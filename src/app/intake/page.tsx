@@ -43,8 +43,8 @@ export default function ServiceSelection() {
     { id: 1, label: "Service", status: step === 1 ? "current" : step > 1 ? "complete" : "upcoming" },
     { id: 2, label: "Purchase Price", status: step === 2 ? "current" : step > 2 ? "complete" : "upcoming" },
     { id: 3, label: "Address", status: step === 3 ? "current" : step > 3 ? "complete" : "upcoming" },
-    { id: 4, label: "Agreement", status: step === 4 ? "current" : (step === 5 || agreementSigned === "no") ? "complete" : "upcoming" },
-    { id: 5, label: "Contact", status: (step === 5 || (step === 4 && agreementSigned === "no")) ? "current" : "upcoming" },
+    { id: 4, label: "Agreement", status: step === 4 ? "current" : step > 4 ? "complete" : "upcoming" },
+    { id: 5, label: "Contact", status: step === 5 ? "current" : "upcoming" },
   ];
 
   return (
