@@ -14,7 +14,7 @@ import {
   Video,
   Clock
 } from "lucide-react";
-import HorizontalProgress from "@/components/intake/HorizontalProgress";
+import HorizontalProgress, { type Step } from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import DateTimePicker from "@/components/intake/DateTimePicker";
@@ -41,7 +41,8 @@ export default function ServiceSelection() {
     { id: "condo", title: "Condo Status Certificate Report", description: "Closing on a condo? We'll review your status certificate thoroughly—at no extra charge.", icon: FileText },
   ];
 
-  const progressSteps = [
+
+  const progressSteps: Step[] = [
     { id: 1, label: "Service", status: step === 1 ? "current" : step > 1 ? "complete" : "upcoming" },
     { id: 2, label: "Purchase Price", status: step === 2 ? "current" : step > 2 ? "complete" : "upcoming" },
     { id: 3, label: "Address", status: step === 3 ? "current" : step > 3 ? "complete" : "upcoming" },
