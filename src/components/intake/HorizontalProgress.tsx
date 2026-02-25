@@ -2,20 +2,20 @@
 
 import { Check } from "lucide-react";
 
-type StepStatus = "complete" | "current" | "upcoming";
+export type StepStatus = "complete" | "current" | "upcoming";
 
-interface Step {
+export interface Step {
   id: number;
   label: string;
   description?: string;
   status: StepStatus;
 }
 
-interface Props {
+interface HorizontalProgressProps {
   steps: Step[];
 }
 
-export default function HorizontalProgress({ steps }: Props) {
+export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
   return (
      <div className="w-full z-50 ">
       <div className="max-w-7xl mx-auto px-6 py-1">

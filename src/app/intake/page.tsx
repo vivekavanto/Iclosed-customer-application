@@ -1,18 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { 
-  Home, 
-  Briefcase, 
-  FileText, 
-  Check, 
-  Repeat, 
-  UploadCloud, 
-  Plus, 
-  ChevronLeft, 
-  ChevronRight, 
-  Video, 
-  Clock 
+import {
+  Home,
+  Briefcase,
+  FileText,
+  Check,
+  Repeat,
+  UploadCloud,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  Video,
+  Clock
 } from "lucide-react";
 import HorizontalProgress from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
@@ -25,7 +25,7 @@ export default function ServiceSelection() {
   const [purchasePrice, setPurchasePrice] = useState("");
   const [agreementSigned, setAgreementSigned] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  
+
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -49,7 +49,7 @@ export default function ServiceSelection() {
 
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans">
-      <main className="flex-grow flex flex-col items-center px-6 ">
+      <main className="flex-grow flex flex-col items-center px-8 ">
         <div className="w-full max-w-7xl mb-8 px-6">
           <HorizontalProgress steps={progressSteps} />
         </div>
@@ -70,9 +70,8 @@ export default function ServiceSelection() {
                   <div
                     key={service.id}
                     onClick={() => setSelected(service.id)}
-                    className={`cursor-pointer rounded-2xl border p-8 flex items-start gap-8 ${
-                      selected === service.id ? "border-[#C10007] shadow-xl" : "border-gray-200 hover:shadow-lg"
-                    }`}
+                    className={`cursor-pointer rounded-2xl border p-8 flex items-start gap-8 ${selected === service.id ? "border-[#C10007] shadow-xl" : "border-gray-200 hover:shadow-lg"
+                      }`}
                   >
                     <div className="flex-shrink-0">
                       <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
@@ -84,9 +83,8 @@ export default function ServiceSelection() {
                       <p className="mt-4 text-gray-500 leading-relaxed max-w-xl">{service.description}</p>
                     </div>
                     <div className="flex items-start pt-2">
-                      <div className={`h-6 w-6 rounded-full border flex items-center justify-center transition-all duration-300 ${
-                        selected === service.id ? "border-[#C10007] bg-[#C10007]" : "border-gray-300"
-                      }`}>
+                      <div className={`h-6 w-6 rounded-full border flex items-center justify-center transition-all duration-300 ${selected === service.id ? "border-[#C10007] bg-[#C10007]" : "border-gray-300"
+                        }`}>
                         {selected === service.id && <Check size={14} className="text-white" strokeWidth={3} />}
                       </div>
                     </div>
@@ -94,13 +92,93 @@ export default function ServiceSelection() {
                 );
               })}
             </div>
+            {selected === "closing" && (
+              <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  {
+                    id: "buy",
+                    icon: Home,
+                    title: "I am buying a property",
+                    description:
+                      "You're buying a property? We'll handle the legal steps to complete your purchase securely.",
+                    price: "$1029",
+                  },
+                  {
+                    id: "sell",
+                    icon: FileText,
+                    title: "I am selling a property",
+                    description:
+                      "Selling a property? We'll prepare your documents and manage the legal side of your sale.",
+                    price: "$1029",
+                  },
+                  {
+                    id: "both",
+                    icon: Repeat,
+                    title: "I am buying AND selling a property",
+                    description:
+                      "Doing both? iClosed will coordinate both ends to ensure a smooth and connected closing.",
+                    price: "$1999",
+                  },
+                ].map((card) => {
+                  const Icon = card.icon;
+                  const isSelected = selectedClosingOption === card.id;
+
+                  return (
+                    <div
+                      key={card.id}
+                      onClick={() => setSelectedClosingOption(card.id)}
+                      className={`
+            cursor-pointer rounded-2xl p-6 transition-all duration-300 transform
+            ${isSelected
+                          ? "bg-white border-2 border-[#C10007] shadow-lg"
+                          : "bg-gray-50 border border-gray-200 hover:shadow-md hover:-translate-y-0.5"
+                        }
+          `}
+                    >
+                      {/* Icon */}
+                      <div
+                        className={`flex items-center justify-center w-16 h-16 rounded-full mb-4 transition-all duration-300
+            ${isSelected
+                            ? "bg-gradient-to-tr from-[#FF6B6B] to-[#C10007] text-white"
+                            : "bg-red-50 text-[#C10007]"
+                          }
+          `}
+                      >
+                        <Icon size={28} strokeWidth={2} />
+                      </div>
+
+                      {/* Content */}
+                      <h4
+                        className={`text-lg font-semibold mb-2 transition-colors duration-300 ${isSelected ? "text-[#C10007]" : "text-gray-900"
+                          }`}
+                      >
+                        {card.title}
+                      </h4>
+
+                      <p className={`text-gray-500 mb-4 ${isSelected ? "text-gray-700" : ""}`}>
+                        {card.description}
+                      </p>
+
+                      <span
+                        className={`font-bold text-xl transition-colors duration-300 ${isSelected ? "text-[#C10007]" : "text-gray-900"
+                          }`}
+                      >
+                        {card.price}
+                      </span>{" "}
+                      + Disbursements
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div className="flex justify-end mt-16">
               <Button
-                disabled={!selected}
+                disabled={!selected || (selected === "closing" && !selectedClosingOption)}
                 onClick={() => setStep(2)}
-                className={`px-10 py-3 rounded-sm text-base font-medium transition-all duration-300 ${
-                  selected ? "bg-[#C10007] text-white" : "bg-gray-200 text-gray-400"
-                }`}
+                className={`px-10 py-3 rounded-sm text-base font-medium transition-all duration-300 selected && (selected !== "closing" || selectedClosingOption)
+  ? "bg-[#C10007] text-white"
+  : "bg-gray-400 text-gray-400"
+                  }`}
               >Next</Button>
             </div>
           </div>
@@ -112,7 +190,7 @@ export default function ServiceSelection() {
             <h1 className="text-3xl font-semibold mb-6">Enter the purchase price for the property.</h1>
             <Input label="Purchase Price" type="text" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} placeholder="$ 1,250,000" className="mb-6" />
             <div className="flex justify-between">
-              <Button onClick={() => setStep(1)} className="px-6 py-2 bg-gray-200 rounded-sm">Previous</Button>
+              <Button onClick={() => setStep(1)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">Previous</Button>
               <Button onClick={() => setStep(3)} disabled={!purchasePrice} className="px-6 py-2 rounded-sm bg-[#C10007] text-white">Next</Button>
             </div>
           </div>
@@ -120,24 +198,76 @@ export default function ServiceSelection() {
 
         {/* STEP 3: Address */}
         {step === 3 && (
-          <div className="w-full max-w-7xl mx-auto bg-gray-50 border border-gray-200 rounded-2xl p-12 shadow-sm">
-            <h1 className="text-3xl font-semibold text-gray-900 mb-8">Purchase Property Address</h1>
-            <div className="space-y-8">
-              <Input label="Street Address" placeholder="Start typing your address..." />
-              <Input label="City" placeholder="Toronto" />
+          <div className="w-full max-w-7xl bg-gray-50 border border-gray-200 rounded-2xl p-6 sm:p-8 md:p-12 shadow-sm">
+            <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-8">
+              Enter the address of purchase property?
+              <small className="text-gray-500 text-sm font-xs">(iClosed currently only serves Ontario)</small>
+            </h1>
+
+
+            {/* FORM GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+
+              <Input
+                label="Street Address"
+                placeholder="Start typing address..."
+              />
+
+              <Input
+                label="Unit/Apartment/Suite Number"
+                placeholder="123"
+              />
+
+              <Input
+                label="City"
+                placeholder="Toronto"
+              />
+
+              <Input
+                label="Postal Code"
+                placeholder="A1C 2B3"
+              />
+
+              {/* Province Select */}
+              <div className="flex flex-col gap-1.5 w-full">
+                <label className="text-sm font-medium text-[var(--color-text-heading)]">
+                  Province
+                </label>
+                <select
+                  className="w-full px-4 py-2.5 rounded-sm border text-sm transition-colors duration-150 
+          bg-gray-100 border-[var(--color-border)] 
+          focus:outline-none focus:ring-2 focus:ring-[#C10007]"
+                  defaultValue="Ontario"
+                >
+                  <option>Ontario</option>
+                </select>
+              </div>
+
             </div>
-            <div className="flex justify-between mt-14">
-              <Button onClick={() => setStep(2)} className="px-6 py-2 bg-gray-200 rounded-sm">Previous</Button>
-              <Button onClick={() => setStep(4)} className="px-8 py-3 bg-[#C10007] text-white rounded-sm">Next</Button>
+
+            {/* BUTTONS */}
+            <div className="flex flex-col sm:flex-row justify-between gap-4 mt-12">
+              <Button
+                onClick={() => setStep(2)}
+                className="bg-gray-400 w-full sm:w-auto rounded-sm"
+              >
+                Previous
+              </Button>
+
+              <Button
+                onClick={() => setStep(4)}
+                className="bg-[#C10007] text-white w-full sm:w-auto rounded-sm"
+              >
+                Next
+              </Button>
             </div>
           </div>
         )}
 
-        {/* STEP 4 & FINAL NO PATH */}
+        {/* STEP 4  */}
         {step === 4 && (
           <div className="w-full max-w-7xl mx-auto">
             {!agreementSigned ? (
-              /* INITIAL AGREEMENT QUESTION */
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-12 shadow-sm space-y-6">
                 <div className="mb-12">
                   <h1 className="text-3xl font-bold text-gray-900">Have you signed the Agreement of Purchase and Sale?</h1>
@@ -152,26 +282,25 @@ export default function ServiceSelection() {
                   <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${agreementSigned === "no" ? "border-[#C10007] bg-[#C10007]" : "border-gray-300"}`}>{agreementSigned === "no" && <Check size={16} className="text-white" />}</div>
                 </div>
                 <div className="flex justify-between mt-12">
-                  <Button onClick={() => setStep(3)} className="px-6 py-2 bg-gray-200 rounded-sm">Previous</Button>
-                  <Button disabled={!agreementSigned} onClick={() => {}} className="px-8 py-3 rounded-sm bg-[#C10007] text-white">Next</Button>
+                  <Button onClick={() => setStep(3)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">Previous</Button>
+                  <Button disabled={!agreementSigned} onClick={() => { }} className="px-8 py-3 rounded-sm bg-[#C10007] text-white">Next</Button>
                 </div>
               </div>
             ) : agreementSigned === "yes" ? (
-              /* IF YES: SHOW UPLOAD */
-              <div className="bg-white border border-red-50 rounded-2xl p-12 shadow-sm space-y-8">
-                <h1 className="text-3xl font-bold text-gray-900">Share your Agreement of Purchase and Sale <span className="text-sm font-normal bg-gray-100 px-2 py-1 rounded text-gray-600">Optional</span></h1>
-                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-20 flex flex-col items-center justify-center bg-white cursor-pointer" onClick={() => document.getElementById('file-upload')?.click()}>
+              <div className="bg-gray-50 border border-red-50 rounded-2xl p-12 shadow-sm space-y-8">
+                <h1 className="text-3xl font-semibold text-gray-900">Share your Agreement of Purchase and Sale <span className="text-sm font-normal bg-gray-100 px-2 py-1 rounded text-gray-600">Optional</span></h1>
+                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-10 flex flex-col items-center justify-center bg-white cursor-pointer" onClick={() => document.getElementById('file-upload')?.click()}>
                   <UploadCloud size={24} className="text-gray-400 mb-4" />
                   <p className="text-gray-600">Click to <span className="text-red-600 font-medium">browse</span> or drag and drop your file</p>
                   <input id="file-upload" type="file" className="hidden" />
                 </div>
                 <div className="flex justify-between pt-6">
-                    <Button onClick={() => setAgreementSigned(null)} className="px-8 py-2 bg-white border border-gray-200 rounded-md">Previous</Button>
-                    <Button onClick={() => setStep(5)} className="px-10 py-2 bg-[#C10007] text-white rounded-md">Next</Button>
+                  <Button onClick={() => setAgreementSigned(null)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">Previous</Button>
+                  <Button onClick={() => setStep(5)} className="px-10 py-2 bg-[#C10007] text-white rounded-md">Next</Button>
                 </div>
               </div>
             ) : (
-              /* IF NO: THIS IS THE FINAL CONSULTATION STEP (IMAGE 3) */
+
               <div className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-16 shadow-sm">
                 <div className="mb-10">
                   <h1 className="text-3xl font-semibold text-gray-900">Please select a time slot for a free consultation to review your transaction</h1>
@@ -181,27 +310,32 @@ export default function ServiceSelection() {
                 <div className="space-y-10 mb-12">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3"><span className="text-red-600">*</span> Full Name</label>
-                    <Input placeholder="John Doe" value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} />
+                    <Input placeholder="John Doe" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3"><span className="text-red-600">*</span> Email Address</label>
-                    <Input placeholder="john@doe.com" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                    <Input placeholder="john@doe.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3"><span className="text-red-600">*</span> Phone Number</label>
-                    <Input placeholder="(555)-123-4567" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
+                    <Input placeholder="(555)-123-4567" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
                   </div>
-                  <div className="pt-4">
-                    <div className="flex items-center gap-2 mb-4 text-gray-900 font-semibold text-lg">
-                      <span className="w-5 h-3 bg-red-600 rounded-sm inline-block"></span> Co-Purchaser
-                    </div>
-                    <Button className="w-full py-4 border border-dashed border-red-200 rounded-lg text-gray-900 font-medium flex items-center justify-center gap-2">
-                      <Plus size={18} /> Add Co-Purchaser
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    className="
+    w-full
+    border border-dashed border-red-200
+    text-gray-900
+    hover:text-[#C10007]
+    hover:bg-[#C10007]
+  "
+                  >
+                    <Plus size={18} />
+                    Add Co-Purchaser
+                  </Button>
                 </div>
 
-                {/* Calendar Integrated Widget */}
+                {/* Calendar  */}
                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col md:flex-row min-h-[500px] mb-12">
                   <div className="w-full md:w-1/3 p-8 border-r border-gray-100">
                     <p className="text-gray-500 font-medium">Nava Wilson</p>
@@ -214,13 +348,13 @@ export default function ServiceSelection() {
                   <div className="flex-1 p-8">
                     <div className="flex items-center justify-between mb-8">
                       <h3 className="text-xl font-bold text-gray-900">Select a Date & Time</h3>
-                      <div className="flex items-center gap-4 text-gray-600">February 2026 
-                        <div className="flex gap-1"><ChevronLeft size={20} /><ChevronRight size={20} className="text-blue-600"/></div>
+                      <div className="flex items-center gap-4 text-gray-600">February 2026
+                        <div className="flex gap-1"><ChevronLeft size={20} /><ChevronRight size={20} className="text-blue-600" /></div>
                       </div>
                     </div>
                     <div className="grid grid-cols-7 gap-y-8 text-center">
-                      {['MON','TUE','WED','THU','FRI','SAT','SUN'].map(d => <div key={d} className="text-xs font-bold text-gray-400">{d}</div>)}
-                      {Array.from({length: 28}, (_, i) => i + 1).map(day => (
+                      {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => <div key={d} className="text-xs font-bold text-gray-400">{d}</div>)}
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
                         <div key={day} className={`py-2 rounded-full ${day >= 25 ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-900'}`}>{day}</div>
                       ))}
                     </div>
@@ -228,33 +362,66 @@ export default function ServiceSelection() {
                 </div>
 
                 <div className="flex justify-between">
-                  <Button onClick={() => setAgreementSigned(null)} className="px-10 py-3 bg-white border border-gray-200 rounded-lg font-medium text-gray-900 flex items-center gap-2">
-                    <ChevronLeft size={18}/> Previous
+                  <Button onClick={() => setAgreementSigned(null)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">
+                    <ChevronLeft size={18} /> Previous
                   </Button>
-                  <Button onClick={() => alert("Final Step: Submission complete!")} className="px-12 py-3 bg-[#C10007] text-white rounded-lg font-semibold hover:bg-red-700">Complete</Button>
+                  <Button onClick={() => alert("Final Step: Submission complete!")} className="px-12 py-3 bg-[#C10007] text-white rounded-sm font-semibold hover:bg-red-700">Complete</Button>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* STEP 5: Final Step (Only for "Yes" path) */}
         {step === 5 && (
           <div className="w-full max-w-7xl mx-auto bg-gray-50 border border-gray-200 rounded-2xl p-16 shadow-sm">
-             <h1 className="text-3xl font-semibold text-gray-900 mb-10">We'll be in touch</h1>
-             <div className="space-y-10">
-                <Input label="Full Name" placeholder="John Doe" />
-                <Input label="Email Address" placeholder="john@doe.com" />
-                <Input label="Phone Number" placeholder="(555)-123-4567" />
-             </div>
-             <div className="flex justify-between mt-16">
-                <Button onClick={() => setStep(4)} className="px-6 py-2 bg-gray-200 rounded-sm">Previous</Button>
-                <Button onClick={() => alert("Submission complete!")} className="px-12 py-3 bg-[#C10007] text-white rounded-lg font-semibold">Complete</Button>
-             </div>
+            <h1 className="text-3xl font-semibold text-gray-900 mb-10">
+              We'll be in touch
+            </h1>
+
+            {/* INPUT GRID */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <Input label="Full Name" placeholder="John Doe" />
+              <Input label="Email Address" placeholder="john@doe.com" />
+              <Input label="Phone Number" placeholder="(555)-123-4567" />
+            </div>
+
+            {/* ADD CO-PURCHASER BUTTON - NEW ROW */}
+            <div className="mt-10">
+              <Button
+                variant="ghost"
+                className="
+          w-full
+          border border-dashed border-red-200
+          text-gray-900
+          hover:text-[#C10007]
+          hover:bg-transparent
+        "
+              >
+                <Plus size={18} />
+                Add Co-Purchaser
+              </Button>
+            </div>
+
+            {/* ACTION BUTTONS */}
+            <div className="flex justify-between mt-16">
+              <Button
+                onClick={() => setStep(4)}
+                className="px-6 py-2 bg-gray-400 rounded-sm"
+              >
+                Previous
+              </Button>
+
+              <Button
+                onClick={() => alert("Submission complete!")}
+                className="px-12 py-3 bg-[#C10007] text-white rounded-sm font-semibold"
+              >
+                Complete
+              </Button>
+            </div>
           </div>
         )}
       </main>
-      
+
     </div>
   );
 }
