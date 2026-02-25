@@ -17,14 +17,17 @@ import {
 import HorizontalProgress from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import DateTimePicker from "@/components/intake/DateTimePicker";
+import Modal from "@/components/ui/Modal";
 
 export default function ServiceSelection() {
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedClosingOption, setSelectedClosingOption] = useState<string | null>(null);
-  const [step, setStep] = useState<number>(1);
   const [purchasePrice, setPurchasePrice] = useState("");
-  const [agreementSigned, setAgreementSigned] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [step, setStep] = useState(1);
+  const [agreementSigned, setAgreementSigned] = useState<"yes" | "no" | null>(null);
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -38,13 +41,12 @@ export default function ServiceSelection() {
     { id: "condo", title: "Condo Status Certificate Report", description: "Closing on a condo? We'll review your status certificate thoroughly—at no extra charge.", icon: FileText },
   ];
 
-  // Logic to update the progress bar status based on the "No" path being the end
   const progressSteps = [
     { id: 1, label: "Service", status: step === 1 ? "current" : step > 1 ? "complete" : "upcoming" },
     { id: 2, label: "Purchase Price", status: step === 2 ? "current" : step > 2 ? "complete" : "upcoming" },
     { id: 3, label: "Address", status: step === 3 ? "current" : step > 3 ? "complete" : "upcoming" },
-    { id: 4, label: "Agreement", status: step === 4 ? "current" : (step === 5 || agreementSigned === "no") ? "complete" : "upcoming" },
-    { id: 5, label: "Contact", status: (step === 5 || (step === 4 && agreementSigned === "no")) ? "current" : "upcoming" },
+    { id: 4, label: "Agreement", status: step === 4 ? "current" : step > 4 ? "complete" : "upcoming" },
+    { id: 5, label: "Contact", status: step === 5 ? "current" : "upcoming" },
   ];
 
   return (
@@ -56,7 +58,7 @@ export default function ServiceSelection() {
 
         {/* STEP 1: Service Selection */}
         {step === 1 && (
-          <div className="max-w-7xl w-full bg-gray-50 rounded-2xl shadow-sm border border-gray-200 p-16">
+          <div className="max-w-7xl w-full bg-gray-50 rounded-sm shadow-sm border border-gray-200 p-16">
             <div className="mb-16">
               <h1 className="text-4xl font-semibold tracking-tight text-gray-900">How can we assist you today?</h1>
               <p className="mt-4 text-lg text-gray-500 leading-relaxed max-w-2xl">
@@ -70,7 +72,7 @@ export default function ServiceSelection() {
                   <div
                     key={service.id}
                     onClick={() => setSelected(service.id)}
-                    className={`cursor-pointer rounded-2xl border p-8 flex items-start gap-8 ${selected === service.id ? "border-[#C10007] shadow-xl" : "border-gray-200 hover:shadow-lg"
+                    className={`cursor-pointer rounded-lg border p-8 flex items-start gap-8 ${selected === service.id ? "border-[#C10007] shadow-xl" : "border-gray-200 hover:shadow-lg"
                       }`}
                   >
                     <div className="flex-shrink-0">
@@ -128,7 +130,7 @@ export default function ServiceSelection() {
                       key={card.id}
                       onClick={() => setSelectedClosingOption(card.id)}
                       className={`
-            cursor-pointer rounded-2xl p-6 transition-all duration-300 transform
+            cursor-pointer rounded-lg p-6 transition-all duration-300 transform
             ${isSelected
                           ? "bg-white border-2 border-[#C10007] shadow-lg"
                           : "bg-gray-50 border border-gray-200 hover:shadow-md hover:-translate-y-0.5"
@@ -186,7 +188,7 @@ export default function ServiceSelection() {
 
         {/* STEP 2: Purchase Price */}
         {step === 2 && (
-          <div className="mt-8 w-full max-w-7xl mx-auto bg-gray-50 rounded-2xl border border-red-100 p-12 shadow-sm">
+          <div className="mt-8 w-full max-w-7xl mx-auto bg-gray-50 rounded-sm border border-red-100 p-12 shadow-sm">
             <h1 className="text-3xl font-semibold mb-6">Enter the purchase price for the property.</h1>
             <Input label="Purchase Price" type="text" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} placeholder="$ 1,250,000" className="mb-6" />
             <div className="flex justify-between">
@@ -264,114 +266,82 @@ export default function ServiceSelection() {
           </div>
         )}
 
-        {/* STEP 4  */}
+        {/* STEP 4: Agreement Logic */}
         {step === 4 && (
           <div className="w-full max-w-7xl mx-auto">
-            {!agreementSigned ? (
+            {agreementSigned === null && (
               <div className="bg-gray-50 border border-gray-200 rounded-2xl p-12 shadow-sm space-y-6">
                 <div className="mb-12">
-                  <h1 className="text-3xl font-bold text-gray-900">Have you signed the Agreement of Purchase and Sale?</h1>
-                  <p className="mt-4 text-lg text-gray-500">Not sure? It's the legal document that outlines the terms of your deal.</p>
+                  <h1 className="text-3xl font-bold text-gray-900">
+                    Have you signed the Agreement of Purchase and Sale?
+                  </h1>
+                  <p className="mt-4 text-lg text-gray-500">
+                    Not sure? It's the legal document that outlines the terms of your deal.
+                  </p>
                 </div>
-                <div onClick={() => setAgreementSigned("yes")} className={`cursor-pointer rounded-xl border-2 p-8 flex items-center justify-between transition-all ${agreementSigned === "yes" ? "border-[#C10007] bg-white" : "border-gray-200"}`}>
-                  <div className="flex-1"><h3 className="text-xl font-semibold text-gray-900">Yes</h3><p className="mt-2 text-gray-500">I've signed the agreement.</p></div>
-                  <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${agreementSigned === "yes" ? "border-[#C10007] bg-[#C10007]" : "border-gray-300"}`}>{agreementSigned === "yes" && <Check size={16} className="text-white" />}</div>
+
+                <div
+                  onClick={() => setAgreementSigned("yes")}
+                  className="cursor-pointer rounded-xl border-2 p-8 flex items-center justify-between transition-all border-gray-200 hover:border-[#C10007]"
+                >
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-gray-900">Yes</h3>
+                    <p className="mt-2 text-gray-500">I've signed the agreement.</p>
+                  </div>
                 </div>
-                <div onClick={() => setAgreementSigned("no")} className={`cursor-pointer rounded-xl border-2 p-8 flex items-center justify-between transition-all ${agreementSigned === "no" ? "border-[#C10007] bg-white" : "border-gray-200"}`}>
-                  <div className="flex-1"><h3 className="text-xl font-semibold text-gray-900">No</h3><p className="mt-2 text-gray-500">I haven't signed it yet.</p></div>
-                  <div className={`h-6 w-6 rounded-full border-2 flex items-center justify-center ${agreementSigned === "no" ? "border-[#C10007] bg-[#C10007]" : "border-gray-300"}`}>{agreementSigned === "no" && <Check size={16} className="text-white" />}</div>
+
+                <div
+                  onClick={() => {
+                    setAgreementSigned("no");
+                    setStep(5);
+                  }}
+                  className="cursor-pointer rounded-xl border-2 p-8 flex items-center justify-between transition-all border-gray-200 hover:border-[#C10007]"
+                >
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-gray-900">No</h3>
+                    <p className="mt-2 text-gray-500">I haven't signed it yet.</p>
+                  </div>
                 </div>
+
                 <div className="flex justify-between mt-12">
-                  <Button onClick={() => setStep(3)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">Previous</Button>
-                  <Button disabled={!agreementSigned} onClick={() => { }} className="px-8 py-3 rounded-sm bg-[#C10007] text-white">Next</Button>
+                  <Button onClick={() => setStep(3)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">
+                    Previous
+                  </Button>
                 </div>
               </div>
-            ) : agreementSigned === "yes" ? (
+            )}
+
+            {agreementSigned === "yes" && (
               <div className="bg-gray-50 border border-red-50 rounded-2xl p-12 shadow-sm space-y-8">
-                <h1 className="text-3xl font-semibold text-gray-900">Share your Agreement of Purchase and Sale <span className="text-sm font-normal bg-gray-100 px-2 py-1 rounded text-gray-600">Optional</span></h1>
-                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-10 flex flex-col items-center justify-center bg-white cursor-pointer" onClick={() => document.getElementById('file-upload')?.click()}>
+                <h1 className="text-3xl font-semibold text-gray-900">
+                  Share your Agreement of Purchase and Sale
+                </h1>
+
+                <div
+                  className="border-2 border-dashed border-gray-200 rounded-2xl p-10 flex flex-col items-center justify-center bg-white cursor-pointer"
+                  onClick={() => document.getElementById("file-upload")?.click()}
+                >
                   <UploadCloud size={24} className="text-gray-400 mb-4" />
-                  <p className="text-gray-600">Click to <span className="text-red-600 font-medium">browse</span> or drag and drop your file</p>
+                  <p className="text-gray-600">
+                    Click to <span className="text-red-600 font-medium">browse</span> or drag and drop your file
+                  </p>
                   <input id="file-upload" type="file" className="hidden" />
                 </div>
+
                 <div className="flex justify-between pt-6">
-                  <Button onClick={() => setAgreementSigned(null)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">Previous</Button>
-                  <Button onClick={() => setStep(5)} className="px-10 py-2 bg-[#C10007] text-white rounded-md">Next</Button>
-                </div>
-              </div>
-            ) : (
-
-              <div className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-16 shadow-sm">
-                <div className="mb-10">
-                  <h1 className="text-3xl font-semibold text-gray-900">Please select a time slot for a free consultation to review your transaction</h1>
-                  <p className="mt-2 text-lg text-gray-500">We'll use your details to send updates and guide you through the process.</p>
-                </div>
-
-                <div className="space-y-10 mb-12">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3"><span className="text-red-600">*</span> Full Name</label>
-                    <Input placeholder="John Doe" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3"><span className="text-red-600">*</span> Email Address</label>
-                    <Input placeholder="john@doe.com" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-3"><span className="text-red-600">*</span> Phone Number</label>
-                    <Input placeholder="(555)-123-4567" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    className="
-    w-full
-    border border-dashed border-red-200
-    text-gray-900
-    hover:text-[#C10007]
-    hover:bg-[#C10007]
-  "
-                  >
-                    <Plus size={18} />
-                    Add Co-Purchaser
-                  </Button>
-                </div>
-
-                {/* Calendar  */}
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col md:flex-row min-h-[500px] mb-12">
-                  <div className="w-full md:w-1/3 p-8 border-r border-gray-100">
-                    <p className="text-gray-500 font-medium">Nava Wilson</p>
-                    <h2 className="text-2xl font-bold text-gray-900 mt-1">IClosed Lead Meeting</h2>
-                    <div className="mt-6 space-y-4">
-                      <div className="flex items-center gap-3 text-gray-600"><Clock size={20} /> 15 min</div>
-                      <div className="flex items-start gap-3 text-gray-600"><Video size={20} /> Web conferencing details provided upon confirmation.</div>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-8">
-                    <div className="flex items-center justify-between mb-8">
-                      <h3 className="text-xl font-bold text-gray-900">Select a Date & Time</h3>
-                      <div className="flex items-center gap-4 text-gray-600">February 2026
-                        <div className="flex gap-1"><ChevronLeft size={20} /><ChevronRight size={20} className="text-blue-600" /></div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-7 gap-y-8 text-center">
-                      {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => <div key={d} className="text-xs font-bold text-gray-400">{d}</div>)}
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
-                        <div key={day} className={`py-2 rounded-full ${day >= 25 ? 'bg-blue-50 text-blue-600 font-bold' : 'text-gray-900'}`}>{day}</div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-between">
                   <Button onClick={() => setAgreementSigned(null)} className="px-6 py-2 bg-gray-400 rounded-sm cursor-pointer">
-                    <ChevronLeft size={18} /> Previous
+                    Previous
                   </Button>
-                  <Button onClick={() => alert("Final Step: Submission complete!")} className="px-12 py-3 bg-[#C10007] text-white rounded-sm font-semibold hover:bg-red-700">Complete</Button>
+                  <Button onClick={() => setStep(5)} className="px-10 py-2 bg-[#C10007] text-white rounded-md">
+                    Next
+                  </Button>
                 </div>
               </div>
             )}
           </div>
         )}
 
+        {/* STEP 5*/}
         {step === 5 && (
           <div className="w-full max-w-7xl mx-auto bg-gray-50 border border-gray-200 rounded-2xl p-16 shadow-sm">
             <h1 className="text-3xl font-semibold text-gray-900 mb-10">
@@ -385,7 +355,7 @@ export default function ServiceSelection() {
               <Input label="Phone Number" placeholder="(555)-123-4567" />
             </div>
 
-            {/* ADD CO-PURCHASER BUTTON - NEW ROW */}
+            {/* ADD CO-PURCHASER BUTTON */}
             <div className="mt-10">
               <Button
                 variant="ghost"
@@ -401,18 +371,58 @@ export default function ServiceSelection() {
                 Add Co-Purchaser
               </Button>
             </div>
+            {agreementSigned === "no" && (
+              <div className="mt-16   border-gray-200">
+                <div className="bg-white border border-gray-200 rounded-sm overflow-hidden flex flex-col md:flex-row min-h-[500px]">
+
+                  {/* Calendar */}
+                  <div className="w-full md:w-1/3 p-8 border-r border-gray-100">
+                    <p className="text-gray-500 font-medium">Nava Wilson</p>
+                    <h2 className="text-2xl font-bold text-gray-900 mt-1">
+                      IClosed Lead Meeting
+                    </h2>
+
+                    <div className="mt-6 space-y-4">
+                      <div className="flex items-center gap-3 text-gray-600">
+                        <Clock size={20} /> 15 min
+                      </div>
+
+                      <div className="flex items-start gap-3 text-gray-600">
+                        <Video size={20} />
+                        Web conferencing details provided upon confirmation.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Calendar component */}
+                  <DateTimePicker
+                    onChange={(date, time) => {
+                      console.log("Selected Date:", date);
+                      console.log("Selected Time:", time);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* ACTION BUTTONS */}
             <div className="flex justify-between mt-16">
               <Button
-                onClick={() => setStep(4)}
+                onClick={() => {
+                  if (agreementSigned === "no") {
+                    setAgreementSigned(null);
+                    setStep(4);
+                  } else {
+                    setStep(4);
+                  }
+                }}
                 className="px-6 py-2 bg-gray-400 rounded-sm"
               >
                 Previous
               </Button>
 
               <Button
-                onClick={() => alert("Submission complete!")}
+                onClick={() => setShowSuccessModal(true)}
                 className="px-12 py-3 bg-[#C10007] text-white rounded-sm font-semibold"
               >
                 Complete
@@ -420,6 +430,49 @@ export default function ServiceSelection() {
             </div>
           </div>
         )}
+        <Modal
+          open={showSuccessModal}
+          onClose={() => setShowSuccessModal(false)}
+          title="Submission Successful"
+          size="md"
+        >
+          <div className="text-center py-8">
+
+            <div className="flex justify-center mb-6">
+              <div className="bg-[#FFE5E6] p-4 rounded-full">
+                <svg
+                  className="w-8 h-8 text-[#C10007]"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+            </div>
+
+            <p className="text-[var(--color-text-muted)] mb-8">
+              Your information has been successfully submitted.
+              Our team will contact you shortly.
+            </p>
+
+            <Button
+              onClick={() => {
+                setShowSuccessModal(false);
+                setStep(1);
+              }}
+              className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
+            >
+              Done
+            </Button>
+
+          </div>
+        </Modal>
       </main>
 
     </div>
