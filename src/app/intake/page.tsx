@@ -86,7 +86,7 @@ export default function ServiceSelection() {
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans">
       <main className="flex-grow flex flex-col items-center px-8 ">
-        <div className="w-full max-w-7xl mb-8 px-6">
+        <div className="w-full max-w-7xl mb-8 ">
           <HorizontalProgress steps={progressSteps} />
         </div>
 

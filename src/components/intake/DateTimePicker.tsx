@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -17,10 +19,14 @@ const DateTimePicker = ({ onChange }: DateTimePickerProps) => {
     new Date(date.getFullYear(), date.getMonth(), 1).getDay();
 
   const handlePrevMonth = () =>
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    setCurrentDate(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1)
+    );
 
   const handleNextMonth = () =>
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    setCurrentDate(
+      new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
+    );
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
@@ -32,13 +38,14 @@ const DateTimePicker = ({ onChange }: DateTimePickerProps) => {
     onChange?.(selectedDate, time);
   };
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // normalize today
+
   return (
     <div className="flex-1 p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
-        <h3 className="text-xl font-bold text-gray-900">
-          Select a Date & Time
-        </h3>
+        <h3 className="text-xl font-bold text-gray-900">Select a Date & Time</h3>
 
         <div className="flex items-center gap-4 text-gray-600">
           {currentDate.toLocaleString("default", { month: "long" })}{" "}
@@ -79,17 +86,19 @@ const DateTimePicker = ({ onChange }: DateTimePickerProps) => {
             day
           );
 
+          const isPast = date < today;
           const isSelected =
-            selectedDate &&
-            date.toDateString() === selectedDate.toDateString();
+            selectedDate && date.toDateString() === selectedDate.toDateString();
 
           return (
             <div
               key={day}
-              onClick={() => handleDateSelect(date)}
+              onClick={() => !isPast && handleDateSelect(date)}
               className={`py-2 rounded-full cursor-pointer transition
                 ${
-                  isSelected
+                  isPast
+                    ? "text-gray-300 cursor-not-allowed"
+                    : isSelected
                     ? "bg-[#E65C61] text-white"
                     : "hover:bg-[#E65C61] text-gray-900"
                 }`}
@@ -103,32 +112,39 @@ const DateTimePicker = ({ onChange }: DateTimePickerProps) => {
       {/* Time Selection */}
       {selectedDate && (
         <div className="mt-8">
-          <h4 className="font-semibold mb-4 text-gray-800">
-            Select Time
-          </h4>
+          <h4 className="font-semibold mb-4 text-gray-800">Select Time</h4>
 
           <div className="grid grid-cols-3 gap-3">
-            {[
-              "09:00 AM",
-              "10:00 AM",
-              "11:00 AM",
-              "02:00 PM",
-              "03:00 PM",
-              "04:00 PM",
-            ].map((time) => (
-              <div
-                key={time}
-                onClick={() => handleTimeSelect(time)}
-                className={`p-2 text-center rounded-sm border cursor-pointer transition
-                  ${
-                    selectedTime === time
-                      ? "bg-[#C10007] text-white border-none"
-                      : "hover:bg-[#FFE5E6]"
-                  }`}
-              >
-                {time}
-              </div>
-            ))}
+            {["09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"].map(
+              (time) => {
+                const [hour, minutePart] = time.split(":");
+                const [minute, meridiem] = minutePart.split(" ");
+                const timeDate = new Date(selectedDate);
+                let h = parseInt(hour, 10);
+                if (meridiem === "PM" && h !== 12) h += 12;
+                if (meridiem === "AM" && h === 12) h = 0;
+                timeDate.setHours(h, parseInt(minute, 10), 0, 0);
+
+                const isPastTime = selectedDate.toDateString() === today.toDateString() && timeDate < new Date();
+
+                return (
+                  <div
+                    key={time}
+                    onClick={() => !isPastTime && handleTimeSelect(time)}
+                    className={`p-2 text-center rounded-sm border cursor-pointer transition
+                      ${
+                        selectedTime === time
+                          ? "bg-[#C10007] text-white border-none"
+                          : isPastTime
+                          ? "text-gray-300 cursor-not-allowed border-gray-200"
+                          : "hover:bg-[#FFE5E6]"
+                      }`}
+                  >
+                    {time}
+                  </div>
+                );
+              }
+            )}
           </div>
         </div>
       )}

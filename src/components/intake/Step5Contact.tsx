@@ -27,14 +27,13 @@ export default function Step5Contact({
         { id: 2, label: "Purchase Price" },
         { id: 3, label: "Address" },
         { id: 4, label: "Agreement Signed" },
-        ...(agreementSigned === "yes"
-            ? [{ id: 5, label: "Upload Document" }]
-            : []),
-        {
-            id: agreementSigned === "yes" ? 6 : 5,
-            label: "Contact Info",
-        },
+        ...(agreementSigned === "yes" ? [{ id: 5, label: "Upload Document" }] : []),
+        { id: agreementSigned === "yes" ? 6 : 5, label: "Contact Info" },
     ];
+
+    const [isValid, setIsValid] = React.useState(false);
+    const [meetingDate, setMeetingDate] = React.useState<Date | null>(null);
+    const [meetingTime, setMeetingTime] = React.useState<string | null>(null);
     const [formData, setFormData] = React.useState({
         fullName: "",
         email: "",
@@ -47,6 +46,15 @@ export default function Step5Contact({
         phone?: string;
     }>({});
 
+    const [touched, setTouched] = React.useState<{
+        fullName?: boolean;
+        email?: boolean;
+        phone?: boolean;
+    }>({});
+
+    const isCompleteEnabled =
+        isValid && (agreementSigned === "yes" || (agreementSigned === "no" && meetingDate && meetingTime));
+
     React.useEffect(() => {
         const newErrors: typeof errors = {};
         if (!formData.fullName.trim()) {
@@ -56,6 +64,7 @@ export default function Step5Contact({
         } else if (formData.fullName.trim().length < 3) {
             newErrors.fullName = "Name is too short.";
         }
+
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!formData.email.trim()) {
             newErrors.email = "Email is required.";
@@ -75,10 +84,10 @@ export default function Step5Contact({
         setErrors(newErrors);
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
-    const [isValid, setIsValid] = React.useState(false);
+
     return (
         <div className="min-h-screen bg-white w-full">
-            <div className="max-w-7xl flex flex-col lg:flex-row">
+            <div className="max-w-7xl mx-auto flex flex-col lg:flex-row">
 
                 {/* LEFT STICKY PANEL */}
                 <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-gray-50 lg:sticky lg:top-0 lg:h-screen flex flex-col border-r border-gray-100 p-8 lg:p-12">
@@ -137,7 +146,7 @@ export default function Step5Contact({
                     </div>
 
                     {/* Desktop Buttons */}
-                    <div className="mt-6 flex gap-3 flex-shrink-0 flex-col sm:flex-row">
+                    <div className="mt-6 hidden lg:flex gap-3 flex-shrink-0">
                         <Button
                             onClick={() => {
                                 if (agreementSigned === "no") setAgreementSigned(null);
@@ -151,11 +160,11 @@ export default function Step5Contact({
                         </Button>
 
                         <Button
-                            onClick={() => setShowSuccessModal(true)}
                             variant="primary"
                             size="md"
                             className="flex-1"
-                            disabled={!isValid}
+                            disabled={!isCompleteEnabled}
+                            onClick={() => setShowSuccessModal(true)}
                         >
                             Complete
                         </Button>
@@ -163,45 +172,58 @@ export default function Step5Contact({
 
                 </div>
 
-                {/* ================= RIGHT PANEL ================= */}
+                {/* RIGHT PANEL */}
                 <div className="flex-1 p-6 sm:p-10 lg:p-12">
-                    <div className="space-y-8 ">
+                    <div className="space-y-8 w-full">
 
                         {/* Contact Form */}
                         <Input
                             label="Full Name"
+                            required
                             placeholder="John Doe"
                             value={formData.fullName}
                             onChange={(e) =>
                                 setFormData({ ...formData, fullName: e.target.value })
                             }
+                            onBlur={() =>
+                                setTouched((prev) => ({ ...prev, fullName: true }))
+                            }
                         />
-                        {errors.fullName && (
+                        {touched.fullName && errors.fullName && (
                             <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>
                         )}
+
                         <Input
                             label="Email Address"
+                            required
                             placeholder="john@doe.com"
                             value={formData.email}
                             onChange={(e) =>
                                 setFormData({ ...formData, email: e.target.value })
                             }
+                            onBlur={() =>
+                                setTouched((prev) => ({ ...prev, email: true }))
+                            }
                         />
-                        {errors.email && (
+                        {touched.email && errors.email && (
                             <p className="text-red-600 text-sm mt-1">{errors.email}</p>
                         )}
+
                         <Input
                             label="Phone Number"
+                            required
                             placeholder="(555)-123-4567"
                             value={formData.phone}
                             onChange={(e) =>
                                 setFormData({ ...formData, phone: e.target.value })
                             }
+                            onBlur={() =>
+                                setTouched((prev) => ({ ...prev, phone: true }))
+                            }
                         />
-                        {errors.phone && (
+                        {touched.phone && errors.phone && (
                             <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
                         )}
-
 
                         {/* Add Co-Purchaser */}
                         <div>
@@ -239,22 +261,20 @@ export default function Step5Contact({
                                 {/* Date Picker */}
                                 <DateTimePicker
                                     onChange={(date, time) => {
-                                        console.log("Selected Date:", date);
-                                        console.log("Selected Time:", time);
+                                        setMeetingDate(date);
+                                        setMeetingTime(time);
                                     }}
                                 />
                             </div>
                         )}
 
-                        {/* Mobile Buttons */}
-                        <div className="lg:hidden flex gap-3 pt-8">
+                        {/* MOBILE FIXED BUTTONS */}
+                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50 flex gap-3">
                             <Button
                                 variant="secondary"
                                 className="flex-1"
                                 onClick={() => {
-                                    if (agreementSigned === "no") {
-                                        setAgreementSigned(null);
-                                    }
+                                    if (agreementSigned === "no") setAgreementSigned(null);
                                     setStep(4);
                                 }}
                             >
@@ -264,7 +284,7 @@ export default function Step5Contact({
                             <Button
                                 variant="primary"
                                 className="flex-1"
-                                disabled={!isValid}
+                                disabled={!isCompleteEnabled}
                                 onClick={() => setShowSuccessModal(true)}
                             >
                                 Complete

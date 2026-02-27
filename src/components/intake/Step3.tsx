@@ -36,18 +36,17 @@ const Step3: React.FC<Step3Props> = ({
         postalCode?: string;
         unit?: string;
     }>({});
+    const [touched, setTouched] = useState<{
+        street?: boolean;
+        city?: boolean;
+        postalCode?: boolean;
+        unit?: boolean;
+    }>({});
 
     useEffect(() => {
-        const newErrors: {
-            street?: string;
-            city?: string;
-            postalCode?: string;
-            unit?: string;
-        } = {};
+        const newErrors: typeof errors = {};
 
-        if (!formData.street.trim()) {
-            newErrors.street = "Street address is required.";
-        }
+        if (!formData.street.trim()) newErrors.street = "Street address is required.";
 
         if (!formData.city.trim()) {
             newErrors.city = "City is required.";
@@ -61,14 +60,13 @@ const Step3: React.FC<Step3Props> = ({
         if (!formData.postalCode.trim()) {
             newErrors.postalCode = "Postal code is required.";
         } else if (!postalRegex.test(formData.postalCode.trim())) {
-            newErrors.postalCode = "Enter a valid Canadian postal code.";
+            newErrors.postalCode = "Enter a valid postal code.";
         }
 
         if (formData.unit.trim()) {
             const unitRegex = /^[A-Za-z0-9-]+$/;
             if (!unitRegex.test(formData.unit.trim())) {
-                newErrors.unit =
-                    "Unit can only contain letters, numbers, or hyphens.";
+                newErrors.unit = "Unit can only contain letters, numbers, or hyphens.";
             } else if (formData.unit.trim().length > 10) {
                 newErrors.unit = "Unit number is too long.";
             }
@@ -78,20 +76,18 @@ const Step3: React.FC<Step3Props> = ({
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
 
-    // ✅ SAME WORKFLOW AS STEP1
     const leftSteps = [
         { id: 1, label: "Select Service" },
         { id: 2, label: "Purchase Price" },
         { id: 3, label: "Address" },
         { id: 4, label: "Agreement Signed" },
-        ...(agreementSigned === "yes"
-            ? [{ id: 5, label: "Upload Document" }]
-            : []),
-        {
-            id: agreementSigned === "yes" ? 6 : 5,
-            label: "Contact Info",
-        },
+        ...(agreementSigned === "yes" ? [{ id: 5, label: "Upload Document" }] : []),
+        { id: agreementSigned === "yes" ? 6 : 5, label: "Contact Info" },
     ];
+
+    const handleBlur = (field: keyof typeof touched) => {
+        setTouched({ ...touched, [field]: true });
+    };
 
     return (
         <div className="min-h-screen bg-white w-full">
@@ -111,7 +107,7 @@ const Step3: React.FC<Step3Props> = ({
                                 Enter the address of the property
                             </h1>
                             <p className="mt-4 text-gray-500 text-sm leading-relaxed">
-                                ( iClosed currently only serves Ontario )
+                                (iClosed currently only serves Ontario)
                             </p>
                         </div>
 
@@ -125,10 +121,9 @@ const Step3: React.FC<Step3Props> = ({
                                     <div key={item.id} className="flex items-center gap-4">
                                         <div
                                             className={`h-8 w-8 flex items-center justify-center rounded-full text-sm font-bold transition-all
-                                                ${
-                                                    isCompleted
-                                                        ? "bg-gray-300 text-gray-600"
-                                                        : isActive
+                                                ${isCompleted
+                                                    ? "bg-gray-300 text-gray-600"
+                                                    : isActive
                                                         ? "bg-[#C10007] text-white"
                                                         : "bg-gray-200 text-gray-400"
                                                 }`}
@@ -138,10 +133,9 @@ const Step3: React.FC<Step3Props> = ({
 
                                         <span
                                             className={`text-sm transition-colors
-                                                ${
-                                                    isActive || isCompleted
-                                                        ? "text-gray-900 font-semibold"
-                                                        : "text-gray-400"
+                                                ${isActive || isCompleted
+                                                    ? "text-gray-900 font-semibold"
+                                                    : "text-gray-400"
                                                 }`}
                                         >
                                             {item.label}
@@ -154,38 +148,65 @@ const Step3: React.FC<Step3Props> = ({
 
                     {/* Buttons */}
                     <div className="mt-6 flex gap-3">
-                        <Button
-                            onClick={() => setStep(2)}
-                            variant="secondary"
-                            size="md"
-                            className="flex-1"
-                        >
-                            Previous
-                        </Button>
+                        {/* Large screens buttons */}
+                        <div className="hidden lg:flex flex-1 gap-3">
+                            <Button
+                                onClick={() => setStep(2)}
+                                variant="secondary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Previous
+                            </Button>
 
-                        <Button
-                            onClick={() => setStep(4)}
-                            disabled={!isValid}
-                            variant="primary"
-                            size="md"
-                            className="flex-1"
-                        >
-                            Next
-                        </Button>
+                            <Button
+                                onClick={() => setStep(4)}
+                                disabled={!isValid}
+                                variant="primary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Next
+                            </Button>
+                        </div>
+
+                        {/* Fixed bottom buttons on small/medium screens */}
+                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50 flex gap-3">
+                            <Button
+                                onClick={() => setStep(2)}
+                                variant="secondary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Previous
+                            </Button>
+
+                            <Button
+                                onClick={() => setStep(4)}
+                                disabled={!isValid}
+                                variant="primary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Next
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
-                {/* RIGHT PANEL (UNCHANGED) */}
+                {/* RIGHT PANEL */}
                 <div className="flex-1 p-6 sm:p-10 lg:p-16 overflow-y-auto">
                     <div className="space-y-6 w-full">
                         <Input
                             label="Street Address"
+                            required
                             value={formData.street}
                             onChange={(e) =>
                                 setFormData({ ...formData, street: e.target.value })
                             }
+                            onBlur={() => handleBlur("street")}
                         />
-                        {errors.street && (
+                        {touched.street && errors.street && (
                             <p className="text-red-600 text-sm mt-1">{errors.street}</p>
                         )}
 
@@ -196,32 +217,37 @@ const Step3: React.FC<Step3Props> = ({
                             onChange={(e) =>
                                 setFormData({ ...formData, unit: e.target.value })
                             }
+                            onBlur={() => handleBlur("unit")}
                         />
-                        {errors.unit && (
+                        {touched.unit && errors.unit && (
                             <p className="text-red-600 text-sm mt-1">{errors.unit}</p>
                         )}
 
                         <Input
                             label="City"
                             placeholder="Toronto"
+                            required
                             value={formData.city}
                             onChange={(e) =>
                                 setFormData({ ...formData, city: e.target.value })
                             }
+                            onBlur={() => handleBlur("city")}
                         />
-                        {errors.city && (
+                        {touched.city && errors.city && (
                             <p className="text-red-600 text-sm mt-1">{errors.city}</p>
                         )}
 
                         <Input
                             label="Postal Code"
                             placeholder="A1C 2B3"
+                            required
                             value={formData.postalCode}
                             onChange={(e) =>
                                 setFormData({ ...formData, postalCode: e.target.value })
                             }
+                            onBlur={() => handleBlur("postalCode")}
                         />
-                        {errors.postalCode && (
+                        {touched.postalCode && errors.postalCode && (
                             <p className="text-red-600 text-sm mt-1">{errors.postalCode}</p>
                         )}
 

@@ -48,7 +48,7 @@ const Step2: React.FC<Step2Props> = ({
         }
     }, [purchasePrice]);
 
-    // ✅ SAME WORKFLOW AS STEP1
+    // SAME WORKFLOW AS STEP1
     const leftSteps = [
         { id: 1, label: "Select Service" },
         { id: 2, label: "Purchase Price" },
@@ -69,7 +69,6 @@ const Step2: React.FC<Step2Props> = ({
 
                 {/* LEFT PANEL */}
                 <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-gray-50 lg:sticky lg:top-0 lg:h-screen flex flex-col border-r border-gray-100 p-8 lg:p-12">
-
                     <div className="flex-1 overflow-y-auto">
                         <div className="w-10 h-1 bg-[#C10007] rounded-full mb-10" />
 
@@ -124,24 +123,49 @@ const Step2: React.FC<Step2Props> = ({
 
                     {/* Buttons */}
                     <div className="mt-6 flex gap-3">
-                        <Button
-                            onClick={() => setStep(1)}
-                            variant="secondary"
-                            size="md"
-                            className="flex-1"
-                        >
-                            Previous
-                        </Button>
+                        {/* Previous & Next buttons on lg+ */}
+                        <div className="hidden lg:flex flex-1 gap-3">
+                            <Button
+                                onClick={() => setStep(1)}
+                                variant="secondary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Previous
+                            </Button>
 
-                        <Button
-                            onClick={() => setStep(3)}
-                            disabled={!isValid}
-                            variant="primary"
-                            size="md"
-                            className="flex-1"
-                        >
-                            Next
-                        </Button>
+                            <Button
+                                onClick={() => setStep(3)}
+                                disabled={!isValid}
+                                variant="primary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Next
+                            </Button>
+                        </div>
+
+                        {/* Fixed bottom buttons on small/medium */}
+                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50 flex gap-3">
+                            <Button
+                                onClick={() => setStep(1)}
+                                variant="secondary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Previous
+                            </Button>
+
+                            <Button
+                                onClick={() => setStep(3)}
+                                disabled={!isValid}
+                                variant="primary"
+                                size="md"
+                                className="flex-1"
+                            >
+                                Next
+                            </Button>
+                        </div>
                     </div>
                 </div>
 
@@ -153,6 +177,7 @@ const Step2: React.FC<Step2Props> = ({
 
                     <Input
                         label="Purchase Price"
+                        required
                         type="text"
                         value={purchasePrice}
                         onChange={(e) => setPurchasePrice(e.target.value)}

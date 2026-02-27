@@ -18,7 +18,7 @@ interface HorizontalProgressProps {
 export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
   return (
      <div className="w-full z-50 ">
-      <div className="max-w-7xl mx-auto px-6 py-1">
+      <div className="max-w-7xl mx-auto  py-1">
 
         <div className="relative">
 
@@ -37,9 +37,9 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                   className="flex-1 flex flex-col items-center text-center relative"
                 >
                   {/* STEP BADGE */}
-                  <div className="relative mb-8">
+                  <div className="relative mb-8 z-[10]">
                     <div
-                      className={`px-4 py-1 text-sm font-semibold rounded-md shadow-md
+                      className={`px-4 py-1 text-sm font-semibold rounded-md shadow-md 
                         ${
                           isCurrent
                             ? "bg-[#C10007] text-white"
@@ -51,7 +51,7 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                     </div>
 
                     <div
-                      className={`absolute left-1/2 -translate-x-1/2 top-full w-3 h-3 rotate-45
+                      className={`absolute left-1/2 -translate-x-1/2 top-[75%] w-3 h-3 rotate-45 z-[-1]
                         ${
                           isCurrent
                             ? "bg-[#C10007]"
@@ -79,7 +79,7 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                     >
                       {/* Inner Circle */}
                       <div
-                        className={`flex items-center justify-center w-14 h-14 rounded-full
+                        className={`flex items-center justify-center w-12 h-12 rounded-full
                           ${
                             isComplete || isCurrent
                               ? "bg-[#C10007] text-white"
