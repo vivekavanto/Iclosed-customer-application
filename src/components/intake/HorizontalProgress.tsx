@@ -22,7 +22,7 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
         <div className="relative">
 
           {/* Base Line */}
-          <div className="absolute top-[88px] left-0 w-full h-[6px] bg-gray-200 rounded-full" />
+          <div className="absolute top-[56px] md:top-[88px] left-0 w-full h-[4px] md:h-[6px] bg-gray-200 rounded-full" />
 
           <ol className="relative flex justify-between items-start">
 
@@ -36,9 +36,9 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                   className="flex-1 flex flex-col items-center text-center relative"
                 >
                   {/* STEP BADGE */}
-                  <div className="relative mb-8 z-[10]">
+                  <div className="relative mb-4 md:mb-8 z-[10]">
                     <div
-                      className={`px-4 py-1 text-sm font-semibold rounded-md shadow-md 
+                      className={`px-2 py-0.5 text-[10px] md:px-4 md:py-1 md:text-sm font-semibold rounded-md shadow-md
                         ${
                           isCurrent
                             ? "bg-[#C10007] text-white"
@@ -46,11 +46,11 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                         }
                       `}
                     >
-                      Step {step.id.toString().padStart(2, "0")}
+                      <span className="hidden sm:inline">Step </span>{step.id.toString().padStart(2, "0")}
                     </div>
 
                     <div
-                      className={`absolute left-1/2 -translate-x-1/2 top-[75%] w-3 h-3 rotate-45 z-[-1]
+                      className={`absolute left-1/2 -translate-x-1/2 top-[75%] w-2 h-2 md:w-3 md:h-3 rotate-45 z-[-1]
                         ${
                           isCurrent
                             ? "bg-[#C10007]"
@@ -62,13 +62,13 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
 
                   {/* Active Line Fill */}
                   {isComplete && index !== steps.length - 1 && (
-                    <div className="absolute top-[88px] left-1/2 w-full h-[6px] bg-[#C10007] rounded-full" />
+                    <div className="absolute top-[56px] md:top-[88px] left-1/2 w-full h-[4px] md:h-[6px] bg-[#C10007] rounded-full" />
                   )}
 
                   {/* Outer Ring */}
                   <div className="relative z-10 flex items-center justify-center">
                     <div
-                      className={`flex items-center justify-center w-15 h-15 rounded-full border-[6px]
+                      className={`flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 md:w-15 md:h-15 rounded-full border-[3px] sm:border-[4px] md:border-[6px]
                         ${
                           isComplete || isCurrent
                             ? "border-[#C10007]"
@@ -78,7 +78,7 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                     >
                       {/* Inner Circle */}
                       <div
-                        className={`flex items-center justify-center w-12 h-12 rounded-full
+                        className={`flex items-center justify-center w-7 h-7 sm:w-9 sm:h-9 md:w-12 md:h-12 rounded-full
                           ${
                             isComplete || isCurrent
                               ? "bg-[#C10007] text-white"
@@ -87,9 +87,16 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                         `}
                       >
                         {isComplete ? (
-                          <Check size={28} />
-                        ) : (
-                          <span className="text-xl font-bold">
+                          <Check size={14} className="sm:hidden" />
+                        ) : null}
+                        {isComplete ? (
+                          <Check size={20} className="hidden sm:block md:hidden" />
+                        ) : null}
+                        {isComplete ? (
+                          <Check size={28} className="hidden md:block" />
+                        ) : null}
+                        {!isComplete && (
+                          <span className="text-xs sm:text-base md:text-xl font-bold">
                             {step.id}
                           </span>
                         )}

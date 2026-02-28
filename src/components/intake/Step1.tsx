@@ -81,7 +81,7 @@ export function Step1({
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto flex flex-col lg:flex-row">
         {/* LEFT PANEL */}
-        <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-gray-50 lg:sticky lg:top-0 lg:h-screen flex flex-col border-r border-gray-100 p-8 lg:p-12">
+        <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-gray-50 lg:sticky lg:top-0 lg:h-screen flex flex-col border-r border-gray-100 p-5 sm:p-8 lg:p-12">
           <div className="flex-1 overflow-y-auto">
             <div className="w-10 h-1 bg-[#C10007] rounded-full mb-10" />
 
@@ -89,7 +89,7 @@ export function Step1({
               <span className="text-xs font-bold uppercase tracking-[0.2em] text-[#C10007]">
                 Step {String(step).padStart(2, "0")}
               </span>
-              <h1 className="mt-3 text-2xl xl:text-3xl font-semibold text-gray-900 leading-snug">
+              <h1 className="mt-3 text-xl sm:text-2xl xl:text-3xl font-semibold text-gray-900 leading-snug">
                 How can we assist you today?
               </h1>
               <p className="mt-4 text-gray-500 text-sm leading-relaxed">
@@ -99,7 +99,7 @@ export function Step1({
             </div>
 
             {/* PROGRESS */}
-            <div className="space-y-4 mt-6">
+            <div className="hidden lg:block space-y-4 mt-6">
               {leftSteps.map((item) => {
                 const isCompleted = item.id < step;
                 const isActive = item.id === step;
@@ -165,7 +165,7 @@ export function Step1({
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="flex-1 p-6 sm:p-10 lg:p-16 overflow-y-auto">
+        <div className="flex-1 p-5 sm:p-10 lg:p-16 pb-28 sm:pb-10 lg:pb-16 overflow-y-auto">
           <div className="max-w-2xl">
             <div className="space-y-3">
               {services.map((service) => {
@@ -176,7 +176,7 @@ export function Step1({
                   <div
                     key={service.id}
                     onClick={() => setSelected(service.id)}
-                    className={`group cursor-pointer rounded-2xl border p-6 flex items-start gap-5 transition-all duration-300 ease-out
+                    className={`group cursor-pointer rounded-2xl border p-4 sm:p-6 flex items-start gap-3 sm:gap-5 transition-all duration-300 ease-out
                     ${
                       isSelected
                         ? "bg-white border-[#C10007] shadow-[0_0_0_1px_rgba(193,0,7,0.2),0_8px_32px_rgba(193,0,7,0.08)]"
@@ -184,7 +184,7 @@ export function Step1({
                     }`}
                   >
                     <div
-                      className={`h-12 w-12 rounded-xl flex-shrink-0 flex items-center justify-center transition-all duration-300 ${
+                      className={`h-10 w-10 sm:h-12 sm:w-12 rounded-xl flex-shrink-0 flex items-center justify-center transition-all duration-300 ${
                         isSelected
                           ? "bg-[#C10007] shadow-[0_4px_12px_rgba(193,0,7,0.3)]"
                           : "bg-gray-50 group-hover:bg-gray-100"
