@@ -153,6 +153,73 @@ export default function ServiceSelection() {
             agreementSigned={agreementSigned}
             setAgreementSigned={setAgreementSigned}
             setShowSuccessModal={setShowSuccessModal}
+            onComplete={async (contactData) => {
+              try {
+                const [firstName, ...rest] = contactData.fullName.split(" ");
+                const lastName = rest.join(" ");
+
+                // 1️⃣ Create intake record first
+                const intakeResponse = await fetch("/api/intake", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    first_name: firstName,
+                    last_name: lastName || "",
+                    email: contactData.email,
+                    phone: contactData.phone,
+
+                    service: selected,
+                    sub_service: selectedClosingOption,
+                    price: purchasePrice,
+
+                    address_street: addressData.street,
+                    address_unit: addressData.unit,
+                    address_city: addressData.city,
+                    address_postal_code: addressData.postalCode,
+                    address_province: "Ontario",
+
+                    aps_signed: agreementSigned === "yes",
+                  }),
+                });
+
+                const intakeResult = await intakeResponse.json();
+
+                if (!intakeResult.success) {
+                  console.error(intakeResult.error);
+                  return;
+                }
+
+                const leadId = intakeResult.lead_id;
+
+                // 2️⃣ If user uploaded file, upload it
+                if (uploadedFile && agreementSigned === "yes") {
+                  const formData = new FormData();
+                  formData.append("file", uploadedFile);
+                  formData.append("lead_id", leadId);
+                  formData.append("doc_type", "APS");
+
+                  const uploadResponse = await fetch("/api/uploadblobstorage", {
+                    method: "POST",
+                    body: formData,
+                  });
+
+                  const uploadResult = await uploadResponse.json();
+
+                  if (!uploadResult.success) {
+                    console.error("Upload failed:", uploadResult.error);
+                    return;
+                  }
+                }
+
+                // 3️⃣ Success
+                setShowSuccessModal(true);
+
+              } catch (error) {
+                console.error("Submission failed:", error);
+              }
+            }}
           />
         ) : null}
 
@@ -191,6 +258,7 @@ export default function ServiceSelection() {
               onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
+                router.push('/details');
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
             >

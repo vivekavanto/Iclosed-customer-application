@@ -310,7 +310,7 @@ function PeopleCard() {
                 "px-5 py-1.5 rounded-lg text-[12px] font-semibold capitalize transition-all duration-200 cursor-pointer",
                 activeTab === tab
                   ? "bg-white text-[#1a1a1a] shadow-sm"
-                  : "text-[#888] hover:text-[#4a4a4a]",
+                                                                                                                                                                        : "text-[#888] hover:text-[#4a4a4a]",
               ].join(" ")}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}

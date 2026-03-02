@@ -6,12 +6,21 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import DateTimePicker from "@/components/intake/DateTimePicker";
 
+interface ContactData {
+    fullName: string;
+    email: string;
+    phone: string;
+    meetingDate: Date | null;
+    meetingTime: string | null;
+}
+
 interface Step5ContactProps {
     setStep: (step: number) => void;
     agreementSigned: "yes" | "no" | null;
     setAgreementSigned: (value: "yes" | "no" | null) => void;
     setShowSuccessModal: (show: boolean) => void;
     step: number;
+    onComplete: (data: ContactData) => void;
 }
 
 export default function Step5Contact({
@@ -19,7 +28,8 @@ export default function Step5Contact({
     agreementSigned,
     setAgreementSigned,
     setShowSuccessModal,
-    step
+    step,
+    onComplete,
 }: Step5ContactProps) {
 
     const leftSteps = [
@@ -84,7 +94,18 @@ export default function Step5Contact({
         setErrors(newErrors);
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
-
+const handleComplete = () => {
+    if (!isCompleteEnabled) return;
+    onComplete({ ...formData, meetingDate, meetingTime });
+    setShowSuccessModal(true);
+}
+const payload={
+    full_name: formData.fullName,
+    email: formData.email,
+    phone: formData.phone,
+    meeting_date: meetingDate,
+    meeting_time: meetingTime,  
+}
     return (
         <div className="min-h-screen bg-white w-full">
             <div className="max-w-7xl mx-auto flex flex-col lg:flex-row">
@@ -164,7 +185,7 @@ export default function Step5Contact({
                             size="md"
                             className="flex-1"
                             disabled={!isCompleteEnabled}
-                            onClick={() => setShowSuccessModal(true)}
+                            onClick={handleComplete}
                         >
                             Complete
                         </Button>
@@ -285,7 +306,7 @@ export default function Step5Contact({
                                 variant="primary"
                                 className="flex-1"
                                 disabled={!isCompleteEnabled}
-                                onClick={() => setShowSuccessModal(true)}
+                                onClick={handleComplete}
                             >
                                 Complete
                             </Button>

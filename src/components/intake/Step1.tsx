@@ -52,7 +52,7 @@ export function Step1({
 
   const closingCards = [
     {
-      id: "buy",
+      id: "buying",
       icon: Home,
       title: "I am buying a property",
       description:
@@ -60,7 +60,7 @@ export function Step1({
       price: "$1029",
     },
     {
-      id: "sell",
+      id: "selling",
       icon: FileText,
       title: "I am selling a property",
       description:

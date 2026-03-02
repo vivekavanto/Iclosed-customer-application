@@ -74,7 +74,7 @@ export default function Blog() {
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
 
-      <main className="mx-auto max-w-7xl px-6 py-5 sm:px-10  lg:px-14">
+      <main className="mx-auto max-w-7xl py-5 ">
 
         {/* Section label  */}
         <div className="mb-12 text-center">

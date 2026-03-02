@@ -5,16 +5,16 @@ import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 
 const navLinks = [
-  // { label: "Home", href: "/dashboard" },
-  // { label: "Documents", href: "/documents" },
+//   { label: "Home", href: "/dashboard" },
+//   { label: "Documents", href: "/documents" },
   { label: "Details", href: "/details" },
   { label: "Blog", href: "/blog" },
-  // { label: "Retainer", href: "/retainer" },
+//   { label: "Retainer", href: "/retainer" },
 ];
 
 function IClosedLogo() {
   return (
-    <Link href="/" className="flex items-center select-none">
+    <Link href="/dashboard" className="flex items-center select-none">
       <span
         className="text-[var(--color-primary)] font-bold italic text-xl leading-none"
         style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}

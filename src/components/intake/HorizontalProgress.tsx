@@ -65,42 +65,31 @@ export default function HorizontalProgress({ steps }: HorizontalProgressProps) {
                     <div className="absolute top-[56px] md:top-[88px] left-1/2 w-full h-[4px] md:h-[6px] bg-[#C10007] rounded-full" />
                   )}
 
-                  {/* Outer Ring */}
+                  {/* Circle */}
                   <div className="relative z-10 flex items-center justify-center">
                     <div
-                      className={`flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 md:w-15 md:h-15 rounded-full border-[3px] sm:border-[4px] md:border-[6px]
+                      className={`flex items-center justify-center w-9 h-9 sm:w-12 sm:h-12 md:w-14 md:h-14 rounded-full
                         ${
                           isComplete || isCurrent
-                            ? "border-[#C10007]"
-                            : "border-gray-300"
+                            ? "bg-[#C10007] text-white"
+                            : "bg-white text-gray-600 border-2 border-gray-300"
                         }
                       `}
                     >
-                      {/* Inner Circle */}
-                      <div
-                        className={`flex items-center justify-center w-7 h-7 sm:w-9 sm:h-9 md:w-12 md:h-12 rounded-full
-                          ${
-                            isComplete || isCurrent
-                              ? "bg-[#C10007] text-white"
-                              : "bg-white text-gray-600"
-                          }
-                        `}
-                      >
-                        {isComplete ? (
-                          <Check size={14} className="sm:hidden" />
-                        ) : null}
-                        {isComplete ? (
-                          <Check size={20} className="hidden sm:block md:hidden" />
-                        ) : null}
-                        {isComplete ? (
-                          <Check size={28} className="hidden md:block" />
-                        ) : null}
-                        {!isComplete && (
-                          <span className="text-xs sm:text-base md:text-xl font-bold">
-                            {step.id}
-                          </span>
-                        )}
-                      </div>
+                      {isComplete ? (
+                        <Check size={14} className="sm:hidden" />
+                      ) : null}
+                      {isComplete ? (
+                        <Check size={20} className="hidden sm:block md:hidden" />
+                      ) : null}
+                      {isComplete ? (
+                        <Check size={26} className="hidden md:block" />
+                      ) : null}
+                      {!isComplete && (
+                        <span className="text-xs sm:text-base md:text-xl font-bold">
+                          {step.id}
+                        </span>
+                      )}
                     </div>
                   </div>
 

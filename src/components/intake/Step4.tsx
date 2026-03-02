@@ -37,7 +37,6 @@ const Step4: React.FC<Step4Props> = ({
     },
   ];
 
-  // 🔥 Next Step Logic
   const handleNext = () => {
     if (!isSelected) return;
 
