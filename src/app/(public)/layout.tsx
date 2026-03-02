@@ -1,8 +1,16 @@
-// Public layout: transparent wrapper – each page owns its own full-screen UI
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
+
 export default function PublicLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header />
+      <main className="flex-grow pt-[100px]">{children}</main>
+      <Footer />
+    </div>
+  );
 }

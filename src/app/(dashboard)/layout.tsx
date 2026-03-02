@@ -118,9 +118,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)]">
+
       {/* ── Top Navigation Bar ── */}
       <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="w-full px-8 h-14 flex items-center gap-8">
+        <div className="max-w-7xl mx-auto w-full px-6 lg:px-8 h-14 flex items-center gap-8">
+
           {/* Logo */}
           <IClosedLogo />
 
@@ -134,8 +136,7 @@ export default function DashboardLayout({
                   href={link.href}
                   className={[
                     "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                    "text-black hover:text-black",
-                    "no-underline decoration-transparent",
+                    "text-black",
                     active ? "bg-gray-100" : "hover:bg-gray-100",
                   ].join(" ")}
                 >
@@ -145,13 +146,17 @@ export default function DashboardLayout({
             })}
           </nav>
 
-          {/* Profile / Logout */}
+          {/* Profile */}
           <ProfileDropdown />
         </div>
       </header>
 
       {/* ── Page content ── */}
-      <main className="flex-1 px-4 py-8 w-full">{children}</main>
+      <main className="flex-1">
+        <div className="max-w-7xl mx-auto w-full px-6 lg:px-8 py-8">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }
