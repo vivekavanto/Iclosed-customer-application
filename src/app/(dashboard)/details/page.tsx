@@ -73,8 +73,8 @@ function ChevronRightIcon() {
 
 const keyStats = [
   { label: "Purchase Price", value: "$895,000" },
-  { label: "Closing Date",   value: "June 5, 2025" },
-  { label: "Deposit Paid",   value: "$50,000" },
+  { label: "Closing Date", value: "June 5, 2025" },
+  { label: "Deposit Paid", value: "$50,000" },
 ];
 
 function HeroBanner() {
@@ -197,10 +197,10 @@ function PropertyCard() {
 ══════════════════════════════════════════════════════════════ */
 
 const profileFields = [
-  { label: "Phone number",       value: "+1 (647) 555-1234" },
-  { label: "Marital status",     value: "Married" },
+  { label: "Phone number", value: "+1 (647) 555-1234" },
+  { label: "Marital status", value: "Married" },
   { label: "Business phone number", value: "NA" },
-  { label: "Current address",    value: "102 Maplewood Drive, Toronto, ON M4B 1G7, Canada" },
+  { label: "Current address", value: "102 Maplewood Drive, Toronto, ON M4B 1G7, Canada" },
   {
     label: "In the past 365 days, have you lived outside of Canada for 183 or more days?",
     value: "Yes",
@@ -252,15 +252,15 @@ function ProfileCard() {
 ══════════════════════════════════════════════════════════════ */
 
 const purchasers = [
-  { name: "John Doe (You)", role: "Purchaser",    initials: "JD", bg: "#c0392b" },
-  { name: "Jessica Martin", role: "Purchaser",    initials: "JM", bg: "#2980b9" },
-  { name: "Daniel Reyes",   role: "Co-Purchaser", initials: "DR", bg: "#27ae60" },
+  { name: "John Doe (You)", role: "Purchaser", initials: "JD", bg: "#c0392b" },
+  { name: "Jessica Martin", role: "Purchaser", initials: "JM", bg: "#c0392b" },
+  { name: "Daniel Reyes", role: "Co-Purchaser", initials: "DR", bg: "#c0392b" },
 ];
 
 const partners = [
-  { name: "MapleTrust Realty Inc.", role: "Real Estate Brokerage",    initials: "MR", bg: "#c0392b" },
-  { name: "Harpreet K. Gill", role: "Real Estate Agent",    initials: "HK", bg: "#2980b9" },
-  { name: "Emily R. Thomas",   role: "Mortgage Advisor", initials: "ER", bg: "#27ae60" },
+  { name: "MapleTrust Realty Inc.", role: "Real Estate Brokerage", initials: "MR", bg: "#c0392b" },
+  { name: "Harpreet K. Gill", role: "Real Estate Agent", initials: "HK", bg: "#c0392b" },
+  { name: "Emily R. Thomas", role: "Mortgage Advisor", initials: "ER", bg: "#c0392b" },
 ];
 
 function PersonChip({
@@ -326,6 +326,12 @@ function PeopleCard() {
             <PersonChip key={p.name} {...p} />
           ))}
         </div>
+      ) : partners.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {partners.map((p) => (
+            <PersonChip key={p.name} {...p} />
+          ))}
+        </div>
       ) : (
         <div className="flex items-center justify-center py-14 text-[13px] text-[#888]">
           No partners listed for this deal.
@@ -346,7 +352,7 @@ export default function DetailsPage() {
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-5">
 
         <HeroBanner />
-       
+
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-5 items-start">
           <PropertyCard />
           <ProfileCard />
