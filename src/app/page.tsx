@@ -577,7 +577,7 @@ function Testimonials() {
 // ─── Why Choose ───────────────────────────────────────────────────────────────
 function WhyChoose() {
   return (
-    <section className="bg-gray-50 py-20 sm:py-28 lg:py-32">
+    <section className="bg-gray-50 py-16 ">
       <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
         <div className="mb-12 sm:mb-16 text-center">
           <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl">
