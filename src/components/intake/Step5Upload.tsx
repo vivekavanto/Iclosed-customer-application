@@ -22,7 +22,7 @@ export default function Step5Upload({
 }: Step5UploadProps): React.ReactElement {
     const leftSteps = [
         { id: 1, label: "Select Service" },
-        { id: 2, label: "Purchase Price" },
+        { id: 2, label: "Price" },
         { id: 3, label: "Address" },
         { id: 4, label: "Agreement Signed" },
         ...(agreementSigned === "yes"

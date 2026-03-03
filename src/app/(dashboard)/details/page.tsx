@@ -83,7 +83,7 @@ function HeroBanner() {
       <div className="flex flex-col lg:flex-row">
 
         {/* ── Left: status info ── */}
-        <div className="flex-1 p-8">
+        <div className="flex-1 p-5 sm:p-8">
           <div className="flex items-start gap-4 mb-5">
             <IconWrap>
               <CheckIcon />
@@ -92,13 +92,13 @@ function HeroBanner() {
               <span className="inline-flex items-center border border-[#27ae60] text-[#27ae60] text-[10px] font-bold px-3 py-0.5 rounded-full uppercase tracking-widest mb-2">
                 Completed
               </span>
-              <h1 className="text-[22px] font-bold text-[#1a1a1a] leading-snug">
+              <h1 className="text-[20px] sm:text-[22px] font-bold text-[#1a1a1a] leading-snug">
                 Your property closing is complete!
               </h1>
             </div>
           </div>
 
-          <div className="pl-14 space-y-1 mb-6">
+          <div className="sm:pl-14 space-y-1 mb-6">
             <p className="text-[14px] font-semibold text-[#1a1a1a]">
               It&apos;s time to get your keys!
             </p>
@@ -107,8 +107,8 @@ function HeroBanner() {
             </p>
           </div>
 
-          <div className="pl-14">
-            <Button className="px-6 py-2.5 text-[13px] font-semibold hover:bg-[#1a1a1a] hover:text-white transition-all duration-200 cursor-pointer">
+          <div className="sm:pl-14">
+            <Button className="w-full sm:w-auto px-6 py-2.5 text-[13px] font-semibold hover:bg-[#1a1a1a] hover:text-white transition-all duration-200 cursor-pointer">
               View Key Handover Details
             </Button>
           </div>
@@ -119,7 +119,7 @@ function HeroBanner() {
         <div className="block lg:hidden h-px bg-[#f0e4e4] mx-8" />
 
         {/* ── Right: key stats panel ── */}
-        <div className="lg:w-[300px] bg-[#fafafa] p-8 flex flex-row lg:flex-col justify-around lg:justify-center gap-0">
+        <div className="lg:w-[300px] bg-[#fafafa] p-5 sm:p-8 flex flex-row lg:flex-col justify-around lg:justify-center gap-0">
           {keyStats.map((stat, i) => (
             <div
               key={stat.label}
@@ -131,7 +131,7 @@ function HeroBanner() {
               <p className="text-[10px] text-[#888] uppercase tracking-widest font-semibold mb-1">
                 {stat.label}
               </p>
-              <p className="text-[20px] font-bold text-[#1a1a1a]">{stat.value}</p>
+              <p className="text-[16px] sm:text-[20px] font-bold text-[#1a1a1a]">{stat.value}</p>
             </div>
           ))}
         </div>
@@ -147,7 +147,7 @@ function HeroBanner() {
 
 function PropertyCard() {
   return (
-    <div className="bg-white border border-[#f0e4e4] rounded-2xl p-6 flex flex-col gap-5">
+    <div className="bg-white border border-[#f0e4e4] rounded-2xl p-4 sm:p-6 flex flex-col gap-5">
 
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -221,7 +221,7 @@ const profileFields = [
 
 function ProfileCard() {
   return (
-    <div className="bg-white border border-[#f0e4e4] rounded-2xl p-6 flex flex-col gap-5">
+    <div className="bg-white border border-[#f0e4e4] rounded-2xl p-4 sm:p-6 flex flex-col gap-5">
 
       {/* Header */}
       <div className="flex items-center gap-3">
@@ -269,7 +269,7 @@ function PersonChip({
   name: string; role: string; initials: string; bg: string;
 }) {
   return (
-    <div className="group flex items-center gap-4 p-5 border border-[#f0e4e4] rounded-xl hover:border-[#c0392b] hover:shadow-[0_2px_12px_rgba(192,57,43,0.08)] transition-all duration-200 cursor-pointer">
+    <div className="group flex items-center gap-3 sm:gap-4 p-3 sm:p-5 border border-[#f0e4e4] rounded-xl hover:border-[#c0392b] hover:shadow-[0_2px_12px_rgba(192,57,43,0.08)] transition-all duration-200 cursor-pointer">
       <div
         className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-[13px] tracking-wide"
         style={{ backgroundColor: bg }}
@@ -291,7 +291,7 @@ function PeopleCard() {
   const [activeTab, setActiveTab] = useState<"purchasers" | "partners">("purchasers");
 
   return (
-    <div className="bg-white border border-[#f0e4e4] rounded-2xl p-6">
+    <div className="bg-white border border-[#f0e4e4] rounded-2xl p-4 sm:p-6">
 
       {/* Header row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -310,7 +310,7 @@ function PeopleCard() {
                 "px-5 py-1.5 rounded-lg text-[12px] font-semibold capitalize transition-all duration-200 cursor-pointer",
                 activeTab === tab
                   ? "bg-white text-[#1a1a1a] shadow-sm"
-                                                                                                                                                                        : "text-[#888] hover:text-[#4a4a4a]",
+                  : "text-[#888] hover:text-[#4a4a4a]",
               ].join(" ")}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -349,7 +349,7 @@ function PeopleCard() {
 export default function DetailsPage() {
   return (
     <div className="-mx-4 -my-8 min-h-[calc(100vh-56px)] ">
-      <div className="max-w-7xl mx-auto px-6 py-8 space-y-5">
+      <div className="max-w-7xl mx-auto px-3 py-5 sm:px-6 sm:py-8 space-y-4 sm:space-y-5">
 
         <HeroBanner />
 

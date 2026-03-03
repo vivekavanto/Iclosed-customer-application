@@ -10,6 +10,7 @@ interface Step2Props {
     setStep: (step: number) => void;
     step: number;
     agreementSigned: "yes" | "no" | null;
+    selectedClosingOption: string | null;
 }
 
 const Step2: React.FC<Step2Props> = ({
@@ -17,8 +18,11 @@ const Step2: React.FC<Step2Props> = ({
     setPurchasePrice,
     setStep,
     step,
-    agreementSigned
+    agreementSigned,
+    selectedClosingOption,
 }) => {
+    const isSelling = selectedClosingOption === "selling";
+    const priceLabel = isSelling ? "Sale Price" : "Purchase Price";
     const [isValid, setIsValid] = useState(false);
     const [error, setError] = useState("");
 
@@ -51,7 +55,7 @@ const Step2: React.FC<Step2Props> = ({
     // SAME WORKFLOW AS STEP1
     const leftSteps = [
         { id: 1, label: "Select Service" },
-        { id: 2, label: "Purchase Price" },
+        { id: 2, label: "Price" },
         { id: 3, label: "Address" },
         { id: 4, label: "Agreement Signed" },
         ...(agreementSigned === "yes"
@@ -77,10 +81,10 @@ const Step2: React.FC<Step2Props> = ({
                                 Step {String(step).padStart(2, "0")}
                             </span>
                             <h1 className="mt-3 text-2xl xl:text-3xl font-semibold text-gray-900">
-                                Enter the purchase price
+                                Enter the {priceLabel.toLowerCase()}
                             </h1>
                             <p className="mt-4 text-gray-500 text-sm">
-                                Provide the purchase price for the property to continue.
+                                Provide the {priceLabel.toLowerCase()} for the property to continue.
                             </p>
                         </div>
 
@@ -172,11 +176,11 @@ const Step2: React.FC<Step2Props> = ({
                 {/* RIGHT PANEL */}
                 <div className="flex-1 p-6 sm:p-10 lg:p-16 overflow-y-auto">
                     <h1 className="text-3xl font-semibold mb-6">
-                        Enter the purchase price for the property.
+                        Enter the {priceLabel.toLowerCase()} for the property.
                     </h1>
 
                     <Input
-                        label="Purchase Price"
+                        label={priceLabel}
                         required
                         type="text"
                         value={purchasePrice}

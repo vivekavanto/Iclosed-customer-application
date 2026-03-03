@@ -78,7 +78,7 @@ const Step3: React.FC<Step3Props> = ({
 
     const leftSteps = [
         { id: 1, label: "Select Service" },
-        { id: 2, label: "Purchase Price" },
+        { id: 2, label: "Price" },
         { id: 3, label: "Address" },
         { id: 4, label: "Agreement Signed" },
         ...(agreementSigned === "yes" ? [{ id: 5, label: "Upload Document" }] : []),

@@ -19,12 +19,15 @@ export async function POST(req: Request) {
     const blob = await put(
       `corporate-docs/${lead_id}/${Date.now()}-${file.name}`,
       file,
-      { access: "public" }
+      {
+        access: "public",
+        token: process.env.BLOB_READ_WRITE_TOKEN!,
+      }
     );
 
     console.log("Blob uploaded:", blob.url);
+    console.log("Incoming doc_type:", doc_type);
 
-    // 2️⃣ Save metadata to lead_corporate_docs table
     const { error } = await supabaseAdmin
       .from("lead_corporate_docs")
       .insert({

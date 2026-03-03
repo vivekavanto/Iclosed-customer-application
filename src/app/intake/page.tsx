@@ -59,7 +59,7 @@ export default function ServiceSelection() {
 
   const progressSteps: Step[] = [
     { id: 1, label: "Service", status: getStatus(step, 1) },
-    { id: 2, label: "Purchase Price", status: getStatus(step, 2) },
+    { id: 2, label: " Price", status: getStatus(step, 2) },
     { id: 3, label: "Address", status: getStatus(step, 3) },
     { id: 4, label: "Agreement", status: getStatus(step, 4) },
     ...(agreementSigned === "yes"
@@ -112,6 +112,7 @@ export default function ServiceSelection() {
             setStep={setStep}
             step={step}
             agreementSigned={agreementSigned}
+            selectedClosingOption={selectedClosingOption}
           />
         )}
 
@@ -157,8 +158,7 @@ export default function ServiceSelection() {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
                 const lastName = rest.join(" ");
-
-                // 1️⃣ Create intake record first
+               
                 const intakeResponse = await fetch("/api/intake", {
                   method: "POST",
                   headers: {
@@ -198,7 +198,7 @@ export default function ServiceSelection() {
                   const formData = new FormData();
                   formData.append("file", uploadedFile);
                   formData.append("lead_id", leadId);
-                  formData.append("doc_type", "APS");
+                  formData.append("doc_type", "Other");
 
                   const uploadResponse = await fetch("/api/uploadblobstorage", {
                     method: "POST",
@@ -258,7 +258,7 @@ export default function ServiceSelection() {
               onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
-                router.push('/details');
+                router.push('/documents');
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
             >
