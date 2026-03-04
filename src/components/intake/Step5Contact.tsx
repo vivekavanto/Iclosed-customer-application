@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Clock, Video } from "lucide-react";
+import { Plus, Clock, Video, ChevronLeft, CheckCircle2 } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -166,35 +166,10 @@ const payload={
                         </div>
                     </div>
 
-                    {/* Desktop Buttons */}
-                    <div className="mt-6 hidden lg:flex gap-3 flex-shrink-0">
-                        <Button
-                            onClick={() => {
-                                if (agreementSigned === "no") setAgreementSigned(null);
-                                setStep(4);
-                            }}
-                            variant="secondary"
-                            size="md"
-                            className="flex-1"
-                        >
-                            Previous
-                        </Button>
-
-                        <Button
-                            variant="primary"
-                            size="md"
-                            className="flex-1"
-                            disabled={!isCompleteEnabled}
-                            onClick={handleComplete}
-                        >
-                            Complete
-                        </Button>
-                    </div>
-
                 </div>
 
                 {/* RIGHT PANEL */}
-                <div className="flex-1 p-6 sm:p-10 lg:p-12">
+                <div className="flex-1 p-6 sm:p-10 lg:p-12 pb-28 lg:pb-12">
                     <div className="space-y-8 w-full">
 
                         {/* Contact Form */}
@@ -289,26 +264,46 @@ const payload={
                             </div>
                         )}
 
-                        {/* MOBILE FIXED BUTTONS */}
-                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50 flex gap-3">
+                        {/* Desktop button row — right below the form */}
+                        <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
                             <Button
                                 variant="secondary"
-                                className="flex-1"
+                                size="md"
                                 onClick={() => {
-                                    if (agreementSigned === "no") setAgreementSigned(null);
-                                    setStep(4);
+                                    if (agreementSigned === "yes") {
+                                        setStep(5); // back to upload step
+                                    } else {
+                                        setAgreementSigned(null);
+                                        setStep(4);
+                                    }
                                 }}
                             >
-                                Previous
+                                <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
+                            <Button variant="primary" size="md" disabled={!isCompleteEnabled} onClick={handleComplete}>
+                                <CheckCircle2 size={16} strokeWidth={2.5} /> Submit
+                            </Button>
+                        </div>
 
+                        {/* Mobile fixed bottom buttons */}
+                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
                             <Button
-                                variant="primary"
+                                variant="secondary"
+                                size="lg"
                                 className="flex-1"
-                                disabled={!isCompleteEnabled}
-                                onClick={handleComplete}
+                                onClick={() => {
+                                    if (agreementSigned === "yes") {
+                                        setStep(5); // back to upload step
+                                    } else {
+                                        setAgreementSigned(null);
+                                        setStep(4);
+                                    }
+                                }}
                             >
-                                Complete
+                                <ChevronLeft size={18} strokeWidth={2.5} /> Back
+                            </Button>
+                            <Button variant="primary" size="lg" className="flex-1" disabled={!isCompleteEnabled} onClick={handleComplete}>
+                                <CheckCircle2 size={18} strokeWidth={2.5} /> Submit
                             </Button>
                         </div>
 

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Button from "@/components/ui/Button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Step4Props {
   agreementSigned: "yes" | "no" | null;
@@ -106,28 +107,6 @@ const Step4: React.FC<Step4Props> = ({
             </div>
           </div>
 
-          {/* DESKTOP BUTTONS */}
-          <div className="mt-6 flex gap-3">
-            <Button
-              onClick={() => setStep(3)}
-              variant="secondary"
-              size="md"
-              className="flex-1"
-            >
-              Previous
-            </Button>
-
-            <Button
-              onClick={handleNext}
-              disabled={!isSelected}
-              variant="primary"
-              size="md"
-              className="flex-1"
-            >
-              Next
-            </Button>
-          </div>
-       
         </div>
 
         {/* RIGHT PANEL (UNCHANGED) */}
@@ -158,25 +137,23 @@ const Step4: React.FC<Step4Props> = ({
               <p className="mt-2 text-gray-500">I haven't signed it yet.</p>
             </div>
 
-            {/* MOBILE CTA */}
-            <div className="lg:hidden flex justify-between mt-10 gap-3">
-              <Button
-                onClick={() => setStep(3)}
-                variant="secondary"
-                size="md"
-                className="flex-1"
-              >
-                Previous
+            {/* Desktop button row — right below the cards */}
+            <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
+              <Button onClick={() => setStep(3)} variant="secondary" size="md">
+                <ChevronLeft size={16} strokeWidth={2.5} /> Back
               </Button>
+              <Button onClick={handleNext} disabled={!isSelected} variant="primary" size="md">
+                Continue <ChevronRight size={16} strokeWidth={2.5} />
+              </Button>
+            </div>
 
-              <Button
-                onClick={handleNext}
-                disabled={!isSelected}
-                variant="primary"
-                size="md"
-                className="flex-1"
-              >
-                Next
+            {/* Mobile fixed bottom buttons */}
+            <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
+              <Button onClick={() => setStep(3)} variant="secondary" size="lg" className="flex-1">
+                <ChevronLeft size={18} strokeWidth={2.5} /> Back
+              </Button>
+              <Button onClick={handleNext} disabled={!isSelected} variant="primary" size="lg" className="flex-1">
+                Continue <ChevronRight size={18} strokeWidth={2.5} />
               </Button>
             </div>
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Step2Props {
     purchasePrice: string;
@@ -31,20 +32,20 @@ const Step2: React.FC<Step2Props> = ({
             purchasePrice.replace(/[^0-9.]/g, "")
         );
 
-        const MIN_PRICE = 100000;
-        const MAX_PRICE = 100000000;
+        const MIN_PRICE = 10000;      // $10,000
+        const MAX_PRICE = 10000000;   // $10,000,000
 
         if (purchasePrice.trim() === "") {
             setError("");
             setIsValid(false);
         } else if (isNaN(numericValue)) {
-            setError("Please enter a valid number.");
+            setError("Please enter a valid amount.");
             setIsValid(false);
         } else if (numericValue < MIN_PRICE) {
-            setError("Property price must be at least ₹1,00,000.");
+            setError("Property price must be at least $10,000.");
             setIsValid(false);
         } else if (numericValue > MAX_PRICE) {
-            setError("Property price cannot exceed ₹10,00,00,000.");
+            setError("Property price cannot exceed $10,000,000.");
             setIsValid(false);
         } else {
             setError("");
@@ -66,6 +67,18 @@ const Step2: React.FC<Step2Props> = ({
             label: "Contact Info",
         },
     ];
+
+    const formatCurrency = (value: string) => {
+        const numeric = value.replace(/[^0-9]/g, "");
+
+        if (!numeric) return "";
+
+        const formatted = new Intl.NumberFormat("en-US").format(
+            parseInt(numeric, 10)
+        );
+
+        return `$${formatted}`;
+    };
 
     return (
         <div className="min-h-screen bg-white">
@@ -98,24 +111,22 @@ const Step2: React.FC<Step2Props> = ({
                                     <div key={item.id} className="flex items-center gap-4">
                                         <div
                                             className={`h-8 w-8 flex items-center justify-center rounded-full text-sm font-bold transition-all
-                                            ${
-                                                isCompleted
+                                            ${isCompleted
                                                     ? "bg-gray-300 text-gray-600"
                                                     : isActive
-                                                    ? "bg-[#C10007] text-white"
-                                                    : "bg-gray-200 text-gray-400"
-                                            }`}
+                                                        ? "bg-[#C10007] text-white"
+                                                        : "bg-gray-200 text-gray-400"
+                                                }`}
                                         >
                                             {item.id}
                                         </div>
 
                                         <span
                                             className={`text-sm transition-colors
-                                            ${
-                                                isActive || isCompleted
+                                            ${isActive || isCompleted
                                                     ? "text-gray-900 font-semibold"
                                                     : "text-gray-400"
-                                            }`}
+                                                }`}
                                         >
                                             {item.label}
                                         </span>
@@ -125,56 +136,10 @@ const Step2: React.FC<Step2Props> = ({
                         </div>
                     </div>
 
-                    {/* Buttons */}
-                    <div className="mt-6 flex gap-3">
-                        {/* Previous & Next buttons on lg+ */}
-                        <div className="hidden lg:flex flex-1 gap-3">
-                            <Button
-                                onClick={() => setStep(1)}
-                                variant="secondary"
-                                size="md"
-                                className="flex-1"
-                            >
-                                Previous
-                            </Button>
-
-                            <Button
-                                onClick={() => setStep(3)}
-                                disabled={!isValid}
-                                variant="primary"
-                                size="md"
-                                className="flex-1"
-                            >
-                                Next
-                            </Button>
-                        </div>
-
-                        {/* Fixed bottom buttons on small/medium */}
-                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50 flex gap-3">
-                            <Button
-                                onClick={() => setStep(1)}
-                                variant="secondary"
-                                size="md"
-                                className="flex-1"
-                            >
-                                Previous
-                            </Button>
-
-                            <Button
-                                onClick={() => setStep(3)}
-                                disabled={!isValid}
-                                variant="primary"
-                                size="md"
-                                className="flex-1"
-                            >
-                                Next
-                            </Button>
-                        </div>
-                    </div>
                 </div>
 
                 {/* RIGHT PANEL */}
-                <div className="flex-1 p-6 sm:p-10 lg:p-16 overflow-y-auto">
+                <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
                     <h1 className="text-3xl font-semibold mb-6">
                         Enter the {priceLabel.toLowerCase()} for the property.
                     </h1>
@@ -184,14 +149,37 @@ const Step2: React.FC<Step2Props> = ({
                         required
                         type="text"
                         value={purchasePrice}
-                        onChange={(e) => setPurchasePrice(e.target.value)}
-                        placeholder="$ 1,250,000"
+                        onChange={(e) => {
+                            const formattedValue = formatCurrency(e.target.value);
+                            setPurchasePrice(formattedValue);
+                        }}
+                        placeholder="$1,250,000"
                         className="mb-2"
                     />
 
                     {error && (
                         <p className="text-sm text-red-600">{error}</p>
                     )}
+
+                    {/* Desktop button row — right below the input */}
+                    <div className="hidden lg:flex items-center justify-between mt-10 pt-6 border-t border-gray-100">
+                        <Button onClick={() => setStep(1)} variant="secondary" size="md">
+                            <ChevronLeft size={16} strokeWidth={2.5} /> Back
+                        </Button>
+                        <Button onClick={() => setStep(3)} disabled={!isValid} variant="primary" size="md">
+                            Continue <ChevronRight size={16} strokeWidth={2.5} />
+                        </Button>
+                    </div>
+
+                    {/* Mobile fixed bottom buttons */}
+                    <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
+                        <Button onClick={() => setStep(1)} variant="secondary" size="lg" className="flex-1">
+                            <ChevronLeft size={18} strokeWidth={2.5} /> Back
+                        </Button>
+                        <Button onClick={() => setStep(3)} disabled={!isValid} variant="primary" size="lg" className="flex-1">
+                            Continue <ChevronRight size={18} strokeWidth={2.5} />
+                        </Button>
+                    </div>
                 </div>
             </div>
         </div>

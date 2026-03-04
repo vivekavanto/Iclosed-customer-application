@@ -1,5 +1,5 @@
 "use client";
-import { Home, FileText, Repeat, Check } from "lucide-react";
+import { Home, FileText, Repeat, Check, ChevronRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 
 interface Service {
@@ -134,38 +134,16 @@ export function Step1({
             </div>
           </div>
 
-          {/* NEXT BUTTON */}
-          <div className="mt-6 lg:flex-shrink-0">
-            {/* Fixed bottom button for small/medium screens */}
-            <div className="block lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50">
-              <Button
-                onClick={handleNext}
-                disabled={isNextDisabled}
-                variant="primary"
-                size="lg"
-                fullWidth
-              >
-                Next
-              </Button>
-            </div>
-
-            {/* Original left panel button visible only on lg+ */}
-            <div className="hidden lg:block">
-              <Button
-                onClick={handleNext}
-                disabled={isNextDisabled}
-                variant="primary"
-                size="lg"
-                fullWidth
-              >
-                Next
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* RIGHT PANEL */}
         <div className="flex-1 p-5 sm:p-10 lg:p-16 pb-28 sm:pb-10 lg:pb-16 overflow-y-auto">
+          {/* Mobile fixed bottom button */}
+          <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+            <Button onClick={handleNext} disabled={isNextDisabled} variant="primary" size="lg" fullWidth>
+              Continue <ChevronRight size={18} strokeWidth={2.5} />
+            </Button>
+          </div>
           <div className="max-w-2xl">
             <div className="space-y-3">
               {services.map((service) => {
@@ -280,6 +258,13 @@ export function Step1({
                 </div>
               </div>
             )}
+
+            {/* Desktop Continue button — right below the form content */}
+            <div className="hidden lg:flex justify-end mt-8 pt-6 border-t border-gray-100">
+              <Button onClick={handleNext} disabled={isNextDisabled} variant="primary" size="md">
+                Continue <ChevronRight size={16} strokeWidth={2.5} />
+              </Button>
+            </div>
           </div>
         </div>
       </div>

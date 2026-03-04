@@ -31,7 +31,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             "bg-[var(--color-surface)] text-[var(--color-text-heading)]",
             "placeholder:text-[var(--color-text-muted)]",
             error
-              ? "border-[var(--color-error)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-ring)]"
+              ? "border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
               : "border-[var(--color-border)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-ring)] focus:border-[var(--color-primary)]",
             className,
           ]
@@ -41,7 +41,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         />
 
         {error && (
-          <p className="text-xs text-[var(--color-error)] mt-0.5">{error}</p>
+          <p className="text-xs text-red-600 mt-0.5">{error}</p>
         )}
         {hint && !error && (
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">

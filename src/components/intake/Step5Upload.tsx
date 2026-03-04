@@ -1,7 +1,7 @@
 // components/intake/Step5Upload.tsx
 "use client";
 
-import { UploadCloud } from "lucide-react";
+import { UploadCloud, ChevronLeft, ChevronRight } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 
@@ -47,16 +47,21 @@ export default function Step5Upload({
                         <div className="w-10 h-1 bg-[var(--color-primary)] rounded-full mb-10" />
 
                         <div className="mb-6">
-                            <span className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--color-primary)]">
-                                Step {String(step).padStart(2, "0")}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--color-primary)]">
+                                    Step {String(step).padStart(2, "0")}
+                                </span>
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 uppercase tracking-wide">
+                                    Optional
+                                </span>
+                            </div>
 
                             <h1 className="mt-3 text-2xl xl:text-3xl font-semibold text-gray-900 leading-snug">
                                 Share your Agreement of Purchase and Sale
                             </h1>
 
                             <p className="mt-4 text-gray-500 text-sm leading-relaxed">
-                                Upload your signed agreement so we can review and proceed.
+                                Upload your signed agreement so we can review it early — or skip and do it later.
                             </p>
                         </div>
 
@@ -95,68 +100,72 @@ export default function Step5Upload({
                         </div>
                     </div>
 
-                    {/* Desktop Buttons */}
-                    <div className="mt-6 hidden lg:flex gap-3 flex-shrink-0">
-                        <Button
-                            onClick={() => setStep(4)}
-                            variant="secondary"
-                            className="flex-1"
-                        >
-                            Previous
-                        </Button>
-
-                        <Button
-                            onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)}
-                            variant="primary"
-                            className="flex-1"
-                        >
-                            Next
-                        </Button>
-                    </div>
                 </div>
 
                 {/* RIGHT CONTENT PANEL */}
-                <div className="flex-1 p-6 sm:p-10 lg:p-12 overflow-y-auto">
+                <div className="flex-1 p-6 sm:p-10 lg:p-12 pb-28 lg:pb-12 overflow-y-auto">
                     <div className="space-y-6 w-full">
 
+                        {/* Upload zone */}
                         <div
-                            className="border-2 border-dashed border-gray-300 rounded-2xl p-16 flex flex-col items-center justify-center bg-white cursor-pointer hover:border-[#C10007]"
+                            className="border-2 border-dashed border-gray-300 rounded-2xl p-14 flex flex-col items-center justify-center bg-white cursor-pointer hover:border-[#C10007] transition-colors"
                             onClick={() => document.getElementById("agreement-file")?.click()}
                         >
                             <UploadCloud size={28} className="text-gray-400 mb-4" />
                             <p className="text-gray-600 text-lg text-center">
                                 Click to <span className="text-[#C10007] font-medium">browse</span> or drag & drop your file
                             </p>
+                            <p className="text-gray-400 text-sm mt-2">PDF, JPG, PNG — max 10 MB</p>
                             <input
                                 id="agreement-file"
                                 type="file"
+                                accept=".pdf,.jpg,.jpeg,.png"
                                 className="hidden"
                                 onChange={(e) => e.target.files && setUploadedFile(e.target.files[0])}
                             />
                         </div>
 
-                        {uploadedFile && (
-                            <p className="mt-4 text-green-600 text-sm text-center">
-                                Selected file: {uploadedFile.name}
+                        {uploadedFile ? (
+                            <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                                <p className="text-green-700 text-sm font-medium truncate">
+                                    ✓ {uploadedFile.name}
+                                </p>
+                                <button
+                                    onClick={() => setUploadedFile(null)}
+                                    className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ) : (
+                            <p className="text-center text-sm text-gray-400">
+                                Don't have it yet?{" "}
+                                <button
+                                    onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)}
+                                    className="text-gray-500 underline underline-offset-2 hover:text-[#C10007] transition-colors cursor-pointer font-medium"
+                                >
+                                    Skip for now
+                                </button>
                             </p>
                         )}
 
-                        {/* Mobile Buttons */}
-                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-6 py-4 bg-gray-50 flex gap-3">
-                            <Button
-                                variant="secondary"
-                                className="flex-1"
-                                onClick={() => setStep(4)}
-                            >
-                                Previous
+                        {/* Desktop button row */}
+                        <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
+                            <Button onClick={() => setStep(4)} variant="secondary" size="md">
+                                <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
+                            <Button onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)} variant="primary" size="md">
+                                Continue <ChevronRight size={16} strokeWidth={2.5} />
+                            </Button>
+                        </div>
 
-                            <Button
-                                variant="primary"
-                                className="flex-1"
-                                onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)}
-                            >
-                                Next
+                        {/* Mobile fixed bottom buttons */}
+                        <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
+                            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setStep(4)}>
+                                <ChevronLeft size={18} strokeWidth={2.5} /> Back
+                            </Button>
+                            <Button variant="primary" size="lg" className="flex-1" onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)}>
+                                Continue <ChevronRight size={18} strokeWidth={2.5} />
                             </Button>
                         </div>
 

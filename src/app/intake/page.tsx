@@ -50,6 +50,13 @@ export default function ServiceSelection() {
     postalCode: ""
   });
 
+  const [sellingAddressData, setSellingAddressData] = useState({
+    street: "",
+    unit: "",
+    city: "",
+    postalCode: ""
+  });
+
   const services = [
     { id: "closing", title: "Property Closing", description: "Buying or selling a property? We'll guide you through the legal process—start to finish, and beyond.", icon: Home },
     { id: "refinance", title: "Mortgage Refinance", description: "Changing your current mortgage? Count on us to handle the legal side, smoothly and efficiently.", icon: Briefcase },
@@ -76,6 +83,12 @@ export default function ServiceSelection() {
     setAgreementSigned(null);
     setUploadedFile(null);
     setAddressData({
+      street: "",
+      unit: "",
+      city: "",
+      postalCode: "",
+    });
+    setSellingAddressData({
       street: "",
       unit: "",
       city: "",
@@ -121,6 +134,9 @@ export default function ServiceSelection() {
           <Step3
             formData={addressData}
             setFormData={setAddressData}
+            sellingFormData={sellingAddressData}
+            setSellingFormData={setSellingAddressData}
+            selectedClosingOption={selectedClosingOption}
             setStep={setStep}
             step={step}
             agreementSigned={agreementSigned}
@@ -179,6 +195,14 @@ export default function ServiceSelection() {
                     address_city: addressData.city,
                     address_postal_code: addressData.postalCode,
                     address_province: "Ontario",
+
+                    ...(selectedClosingOption === "both" && {
+                      selling_address_street: sellingAddressData.street,
+                      selling_address_unit: sellingAddressData.unit,
+                      selling_address_city: sellingAddressData.city,
+                      selling_address_postal_code: sellingAddressData.postalCode,
+                      selling_address_province: "Ontario",
+                    }),
 
                     aps_signed: agreementSigned === "yes",
                   }),
@@ -258,7 +282,7 @@ export default function ServiceSelection() {
               onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
-                router.push('/documents');
+                router.push('/dashboard');
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
             >
