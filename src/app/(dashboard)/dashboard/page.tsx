@@ -361,7 +361,7 @@ export default function DashboardPage() {
                 Closing Manager
               </p>
               <p className="text-sm font-bold text-gray-900">
-                Assigned Soon
+                Suganya Argeen
               </p>
             </div>
           </div>
