@@ -14,6 +14,11 @@ import {
   ChevronRight,
   Loader2,
 } from "lucide-react";
+import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer";
+import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
+import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
+import UploadHomeInsuranceDrawer from "@/components/dashboard/UploadHomeInsuranceDrawer";
+import ScheduleAppointmentDrawer from "@/components/dashboard/ScheduleAppointmentDrawer";
 
 
 interface Task {
@@ -37,14 +42,63 @@ const statusConfig = {
    ATTENTION CARD
 ════════════════════════════════════════════════════ */
 
+/** Tasks whose title contains these keywords open the Upload Agreement drawer */
+function isAgreementTask(title: string) {
+  const lower = title.toLowerCase();
+  return (
+    lower.includes("agreement of purchase") ||
+    lower.includes("purchase and sale") ||
+    lower.includes("amendments") ||
+    lower.includes("upload agreement")
+  );
+}
+
+/** Tasks whose title contains these keywords open the Personal Information drawer */
+function isPersonalInfoTask(title: string) {
+  const lower = title.toLowerCase();
+  return (
+    lower.includes("personal information") ||
+    lower.includes("provide personal")
+  );
+}
+
+/** Tasks whose title contains these keywords open the Upload Identification drawer */
+function isIdentificationTask(title: string) {
+  const lower = title.toLowerCase();
+  return (
+    lower.includes("upload identification") ||
+    lower.includes("identification document")
+  );
+}
+
+/** Tasks whose title contains these keywords open the Home Insurance drawer */
+function isHomeInsuranceTask(title: string) {
+  const lower = title.toLowerCase();
+  return (
+    lower.includes("home insurance") ||
+    lower.includes("insurance policy")
+  );
+}
+
+/** Tasks whose title contains these keywords open the Schedule Appointment drawer */
+function isScheduleAppointmentTask(title: string) {
+  const lower = title.toLowerCase();
+  return (
+    lower.includes("schedule") ||
+    lower.includes("appointment")
+  );
+}
+
 function AttentionCard({
   tasks,
   loading,
   onMarkDone,
+  onTaskClick,
 }: {
   tasks: Task[];
   loading: boolean;
   onMarkDone: (id: string) => void;
+  onTaskClick: (task: Task) => void;
 }) {
   const pending = tasks.filter((t) => !t.completed);
   const allDone = !loading && tasks.length > 0 && pending.length === 0;
@@ -151,9 +205,12 @@ function AttentionCard({
 
                 {/* Arrow */}
                 {!task.completed && (
-                  <div className="flex-shrink-0 mt-1 w-7 h-7 rounded-lg bg-gray-50 hover:bg-[#FEF2F2] flex items-center justify-center transition-colors duration-200 group cursor-pointer">
+                  <button
+                    onClick={() => onTaskClick(task)}
+                    className="flex-shrink-0 mt-1 w-7 h-7 rounded-lg bg-gray-50 hover:bg-[#FEF2F2] flex items-center justify-center transition-colors duration-200 group cursor-pointer"
+                  >
                     <ChevronRight size={13} className="text-gray-400 group-hover:text-[#C10007]" strokeWidth={2.5} />
-                  </div>
+                  </button>
                 )}
               </div>
             );
@@ -222,6 +279,26 @@ export default function DashboardPage() {
   const [property, setProperty] = useState<any>(null);
   const [propertyLoading, setPropertyLoading] = useState(true);
 
+  const [agreementDrawerOpen, setAgreementDrawerOpen] = useState(false);
+  const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
+  const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
+  const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
+  const [scheduleAppointmentDrawerOpen, setScheduleAppointmentDrawerOpen] = useState(false);
+
+  function handleTaskClick(task: Task) {
+    if (isAgreementTask(task.title)) {
+      setAgreementDrawerOpen(true);
+    } else if (isPersonalInfoTask(task.title)) {
+      setPersonalInfoDrawerOpen(true);
+    } else if (isIdentificationTask(task.title)) {
+      setIdentificationDrawerOpen(true);
+    } else if (isHomeInsuranceTask(task.title)) {
+      setHomeInsuranceDrawerOpen(true);
+    } else if (isScheduleAppointmentTask(task.title)) {
+      setScheduleAppointmentDrawerOpen(true);
+    }
+  }
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -280,8 +357,43 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pb-8">
 
+      {/* ── Upload Agreement Drawer ── */}
+      <UploadAgreementDrawer
+        open={agreementDrawerOpen}
+        onClose={() => setAgreementDrawerOpen(false)}
+      />
+
+      {/* ── Personal Information Drawer ── */}
+      <PersonalInformationDrawer
+        open={personalInfoDrawerOpen}
+        onClose={() => setPersonalInfoDrawerOpen(false)}
+      />
+
+      {/* ── Upload Identification Drawer ── */}
+      <UploadIdentificationDrawer
+        open={identificationDrawerOpen}
+        onClose={() => setIdentificationDrawerOpen(false)}
+      />
+
+      {/* ── Home Insurance Drawer ── */}
+      <UploadHomeInsuranceDrawer
+        open={homeInsuranceDrawerOpen}
+        onClose={() => setHomeInsuranceDrawerOpen(false)}
+      />
+
+      {/* ── Schedule Appointment Drawer ── */}
+      <ScheduleAppointmentDrawer
+        open={scheduleAppointmentDrawerOpen}
+        onClose={() => setScheduleAppointmentDrawerOpen(false)}
+      />
+
       {/* ── 1. Needs Your Attention ── */}
-      <AttentionCard tasks={tasks} loading={tasksLoading} onMarkDone={markDone} />
+      <AttentionCard
+        tasks={tasks}
+        loading={tasksLoading}
+        onMarkDone={markDone}
+        onTaskClick={handleTaskClick}
+      />
 
       {/* ── 2. Property Selector Tabs ── */}
       <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
