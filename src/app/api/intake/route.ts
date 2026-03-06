@@ -18,9 +18,37 @@ export async function POST(req: Request) {
       address_city,
       address_postal_code,
       address_province,
+      selling_address_street,
+      selling_address_unit,
+      selling_address_city,
+      selling_address_postal_code,
+      selling_address_province,
       aps_signed,
     } = body;
 
+    // 🔹 Lead type logic
+    let lead_type = null;
+    if (service === "closing") {
+      if (sub_service === "buying") {
+        lead_type = "Purchase";
+      }
+      else if (sub_service === "selling") {
+        lead_type = "Sale";
+      }
+      else if (sub_service === "both") {
+        lead_type = "Purchase & Sale"; 
+      }
+
+    }
+
+    if (service === "refinance") {
+      lead_type = "Refinance";
+    }
+    if (service === "condo") {
+      lead_type = "Condo";
+    }
+    
+    //  Insert Lead
     const { data, error } = await supabaseAdmin
       .from("leads")
       .insert({
@@ -30,12 +58,18 @@ export async function POST(req: Request) {
         phone,
         service,
         sub_service: service === "closing" ? sub_service : null,
+        lead_type,
         price,
         address_street,
         address_unit,
         address_city,
         address_postal_code,
         address_province,
+        selling_address_street,
+        selling_address_unit,
+        selling_address_city,
+        selling_address_postal_code,
+        selling_address_province,
         aps_signed,
       })
       .select()
@@ -51,7 +85,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      lead_id: data.id,  
+      lead_id: data.id,
     });
 
   } catch (err) {
