@@ -1,33 +1,32 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { getAuthClientDeal } from "@/lib/getAuthClient";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
+
+    // ── Primary: use authenticated session ───────────────────
+    const authData = await getAuthClientDeal();
+
+    // ── Fallback: use lead_id / deal_id query params ─────────
     const lead_id = searchParams.get("lead_id");
     const deal_id = searchParams.get("deal_id");
 
-    let resolvedDealId: string | null = deal_id;
+    let resolvedDealId: string | null = authData?.deal?.id ?? deal_id ?? null;
 
-    // Resolve deal_id from lead_id if needed
     if (!resolvedDealId && lead_id) {
-      const { data: deal, error: dealError } = await supabaseAdmin
+      const { data: deal } = await supabaseAdmin
         .from("deals")
         .select("id")
         .eq("lead_id", lead_id)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      if (dealError) {
-        return NextResponse.json({ success: false, error: dealError.message }, { status: 400 });
-      }
-
       resolvedDealId = deal?.id ?? null;
     }
 
     if (!resolvedDealId) {
-      // No deal yet — return empty milestones
       return NextResponse.json({ success: true, milestones: [] });
     }
 
@@ -53,7 +52,6 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: msError.message }, { status: 400 });
     }
 
-    // Calculate progress for each milestone
     const enriched = (milestones ?? []).map((m: any) => {
       const total = m.tasks?.length ?? 0;
       const completed = m.tasks?.filter((t: any) => t.completed).length ?? 0;

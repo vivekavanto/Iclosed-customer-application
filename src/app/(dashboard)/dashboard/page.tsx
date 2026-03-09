@@ -15,11 +15,7 @@ import {
   Loader2,
   Circle,
 } from "lucide-react";
-import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer";
-import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
-import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
-import UploadHomeInsuranceDrawer from "@/components/dashboard/UploadHomeInsuranceDrawer";
-import ScheduleAppointmentDrawer from "@/components/dashboard/ScheduleAppointmentDrawer";
+import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -71,41 +67,6 @@ interface DealData {
   closing_date: string | null;
   property_address: string | null;
   price: number | null;
-}
-
-/* ─────────────────────────────────────────────
-   TASK TYPE DETECTORS (which drawer to open)
-───────────────────────────────────────────── */
-function isAgreementTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("agreement of purchase") ||
-    lower.includes("purchase and sale") ||
-    lower.includes("amendments") ||
-    lower.includes("upload agreement")
-  );
-}
-function isPersonalInfoTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("personal information") || lower.includes("provide personal")
-  );
-}
-function isIdentificationTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("upload identification") ||
-    lower.includes("identification document") ||
-    lower.includes("id document")
-  );
-}
-function isHomeInsuranceTask(title: string) {
-  const lower = title.toLowerCase();
-  return lower.includes("home insurance") || lower.includes("insurance policy");
-}
-function isScheduleAppointmentTask(title: string) {
-  const lower = title.toLowerCase();
-  return lower.includes("schedule") || lower.includes("appointment");
 }
 
 /* ─────────────────────────────────────────────
@@ -470,26 +431,10 @@ export default function DashboardPage() {
   const [deal, setDeal] = useState<DealData | null>(null);
   const [propertyLoading, setPropertyLoading] = useState(true);
 
-  const [agreementDrawerOpen, setAgreementDrawerOpen] = useState(false);
-  const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
-  const [identificationDrawerOpen, setIdentificationDrawerOpen] =
-    useState(false);
-  const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
-  const [scheduleAppointmentDrawerOpen, setScheduleAppointmentDrawerOpen] =
-    useState(false);
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   function handleTaskClick(task: Task) {
-    if (isAgreementTask(task.title)) {
-      setAgreementDrawerOpen(true);
-    } else if (isPersonalInfoTask(task.title)) {
-      setPersonalInfoDrawerOpen(true);
-    } else if (isIdentificationTask(task.title)) {
-      setIdentificationDrawerOpen(true);
-    } else if (isHomeInsuranceTask(task.title)) {
-      setHomeInsuranceDrawerOpen(true);
-    } else if (isScheduleAppointmentTask(task.title)) {
-      setScheduleAppointmentDrawerOpen(true);
-    }
+    setActiveTask(task);
   }
 
   useEffect(() => {
@@ -607,25 +552,35 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pb-8">
       {/* ── Drawers ── */}
-      <UploadAgreementDrawer
-        open={agreementDrawerOpen}
-        onClose={() => setAgreementDrawerOpen(false)}
-      />
-      <PersonalInformationDrawer
-        open={personalInfoDrawerOpen}
-        onClose={() => setPersonalInfoDrawerOpen(false)}
-      />
-      <UploadIdentificationDrawer
-        open={identificationDrawerOpen}
-        onClose={() => setIdentificationDrawerOpen(false)}
-      />
-      <UploadHomeInsuranceDrawer
-        open={homeInsuranceDrawerOpen}
-        onClose={() => setHomeInsuranceDrawerOpen(false)}
-      />
-      <ScheduleAppointmentDrawer
-        open={scheduleAppointmentDrawerOpen}
-        onClose={() => setScheduleAppointmentDrawerOpen(false)}
+      <DynamicTaskDrawer
+        open={!!activeTask}
+        onClose={() => setActiveTask(null)}
+        taskId={activeTask?.id ?? null}
+        taskTitle={activeTask?.title ?? ""}
+        leadId={
+          typeof window !== "undefined"
+            ? (localStorage.getItem("iclosed_lead_id") ?? undefined)
+            : undefined
+        }
+        onTaskCompleted={(completedId) => {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === completedId
+                ? { ...t, completed: true, status: "Completed" as const }
+                : t,
+            ),
+          );
+          const leadId =
+            typeof window !== "undefined"
+              ? localStorage.getItem("iclosed_lead_id")
+              : null;
+          const params = leadId ? `?lead_id=${leadId}` : "";
+          fetch(`/api/milestones${params}`)
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.success) setMilestones(d.milestones);
+            });
+        }}
       />
 
       {/* ── 1. Needs Your Attention ── */}
