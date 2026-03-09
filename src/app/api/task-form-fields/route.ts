@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     try {
       const { data, error } = await supabaseAdmin
         .from("tasks")
-        .select("id, title, task_template_id, completed")
+        .select("id, title, task_template_id, completed, deal_id")
         .eq("id", task_id)
         .single();
       if (error) throw error;
@@ -33,7 +33,7 @@ export async function GET(req: Request) {
       // task_template_id column might not exist yet — fallback select without it
       const { data, error } = await supabaseAdmin
         .from("tasks")
-        .select("id, title, completed")
+        .select("id, title, completed, deal_id")
         .eq("id", task_id)
         .single();
       if (error || !data) {
@@ -89,11 +89,66 @@ export async function GET(req: Request) {
       .select("field_id, field_label, value, file_url, file_name")
       .eq("task_id", task_id);
 
+    let finalResponses = existingResponses ?? [];
+
+    // 5. Pre-fill from lead context if the fields haven't been answered yet
+    if (task.deal_id && fields) {
+      const { data: deal } = await supabaseAdmin
+        .from("deals")
+        .select("lead_id, property_address")
+        .eq("id", task.deal_id)
+        .single();
+        
+      if (deal?.lead_id) {
+        const { data: lead } = await supabaseAdmin
+          .from("leads")
+          .select("*")
+          .eq("id", deal.lead_id)
+          .single();
+
+        if (lead) {
+          const prefillMapping: Record<string, string | null | undefined> = {
+            "Phone Number": lead.phone,
+            "Street Address": lead.address_street || deal.property_address,
+            "City": lead.address_city,
+            "Postal Code": lead.address_postal_code,
+            "Marital Status": lead.marital_status,
+            "Occupation": lead.occupation,
+            "Citizenship Status": lead.citizenship_status,
+            "Business/Employer Phone (Optional)": lead.employer_phone,
+            "First Name": lead.first_name,
+            "Last Name": lead.last_name,
+            "Email": lead.email
+          };
+
+          fields.forEach((field) => {
+            // Check if this field is already answered in existingResponses
+            const hasAnswer = finalResponses.some(r => r.field_id === field.id);
+            if (!hasAnswer) {
+              const labelMatched = Object.keys(prefillMapping).find(
+                key => field.label.trim().toLowerCase() === key.toLowerCase()
+              );
+              
+              if (labelMatched && prefillMapping[labelMatched]) {
+                finalResponses.push({
+                  field_id: field.id,
+                  field_label: field.label,
+                  value: String(prefillMapping[labelMatched]),
+                  file_url: null,
+                  file_name: null
+                });
+              }
+            }
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       task,
       fields: fields ?? [],
-      existing_responses: existingResponses ?? [],
+      existing_responses: finalResponses,
     });
   } catch (err) {
     console.error("GET /api/task-form-fields error:", err);
