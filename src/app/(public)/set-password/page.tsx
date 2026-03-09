@@ -22,26 +22,38 @@ export default function SetPasswordPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 
-  // Check for session on mount
   useEffect(() => {
-    const checkSession = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setHasSession(!!session);
-      setSessionLoading(false);
+    let mounted = true;
+
+    const checkInitialSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (mounted) {
+          setHasSession(!!session);
+          setSessionLoading(false);
+        }
+      } catch (err) {
+        if (mounted) setSessionLoading(false);
+      }
     };
 
-    checkSession();
+    checkInitialSession();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setHasSession(!!session);
-      setSessionLoading(false);
+      if (mounted) {
+        setHasSession(!!session);
+        setSessionLoading(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [supabase]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,9 +61,19 @@ export default function SetPasswordPage() {
     setLoading(true);
     setError("");
 
-    if (!hasSession) {
+    // Double check session immediately before update
+    let currentSession = hasSession;
+    if (!currentSession) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      currentSession = !!session;
+      setHasSession(currentSession);
+    }
+
+    if (!currentSession) {
       setError(
-        "Auth session missing! Please click the link from your email again.",
+        "Session expired or missing. Please click the link in your email again to refresh your access.",
       );
       setLoading(false);
       return;
@@ -87,6 +109,19 @@ export default function SetPasswordPage() {
       setLoading(false);
     }
   };
+
+  if (sessionLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-100 border-t-[#c0392b]" />
+          <p className="text-sm font-medium text-gray-500">
+            Checking authorization...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -136,12 +171,26 @@ export default function SetPasswordPage() {
           </div>
 
           <div className="mb-8 p-6 bg-white border border-gray-100 rounded-2xl shadow-sm">
+            {!hasSession && !success && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-100 rounded-xl">
+                <p className="text-[0.8rem] text-amber-800 font-medium">
+                  <span className="block font-bold mb-1">
+                    Authorization required
+                  </span>
+                  Please make sure you clicked the link directly from your email
+                  inbox. If you are still seeing this, the link may have
+                  expired.
+                </p>
+              </div>
+            )}
+
             <h1 className="mb-1.5 text-2xl font-bold text-gray-900 tracking-tight">
-              Create a Password
+              {success ? "Success!" : "Create a Password"}
             </h1>
             <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-              Please choose a secure password to protect your real estate
-              transaction details.
+              {success
+                ? "Your password has been set successfully."
+                : "Please choose a secure password to protect your real estate transaction details."}
             </p>
 
             {success ? (
@@ -213,7 +262,9 @@ export default function SetPasswordPage() {
                 </div>
 
                 {error && (
-                  <p className="text-sm text-red-600 font-medium">{error}</p>
+                  <p className="text-sm text-red-600 font-medium leading-tight">
+                    {error}
+                  </p>
                 )}
 
                 {/* Submit button */}
