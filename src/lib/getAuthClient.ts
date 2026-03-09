@@ -2,17 +2,24 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import supabaseAdmin from "./supabaseAdmin";
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
 /**
  * Gets the authenticated Supabase user from the server-side session (cookie).
- * Returns null if no session.
+ * Returns null if no session OR if env vars are missing (falls back to lead_id flow).
  */
 export async function getAuthUser() {
-  const cookieStore = await cookies();
+  // If env vars missing, skip auth silently — dashboard will use lead_id fallback
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn("[getAuthClient] NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY missing — skipping auth check");
+    return null;
+  }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  try {
+    const cookieStore = await cookies();
+
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll() {
           return cookieStore.getAll();
@@ -23,17 +30,19 @@ export async function getAuthUser() {
           });
         },
       },
-    }
-  );
+    });
 
-  const { data: { user } } = await supabase.auth.getUser();
-  return user ?? null;
+    const { data: { user } } = await supabase.auth.getUser();
+    return user ?? null;
+  } catch (err) {
+    console.warn("[getAuthClient] Auth check failed (non-blocking):", err);
+    return null;
+  }
 }
 
 /**
  * Gets the client record for the authenticated user.
- * Looks up clients table WHERE auth_user_id = user.id.
- * Returns null if not found.
+ * Returns null if not found or not authenticated.
  */
 export async function getAuthClient() {
   const user = await getAuthUser();
@@ -50,7 +59,7 @@ export async function getAuthClient() {
 
 /**
  * Gets the latest active deal for the authenticated client.
- * Returns { client, deal } or null if no deal exists.
+ * Returns { client, deal } or null if no deal / not authenticated.
  */
 export async function getAuthClientDeal() {
   const client = await getAuthClient();
