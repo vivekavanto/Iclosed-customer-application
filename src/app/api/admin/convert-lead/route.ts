@@ -186,7 +186,7 @@ export async function POST(req: Request) {
       const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         lead.email,
         {
-          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/dashboard`,
+          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://iclosed-customer-application-rosy.vercel.app/"}/dashboard`,
         }
       );
 
