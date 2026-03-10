@@ -171,19 +171,6 @@ export default function SetPasswordPage() {
           </div>
 
           <div className="mb-8 p-6 bg-white border border-gray-100 rounded-2xl shadow-sm">
-            {!hasSession && !success && (
-              <div className="mb-6 p-4 bg-amber-50 border border-amber-100 rounded-xl">
-                <p className="text-[0.8rem] text-amber-800 font-medium">
-                  <span className="block font-bold mb-1">
-                    Authorization required
-                  </span>
-                  Please make sure you clicked the link directly from your email
-                  inbox. If you are still seeing this, the link may have
-                  expired.
-                </p>
-              </div>
-            )}
-
             <h1 className="mb-1.5 text-2xl font-bold text-gray-900 tracking-tight">
               {success ? "Success!" : "Create a Password"}
             </h1>
