@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { createBrowserClient } from "@supabase/ssr";
 
 /**
  * This component runs on every page load and checks if the URL
@@ -41,6 +41,11 @@ export default function AuthHashHandler() {
     async function handleHashAuth() {
       try {
         console.log("[AuthHashHandler] Detected hash auth tokens, type:", type);
+
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        );
 
         // Set the session using the tokens from the hash
         const { data, error } = await supabase.auth.setSession({
