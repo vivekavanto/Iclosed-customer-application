@@ -150,7 +150,7 @@ export async function POST(req: Request) {
     // ── 7. Copy tasks from task_templates ─────────────────────────────────────
     const { data: taskTemplates } = await supabaseAdmin
       .from("task_templates")
-      .select("id, name, role_type, order_index, deadline_rule")
+      .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
       .eq("lead_type", leadType)
       .order("order_index", { ascending: true });
 
@@ -165,7 +165,7 @@ export async function POST(req: Request) {
         })
         .map((t) => ({
           deal_id: dealId,
-          milestone_id: firstMilestoneId,
+          milestone_id: milestoneMap[t.stage_template_id] ?? firstMilestoneId,
           task_template_id: t.id,
           title: t.name?.trim() ?? t.name,
           status: "Pending",

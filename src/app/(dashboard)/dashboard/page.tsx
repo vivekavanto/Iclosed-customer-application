@@ -577,10 +577,20 @@ export default function DashboardPage() {
           ? localStorage.getItem("iclosed_lead_id")
           : null;
       const params = leadId ? `?lead_id=${leadId}` : "";
-      const msRes = await fetch(`/api/milestones${params}`);
+      
+      // Refresh milestones and tasks to reflect any backend-driven changes
+      const [msRes, tasksRes] = await Promise.all([
+        fetch(`/api/milestones${params}`),
+        fetch(`/api/tasks${params}`)
+      ]);
+
       if (msRes.ok) {
         const msData = await msRes.json();
         if (msData.success) setMilestones(msData.milestones);
+      }
+      if (tasksRes.ok) {
+        const tasksData = await tasksRes.json();
+        if (tasksData.success) setTasks(tasksData.tasks);
       }
     } catch {
       // Revert on failure
