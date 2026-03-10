@@ -182,11 +182,11 @@ export async function POST(req: Request) {
     let inviteSent = false;
 
     try {
-      // inviteUserByEmail sends a magic link — client sets their password via the email
+      const customerPortalUrl = (process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ?? "https://iclosed-customer-application-rosy.vercel.app").replace(/\/+$/, "");
       const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         lead.email,
         {
-          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? "https://iclosed-customer-application-rosy.vercel.app/"}/dashboard`,
+          redirectTo: `${customerPortalUrl}/api/auth/callback?next=/set-password`,
         }
       );
 
