@@ -57,14 +57,15 @@ export async function POST(req: Request) {
     // ── 2. Create or find client record ───────────────────────────────────────
     let clientId: string;
 
-    const { data: existingClient } = await supabaseAdmin
+    const { data: existingClients } = await supabaseAdmin
       .from("clients")
       .select("id")
       .eq("email", lead.email)
-      .maybeSingle();
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-    if (existingClient) {
-      clientId = existingClient.id;
+    if (existingClients && existingClients.length > 0) {
+      clientId = existingClients[0].id;
     } else {
       const { data: newClient, error: clientError } = await supabaseAdmin
         .from("clients")

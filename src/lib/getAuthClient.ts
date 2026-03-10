@@ -48,13 +48,14 @@ export async function getAuthClient() {
   const user = await getAuthUser();
   if (!user) return null;
 
-  const { data: client } = await supabaseAdmin
+  const { data: clients } = await supabaseAdmin
     .from("clients")
     .select("id, email, first_name, last_name, phone")
     .eq("auth_user_id", user.id)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(1);
 
-  return client ?? null;
+  return clients && clients.length > 0 ? clients[0] : null;
 }
 
 /**
