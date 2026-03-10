@@ -48,6 +48,11 @@ export async function POST(req: Request) {
       lead_type = "Condo";
     }
     
+    // Strip currency formatting from price (e.g. "$6,567,876" → "6567876")
+    const cleanPrice = price
+      ? String(price).replace(/[^0-9.]/g, "")
+      : null;
+
     //  Insert Lead
     const { data, error } = await supabaseAdmin
       .from("leads")
@@ -59,7 +64,7 @@ export async function POST(req: Request) {
         service,
         sub_service: service === "closing" ? sub_service : null,
         lead_type,
-        price,
+        price: cleanPrice,
         address_street,
         address_unit,
         address_city,

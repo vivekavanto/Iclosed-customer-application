@@ -3,14 +3,23 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
-import { Menu, X, LogOut, ChevronDown, LayoutDashboard, FileText, Info, BookOpen } from "lucide-react";
+import {
+  Menu,
+  X,
+  LogOut,
+  ChevronDown,
+  LayoutDashboard,
+  FileText,
+  Info,
+  BookOpen,
+} from "lucide-react";
 import Footer from "@/components/layout/Footer";
 
 const navLinks = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Documents", href: "/documents", icon: FileText },
-  { label: "Details",   href: "/details",   icon: Info },
-  { label: "Blog",      href: "/blog",       icon: BookOpen },
+  { label: "Details", href: "/details", icon: Info },
+  { label: "Blog", href: "/blog", icon: BookOpen },
 ];
 
 /* ════════════════════════════════════════════
@@ -37,17 +46,31 @@ function IClosedLogo() {
    PROFILE DROPDOWN  (desktop)
 ════════════════════════════════════════════ */
 
-function ProfileDropdown() {
+function ProfileDropdown({
+  user,
+}: {
+  user: { first_name?: string; last_name?: string } | null;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  };
+
+  const displayName =
+    `${user?.first_name || ""} ${user?.last_name || ""}`.trim() || "User";
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <div ref={ref} className="relative">
@@ -57,9 +80,11 @@ function ProfileDropdown() {
       >
         {/* Avatar circle */}
         <div className="w-7 h-7 rounded-full bg-[#C10007] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-          U
+          {initial}
         </div>
-        <span className="hidden sm:block">User</span>
+        <span className="hidden sm:block truncate max-w-[120px]">
+          {displayName}
+        </span>
         <ChevronDown
           size={14}
           className={`hidden sm:block transition-transform duration-200 ${open ? "rotate-180" : ""}`}
@@ -70,15 +95,23 @@ function ProfileDropdown() {
       {open && (
         <div className="absolute right-0 mt-2 w-44 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--color-border)]">
-            <p className="text-xs text-[var(--color-text-muted)]">Signed in as</p>
-            <p className="text-sm font-semibold text-[var(--color-text-heading)] truncate">User</p>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Signed in as
+            </p>
+            <p className="text-sm font-semibold text-[var(--color-text-heading)] truncate">
+              {displayName}
+            </p>
           </div>
           <div className="py-1">
             <button
               className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text-body)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-primary)] transition-colors cursor-pointer text-left group"
-              onClick={() => setOpen(false)}
+              onClick={handleLogout}
             >
-              <LogOut size={15} className="text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors" strokeWidth={2} />
+              <LogOut
+                size={15}
+                className="text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors"
+                strokeWidth={2}
+              />
               Logout
             </button>
           </div>
@@ -92,20 +125,48 @@ function ProfileDropdown() {
    LAYOUT
 ════════════════════════════════════════════ */
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<{
+    first_name?: string;
+    last_name?: string;
+  } | null>(null);
 
   // Close mobile menu on route change
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.user) {
+          setUser(data.user);
+        }
+      })
+      .catch((err) => console.error("Failed to fetch user:", err));
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  };
+
+  const displayName =
+    `${user?.first_name || ""} ${user?.last_name || ""}`.trim() || "User";
+  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)]">
-
       {/* ── Top Navigation Bar ── */}
       <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-4">
-
           {/* Logo */}
           <IClosedLogo />
 
@@ -135,13 +196,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Profile (desktop) */}
           <div className="hidden md:block">
-            <ProfileDropdown />
+            <ProfileDropdown user={user} />
           </div>
 
           {/* Avatar only on mobile (no dropdown, hamburger handles it) */}
           <div className="flex items-center gap-2 md:hidden">
             <div className="w-7 h-7 rounded-full bg-[#C10007] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              U
+              {initial}
             </div>
           </div>
 
@@ -151,9 +212,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
             aria-label="Toggle menu"
           >
-            {mobileOpen
-              ? <X size={20} className="text-gray-700" strokeWidth={2} />
-              : <Menu size={20} className="text-gray-700" strokeWidth={2} />}
+            {mobileOpen ? (
+              <X size={20} className="text-gray-700" strokeWidth={2} />
+            ) : (
+              <Menu size={20} className="text-gray-700" strokeWidth={2} />
+            )}
           </button>
         </div>
 
@@ -184,13 +247,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="pt-2 mt-2 border-t border-gray-100">
               <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl">
                 <div className="w-7 h-7 rounded-full bg-[#C10007] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                  U
+                  {initial}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-gray-400">Signed in as</p>
-                  <p className="text-sm font-semibold text-gray-900 truncate">User</p>
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {displayName}
+                  </p>
                 </div>
-                <button className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#C10007] transition-colors cursor-pointer">
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-[#C10007] transition-colors cursor-pointer"
+                >
                   <LogOut size={14} strokeWidth={2} />
                   Logout
                 </button>
@@ -220,14 +288,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               href={link.href}
               className="flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors"
             >
-              <div className={`w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${active ? "bg-[#FEF2F2]" : ""}`}>
+              <div
+                className={`w-10 h-7 flex items-center justify-center rounded-full transition-all duration-200 ${active ? "bg-[#FEF2F2]" : ""}`}
+              >
                 <Icon
                   size={20}
                   strokeWidth={active ? 2.2 : 1.8}
                   className={active ? "text-[#C10007]" : "text-gray-400"}
                 />
               </div>
-              <span className={`text-[10px] font-semibold transition-colors ${active ? "text-[#C10007]" : "text-gray-400"}`}>
+              <span
+                className={`text-[10px] font-semibold transition-colors ${active ? "text-[#C10007]" : "text-gray-400"}`}
+              >
                 {link.label}
               </span>
             </Link>
@@ -237,7 +309,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Bottom padding so content isn't hidden behind the bottom nav on mobile */}
       <div className="md:hidden h-16" />
-
     </div>
   );
 }

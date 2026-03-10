@@ -12,9 +12,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Video,
-  Clock
+  Clock,
 } from "lucide-react";
-import HorizontalProgress, { Step, StepStatus } from "@/components/intake/HorizontalProgress";
+import HorizontalProgress, {
+  Step,
+  StepStatus,
+} from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import DateTimePicker from "@/components/intake/DateTimePicker";
@@ -29,40 +32,65 @@ import { useRouter } from "next/navigation";
 
 export default function ServiceSelection() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [selectedClosingOption, setSelectedClosingOption] = useState<string | null>(null);
+  const [selectedClosingOption, setSelectedClosingOption] = useState<
+    string | null
+  >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
-  const [agreementSigned, setAgreementSigned] = useState<"yes" | "no" | null>(null);
+  const [agreementSigned, setAgreementSigned] = useState<"yes" | "no" | null>(
+    null,
+  );
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const router = useRouter();
 
   const getStatus = (currentStep: number, stepId: number): StepStatus => {
-    return currentStep === stepId ? "current" : currentStep > stepId ? "complete" : "upcoming";
+    return currentStep === stepId
+      ? "current"
+      : currentStep > stepId
+        ? "complete"
+        : "upcoming";
   };
 
   const [addressData, setAddressData] = useState({
     street: "",
     unit: "",
     city: "",
-    postalCode: ""
+    postalCode: "",
   });
 
   const [sellingAddressData, setSellingAddressData] = useState({
     street: "",
     unit: "",
     city: "",
-    postalCode: ""
+    postalCode: "",
   });
 
   const services = [
-    { id: "closing", title: "Property Closing", description: "Buying or selling a property? We'll guide you through the legal process—start to finish, and beyond.", icon: Home },
-    { id: "refinance", title: "Mortgage Refinance", description: "Changing your current mortgage? Count on us to handle the legal side, smoothly and efficiently.", icon: Briefcase },
-    { id: "condo", title: "Condo Status Certificate Report", description: "Closing on a condo? We'll review your status certificate thoroughly—at no extra charge.", icon: FileText },
+    {
+      id: "closing",
+      title: "Property Closing",
+      description:
+        "Buying or selling a property? We'll guide you through the legal process—start to finish, and beyond.",
+      icon: Home,
+    },
+    {
+      id: "refinance",
+      title: "Mortgage Refinance",
+      description:
+        "Changing your current mortgage? Count on us to handle the legal side, smoothly and efficiently.",
+      icon: Briefcase,
+    },
+    {
+      id: "condo",
+      title: "Condo Status Certificate Report",
+      description:
+        "Closing on a condo? We'll review your status certificate thoroughly—at no extra charge.",
+      icon: FileText,
+    },
   ];
-
 
   const progressSteps: Step[] = [
     { id: 1, label: "Service", status: getStatus(step, 1) },
@@ -72,7 +100,11 @@ export default function ServiceSelection() {
     ...(agreementSigned === "yes"
       ? [{ id: 5, label: "Upload", status: getStatus(step, 5) }]
       : []),
-    { id: agreementSigned === "yes" ? 6 : 5, label: "Contact", status: getStatus(step, agreementSigned === "yes" ? 6 : 5) },
+    {
+      id: agreementSigned === "yes" ? 6 : 5,
+      label: "Contact",
+      status: getStatus(step, agreementSigned === "yes" ? 6 : 5),
+    },
   ];
 
   const resetForm = () => {
@@ -163,7 +195,7 @@ export default function ServiceSelection() {
         )}
 
         {(step === 5 && agreementSigned === "no") ||
-          (step === 6 && agreementSigned === "yes") ? (
+        (step === 6 && agreementSigned === "yes") ? (
           <Step5Contact
             step={step}
             setStep={setStep}
@@ -174,7 +206,7 @@ export default function ServiceSelection() {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
                 const lastName = rest.join(" ");
-               
+
                 const intakeResponse = await fetch("/api/intake", {
                   method: "POST",
                   headers: {
@@ -200,7 +232,8 @@ export default function ServiceSelection() {
                       selling_address_street: sellingAddressData.street,
                       selling_address_unit: sellingAddressData.unit,
                       selling_address_city: sellingAddressData.city,
-                      selling_address_postal_code: sellingAddressData.postalCode,
+                      selling_address_postal_code:
+                        sellingAddressData.postalCode,
                       selling_address_province: "Ontario",
                     }),
 
@@ -216,6 +249,10 @@ export default function ServiceSelection() {
                 }
 
                 const leadId = intakeResult.lead_id;
+
+                // ✅ Save lead identity to localStorage so dashboard can identify customer
+                localStorage.setItem("iclosed_lead_id", leadId);
+                localStorage.setItem("iclosed_email", contactData.email);
 
                 // 2️⃣ If user uploaded file, upload it
                 if (uploadedFile && agreementSigned === "yes") {
@@ -239,7 +276,6 @@ export default function ServiceSelection() {
 
                 // 3️⃣ Success
                 setShowSuccessModal(true);
-
               } catch (error) {
                 console.error("Submission failed:", error);
               }
@@ -254,7 +290,6 @@ export default function ServiceSelection() {
           size="md"
         >
           <div className="text-center py-8">
-
             <div className="flex justify-center mb-6">
               <div className="bg-[#FFE5E6] p-4 rounded-full">
                 <svg
@@ -274,25 +309,23 @@ export default function ServiceSelection() {
             </div>
 
             <p className="text-[var(--color-text-muted)] mb-8">
-              Your information has been successfully submitted.
-              Our team will contact you shortly.
+              Your information has been successfully submitted. Our team will
+              contact you shortly.
             </p>
 
             <Button
               onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
-                router.push('/dashboard');
+                router.push("/dashboard");
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
             >
               Done
             </Button>
-
           </div>
         </Modal>
       </main>
-
     </div>
   );
 }

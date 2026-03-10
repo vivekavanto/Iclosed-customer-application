@@ -19,30 +19,37 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState("");
 
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setLoading(true);
     setError("");
 
-    const validEmail = "admin@gmail.com";
-    const validPassword = "123456";
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-    setTimeout(() => {
-      if (email === validEmail && password === validPassword) {
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Login failed");
+      } else if (data.success) {
         router.push("/dashboard");
-      } else {
-        setError("Invalid email or password");
-        setLoading(false);
+        router.refresh();
       }
-    }, 500);
-
-    e.preventDefault();
-    setLoading(true);
-    setTimeout(() => setLoading(false), 1500);
+    } catch (err: any) {
+      setError("An unexpected error occurred. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const features = [
