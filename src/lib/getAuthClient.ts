@@ -50,7 +50,7 @@ export async function getAuthClient() {
 
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("id, email, first_name, last_name")
+    .select("id, email, first_name, last_name, phone")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 

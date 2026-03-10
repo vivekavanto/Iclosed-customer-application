@@ -54,9 +54,11 @@ interface PropertyData {
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
+  address_postal_code: string | null;
   address_unit: string | null;
   first_name: string | null;
   last_name: string | null;
+  phone: string | null;
   lead_type: string | null;
 }
 
@@ -614,6 +616,7 @@ export default function DashboardPage() {
       <PersonalInformationDrawer
         open={personalInfoDrawerOpen}
         onClose={() => setPersonalInfoDrawerOpen(false)}
+        property={property}
       />
 
       {/* ── Upload Identification Drawer ── */}

@@ -7,6 +7,12 @@ import Button from "@/components/ui/Button";
 interface PersonalInformationDrawerProps {
   open: boolean;
   onClose: () => void;
+  property?: {
+    phone?: string | null;
+    address_street?: string | null;
+    address_city?: string | null;
+    address_postal_code?: string | null;
+  } | null;
 }
 
 interface FormData {
@@ -203,11 +209,26 @@ function SelectInput({
 export default function PersonalInformationDrawer({
   open,
   onClose,
+  property,
 }: PersonalInformationDrawerProps) {
   const [form, setForm] = useState<FormData>(EMPTY);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+
+  // Initialize form with property data when opened
+  useEffect(() => {
+    if (open) {
+      setForm((prev) => ({
+        ...EMPTY,
+        ...prev, // preserve any already entered data if any
+        phone: prev.phone || property?.phone || "",
+        streetAddress: prev.streetAddress || property?.address_street || "",
+        city: prev.city || property?.address_city || "",
+        postalCode: prev.postalCode || property?.address_postal_code || "",
+      }));
+    }
+  }, [open, property]);
 
   // Close on Escape
   useEffect(() => {

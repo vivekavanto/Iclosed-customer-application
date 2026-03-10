@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       const { data: lead } = deal.lead_id
         ? await supabaseAdmin
             .from("leads")
-            .select("address_street, address_city, address_province, address_unit, lead_type")
+            .select("address_street, address_city, address_province, address_unit, address_postal_code, lead_type, phone")
             .eq("id", deal.lead_id)
             .maybeSingle()
         : { data: null };
@@ -32,9 +32,11 @@ export async function GET(req: Request) {
           address_street: deal.property_address || lead?.address_street || null,
           address_city: lead?.address_city || null,
           address_province: lead?.address_province || null,
+          address_postal_code: lead?.address_postal_code || null,
           address_unit: lead?.address_unit || null,
           first_name: client.first_name,
           last_name: client.last_name,
+          phone: client.phone || lead?.phone || null,
           lead_type: lead?.lead_type || deal.type || null,
         },
         deal,
@@ -45,7 +47,7 @@ export async function GET(req: Request) {
     if (lead_id) {
       const { data: lead, error: leadError } = await supabaseAdmin
         .from("leads")
-        .select("id, first_name, last_name, address_street, address_city, address_province, address_unit, lead_type")
+        .select("id, first_name, last_name, phone, address_street, address_city, address_province, address_postal_code, address_unit, lead_type")
         .eq("id", lead_id)
         .maybeSingle();
 
@@ -67,9 +69,11 @@ export async function GET(req: Request) {
           address_street: deal?.property_address || lead.address_street,
           address_city: lead.address_city,
           address_province: lead.address_province,
+          address_postal_code: lead.address_postal_code,
           address_unit: lead.address_unit,
           first_name: lead.first_name,
           last_name: lead.last_name,
+          phone: lead.phone,
           lead_type: lead.lead_type,
         },
         deal: deal ?? null,
