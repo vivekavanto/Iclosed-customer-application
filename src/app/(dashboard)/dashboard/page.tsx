@@ -478,8 +478,11 @@ export default function DashboardPage() {
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
   const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
+  
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   function handleTaskClick(task: Task) {
+    setActiveTask(task);
     if (isAgreementTask(task.title)) {
       setAgreementDrawerOpen(true);
     } else if (isPersonalInfoTask(task.title)) {
@@ -617,6 +620,14 @@ export default function DashboardPage() {
         open={personalInfoDrawerOpen}
         onClose={() => setPersonalInfoDrawerOpen(false)}
         property={property}
+        taskId={activeTask?.id}
+        onSaved={async () => {
+          setPersonalInfoDrawerOpen(false);
+          if (activeTask) {
+             // Let the backend handle the status updating naturally then refetch the UI so milestones automatically tick up.
+             await markDone(activeTask.id); 
+          }
+        }}
       />
 
       {/* ── Upload Identification Drawer ── */}
