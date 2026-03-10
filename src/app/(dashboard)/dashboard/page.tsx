@@ -18,7 +18,6 @@ import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer"
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import UploadHomeInsuranceDrawer from "@/components/dashboard/UploadHomeInsuranceDrawer";
-import ScheduleAppointmentDrawer from "@/components/dashboard/ScheduleAppointmentDrawer";
 
 
 interface Task {
@@ -80,14 +79,6 @@ function isHomeInsuranceTask(title: string) {
   );
 }
 
-/** Tasks whose title contains these keywords open the Schedule Appointment drawer */
-function isScheduleAppointmentTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("schedule") ||
-    lower.includes("appointment")
-  );
-}
 
 function AttentionCard({
   tasks,
@@ -283,7 +274,6 @@ export default function DashboardPage() {
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
   const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
-  const [scheduleAppointmentDrawerOpen, setScheduleAppointmentDrawerOpen] = useState(false);
 
   function handleTaskClick(task: Task) {
     if (isAgreementTask(task.title)) {
@@ -294,8 +284,6 @@ export default function DashboardPage() {
       setIdentificationDrawerOpen(true);
     } else if (isHomeInsuranceTask(task.title)) {
       setHomeInsuranceDrawerOpen(true);
-    } else if (isScheduleAppointmentTask(task.title)) {
-      setScheduleAppointmentDrawerOpen(true);
     }
   }
 
@@ -379,12 +367,6 @@ export default function DashboardPage() {
       <UploadHomeInsuranceDrawer
         open={homeInsuranceDrawerOpen}
         onClose={() => setHomeInsuranceDrawerOpen(false)}
-      />
-
-      {/* ── Schedule Appointment Drawer ── */}
-      <ScheduleAppointmentDrawer
-        open={scheduleAppointmentDrawerOpen}
-        onClose={() => setScheduleAppointmentDrawerOpen(false)}
       />
 
       {/* ── 1. Needs Your Attention ── */}
