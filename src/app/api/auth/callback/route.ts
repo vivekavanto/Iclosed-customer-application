@@ -41,15 +41,38 @@ export async function GET(request: Request) {
     }
   }
 
-  // If no code, check if there are error parameters in the search (some flows do this)
-  const errorCode = requestUrl.searchParams.get("error_code");
-  const errorDescription = requestUrl.searchParams.get("error_description");
-
-  if (errorCode || errorDescription) {
-     console.error(`[Auth Callback] Supabase Error: ${errorCode} - ${errorDescription}`);
-     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(errorDescription || "Authentication failed")}`);
-  }
-
-  console.warn("[Auth Callback] No code or error found in search params.");
-  return NextResponse.redirect(`${origin}/login?error=Invalid+magic+link`);
+  // If there's no code, it might be an implicit flow (hash fragment like #access_token=...)
+  // We return a simple HTML snippet to parse the hash safely on the client.
+  return new NextResponse(
+    `<html>
+      <head><title>Authenticating...</title></head>
+      <body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;background:#fafafa;">
+        <div style="text-align:center;">
+          <div style="width:40px;height:40px;border:3px solid #e5e7eb;border-top-color:#c0392b;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;"></div>
+          <p style="color:#64748b;font-size:14px;font-weight:600;">Verifying secure link...</p>
+        </div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        <script>
+          const hash = window.location.hash;
+          if (hash && hash.includes("access_token")) {
+             // Pass the hash fragment exactly as-is to the set-password page where AuthHashHandler runs
+             window.location.replace("${next}" + hash);
+          } else {
+             // Check if there's an error in the query parameters from the backend redirect
+             const searchParams = new URLSearchParams(window.location.search);
+             const errCode = searchParams.get("error_code");
+             const errDesc = searchParams.get("error_description");
+             if (errCode || errDesc) {
+                 window.location.replace("/login?error=" + encodeURIComponent(errDesc || "Authentication failed"));
+             } else {
+                 window.location.replace("/login?error=Invalid+magic+link");
+             }
+          }
+        </script>
+      </body>
+    </html>`,
+    {
+      headers: { "Content-Type": "text/html" }
+    }
+  );
 }
