@@ -64,15 +64,18 @@ export default function AuthHashHandler() {
         if (type === "invite" || type === "recovery") {
           // New user invite or password recovery → go to set-password page
           console.log("[AuthHashHandler] Redirecting to /set-password");
-          router.replace("/set-password");
+          window.location.href = "/set-password";
         } else {
           // Regular login → go to dashboard
           console.log("[AuthHashHandler] Redirecting to /dashboard");
-          router.replace("/dashboard");
+          window.location.href = "/dashboard";
         }
       } catch (err) {
         console.error("[AuthHashHandler] Unexpected error:", err);
         window.location.replace("/login?error=Authentication+failed");
+      } finally {
+        // Just as a fallback to clear the loading state if somehow stuck
+        setTimeout(() => setProcessing(false), 2000);
       }
     }
 
