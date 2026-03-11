@@ -628,15 +628,7 @@ export default function DashboardPage() {
         onClose={() => setHomeInsuranceDrawerOpen(false)}
       />
 
-      {/* ── 1. Needs Your Attention ── */}
-      <AttentionCard
-        tasks={tasks}
-        loading={tasksLoading}
-        onMarkDone={markDone}
-        onTaskClick={handleTaskClick}
-      />
-
-      {/* ── 2. Property Selector Tab ── */}
+      {/* ── 1. Property Selector Tab ── */}
       <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
         {propertyLoading ? (
           <div className="px-4 py-2 text-sm text-gray-400">
@@ -659,7 +651,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* ── 3. Property Hero Card ── */}
+      {/* ── 2. Property Hero Card ── */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
         {/* Header */}
         <div className="bg-gray-100 px-6 py-5 flex items-start gap-4">
@@ -718,13 +710,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── 4. Bottom Grid: Timeline + Assistance ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_288px] gap-5 items-start">
-        {/* ── Status Timeline (Dynamic) ── */}
-        <StatusTimeline milestones={milestones} loading={milestonesLoading} />
+      {/* ── 3. Main Grid: Tasks (left) + Status & Assistance (right) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
 
-        {/* ── Need Assistance ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+        {/* ── Left: Needs Your Attention ── */}
+        <AttentionCard
+          tasks={tasks}
+          loading={tasksLoading}
+          onMarkDone={markDone}
+          onTaskClick={handleTaskClick}
+        />
+
+        {/* ── Right: Status Overview + Need Assistance stacked ── */}
+        <div className="flex flex-col gap-5">
+          <StatusTimeline milestones={milestones} loading={milestonesLoading} />
+
+          {/* ── Need Assistance ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
               <svg
@@ -788,7 +790,8 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
-      </div>
+        </div>{/* end right column */}
+      </div>{/* end main grid */}
     </div>
   );
 }
