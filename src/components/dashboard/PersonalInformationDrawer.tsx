@@ -7,6 +7,14 @@ import Button from "@/components/ui/Button";
 interface PersonalInformationDrawerProps {
   open: boolean;
   onClose: () => void;
+  property?: {
+    phone?: string | null;
+    address_street?: string | null;
+    address_city?: string | null;
+    address_postal_code?: string | null;
+  } | null;
+  taskId?: string;
+  onSaved?: () => void;
 }
 
 interface FormData {
@@ -203,11 +211,28 @@ function SelectInput({
 export default function PersonalInformationDrawer({
   open,
   onClose,
+  property,
+  taskId,
+  onSaved,
 }: PersonalInformationDrawerProps) {
   const [form, setForm] = useState<FormData>(EMPTY);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+
+  // Initialize form with property data when opened
+  useEffect(() => {
+    if (open) {
+      setForm((prev) => ({
+        ...EMPTY,
+        ...prev, // preserve any already entered data if any
+        phone: prev.phone || property?.phone || "",
+        streetAddress: prev.streetAddress || property?.address_street || "",
+        city: prev.city || property?.address_city || "",
+        postalCode: prev.postalCode || property?.address_postal_code || "",
+      }));
+    }
+  }, [open, property]);
 
   // Close on Escape
   useEffect(() => {
@@ -247,12 +272,52 @@ export default function PersonalInformationDrawer({
         return;
       }
     }
+    
+    if (!taskId) {
+      console.warn("No task ID provided to save against.");
+      return;
+    }
+
     if (asDraft) setSavingDraft(true);
     else setSaving(true);
+    
     try {
-      // TODO: wire up to API
-      await new Promise((r) => setTimeout(r, 800));
+      const responses = [
+        { field_label: "Phone number", field_type: "tel", value: form.phone },
+        { field_label: "Street address", field_type: "text", value: form.streetAddress },
+        { field_label: "City", field_type: "text", value: form.city },
+        { field_label: "Postal code", field_type: "text", value: form.postalCode },
+        { field_label: "Marital Status", field_type: "select", value: form.maritalStatus },
+        { field_label: "Property Use", field_type: "select", value: form.propertyUse },
+        { field_label: "Previously Owned", field_type: "select", value: form.previouslyOwned },
+        { field_label: "Citizenship Status", field_type: "select", value: form.citizenshipStatus },
+        { field_label: "Lived Outside Canada", field_type: "select", value: form.livedOutsideCanada },
+        { field_label: "Occupation", field_type: "text", value: form.occupation },
+        { field_label: "Employer Phone", field_type: "tel", value: form.employerPhone },
+        { field_label: "Source of funds", field_type: "textarea", value: form.sourceOfFunds },
+        { field_label: "Signing method", field_type: "select", value: form.signingMethod },
+      ];
+
+      const res = await fetch("/api/task-responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: taskId,
+          responses,
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to save personal information replies.");
+      }
+
+      if (onSaved && !asDraft) {
+        onSaved();
+      }
+
       handleClose();
+    } catch (err) {
+      console.error(err);
     } finally {
       setSaving(false);
       setSavingDraft(false);

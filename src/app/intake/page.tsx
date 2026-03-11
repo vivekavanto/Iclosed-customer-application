@@ -29,6 +29,7 @@ import Step4 from "@/components/intake/Step4";
 import Step5Upload from "@/components/intake/Step5Upload";
 import Step5Contact from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
+import { createBrowserClient } from "@supabase/ssr";
 
 export default function ServiceSelection() {
   const [selected, setSelected] = useState<string | null>(null);
@@ -314,9 +315,18 @@ export default function ServiceSelection() {
             </p>
 
             <Button
-              onClick={() => {
+              onClick={async () => {
                 setShowSuccessModal(false);
                 resetForm();
+                
+                // Ensure we sign out any existing user session (e.g. from previous tests)
+                // so the new lead_id logic in dashboard takes precedence.
+                const supabase = createBrowserClient(
+                  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+                );
+                await supabase.auth.signOut();
+
                 router.push("/dashboard");
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"

@@ -19,6 +19,7 @@ import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer"
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import UploadHomeInsuranceDrawer from "@/components/dashboard/UploadHomeInsuranceDrawer";
+import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 
 
 interface Task {
@@ -54,9 +55,11 @@ interface PropertyData {
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
+  address_postal_code: string | null;
   address_unit: string | null;
   first_name: string | null;
   last_name: string | null;
+  phone: string | null;
   lead_type: string | null;
 }
 
@@ -476,8 +479,12 @@ export default function DashboardPage() {
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
   const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
+  const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
+  
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   function handleTaskClick(task: Task) {
+    setActiveTask(task);
     if (isAgreementTask(task.title)) {
       setAgreementDrawerOpen(true);
     } else if (isPersonalInfoTask(task.title)) {
@@ -486,6 +493,8 @@ export default function DashboardPage() {
       setIdentificationDrawerOpen(true);
     } else if (isHomeInsuranceTask(task.title)) {
       setHomeInsuranceDrawerOpen(true);
+    } else {
+      setDynamicDrawerOpen(true);
     }
   }
 
@@ -568,10 +577,20 @@ export default function DashboardPage() {
           ? localStorage.getItem("iclosed_lead_id")
           : null;
       const params = leadId ? `?lead_id=${leadId}` : "";
-      const msRes = await fetch(`/api/milestones${params}`);
+      
+      // Refresh milestones and tasks to reflect any backend-driven changes
+      const [msRes, tasksRes] = await Promise.all([
+        fetch(`/api/milestones${params}`),
+        fetch(`/api/tasks${params}`)
+      ]);
+
       if (msRes.ok) {
         const msData = await msRes.json();
         if (msData.success) setMilestones(msData.milestones);
+      }
+      if (tasksRes.ok) {
+        const tasksData = await tasksRes.json();
+        if (tasksData.success) setTasks(tasksData.tasks);
       }
     } catch {
       // Revert on failure
@@ -593,6 +612,11 @@ export default function DashboardPage() {
     .filter(Boolean)
     .join(", ");
 
+  const leadId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("iclosed_lead_id")
+      : null;
+
   const closingFormatted = deal?.closing_date
     ? new Date(deal.closing_date).toLocaleDateString("en-CA", {
         month: "long",
@@ -608,24 +632,64 @@ export default function DashboardPage() {
       <UploadAgreementDrawer
         open={agreementDrawerOpen}
         onClose={() => setAgreementDrawerOpen(false)}
+        leadId={leadId ?? undefined}
+        taskId={activeTask?.id}
+        onSaved={async () => {
+          setAgreementDrawerOpen(false);
+          if (activeTask) await markDone(activeTask.id);
+        }}
       />
 
       {/* ── Personal Information Drawer ── */}
       <PersonalInformationDrawer
         open={personalInfoDrawerOpen}
         onClose={() => setPersonalInfoDrawerOpen(false)}
+        property={property}
+        taskId={activeTask?.id}
+        onSaved={async () => {
+          setPersonalInfoDrawerOpen(false);
+          if (activeTask) {
+             // Let the backend handle the status updating naturally then refetch the UI so milestones automatically tick up.
+             await markDone(activeTask.id); 
+          }
+        }}
       />
 
       {/* ── Upload Identification Drawer ── */}
       <UploadIdentificationDrawer
         open={identificationDrawerOpen}
         onClose={() => setIdentificationDrawerOpen(false)}
+        leadId={leadId ?? undefined}
+        taskId={activeTask?.id}
+        onSaved={async () => {
+          setIdentificationDrawerOpen(false);
+          if (activeTask) await markDone(activeTask.id);
+        }}
       />
 
       {/* ── Home Insurance Drawer ── */}
       <UploadHomeInsuranceDrawer
         open={homeInsuranceDrawerOpen}
         onClose={() => setHomeInsuranceDrawerOpen(false)}
+        leadId={leadId ?? undefined}
+        taskId={activeTask?.id}
+        onSaved={async () => {
+          setHomeInsuranceDrawerOpen(false);
+          if (activeTask) await markDone(activeTask.id);
+        }}
+      />
+
+      {/* ── Dynamic Task Drawer (Fallback for unknown tasks like Mortgage) ── */}
+      <DynamicTaskDrawer
+        open={dynamicDrawerOpen}
+        onClose={() => setDynamicDrawerOpen(false)}
+        taskId={activeTask?.id ?? null}
+        taskTitle={activeTask?.title ?? "Task Details"}
+        leadId={leadId ?? undefined}
+        onTaskCompleted={(id) => {
+          setDynamicDrawerOpen(false);
+          markDone(id);
+        }}
       />
 
       {/* ── 1. Property Selector Tab ── */}

@@ -8,6 +8,8 @@ interface UploadAgreementDrawerProps {
   open: boolean;
   onClose: () => void;
   leadId?: string;
+  taskId?: string;
+  onSaved?: () => void;
 }
 
 const ALLOWED_EXTENSIONS = [".pdf", ".doc", ".docx"];
@@ -33,6 +35,8 @@ export default function UploadAgreementDrawer({
   open,
   onClose,
   leadId,
+  taskId,
+  onSaved,
 }: UploadAgreementDrawerProps) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +103,29 @@ export default function UploadAgreementDrawer({
       const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
       const data = await res.json();
       if (!data.success) throw new Error(data.error ?? "Upload failed");
+      
+      const fileUrl = data.url ?? data.file_url;
+      
+      // If we have a taskId, record the response in the DB to mark task as done
+      if (taskId) {
+        const respRes = await fetch("/api/task-responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            task_id: taskId,
+            responses: [{
+              field_label: "Agreement of Purchase and Sale",
+              field_type: "file",
+              file_url: fileUrl,
+              file_name: file.name
+            }]
+          })
+        });
+        if (!respRes.ok) throw new Error("File uploaded, but failed to mark task as completed.");
+        
+        if (onSaved) onSaved();
+      }
+
       setUploaded(true);
     } catch (err: any) {
       setError(err.message ?? "Upload failed. Please try again.");

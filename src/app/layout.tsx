@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import AuthHashHandler from "@/components/AuthHashHandler";
 
 export const metadata: Metadata = {
   title: "iClosed – Customer Portal",
@@ -29,6 +30,7 @@ export default function RootLayout({
       </head>
 
       <body className="min-h-screen flex flex-col bg-[var(--color-bg)] text-[var(--color-text-body)]">
+        <AuthHashHandler />
         {children}
       </body>
     </html>
