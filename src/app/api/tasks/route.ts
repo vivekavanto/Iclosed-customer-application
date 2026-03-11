@@ -33,26 +33,34 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, tasks: [], deal_id: null });
     }
 
-    // Fetch tasks for this deal
-    const { data: tasks, error: tasksError } = await supabaseAdmin
-      .from("tasks")
-      .select(`
-        *,
-        milestones (
-          id,
-          title,
-          order_index,
-          status
-        )
-      `)
-      .eq("deal_id", resolvedDealId)
-      .order("due_date", { ascending: true, nullsFirst: false });
+    // Fetch tasks and milestones separately (no FK relationship between _duplicate tables)
+    const [{ data: tasks, error: tasksError }, { data: milestones }] = await Promise.all([
+      supabaseAdmin
+        .from("tasks_duplicate")
+        .select("*")
+        .eq("deal_id", resolvedDealId)
+        .order("due_date", { ascending: true, nullsFirst: false }),
+      supabaseAdmin
+        .from("milestones_duplicate")
+        .select("id, title, order_index, status")
+        .eq("deal_id", resolvedDealId),
+    ]);
 
     if (tasksError) {
       return NextResponse.json({ success: false, error: tasksError.message }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, tasks: tasks ?? [], deal_id: resolvedDealId });
+    // Merge milestone info into each task
+    const milestoneMap = Object.fromEntries(
+      (milestones ?? []).map((m: any) => [m.id, m])
+    );
+
+    const enriched = (tasks ?? []).map((t: any) => ({
+      ...t,
+      milestones: t.milestone_id ? (milestoneMap[t.milestone_id] ?? null) : null,
+    }));
+
+    return NextResponse.json({ success: true, tasks: enriched, deal_id: resolvedDealId });
   } catch (err) {
     console.error("GET /api/tasks error:", err);
     return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });

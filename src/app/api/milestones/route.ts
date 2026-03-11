@@ -32,31 +32,26 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, milestones: [] });
     }
 
-    // Fetch milestones with task counts
-    const { data: milestones, error: msError } = await supabaseAdmin
-      .from("milestones")
-      .select(`
-        id,
-        title,
-        status,
-        milestone_date,
-        order_index,
-        completed_at,
-        tasks (
-          id,
-          completed
-        )
-      `)
-      .eq("deal_id", resolvedDealId)
-      .order("order_index", { ascending: true });
+    // Fetch milestones and tasks separately (no FK relationship between _duplicate tables)
+    const [{ data: milestones, error: msError }, { data: tasks }] = await Promise.all([
+      supabaseAdmin
+        .from("milestones_duplicate")
+        .select("id, title, status, milestone_date, order_index, completed_at")
+        .eq("deal_id", resolvedDealId)
+        .order("order_index", { ascending: true }),
+      supabaseAdmin
+        .from("tasks_duplicate")
+        .select("id, milestone_id, completed")
+        .eq("deal_id", resolvedDealId),
+    ]);
 
     if (msError) {
       return NextResponse.json({ success: false, error: msError.message }, { status: 400 });
     }
 
+    // Count tasks per milestone manually
     const enriched = (milestones ?? []).map((m: any) => {
-      const total = m.tasks?.length ?? 0;
-      const completed = m.tasks?.filter((t: any) => t.completed).length ?? 0;
+      const mTasks = (tasks ?? []).filter((t: any) => t.milestone_id === m.id);
       return {
         id: m.id,
         title: m.title,
@@ -64,8 +59,8 @@ export async function GET(req: Request) {
         milestone_date: m.milestone_date,
         order_index: m.order_index,
         completed_at: m.completed_at,
-        total_tasks: total,
-        completed_tasks: completed,
+        total_tasks: mTasks.length,
+        completed_tasks: mTasks.filter((t: any) => t.completed).length,
       };
     });
 

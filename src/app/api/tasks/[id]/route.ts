@@ -10,7 +10,7 @@ export async function PATCH(
 
     // 1️⃣ Mark the task as completed
     const { data: task, error: taskError } = await supabaseAdmin
-      .from("tasks")
+      .from("tasks_duplicate")
       .update({
         completed: true,
         status: "Completed",
@@ -27,7 +27,7 @@ export async function PATCH(
     // 2️⃣ If task belongs to a milestone → check if ALL tasks in that milestone are completed
     if (task?.milestone_id) {
       const { data: siblingsData } = await supabaseAdmin
-        .from("tasks")
+        .from("tasks_duplicate")
         .select("id, completed")
         .eq("milestone_id", task.milestone_id);
 
@@ -37,7 +37,7 @@ export async function PATCH(
       if (allDone) {
         // 3️⃣ Mark this milestone as Completed
         await supabaseAdmin
-          .from("milestones")
+          .from("milestones_duplicate")
           .update({
             status: "Completed",
             completed_at: new Date().toISOString(),
@@ -46,14 +46,14 @@ export async function PATCH(
 
         // 4️⃣ Find the next milestone in this deal (next order_index) → mark it In Progress
         const { data: currentMilestone } = await supabaseAdmin
-          .from("milestones")
+          .from("milestones_duplicate")
           .select("order_index")
           .eq("id", task.milestone_id)
           .single();
 
         if (currentMilestone) {
           const { data: nextMilestone } = await supabaseAdmin
-            .from("milestones")
+            .from("milestones_duplicate")
             .select("id")
             .eq("deal_id", task.deal_id)
             .gt("order_index", currentMilestone.order_index)
@@ -64,7 +64,7 @@ export async function PATCH(
 
           if (nextMilestone) {
             await supabaseAdmin
-              .from("milestones")
+              .from("milestones_duplicate")
               .update({ status: "In Progress" })
               .eq("id", nextMilestone.id);
           }

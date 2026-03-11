@@ -56,27 +56,27 @@ export async function POST(req: Request) {
 
     // Auto-mark the task as completed on submit
     const { data: task, error: taskFetchError } = await supabaseAdmin
-      .from("tasks")
+      .from("tasks_duplicate")
       .select("id, deal_id, milestone_id")
       .eq("id", task_id)
       .single();
 
     if (!taskFetchError && task) {
       await supabaseAdmin
-        .from("tasks")
+        .from("tasks_duplicate")
         .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
         .eq("id", task_id);
 
       // Check if all tasks in the milestone are now completed
       if (task.milestone_id) {
         const { data: siblings } = await supabaseAdmin
-          .from("tasks")
+          .from("tasks_duplicate")
           .select("id, completed")
           .eq("milestone_id", task.milestone_id);
 
         // Re-fetch to get updated state after marking this task done
         const { data: updatedSiblings } = await supabaseAdmin
-          .from("tasks")
+          .from("tasks_duplicate")
           .select("id, completed")
           .eq("milestone_id", task.milestone_id);
 
@@ -86,20 +86,20 @@ export async function POST(req: Request) {
 
         if (allDone) {
           await supabaseAdmin
-            .from("milestones")
+            .from("milestones_duplicate")
             .update({ status: "Completed", completed_at: new Date().toISOString() })
             .eq("id", task.milestone_id);
 
           // Advance next milestone to In Progress
           const { data: currentMs } = await supabaseAdmin
-            .from("milestones")
+            .from("milestones_duplicate")
             .select("order_index")
             .eq("id", task.milestone_id)
             .single();
 
           if (currentMs) {
             const { data: nextMs } = await supabaseAdmin
-              .from("milestones")
+              .from("milestones_duplicate")
               .select("id")
               .eq("deal_id", task.deal_id)
               .gt("order_index", currentMs.order_index)
@@ -110,7 +110,7 @@ export async function POST(req: Request) {
 
             if (nextMs) {
               await supabaseAdmin
-                .from("milestones")
+                .from("milestones_duplicate")
                 .update({ status: "In Progress" })
                 .eq("id", nextMs.id);
             }
