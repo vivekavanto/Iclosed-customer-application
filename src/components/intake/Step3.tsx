@@ -33,7 +33,7 @@ function validate(formData: FormData) {
 
   if (!formData.city.trim()) {
     errors.city = "City is required.";
-  } else if (!/^[A-Za-z\s'-]+$/.test(formData.city.trim())) {
+  } else if (!/^[A-Za-zÀ-ÖØ-öø-ÿ\s''-]+$/.test(formData.city.trim())) {
     errors.city = "City name is not valid.";
   } else if (formData.city.trim().length < 2) {
     errors.city = "City name is too short.";

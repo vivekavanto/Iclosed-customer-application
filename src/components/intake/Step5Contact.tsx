@@ -24,6 +24,8 @@ interface Step5ContactProps {
     setShowSuccessModal: (show: boolean) => void;
     step: number;
     onComplete: (data: ContactData) => void;
+    /** Pre-fill contact fields when user is already logged in */
+    initialData?: { fullName: string; email: string; phone: string };
 }
 
 export default function Step5Contact({
@@ -33,6 +35,7 @@ export default function Step5Contact({
     setShowSuccessModal,
     step,
     onComplete,
+    initialData,
 }: Step5ContactProps) {
 
     const leftSteps = [
@@ -44,13 +47,31 @@ export default function Step5Contact({
         { id: agreementSigned === "yes" ? 6 : 5, label: "Contact Info" },
     ];
 
+    const formatPhone = (value: string): string => {
+        const digits = value.replace(/\D/g, "").slice(0, 10);
+        if (digits.length <= 3) return digits.length ? `(${digits}` : "";
+        if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+        return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    };
+
     const [isValid, setIsValid] = React.useState(false);
     const [calendlyBooked, setCalendlyBooked] = React.useState(false);
     const [formData, setFormData] = React.useState({
-        fullName: "",
-        email: "",
-        phone: "",
+        fullName: initialData?.fullName ?? "",
+        email: initialData?.email ?? "",
+        phone: initialData?.phone ?? "",
     });
+
+    // Sync pre-fill when auth data loads asynchronously
+    React.useEffect(() => {
+        if (initialData) {
+            setFormData({
+                fullName: initialData.fullName,
+                email: initialData.email,
+                phone: initialData.phone,
+            });
+        }
+    }, [initialData?.fullName, initialData?.email, initialData?.phone]);
 
     const [errors, setErrors] = React.useState<{
         fullName?: string;
@@ -86,13 +107,11 @@ export default function Step5Contact({
             newErrors.email = "Enter a valid email address.";
         }
 
-        const phoneRegex = /^[0-9()\-\s+]+$/;
+        const phoneFormatRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
         if (!formData.phone.trim()) {
             newErrors.phone = "Phone number is required.";
-        } else if (!phoneRegex.test(formData.phone.trim())) {
-            newErrors.phone = "Enter a valid phone number.";
-        } else if (formData.phone.replace(/\D/g, "").length < 10) {
-            newErrors.phone = "Phone number must be at least 10 digits.";
+        } else if (!phoneFormatRegex.test(formData.phone.trim())) {
+            newErrors.phone = "Enter a valid phone number in (416) 555-1234 format.";
         }
 
         setErrors(newErrors);
@@ -214,10 +233,10 @@ export default function Step5Contact({
                         <Input
                             label="Phone Number"
                             required
-                            placeholder="(555)-123-4567"
+                            placeholder="(416) 555-1234"
                             value={formData.phone}
                             onChange={(e) =>
-                                setFormData({ ...formData, phone: e.target.value })
+                                setFormData({ ...formData, phone: formatPhone(e.target.value) })
                             }
                             onBlur={() =>
                                 setTouched((prev) => ({ ...prev, phone: true }))

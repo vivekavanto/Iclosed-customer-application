@@ -13,7 +13,6 @@ import {
   AlertTriangle,
   ChevronRight,
   Loader2,
-  Circle,
 } from "lucide-react";
 import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
@@ -52,6 +51,7 @@ interface Milestone {
 }
 
 interface PropertyData {
+  deal_id: string;
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
@@ -465,57 +465,56 @@ function StatusTimeline({
    PAGE
 ───────────────────────────────────────────── */
 export default function DashboardPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [milestonesLoading, setMilestonesLoading] = useState(true);
-
-  const [property, setProperty] = useState<PropertyData | null>(null);
-  const [deal, setDeal] = useState<DealData | null>(null);
+  // ── Multiple properties / deals (one tab per deal) ────────
+  const [properties, setProperties] = useState<PropertyData[]>([]);
+  const [deals, setDeals] = useState<DealData[]>([]);
+  const [activeDealId, setActiveDealId] = useState<string | null>(null);
   const [propertyLoading, setPropertyLoading] = useState(true);
 
+  // ── Tasks + milestones for the active deal ────────────────
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [milestonesLoading, setMilestonesLoading] = useState(false);
+
+  // ── Drawer state ──────────────────────────────────────────
   const [agreementDrawerOpen, setAgreementDrawerOpen] = useState(false);
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
   const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
-  
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  // ── Derived: active property + deal ──────────────────────
+  const activeDeal = deals.find((d) => d.id === activeDealId) ?? null;
+  const activeProperty = properties.find((p) => p.deal_id === activeDealId) ?? null;
+
+  const leadId =
+    typeof window !== "undefined" ? localStorage.getItem("iclosed_lead_id") : null;
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);
-    if (isAgreementTask(task.title)) {
-      setAgreementDrawerOpen(true);
-    } else if (isPersonalInfoTask(task.title)) {
-      setPersonalInfoDrawerOpen(true);
-    } else if (isIdentificationTask(task.title)) {
-      setIdentificationDrawerOpen(true);
-    } else if (isHomeInsuranceTask(task.title)) {
-      setHomeInsuranceDrawerOpen(true);
-    } else {
-      setDynamicDrawerOpen(true);
-    }
+    if (isAgreementTask(task.title)) setAgreementDrawerOpen(true);
+    else if (isPersonalInfoTask(task.title)) setPersonalInfoDrawerOpen(true);
+    else if (isIdentificationTask(task.title)) setIdentificationDrawerOpen(true);
+    else if (isHomeInsuranceTask(task.title)) setHomeInsuranceDrawerOpen(true);
+    else setDynamicDrawerOpen(true);
   }
 
+  // ── On mount: fetch all properties + deals ────────────────
   useEffect(() => {
     const fetchData = async () => {
-      // Get lead identity from localStorage
-      const leadId =
-        typeof window !== "undefined"
-          ? localStorage.getItem("iclosed_lead_id")
-          : null;
-
       const params = leadId ? `?lead_id=${leadId}` : "";
-
       try {
-        /* ── Fetch Property & Deal ── */
-        const propertyRes = await fetch(`/api/dashboardproperty${params}`);
-        if (propertyRes.ok) {
-          const propertyData = await propertyRes.json();
-          if (propertyData.success) {
-            setProperty(propertyData.property);
-            setDeal(propertyData.deal);
+        const res = await fetch(`/api/dashboardproperty${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setProperties(data.properties ?? []);
+            setDeals(data.deals ?? []);
+            if (data.deals?.length > 0) {
+              setActiveDealId(data.deals[0].id);
+            }
           }
         }
       } catch (err) {
@@ -523,102 +522,76 @@ export default function DashboardPage() {
       } finally {
         setPropertyLoading(false);
       }
+    };
+    fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // ── When active deal changes: reload tasks + milestones ───
+  useEffect(() => {
+    if (!activeDealId) return;
+    const fetchDealData = async () => {
+      setTasksLoading(true);
+      setMilestonesLoading(true);
+      setTasks([]);
+      setMilestones([]);
       try {
-        /* ── Fetch Tasks ── */
-        const tasksRes = await fetch(`/api/tasks${params}`);
-        if (tasksRes.ok) {
-          const tasksData = await tasksRes.json();
-          if (tasksData.success) {
-            setTasks(tasksData.tasks);
-          }
+        const [tasksRes, msRes] = await Promise.allSettled([
+          fetch(`/api/tasks?deal_id=${activeDealId}`),
+          fetch(`/api/milestones?deal_id=${activeDealId}`),
+        ]);
+        if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
+          const d = await tasksRes.value.json();
+          if (d.success) setTasks(d.tasks);
+        }
+        if (msRes.status === "fulfilled" && msRes.value.ok) {
+          const d = await msRes.value.json();
+          if (d.success) setMilestones(d.milestones);
         }
       } catch (err) {
-        console.error("Tasks fetch error:", err);
+        console.error("Deal data fetch error:", err);
       } finally {
         setTasksLoading(false);
-      }
-
-      try {
-        /* ── Fetch Milestones ── */
-        const msRes = await fetch(`/api/milestones${params}`);
-        if (msRes.ok) {
-          const msData = await msRes.json();
-          if (msData.success) {
-            setMilestones(msData.milestones);
-          }
-        }
-      } catch (err) {
-        console.error("Milestones fetch error:", err);
-      } finally {
         setMilestonesLoading(false);
       }
     };
+    fetchDealData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDealId]);
 
-    fetchData();
-  }, []);
-
+  // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string) {
-    // Optimistic update
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, completed: true, status: "Completed" as const }
-          : t,
-      ),
+      prev.map((t) => t.id === id ? { ...t, completed: true, status: "Completed" as const } : t),
     );
     try {
       const res = await fetch(`/api/tasks/${id}`, { method: "PATCH" });
       if (!res.ok) throw new Error("Failed");
-
-      // Refresh milestones to reflect task completion in progress
-      const leadId =
-        typeof window !== "undefined"
-          ? localStorage.getItem("iclosed_lead_id")
-          : null;
-      const params = leadId ? `?lead_id=${leadId}` : "";
-      
-      // Refresh milestones and tasks to reflect any backend-driven changes
-      const [msRes, tasksRes] = await Promise.all([
-        fetch(`/api/milestones${params}`),
-        fetch(`/api/tasks${params}`)
-      ]);
-
-      if (msRes.ok) {
-        const msData = await msRes.json();
-        if (msData.success) setMilestones(msData.milestones);
-      }
-      if (tasksRes.ok) {
-        const tasksData = await tasksRes.json();
-        if (tasksData.success) setTasks(tasksData.tasks);
+      if (activeDealId) {
+        const [msRes, tasksRes] = await Promise.all([
+          fetch(`/api/milestones?deal_id=${activeDealId}`),
+          fetch(`/api/tasks?deal_id=${activeDealId}`),
+        ]);
+        if (msRes.ok) { const d = await msRes.json(); if (d.success) setMilestones(d.milestones); }
+        if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) setTasks(d.tasks); }
       }
     } catch {
-      // Revert on failure
       setTasks((prev) =>
-        prev.map((t) =>
-          t.id === id
-            ? { ...t, completed: false, status: "In Progress" as const }
-            : t,
-        ),
+        prev.map((t) => t.id === id ? { ...t, completed: false, status: "In Progress" as const } : t),
       );
     }
   }
 
   const fullAddress = [
-    property?.address_street,
-    property?.address_city,
-    property?.address_province,
+    activeProperty?.address_street,
+    activeProperty?.address_city,
+    activeProperty?.address_province,
   ]
     .filter(Boolean)
     .join(", ");
 
-  const leadId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("iclosed_lead_id")
-      : null;
-
-  const closingFormatted = deal?.closing_date
-    ? new Date(deal.closing_date).toLocaleDateString("en-CA", {
+  const closingFormatted = activeDeal?.closing_date
+    ? new Date(activeDeal.closing_date).toLocaleDateString("en-CA", {
         month: "long",
         day: "numeric",
         year: "numeric",
@@ -644,14 +617,11 @@ export default function DashboardPage() {
       <PersonalInformationDrawer
         open={personalInfoDrawerOpen}
         onClose={() => setPersonalInfoDrawerOpen(false)}
-        property={property}
+        property={activeProperty}
         taskId={activeTask?.id}
         onSaved={async () => {
           setPersonalInfoDrawerOpen(false);
-          if (activeTask) {
-             // Let the backend handle the status updating naturally then refetch the UI so milestones automatically tick up.
-             await markDone(activeTask.id); 
-          }
+          if (activeTask) await markDone(activeTask.id);
         }}
       />
 
@@ -692,26 +662,36 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── 1. Property Selector Tab ── */}
-      <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+      {/* ── 1. Property Selector Tabs (one per deal) ── */}
+      <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide">
         {propertyLoading ? (
-          <div className="px-4 py-2 text-sm text-gray-400">
-            Loading property...
+          <div className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400">
+            <Loader2 size={14} className="animate-spin" /> Loading properties...
           </div>
-        ) : property ? (
-          <button
-            type="button"
-            className="cursor-pointer flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[#C10007] text-white shadow-md"
-          >
-            <Building2 size={16} strokeWidth={2} />
-            <span className="whitespace-nowrap">
-              {property.address_street || "Address not available"}
-            </span>
-          </button>
+        ) : properties.length === 0 ? (
+          <div className="px-4 py-2 text-sm text-gray-400">No properties yet</div>
         ) : (
-          <div className="px-4 py-2 text-sm text-gray-400">
-            No property available yet
-          </div>
+          properties.map((p, i) => {
+            const isActive = p.deal_id === activeDealId;
+            return (
+              <button
+                key={p.deal_id}
+                type="button"
+                onClick={() => setActiveDealId(p.deal_id)}
+                className={[
+                  "cursor-pointer flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200",
+                  isActive
+                    ? "bg-[#C10007] text-white shadow-md"
+                    : "bg-white border border-gray-200 text-gray-600 hover:border-[#C10007] hover:text-[#C10007]",
+                ].join(" ")}
+              >
+                <Building2 size={15} strokeWidth={2} />
+                <span className="whitespace-nowrap">
+                  {p.address_street || `Property ${i + 1}`}
+                </span>
+              </button>
+            );
+          })
         )}
       </div>
 
@@ -724,13 +704,13 @@ export default function DashboardPage() {
           </div>
           <div>
             <p className="text-[14px] font-bold uppercase text-[#C10007] mb-1">
-              {deal?.type
-                ? `${deal.type} · Property Address`
+              {activeDeal?.type
+                ? `${activeDeal.type} · Property Address`
                 : "Property Address"}
             </p>
             {propertyLoading ? (
               <p className="text-sm text-gray-400">Loading address...</p>
-            ) : property ? (
+            ) : activeProperty ? (
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 leading-tight">
                 {fullAddress || "Address not provided"}
               </h1>
@@ -767,7 +747,7 @@ export default function DashboardPage() {
                 File Number
               </p>
               <p className="text-sm font-bold text-gray-900">
-                {propertyLoading ? "..." : (deal?.file_number ?? "Pending")}
+                {propertyLoading ? "..." : (activeDeal?.file_number ?? "Pending")}
               </p>
             </div>
           </div>

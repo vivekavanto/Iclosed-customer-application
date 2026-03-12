@@ -76,3 +76,20 @@ export async function getAuthClientDeal() {
 
   return { client, deal: deal ?? null };
 }
+
+/**
+ * Gets ALL deals for the authenticated client.
+ * Returns { client, deals[] } or null if not authenticated.
+ */
+export async function getAuthClientDeals() {
+  const client = await getAuthClient();
+  if (!client) return null;
+
+  const { data: deals } = await supabaseAdmin
+    .from("deals")
+    .select("id, file_number, type, status, closing_date, property_address, price, lead_id")
+    .eq("client_id", client.id)
+    .order("created_at", { ascending: false });
+
+  return { client, deals: deals ?? [] };
+}
