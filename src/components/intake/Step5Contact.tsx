@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, ChevronLeft, CheckCircle2, CalendarCheck, Clock, Video } from "lucide-react";
+import { Plus, ChevronLeft, CheckCircle2, CalendarCheck, Clock, Video, X, Trash2, Users } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -17,6 +17,13 @@ interface ContactData {
     meetingTime: string | null;
 }
 
+interface CoPerson {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string;
+}
+
 interface Step5ContactProps {
     setStep: (step: number) => void;
     agreementSigned: "yes" | "no" | null;
@@ -26,6 +33,8 @@ interface Step5ContactProps {
     onComplete: (data: ContactData) => void;
     /** Pre-fill contact fields when user is already logged in */
     initialData?: { fullName: string; email: string; phone: string };
+    /** Determines co-person label: purchase→Co-Purchaser, sale→Co-Seller, both→Co-Purchaser */
+    selectedClosingOption?: string | null;
 }
 
 export default function Step5Contact({
@@ -36,7 +45,52 @@ export default function Step5Contact({
     step,
     onComplete,
     initialData,
+    selectedClosingOption,
 }: Step5ContactProps) {
+    const coLabel = selectedClosingOption === "selling" ? "Co-Seller" : "Co-Purchaser";
+
+    // ── Co-person state ──
+    const [coPersons, setCoPersons] = React.useState<CoPerson[]>([]);
+    const [showCoModal, setShowCoModal] = React.useState(false);
+    const [coForm, setCoForm] = React.useState({ fullName: "", email: "", phone: "" });
+    const [coErrors, setCoErrors] = React.useState<{ fullName?: string; email?: string; phone?: string }>({});
+    const [coTouched, setCoTouched] = React.useState<{ fullName?: boolean; email?: boolean; phone?: boolean }>({});
+
+    const formatCoPhone = (value: string): string => {
+        const digits = value.replace(/\D/g, "").slice(0, 10);
+        if (digits.length <= 3) return digits.length ? `(${digits}` : "";
+        if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+        return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    };
+
+    const validateCoForm = () => {
+        const errs: typeof coErrors = {};
+        if (!coForm.fullName.trim()) errs.fullName = "Full name is required.";
+        else if (!/^[A-Za-z\s]+$/.test(coForm.fullName.trim())) errs.fullName = "Name can only contain letters.";
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!coForm.email.trim()) errs.email = "Email is required.";
+        else if (!emailRegex.test(coForm.email.trim())) errs.email = "Enter a valid email address.";
+        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+        if (!coForm.phone.trim()) errs.phone = "Phone number is required.";
+        else if (!phoneRegex.test(coForm.phone.trim())) errs.phone = "Enter phone in (416) 555-1234 format.";
+        return errs;
+    };
+
+    const handleAddCoPerson = () => {
+        setCoTouched({ fullName: true, email: true, phone: true });
+        const errs = validateCoForm();
+        setCoErrors(errs);
+        if (Object.keys(errs).length > 0) return;
+        setCoPersons(prev => [...prev, { id: crypto.randomUUID(), ...coForm }]);
+        setCoForm({ fullName: "", email: "", phone: "" });
+        setCoErrors({});
+        setCoTouched({});
+        setShowCoModal(false);
+    };
+
+    const handleRemoveCoPerson = (id: string) => {
+        setCoPersons(prev => prev.filter(p => p.id !== id));
+    };
 
     const leftSteps = [
         { id: 1, label: "Select Service" },
@@ -246,16 +300,147 @@ export default function Step5Contact({
                             <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
                         )}
 
-                        {/* Add Co-Purchaser */}
+                        {/* Co-person cards */}
+                        {coPersons.length > 0 && (
+                            <div className="space-y-3">
+                                {coPersons.map((p) => (
+                                    <div key={p.id} className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                                        <div className="w-9 h-9 rounded-full bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+                                            <Users size={15} className="text-[#C10007]" strokeWidth={2} />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-gray-900 truncate">{p.fullName}</p>
+                                            <p className="text-xs text-gray-400 truncate">{p.email}</p>
+                                            <p className="text-xs text-gray-400">{p.phone}</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveCoPerson(p.id)}
+                                            className="cursor-pointer flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
+                                            aria-label="Remove"
+                                        >
+                                            <Trash2 size={13} strokeWidth={2} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Add Co-Person button */}
                         <div>
                             <Button
                                 variant="ghost"
                                 className="w-full border border-dashed border-red-200 text-gray-900 hover:text-[#C10007] hover:bg-transparent"
+                                onClick={() => setShowCoModal(true)}
                             >
                                 <Plus size={18} />
-                                Add Co-Purchaser
+                                Add {coLabel}
                             </Button>
                         </div>
+
+                        {/* Co-person modal */}
+                        {showCoModal && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-40 bg-black/40"
+                                    onClick={() => setShowCoModal(false)}
+                                />
+                                <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+                                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-auto">
+                                        {/* Modal header */}
+                                        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center">
+                                                    <Users size={18} className="text-[#C10007]" strokeWidth={2} />
+                                                </div>
+                                                <h3 className="text-base font-bold text-gray-900">Add a {coLabel}</h3>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowCoModal(false); setCoErrors({}); setCoTouched({}); setCoForm({ fullName: "", email: "", phone: "" }); }}
+                                                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                            >
+                                                <X size={18} />
+                                            </button>
+                                        </div>
+
+                                        {/* Modal body */}
+                                        <div className="px-6 py-5 space-y-4">
+                                            {/* Full Name */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                                    Full Name <span className="text-[#C10007]">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="John Doe"
+                                                    value={coForm.fullName}
+                                                    onChange={(e) => { setCoForm(f => ({ ...f, fullName: e.target.value })); if (coTouched.fullName) setCoErrors(validateCoForm()); }}
+                                                    onBlur={() => { setCoTouched(t => ({ ...t, fullName: true })); setCoErrors(validateCoForm()); }}
+                                                    className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors ${coTouched.fullName && coErrors.fullName ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                                                />
+                                                {coTouched.fullName && coErrors.fullName && <p className="mt-1 text-xs text-[#C10007]">{coErrors.fullName}</p>}
+                                            </div>
+
+                                            {/* Email */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                                    Email Address <span className="text-[#C10007]">*</span>
+                                                </label>
+                                                <input
+                                                    type="email"
+                                                    placeholder="john@doe.com"
+                                                    value={coForm.email}
+                                                    onChange={(e) => { setCoForm(f => ({ ...f, email: e.target.value })); if (coTouched.email) setCoErrors(validateCoForm()); }}
+                                                    onBlur={() => { setCoTouched(t => ({ ...t, email: true })); setCoErrors(validateCoForm()); }}
+                                                    className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors ${coTouched.email && coErrors.email ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                                                />
+                                                {coTouched.email && coErrors.email && <p className="mt-1 text-xs text-[#C10007]">{coErrors.email}</p>}
+                                            </div>
+
+                                            {/* Phone */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                                    Phone Number <span className="text-[#C10007]">*</span>
+                                                </label>
+                                                <div className="flex items-center border rounded-lg overflow-hidden transition-colors focus-within:border-[#C10007] focus-within:ring-2 focus-within:ring-[#C10007]/10 border-gray-200">
+                                                    <span className="flex items-center gap-1.5 px-3 py-3 text-sm text-gray-500 border-r border-gray-200 bg-gray-50 flex-shrink-0">
+                                                        🇨🇦 +1
+                                                    </span>
+                                                    <input
+                                                        type="tel"
+                                                        placeholder="(555)-123-4567"
+                                                        value={coForm.phone}
+                                                        onChange={(e) => { setCoForm(f => ({ ...f, phone: formatCoPhone(e.target.value) })); if (coTouched.phone) setCoErrors(validateCoForm()); }}
+                                                        onBlur={() => { setCoTouched(t => ({ ...t, phone: true })); setCoErrors(validateCoForm()); }}
+                                                        className="flex-1 px-3 py-3 text-sm outline-none bg-white"
+                                                    />
+                                                </div>
+                                                {coTouched.phone && coErrors.phone && <p className="mt-1 text-xs text-[#C10007]">{coErrors.phone}</p>}
+                                            </div>
+                                        </div>
+
+                                        {/* Modal footer */}
+                                        <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowCoModal(false); setCoErrors({}); setCoTouched({}); setCoForm({ fullName: "", email: "", phone: "" }); }}
+                                                className="cursor-pointer flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleAddCoPerson}
+                                                className="cursor-pointer flex-1 px-4 py-2.5 text-sm font-bold text-white bg-[#C10007] rounded-lg hover:bg-[#a30006] transition-colors"
+                                            >
+                                                Add {coLabel}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                         {/* ── Calendly Inline Scheduler ── */}
                         {agreementSigned === "no" && (

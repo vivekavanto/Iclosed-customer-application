@@ -219,6 +219,7 @@ export default function ServiceSelection() {
             setAgreementSigned={setAgreementSigned}
             setShowSuccessModal={setShowSuccessModal}
             initialData={authProfile}
+            selectedClosingOption={selectedClosingOption}
             onComplete={async (contactData) => {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");

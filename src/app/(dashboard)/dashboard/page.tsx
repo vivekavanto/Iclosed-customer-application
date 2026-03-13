@@ -307,12 +307,18 @@ function StatusTimeline({
   const activeIndex = milestones.findIndex((m) => m.status !== "Completed");
   const effectiveActive =
     activeIndex === -1 ? milestones.length - 1 : activeIndex;
+
+  // Progress = completed milestones + fractional progress of in-progress milestone
+  const completedCount = milestones.filter((m) => m.status === "Completed").length;
+  const inProgressMilestone = milestones.find((m) => m.status === "In Progress");
+  const inProgressFraction =
+    inProgressMilestone && inProgressMilestone.total_tasks > 0
+      ? inProgressMilestone.completed_tasks / inProgressMilestone.total_tasks
+      : 0;
   const progressPercent =
-    milestones.length > 1
-      ? Math.round((effectiveActive / (milestones.length - 1)) * 100)
-      : milestones[0]?.status === "Completed"
-        ? 100
-        : 0;
+    milestones.length <= 1
+      ? milestones[0]?.status === "Completed" ? 100 : Math.round(inProgressFraction * 100)
+      : Math.min(100, Math.round(((completedCount + inProgressFraction) / milestones.length) * 100));
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm">
