@@ -77,13 +77,13 @@ export async function GET(req: Request) {
     const [{ data: tasks, error: tasksError }, { data: milestones }] =
       await Promise.all([
         supabaseAdmin
-          .from("tasks_duplicate")
+          .from("tasks")
           .select("*")
           .in("deal_id", dealIds)
           .order("due_date", { ascending: true, nullsFirst: false }),
 
         supabaseAdmin
-          .from("milestones_duplicate")
+          .from("milestones")
           .select("id, title, order_index, status")
           .in("deal_id", dealIds),
       ]);

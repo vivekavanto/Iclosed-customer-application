@@ -14,10 +14,7 @@ import {
   ChevronRight,
   Loader2,
 } from "lucide-react";
-import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
-import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
-import UploadHomeInsuranceDrawer from "@/components/dashboard/UploadHomeInsuranceDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 
 
@@ -101,54 +98,14 @@ const statusConfig = {
    ATTENTION CARD
 ════════════════════════════════════════════════════ */
 
-/** Tasks whose title contains these keywords open the Upload Agreement drawer */
-function isAgreementTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("agreement of purchase") ||
-    lower.includes("purchase and sale") ||
-    lower.includes("amendments") ||
-    lower.includes("upload agreement")
-  );
-}
-
-/** Tasks whose title contains these keywords open the Personal Information drawer */
-function isPersonalInfoTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("personal information") ||
-    lower.includes("provide personal")
-  );
-}
-
-/** Tasks whose title contains these keywords open the Upload Identification drawer */
-function isIdentificationTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("upload identification") ||
-    lower.includes("identification document")
-  );
-}
-
-/** Tasks whose title contains these keywords open the Home Insurance drawer */
-function isHomeInsuranceTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("home insurance") ||
-    lower.includes("insurance policy")
-  );
-}
-
 
 function AttentionCard({
   tasks,
   loading,
-  onMarkDone,
   onTaskClick,
 }: {
   tasks: Task[];
   loading: boolean;
-  onMarkDone: (id: string) => void;
   onTaskClick: (task: Task) => void;
 }) {
   const pending = tasks.filter((t) => !t.completed);
@@ -255,25 +212,19 @@ function AttentionCard({
             return (
               <div
                 key={task.id}
-                className={`flex items-start gap-4 px-5 sm:px-6 py-4 transition-colors duration-200 ${task.completed ? "opacity-40" : "hover:bg-gray-50/60"}`}
+                onClick={() => !task.completed && onTaskClick(task)}
+                className={`flex items-start gap-4 px-5 sm:px-6 py-4 transition-colors duration-200 ${task.completed ? "opacity-40" : "hover:bg-gray-50/60 cursor-pointer"}`}
               >
-                {/* Checkbox */}
-                <button
-                  onClick={() => !task.completed && onMarkDone(task.id)}
-                  className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 cursor-pointer ${
-                    task.completed
-                      ? "bg-[#22c55e] border-[#22c55e]"
-                      : "border-gray-300 hover:border-[#C10007]"
-                  }`}
-                >
+                {/* Status indicator */}
+                <div className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  task.completed
+                    ? "bg-[#22c55e] border-[#22c55e]"
+                    : "border-gray-300"
+                }`}>
                   {task.completed && (
-                    <CheckCircle2
-                      size={12}
-                      className="text-white"
-                      strokeWidth={3}
-                    />
+                    <CheckCircle2 size={12} className="text-white" strokeWidth={3} />
                   )}
-                </button>
+                </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
@@ -304,16 +255,11 @@ function AttentionCard({
 
                 {/* Arrow */}
                 {!task.completed && (
-                  <button
-                    onClick={() => onTaskClick(task)}
-                    className="flex-shrink-0 mt-1 w-7 h-7 rounded-lg bg-gray-50 hover:bg-[#FEF2F2] flex items-center justify-center transition-colors duration-200 group cursor-pointer"
-                  >
-                    <ChevronRight
-                      size={13}
-                      className="text-gray-400 group-hover:text-[#C10007]"
-                      strokeWidth={2.5}
-                    />
-                  </button>
+                  <ChevronRight
+                    size={13}
+                    className="flex-shrink-0 mt-1 text-gray-400"
+                    strokeWidth={2.5}
+                  />
                 )}
               </div>
             );
@@ -391,8 +337,8 @@ function StatusTimeline({
         <div className="absolute left-[27px] top-4 bottom-4 w-px bg-gray-100" />
         <div className="space-y-0.5">
           {milestones.map((milestone, idx) => {
-            const isActive = idx === effectiveActive;
-            const isPast = milestone.status === "Completed";
+            const isCompleted = milestone.status === "Completed";
+            const isInProgress = milestone.status === "In Progress";
             const formattedDate = milestone.milestone_date
               ? new Date(milestone.milestone_date).toLocaleDateString("en-CA", {
                   month: "short",
@@ -404,11 +350,11 @@ function StatusTimeline({
             return (
               <div
                 key={milestone.id}
-                className={`relative flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${isActive ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"}`}
+                className={`relative flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${isInProgress ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"}`}
               >
                 {/* Node */}
                 <div className="z-10 flex-shrink-0 mt-0.5">
-                  {isPast ? (
+                  {isCompleted ? (
                     <div className="w-[30px] h-[30px] rounded-full bg-gray-100 flex items-center justify-center">
                       <CheckCircle2
                         size={15}
@@ -416,13 +362,9 @@ function StatusTimeline({
                         strokeWidth={2}
                       />
                     </div>
-                  ) : isActive ? (
+                  ) : isInProgress ? (
                     <div className="w-[30px] h-[30px] rounded-full bg-[#C10007] flex items-center justify-center ring-4 ring-[rgba(193,0,7,0.12)]">
-                      <CheckCircle2
-                        size={15}
-                        className="text-white"
-                        strokeWidth={2.5}
-                      />
+                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
                     </div>
                   ) : (
                     <div className="w-[30px] h-[30px] rounded-full border-2 border-gray-200 bg-white" />
@@ -432,14 +374,14 @@ function StatusTimeline({
                 {/* Label + meta */}
                 <div className="flex-1 pt-0.5 min-w-0">
                   <p
-                    className={`text-sm font-semibold leading-snug ${isActive ? "text-[#C10007]" : isPast ? "text-gray-400" : "text-gray-700"}`}
+                    className={`text-sm font-semibold leading-snug ${isInProgress ? "text-[#C10007]" : isCompleted ? "text-gray-400" : "text-gray-700"}`}
                   >
                     {milestone.title}
                   </p>
                   <div className="flex items-center gap-3 mt-0.5">
                     {formattedDate && (
                       <p
-                        className={`text-xs ${isActive ? "text-[#C10007]/70" : "text-gray-400"}`}
+                        className={`text-xs ${isInProgress ? "text-[#C10007]/70" : "text-gray-400"}`}
                       >
                         {formattedDate}
                       </p>
@@ -478,10 +420,7 @@ export default function DashboardPage() {
   const [milestonesLoading, setMilestonesLoading] = useState(false);
 
   // ── Drawer state ──────────────────────────────────────────
-  const [agreementDrawerOpen, setAgreementDrawerOpen] = useState(false);
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
-  const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
-  const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
@@ -494,11 +433,7 @@ export default function DashboardPage() {
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);
-    if (isAgreementTask(task.title)) setAgreementDrawerOpen(true);
-    else if (isPersonalInfoTask(task.title)) setPersonalInfoDrawerOpen(true);
-    else if (isIdentificationTask(task.title)) setIdentificationDrawerOpen(true);
-    else if (isHomeInsuranceTask(task.title)) setHomeInsuranceDrawerOpen(true);
-    else setDynamicDrawerOpen(true);
+    setDynamicDrawerOpen(true);
   }
 
   // ── On mount: fetch all properties + deals ────────────────
@@ -601,18 +536,6 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pb-8">
 
-      {/* ── Upload Agreement Drawer ── */}
-      <UploadAgreementDrawer
-        open={agreementDrawerOpen}
-        onClose={() => setAgreementDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setAgreementDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
-        }}
-      />
-
       {/* ── Personal Information Drawer ── */}
       <PersonalInformationDrawer
         open={personalInfoDrawerOpen}
@@ -625,31 +548,7 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── Upload Identification Drawer ── */}
-      <UploadIdentificationDrawer
-        open={identificationDrawerOpen}
-        onClose={() => setIdentificationDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setIdentificationDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
-        }}
-      />
-
-      {/* ── Home Insurance Drawer ── */}
-      <UploadHomeInsuranceDrawer
-        open={homeInsuranceDrawerOpen}
-        onClose={() => setHomeInsuranceDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setHomeInsuranceDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
-        }}
-      />
-
-      {/* ── Dynamic Task Drawer (Fallback for unknown tasks like Mortgage) ── */}
+      {/* ── Dynamic Task Drawer (DB-driven form fields) ── */}
       <DynamicTaskDrawer
         open={dynamicDrawerOpen}
         onClose={() => setDynamicDrawerOpen(false)}
@@ -761,7 +660,6 @@ export default function DashboardPage() {
         <AttentionCard
           tasks={tasks}
           loading={tasksLoading}
-          onMarkDone={markDone}
           onTaskClick={handleTaskClick}
         />
 

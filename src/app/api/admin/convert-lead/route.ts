@@ -133,7 +133,7 @@ export async function POST(req: Request) {
         const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
 
         const { data: ms } = await supabaseAdmin
-          .from("milestones_duplicate")
+          .from("milestones")
           .insert({
             deal_id: dealId,
             title: cleanName,
@@ -174,7 +174,7 @@ export async function POST(req: Request) {
         }));
 
       if (taskRows.length > 0) {
-        await supabaseAdmin.from("tasks_duplicate").insert(taskRows);
+        await supabaseAdmin.from("tasks").insert(taskRows);
       }
     }
 

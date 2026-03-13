@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     let task: any = null;
     try {
       const { data, error } = await supabaseAdmin
-        .from("tasks_duplicate")
+        .from("tasks")
         .select("id, title, task_template_id, completed, deal_id")
         .eq("id", task_id)
         .single();
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     } catch {
       // task_template_id column might not exist yet — fallback select without it
       const { data, error } = await supabaseAdmin
-        .from("tasks_duplicate")
+        .from("tasks")
         .select("id, title, completed, deal_id")
         .eq("id", task_id)
         .single();
