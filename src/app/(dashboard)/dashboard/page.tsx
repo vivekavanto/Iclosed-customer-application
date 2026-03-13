@@ -13,12 +13,8 @@ import {
   AlertTriangle,
   ChevronRight,
   Loader2,
-  Circle,
 } from "lucide-react";
-import UploadAgreementDrawer from "@/components/dashboard/UploadAgreementDrawer";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
-import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
-import UploadHomeInsuranceDrawer from "@/components/dashboard/UploadHomeInsuranceDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 
 
@@ -52,6 +48,7 @@ interface Milestone {
 }
 
 interface PropertyData {
+  deal_id: string;
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
@@ -101,54 +98,14 @@ const statusConfig = {
    ATTENTION CARD
 ════════════════════════════════════════════════════ */
 
-/** Tasks whose title contains these keywords open the Upload Agreement drawer */
-function isAgreementTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("agreement of purchase") ||
-    lower.includes("purchase and sale") ||
-    lower.includes("amendments") ||
-    lower.includes("upload agreement")
-  );
-}
-
-/** Tasks whose title contains these keywords open the Personal Information drawer */
-function isPersonalInfoTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("personal information") ||
-    lower.includes("provide personal")
-  );
-}
-
-/** Tasks whose title contains these keywords open the Upload Identification drawer */
-function isIdentificationTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("upload identification") ||
-    lower.includes("identification document")
-  );
-}
-
-/** Tasks whose title contains these keywords open the Home Insurance drawer */
-function isHomeInsuranceTask(title: string) {
-  const lower = title.toLowerCase();
-  return (
-    lower.includes("home insurance") ||
-    lower.includes("insurance policy")
-  );
-}
-
 
 function AttentionCard({
   tasks,
   loading,
-  onMarkDone,
   onTaskClick,
 }: {
   tasks: Task[];
   loading: boolean;
-  onMarkDone: (id: string) => void;
   onTaskClick: (task: Task) => void;
 }) {
   const pending = tasks.filter((t) => !t.completed);
@@ -255,25 +212,19 @@ function AttentionCard({
             return (
               <div
                 key={task.id}
-                className={`flex items-start gap-4 px-5 sm:px-6 py-4 transition-colors duration-200 ${task.completed ? "opacity-40" : "hover:bg-gray-50/60"}`}
+                onClick={() => !task.completed && onTaskClick(task)}
+                className={`flex items-start gap-4 px-5 sm:px-6 py-4 transition-colors duration-200 ${task.completed ? "opacity-40" : "hover:bg-gray-50/60 cursor-pointer"}`}
               >
-                {/* Checkbox */}
-                <button
-                  onClick={() => !task.completed && onMarkDone(task.id)}
-                  className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 cursor-pointer ${
-                    task.completed
-                      ? "bg-[#22c55e] border-[#22c55e]"
-                      : "border-gray-300 hover:border-[#C10007]"
-                  }`}
-                >
+                {/* Status indicator */}
+                <div className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  task.completed
+                    ? "bg-[#22c55e] border-[#22c55e]"
+                    : "border-gray-300"
+                }`}>
                   {task.completed && (
-                    <CheckCircle2
-                      size={12}
-                      className="text-white"
-                      strokeWidth={3}
-                    />
+                    <CheckCircle2 size={12} className="text-white" strokeWidth={3} />
                   )}
-                </button>
+                </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
@@ -304,16 +255,11 @@ function AttentionCard({
 
                 {/* Arrow */}
                 {!task.completed && (
-                  <button
-                    onClick={() => onTaskClick(task)}
-                    className="flex-shrink-0 mt-1 w-7 h-7 rounded-lg bg-gray-50 hover:bg-[#FEF2F2] flex items-center justify-center transition-colors duration-200 group cursor-pointer"
-                  >
-                    <ChevronRight
-                      size={13}
-                      className="text-gray-400 group-hover:text-[#C10007]"
-                      strokeWidth={2.5}
-                    />
-                  </button>
+                  <ChevronRight
+                    size={13}
+                    className="flex-shrink-0 mt-1 text-gray-400"
+                    strokeWidth={2.5}
+                  />
                 )}
               </div>
             );
@@ -391,8 +337,8 @@ function StatusTimeline({
         <div className="absolute left-[27px] top-4 bottom-4 w-px bg-gray-100" />
         <div className="space-y-0.5">
           {milestones.map((milestone, idx) => {
-            const isActive = idx === effectiveActive;
-            const isPast = milestone.status === "Completed";
+            const isCompleted = milestone.status === "Completed";
+            const isInProgress = milestone.status === "In Progress";
             const formattedDate = milestone.milestone_date
               ? new Date(milestone.milestone_date).toLocaleDateString("en-CA", {
                   month: "short",
@@ -404,11 +350,11 @@ function StatusTimeline({
             return (
               <div
                 key={milestone.id}
-                className={`relative flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${isActive ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"}`}
+                className={`relative flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${isInProgress ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"}`}
               >
                 {/* Node */}
                 <div className="z-10 flex-shrink-0 mt-0.5">
-                  {isPast ? (
+                  {isCompleted ? (
                     <div className="w-[30px] h-[30px] rounded-full bg-gray-100 flex items-center justify-center">
                       <CheckCircle2
                         size={15}
@@ -416,13 +362,9 @@ function StatusTimeline({
                         strokeWidth={2}
                       />
                     </div>
-                  ) : isActive ? (
+                  ) : isInProgress ? (
                     <div className="w-[30px] h-[30px] rounded-full bg-[#C10007] flex items-center justify-center ring-4 ring-[rgba(193,0,7,0.12)]">
-                      <CheckCircle2
-                        size={15}
-                        className="text-white"
-                        strokeWidth={2.5}
-                      />
+                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
                     </div>
                   ) : (
                     <div className="w-[30px] h-[30px] rounded-full border-2 border-gray-200 bg-white" />
@@ -432,14 +374,14 @@ function StatusTimeline({
                 {/* Label + meta */}
                 <div className="flex-1 pt-0.5 min-w-0">
                   <p
-                    className={`text-sm font-semibold leading-snug ${isActive ? "text-[#C10007]" : isPast ? "text-gray-400" : "text-gray-700"}`}
+                    className={`text-sm font-semibold leading-snug ${isInProgress ? "text-[#C10007]" : isCompleted ? "text-gray-400" : "text-gray-700"}`}
                   >
                     {milestone.title}
                   </p>
                   <div className="flex items-center gap-3 mt-0.5">
                     {formattedDate && (
                       <p
-                        className={`text-xs ${isActive ? "text-[#C10007]/70" : "text-gray-400"}`}
+                        className={`text-xs ${isInProgress ? "text-[#C10007]/70" : "text-gray-400"}`}
                       >
                         {formattedDate}
                       </p>
@@ -465,57 +407,49 @@ function StatusTimeline({
    PAGE
 ───────────────────────────────────────────── */
 export default function DashboardPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [milestonesLoading, setMilestonesLoading] = useState(true);
-
-  const [property, setProperty] = useState<PropertyData | null>(null);
-  const [deal, setDeal] = useState<DealData | null>(null);
+  // ── Multiple properties / deals (one tab per deal) ────────
+  const [properties, setProperties] = useState<PropertyData[]>([]);
+  const [deals, setDeals] = useState<DealData[]>([]);
+  const [activeDealId, setActiveDealId] = useState<string | null>(null);
   const [propertyLoading, setPropertyLoading] = useState(true);
 
-  const [agreementDrawerOpen, setAgreementDrawerOpen] = useState(false);
+  // ── Tasks + milestones for the active deal ────────────────
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [milestonesLoading, setMilestonesLoading] = useState(false);
+
+  // ── Drawer state ──────────────────────────────────────────
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
-  const [identificationDrawerOpen, setIdentificationDrawerOpen] = useState(false);
-  const [homeInsuranceDrawerOpen, setHomeInsuranceDrawerOpen] = useState(false);
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
-  
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  // ── Derived: active property + deal ──────────────────────
+  const activeDeal = deals.find((d) => d.id === activeDealId) ?? null;
+  const activeProperty = properties.find((p) => p.deal_id === activeDealId) ?? null;
+
+  const leadId =
+    typeof window !== "undefined" ? localStorage.getItem("iclosed_lead_id") : null;
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);
-    if (isAgreementTask(task.title)) {
-      setAgreementDrawerOpen(true);
-    } else if (isPersonalInfoTask(task.title)) {
-      setPersonalInfoDrawerOpen(true);
-    } else if (isIdentificationTask(task.title)) {
-      setIdentificationDrawerOpen(true);
-    } else if (isHomeInsuranceTask(task.title)) {
-      setHomeInsuranceDrawerOpen(true);
-    } else {
-      setDynamicDrawerOpen(true);
-    }
+    setDynamicDrawerOpen(true);
   }
 
+  // ── On mount: fetch all properties + deals ────────────────
   useEffect(() => {
     const fetchData = async () => {
-      // Get lead identity from localStorage
-      const leadId =
-        typeof window !== "undefined"
-          ? localStorage.getItem("iclosed_lead_id")
-          : null;
-
       const params = leadId ? `?lead_id=${leadId}` : "";
-
       try {
-        /* ── Fetch Property & Deal ── */
-        const propertyRes = await fetch(`/api/dashboardproperty${params}`);
-        if (propertyRes.ok) {
-          const propertyData = await propertyRes.json();
-          if (propertyData.success) {
-            setProperty(propertyData.property);
-            setDeal(propertyData.deal);
+        const res = await fetch(`/api/dashboardproperty${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setProperties(data.properties ?? []);
+            setDeals(data.deals ?? []);
+            if (data.deals?.length > 0) {
+              setActiveDealId(data.deals[0].id);
+            }
           }
         }
       } catch (err) {
@@ -523,102 +457,76 @@ export default function DashboardPage() {
       } finally {
         setPropertyLoading(false);
       }
+    };
+    fetchData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // ── When active deal changes: reload tasks + milestones ───
+  useEffect(() => {
+    if (!activeDealId) return;
+    const fetchDealData = async () => {
+      setTasksLoading(true);
+      setMilestonesLoading(true);
+      setTasks([]);
+      setMilestones([]);
       try {
-        /* ── Fetch Tasks ── */
-        const tasksRes = await fetch(`/api/tasks${params}`);
-        if (tasksRes.ok) {
-          const tasksData = await tasksRes.json();
-          if (tasksData.success) {
-            setTasks(tasksData.tasks);
-          }
+        const [tasksRes, msRes] = await Promise.allSettled([
+          fetch(`/api/tasks?deal_id=${activeDealId}`),
+          fetch(`/api/milestones?deal_id=${activeDealId}`),
+        ]);
+        if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
+          const d = await tasksRes.value.json();
+          if (d.success) setTasks(d.tasks);
+        }
+        if (msRes.status === "fulfilled" && msRes.value.ok) {
+          const d = await msRes.value.json();
+          if (d.success) setMilestones(d.milestones);
         }
       } catch (err) {
-        console.error("Tasks fetch error:", err);
+        console.error("Deal data fetch error:", err);
       } finally {
         setTasksLoading(false);
-      }
-
-      try {
-        /* ── Fetch Milestones ── */
-        const msRes = await fetch(`/api/milestones${params}`);
-        if (msRes.ok) {
-          const msData = await msRes.json();
-          if (msData.success) {
-            setMilestones(msData.milestones);
-          }
-        }
-      } catch (err) {
-        console.error("Milestones fetch error:", err);
-      } finally {
         setMilestonesLoading(false);
       }
     };
+    fetchDealData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDealId]);
 
-    fetchData();
-  }, []);
-
+  // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string) {
-    // Optimistic update
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, completed: true, status: "Completed" as const }
-          : t,
-      ),
+      prev.map((t) => t.id === id ? { ...t, completed: true, status: "Completed" as const } : t),
     );
     try {
       const res = await fetch(`/api/tasks/${id}`, { method: "PATCH" });
       if (!res.ok) throw new Error("Failed");
-
-      // Refresh milestones to reflect task completion in progress
-      const leadId =
-        typeof window !== "undefined"
-          ? localStorage.getItem("iclosed_lead_id")
-          : null;
-      const params = leadId ? `?lead_id=${leadId}` : "";
-      
-      // Refresh milestones and tasks to reflect any backend-driven changes
-      const [msRes, tasksRes] = await Promise.all([
-        fetch(`/api/milestones${params}`),
-        fetch(`/api/tasks${params}`)
-      ]);
-
-      if (msRes.ok) {
-        const msData = await msRes.json();
-        if (msData.success) setMilestones(msData.milestones);
-      }
-      if (tasksRes.ok) {
-        const tasksData = await tasksRes.json();
-        if (tasksData.success) setTasks(tasksData.tasks);
+      if (activeDealId) {
+        const [msRes, tasksRes] = await Promise.all([
+          fetch(`/api/milestones?deal_id=${activeDealId}`),
+          fetch(`/api/tasks?deal_id=${activeDealId}`),
+        ]);
+        if (msRes.ok) { const d = await msRes.json(); if (d.success) setMilestones(d.milestones); }
+        if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) setTasks(d.tasks); }
       }
     } catch {
-      // Revert on failure
       setTasks((prev) =>
-        prev.map((t) =>
-          t.id === id
-            ? { ...t, completed: false, status: "In Progress" as const }
-            : t,
-        ),
+        prev.map((t) => t.id === id ? { ...t, completed: false, status: "In Progress" as const } : t),
       );
     }
   }
 
   const fullAddress = [
-    property?.address_street,
-    property?.address_city,
-    property?.address_province,
+    activeProperty?.address_street,
+    activeProperty?.address_city,
+    activeProperty?.address_province,
   ]
     .filter(Boolean)
     .join(", ");
 
-  const leadId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("iclosed_lead_id")
-      : null;
-
-  const closingFormatted = deal?.closing_date
-    ? new Date(deal.closing_date).toLocaleDateString("en-CA", {
+  const closingFormatted = activeDeal?.closing_date
+    ? new Date(activeDeal.closing_date).toLocaleDateString("en-CA", {
         month: "long",
         day: "numeric",
         year: "numeric",
@@ -628,58 +536,19 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5 pb-8">
 
-      {/* ── Upload Agreement Drawer ── */}
-      <UploadAgreementDrawer
-        open={agreementDrawerOpen}
-        onClose={() => setAgreementDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setAgreementDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
-        }}
-      />
-
       {/* ── Personal Information Drawer ── */}
       <PersonalInformationDrawer
         open={personalInfoDrawerOpen}
         onClose={() => setPersonalInfoDrawerOpen(false)}
-        property={property}
+        property={activeProperty}
         taskId={activeTask?.id}
         onSaved={async () => {
           setPersonalInfoDrawerOpen(false);
-          if (activeTask) {
-             // Let the backend handle the status updating naturally then refetch the UI so milestones automatically tick up.
-             await markDone(activeTask.id); 
-          }
-        }}
-      />
-
-      {/* ── Upload Identification Drawer ── */}
-      <UploadIdentificationDrawer
-        open={identificationDrawerOpen}
-        onClose={() => setIdentificationDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setIdentificationDrawerOpen(false);
           if (activeTask) await markDone(activeTask.id);
         }}
       />
 
-      {/* ── Home Insurance Drawer ── */}
-      <UploadHomeInsuranceDrawer
-        open={homeInsuranceDrawerOpen}
-        onClose={() => setHomeInsuranceDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setHomeInsuranceDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
-        }}
-      />
-
-      {/* ── Dynamic Task Drawer (Fallback for unknown tasks like Mortgage) ── */}
+      {/* ── Dynamic Task Drawer (DB-driven form fields) ── */}
       <DynamicTaskDrawer
         open={dynamicDrawerOpen}
         onClose={() => setDynamicDrawerOpen(false)}
@@ -692,38 +561,40 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── 1. Needs Your Attention ── */}
-      <AttentionCard
-        tasks={tasks}
-        loading={tasksLoading}
-        onMarkDone={markDone}
-        onTaskClick={handleTaskClick}
-      />
-
-      {/* ── 2. Property Selector Tab ── */}
-      <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+      {/* ── 1. Property Selector Tabs (one per deal) ── */}
+      <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide">
         {propertyLoading ? (
-          <div className="px-4 py-2 text-sm text-gray-400">
-            Loading property...
+          <div className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400">
+            <Loader2 size={14} className="animate-spin" /> Loading properties...
           </div>
-        ) : property ? (
-          <button
-            type="button"
-            className="cursor-pointer flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold bg-[#C10007] text-white shadow-md"
-          >
-            <Building2 size={16} strokeWidth={2} />
-            <span className="whitespace-nowrap">
-              {property.address_street || "Address not available"}
-            </span>
-          </button>
+        ) : properties.length === 0 ? (
+          <div className="px-4 py-2 text-sm text-gray-400">No properties yet</div>
         ) : (
-          <div className="px-4 py-2 text-sm text-gray-400">
-            No property available yet
-          </div>
+          properties.map((p, i) => {
+            const isActive = p.deal_id === activeDealId;
+            return (
+              <button
+                key={p.deal_id}
+                type="button"
+                onClick={() => setActiveDealId(p.deal_id)}
+                className={[
+                  "cursor-pointer flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200",
+                  isActive
+                    ? "bg-[#C10007] text-white shadow-md"
+                    : "bg-white border border-gray-200 text-gray-600 hover:border-[#C10007] hover:text-[#C10007]",
+                ].join(" ")}
+              >
+                <Building2 size={15} strokeWidth={2} />
+                <span className="whitespace-nowrap">
+                  {p.address_street || `Property ${i + 1}`}
+                </span>
+              </button>
+            );
+          })
         )}
       </div>
 
-      {/* ── 3. Property Hero Card ── */}
+      {/* ── 2. Property Hero Card ── */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
         {/* Header */}
         <div className="bg-gray-100 px-6 py-5 flex items-start gap-4">
@@ -732,13 +603,13 @@ export default function DashboardPage() {
           </div>
           <div>
             <p className="text-[14px] font-bold uppercase text-[#C10007] mb-1">
-              {deal?.type
-                ? `${deal.type} · Property Address`
+              {activeDeal?.type
+                ? `${activeDeal.type} · Property Address`
                 : "Property Address"}
             </p>
             {propertyLoading ? (
               <p className="text-sm text-gray-400">Loading address...</p>
-            ) : property ? (
+            ) : activeProperty ? (
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 leading-tight">
                 {fullAddress || "Address not provided"}
               </h1>
@@ -775,20 +646,29 @@ export default function DashboardPage() {
                 File Number
               </p>
               <p className="text-sm font-bold text-gray-900">
-                {propertyLoading ? "..." : (deal?.file_number ?? "Pending")}
+                {propertyLoading ? "..." : (activeDeal?.file_number ?? "Pending")}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── 4. Bottom Grid: Timeline + Assistance ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_288px] gap-5 items-start">
-        {/* ── Status Timeline (Dynamic) ── */}
-        <StatusTimeline milestones={milestones} loading={milestonesLoading} />
+      {/* ── 3. Main Grid: Tasks (left) + Status & Assistance (right) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
 
-        {/* ── Need Assistance ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+        {/* ── Left: Needs Your Attention ── */}
+        <AttentionCard
+          tasks={tasks}
+          loading={tasksLoading}
+          onTaskClick={handleTaskClick}
+        />
+
+        {/* ── Right: Status Overview + Need Assistance stacked ── */}
+        <div className="flex flex-col gap-5">
+          <StatusTimeline milestones={milestones} loading={milestonesLoading} />
+
+          {/* ── Need Assistance ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
               <svg
@@ -852,7 +732,8 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
-      </div>
+        </div>{/* end right column */}
+      </div>{/* end main grid */}
     </div>
   );
 }

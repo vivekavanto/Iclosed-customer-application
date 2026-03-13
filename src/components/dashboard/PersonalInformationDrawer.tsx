@@ -65,9 +65,17 @@ const EMPTY: FormData = {
   signingMethod: "",
 };
 
-// Canadian phone: strips non-digits, must be 10 digits
+// Format phone as (416) 555-1234
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  if (digits.length <= 3) return digits.length ? `(${digits}` : "";
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+// Validate (XXX) XXX-XXXX format
 function isValidPhone(v: string) {
-  return /^\d{10}$/.test(v.replace(/\D/g, ""));
+  return /^\(\d{3}\) \d{3}-\d{4}$/.test(v.trim());
 }
 
 // Canadian postal code: A1A 1A1 or A1A1A1
@@ -78,9 +86,11 @@ function isValidPostalCode(v: string) {
 function validate(data: FormData): FormErrors {
   const e: FormErrors = {};
   if (!data.phone.trim()) e.phone = "Phone number is required.";
-  else if (!isValidPhone(data.phone)) e.phone = "Enter a valid 10-digit phone number.";
+  else if (!isValidPhone(data.phone)) e.phone = "Enter a valid phone number in (416) 555-1234 format.";
   if (!data.streetAddress.trim()) e.streetAddress = "Street address is required.";
   if (!data.city.trim()) e.city = "City is required.";
+  else if (!/^[A-Za-zÀ-ÖØ-öø-ÿ\s''-]+$/.test(data.city.trim())) e.city = "City name is not valid.";
+  else if (data.city.trim().length < 2) e.city = "City name is too short.";
   if (!data.postalCode.trim()) e.postalCode = "Postal code is required.";
   else if (!isValidPostalCode(data.postalCode)) e.postalCode = "Enter a valid Canadian postal code (e.g. M1B 3C6).";
   if (!data.maritalStatus) e.maritalStatus = "Please select your marital status.";
@@ -90,7 +100,7 @@ function validate(data: FormData): FormErrors {
   if (!data.livedOutsideCanada) e.livedOutsideCanada = "Please answer this question.";
   if (!data.occupation.trim()) e.occupation = "Occupation is required.";
   if (data.employerPhone.trim() && !isValidPhone(data.employerPhone))
-    e.employerPhone = "Enter a valid 10-digit phone number.";
+    e.employerPhone = "Enter a valid phone number in (416) 555-1234 format.";
   if (!data.sourceOfFunds.trim()) e.sourceOfFunds = "Please describe your source of funds.";
   if (!data.signingMethod) e.signingMethod = "Please select a signing method.";
   return e;
@@ -376,8 +386,8 @@ export default function PersonalInformationDrawer({
               id="phone"
               type="tel"
               value={form.phone}
-              onChange={(v) => set("phone", v)}
-              placeholder="e.g. 4165408632"
+              onChange={(v) => set("phone", formatPhone(v))}
+              placeholder="(416) 555-1234"
               error={errors.phone}
             />
             <FieldError msg={errors.phone} />
@@ -566,8 +576,8 @@ export default function PersonalInformationDrawer({
               id="employerPhone"
               type="tel"
               value={form.employerPhone}
-              onChange={(v) => set("employerPhone", v)}
-              placeholder="e.g. 6479977278"
+              onChange={(v) => set("employerPhone", formatPhone(v))}
+              placeholder="(416) 555-1234"
               error={errors.employerPhone}
             />
             <FieldError msg={errors.employerPhone} />

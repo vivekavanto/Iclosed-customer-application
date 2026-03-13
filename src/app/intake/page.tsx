@@ -1,26 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Home,
-  Briefcase,
-  FileText,
-  Check,
-  Repeat,
-  UploadCloud,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
-  Video,
-  Clock,
-} from "lucide-react";
+import { useState, useEffect } from "react";
+import { Home, Briefcase, FileText } from "lucide-react";
 import HorizontalProgress, {
   Step,
   StepStatus,
 } from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
-import Input from "@/components/ui/Input";
-import DateTimePicker from "@/components/intake/DateTimePicker";
 import Modal from "@/components/ui/Modal";
 import { Step1 } from "@/components/intake/Step1";
 import Step2 from "@/components/intake/Step2";
@@ -37,7 +23,6 @@ export default function ServiceSelection() {
     string | null
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
-  const [showUpload, setShowUpload] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
   const [agreementSigned, setAgreementSigned] = useState<"yes" | "no" | null>(
@@ -45,7 +30,37 @@ export default function ServiceSelection() {
   );
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
+  // Pre-fill contact info for logged-in users
+  const [authProfile, setAuthProfile] = useState<{
+    fullName: string;
+    email: string;
+    phone: string;
+  } | undefined>(undefined);
+
   const router = useRouter();
+
+  useEffect(() => {
+    const loadAuthProfile = async () => {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) return;
+
+      // Fetch client profile via deals API (returns first_name, last_name, phone)
+      const res = await fetch("/api/deals");
+      const data = res.ok ? await res.json() : null;
+      const first = data?.deals?.[0];
+
+      setAuthProfile({
+        fullName: first ? `${first.first_name ?? ""} ${first.last_name ?? ""}`.trim() : "",
+        email: user.email,
+        phone: first?.phone ?? "",
+      });
+    };
+    loadAuthProfile();
+  }, []);
 
   const getStatus = (currentStep: number, stepId: number): StepStatus => {
     return currentStep === stepId
@@ -132,9 +147,9 @@ export default function ServiceSelection() {
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans">
       <main className="flex-grow flex flex-col items-center px-8 ">
-        <div className="w-full max-w-7xl mb-8 ">
+        {/* <div className="w-full max-w-7xl mb-8 ">
           <HorizontalProgress steps={progressSteps} />
-        </div>
+        </div> */}
 
         {/* STEP 1 */}
         {step === 1 && (
@@ -203,6 +218,7 @@ export default function ServiceSelection() {
             agreementSigned={agreementSigned}
             setAgreementSigned={setAgreementSigned}
             setShowSuccessModal={setShowSuccessModal}
+            initialData={authProfile}
             onComplete={async (contactData) => {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
@@ -315,18 +331,9 @@ export default function ServiceSelection() {
             </p>
 
             <Button
-              onClick={async () => {
+              onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
-                
-                // Ensure we sign out any existing user session (e.g. from previous tests)
-                // so the new lead_id logic in dashboard takes precedence.
-                const supabase = createBrowserClient(
-                  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-                  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-                );
-                await supabase.auth.signOut();
-
                 router.push("/dashboard");
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"

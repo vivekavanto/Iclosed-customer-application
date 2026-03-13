@@ -44,6 +44,22 @@ export async function POST(request: Request) {
       );
     }
 
+    // Get client record
+    const { data: client } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("email", email)
+      .single();
+
+    // If client exists, attach leads
+    if (client) {
+      await supabase
+        .from("leads")
+        .update({ client_id: client.id })
+        .eq("email", email)
+        .is("client_id", null);
+    }
+
     // Send welcome email on first login (non-blocking)
     const adminPortalUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-portal-next.vercel.app";
     fetch(`${adminPortalUrl}/api/webhooks/new-lead`, {
@@ -53,7 +69,7 @@ export async function POST(request: Request) {
     }).catch(() => {});
 
     return NextResponse.json(
-      { success: true, user: data.user },
+      { success: true, user: data.user, client_id: client?.id},
       { status: 200 }
     );
   } catch (err: any) {

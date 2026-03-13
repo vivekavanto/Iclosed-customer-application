@@ -24,7 +24,7 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: taskError.message }, { status: 400 });
     }
 
-    // 2️⃣ If task belongs to a milestone → check if ALL tasks in that milestone are completed
+    // 2️⃣ If task belongs to a milestone → update milestone status
     if (task?.milestone_id) {
       const { data: siblingsData } = await supabaseAdmin
         .from("tasks")
@@ -33,18 +33,16 @@ export async function PATCH(
 
       const siblings = siblingsData ?? [];
       const allDone = siblings.length > 0 && siblings.every((t) => t.completed);
+      const anyDone = siblings.some((t) => t.completed);
 
       if (allDone) {
-        // 3️⃣ Mark this milestone as Completed
+        // 3️⃣ All tasks done → mark milestone Completed
         await supabaseAdmin
           .from("milestones")
-          .update({
-            status: "Completed",
-            completed_at: new Date().toISOString(),
-          })
+          .update({ status: "Completed", completed_at: new Date().toISOString() })
           .eq("id", task.milestone_id);
 
-        // 4️⃣ Find the next milestone in this deal (next order_index) → mark it In Progress
+        // 4️⃣ Find next milestone → mark it In Progress
         const { data: currentMilestone } = await supabaseAdmin
           .from("milestones")
           .select("order_index")
@@ -69,6 +67,13 @@ export async function PATCH(
               .eq("id", nextMilestone.id);
           }
         }
+      } else if (anyDone) {
+        // 3️⃣ Some tasks done → mark milestone In Progress
+        await supabaseAdmin
+          .from("milestones")
+          .update({ status: "In Progress" })
+          .eq("id", task.milestone_id)
+          .neq("status", "Completed"); // don't downgrade a completed milestone
       }
     }
 
