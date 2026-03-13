@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     }
 
     // Send welcome email on first login (non-blocking)
-    const adminPortalUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-portal-next.vercel.app";
+    const adminPortalUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-panel.vercel.app";
     fetch(`${adminPortalUrl}/api/webhooks/new-lead`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
