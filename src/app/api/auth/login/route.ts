@@ -60,13 +60,21 @@ export async function POST(request: Request) {
         .is("client_id", null);
     }
 
-    // Send welcome email on first login (non-blocking)
+    // Send welcome email webhook to admin portal
     const adminPortalUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-panel.vercel.app";
-    fetch(`${adminPortalUrl}/api/webhooks/new-lead`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    }).catch(() => {});
+    try {
+      const webhookRes = await fetch(`${adminPortalUrl}/api/webhooks/new-lead`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!webhookRes.ok) {
+        const text = await webhookRes.text();
+        console.error("Welcome email webhook failed:", webhookRes.status, text);
+      }
+    } catch (webhookErr) {
+      console.error("Welcome email webhook error:", webhookErr);
+    }
 
     return NextResponse.json(
       { success: true, user: data.user, client_id: client?.id},
