@@ -98,6 +98,9 @@ export default function SetPasswordPage() {
 
       if (updateError) throw updateError;
 
+      // Trigger welcome email on first login (fire and forget)
+      fetch("/api/auth/welcome-email", { method: "POST" }).catch(() => {});
+
       setSuccess(true);
       setTimeout(() => {
         router.push("/dashboard");

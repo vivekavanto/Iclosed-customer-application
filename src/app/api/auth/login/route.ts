@@ -45,96 +45,88 @@ export async function POST(request: Request) {
       );
     }
 
-    // Use service role client to bypass RLS for leads/clients queries
+    // Use service role client to bypass RLS
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
     // Get client record
-    const { data: client } = await supabaseAdmin
+    const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
       .select("id")
       .eq("email", email)
       .single();
 
-    // If client exists, link leads and send welcome email via deals table
+    console.log("[LOGIN] Email:", email);
+    console.log("[LOGIN] Client:", client, "Error:", clientError?.message);
+
+    // If client exists, link leads and send welcome email
     if (client) {
-      // Find deals for this client
-      const { data: deals, error: dealsError } = await supabaseAdmin
+      // Link unlinked leads by email
+      await supabaseAdmin
+        .from("leads")
+        .update({ client_id: client.id })
+        .eq("email", email)
+        .is("client_id", null);
+
+      // Find deals → leads and send welcome email for unsent ones
+      const { data: deals, error: dealsErr } = await supabaseAdmin
         .from("deals")
         .select("lead_id")
-        .eq("client_id", client.id)
-        .order("created_at", { ascending: false });
+        .eq("client_id", client.id);
 
-      if (dealsError) {
-        console.error("Deals lookup error:", dealsError);
-      }
+      console.log("[LOGIN] Deals found:", deals, "Error:", dealsErr?.message);
 
       const leadIds = (deals || []).map((d) => d.lead_id).filter(Boolean);
+      console.log("[LOGIN] Lead IDs from deals:", leadIds);
 
-      // Link client_id on leads found via deals (more reliable than email match)
       if (leadIds.length > 0) {
-        const { error: linkError } = await supabaseAdmin
+        // Also link client_id via deals
+        await supabaseAdmin
           .from("leads")
           .update({ client_id: client.id })
           .in("id", leadIds)
           .is("client_id", null);
 
-        if (linkError) {
-          console.error("Lead client_id link error:", linkError);
-        }
-
-        // Get leads where welcome email not yet sent
-        const { data: unsent, error: unsentError } = await supabaseAdmin
+        const { data: unsent, error: unsentErr } = await supabaseAdmin
           .from("leads")
-          .select("id, welcome_email_sent")
+          .select("id")
           .in("id", leadIds)
           .eq("welcome_email_sent", false);
 
-        if (unsentError) {
-          console.error("Unsent leads lookup error:", unsentError);
-        }
+        console.log("[LOGIN] Unsent leads:", unsent, "Error:", unsentErr?.message);
 
         const adminPortalUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-panel.vercel.app";
+        console.log("[LOGIN] Admin portal URL:", adminPortalUrl);
 
-        // Send welcome email for each unsent lead
         for (const lead of unsent || []) {
           try {
-            console.log("Sending welcome email for lead:", lead.id);
-            const webhookRes = await fetch(`${adminPortalUrl}/api/admin/send-welcome-email`, {
+            console.log("[LOGIN] Sending welcome email for lead:", lead.id);
+            const res = await fetch(`${adminPortalUrl}/api/admin/send-welcome-email`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ lead_id: lead.id }),
             });
-            const responseText = await webhookRes.text();
-            console.log("Welcome email response:", webhookRes.status, responseText);
+            const resText = await res.text();
+            console.log("[LOGIN] Welcome email response:", res.status, resText);
 
-            if (webhookRes.ok) {
-              const { error: updateError } = await supabaseAdmin
+            if (res.ok) {
+              await supabaseAdmin
                 .from("leads")
                 .update({ welcome_email_sent: true })
                 .eq("id", lead.id);
-
-              if (updateError) {
-                console.error("Failed to update welcome_email_sent:", updateError);
-              } else {
-                console.log("welcome_email_sent set to true for lead:", lead.id);
-              }
+              console.log("[LOGIN] Marked welcome_email_sent=true for lead:", lead.id);
             }
-          } catch (webhookErr) {
-            console.error("Welcome email error for lead:", lead.id, webhookErr);
+          } catch (err) {
+            console.error("[LOGIN] Welcome email error for lead:", lead.id, err);
           }
         }
-
-        if (!unsent || unsent.length === 0) {
-          console.log("All welcome emails already sent for client:", client.id);
-        }
       } else {
-        console.log("No deals found for client:", client.id);
+        console.log("[LOGIN] No lead IDs found from deals");
       }
     } else {
-      console.log("No client found for email:", email);
+      console.log("[LOGIN] No client found, skipping welcome email");
     }
 
     return NextResponse.json(
