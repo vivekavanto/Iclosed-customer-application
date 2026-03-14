@@ -58,8 +58,21 @@ export async function POST(request: Request) {
       .eq("email", email)
       .single();
 
-    // Get lead record for this email
-    const { data: lead, error: leadError } = await supabaseAdmin
+    // If client exists, attach leads
+    if (client) {
+      await supabaseAdmin
+        .from("leads")
+        .update({ client_id: client.id })
+        .eq("email", email)
+        .is("client_id", null);
+    }
+
+    // Find lead for welcome email — first try direct email match on leads table,
+    // then fallback: look up via deals table (deals.client_id → deals.lead_id)
+    let lead: { id: string; welcome_email_sent: boolean } | null = null;
+
+    // 1. Direct lookup: lead by email
+    const { data: directLead, error: leadError } = await supabaseAdmin
       .from("leads")
       .select("id, welcome_email_sent")
       .eq("email", email)
@@ -71,13 +84,27 @@ export async function POST(request: Request) {
       console.error("Lead lookup error:", leadError);
     }
 
-    // If client exists, attach leads
-    if (client) {
-      await supabaseAdmin
-        .from("leads")
-        .update({ client_id: client.id })
-        .eq("email", email)
-        .is("client_id", null);
+    lead = directLead;
+
+    // 2. Fallback: if no lead found by email, look through deals → lead_id
+    if (!lead && client) {
+      const { data: deal } = await supabaseAdmin
+        .from("deals")
+        .select("lead_id")
+        .eq("client_id", client.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (deal?.lead_id) {
+        const { data: dealLead } = await supabaseAdmin
+          .from("leads")
+          .select("id, welcome_email_sent")
+          .eq("id", deal.lead_id)
+          .maybeSingle();
+
+        lead = dealLead;
+      }
     }
 
     // Send welcome email on first login (uses same endpoint as manual send)
