@@ -62,6 +62,7 @@ interface PropertyData {
 
 interface DealData {
   id: string;
+  lead_id: string | null;
   file_number: string | null;
   type: string | null;
   status: string | null;
@@ -289,35 +290,28 @@ function StatusTimeline({
   }
 
   if (milestones.length === 0) {
-    return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm">
-        <h2 className="text-base font-bold text-gray-900 mb-4">
-          Status Overview
-        </h2>
-        <div className="flex flex-col items-center justify-center py-8 gap-2">
-          <p className="text-sm text-gray-400">
-            Your file stages will appear here once active.
-          </p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
-  // Determine active milestone: the first one that is NOT completed
-  const activeIndex = milestones.findIndex((m) => m.status !== "Completed");
+  // A milestone is "done" if status=Completed OR all its tasks are completed
+  const isMilestoneDone = (m: Milestone) =>
+    m.status === "Completed" || (m.total_tasks > 0 && m.completed_tasks === m.total_tasks);
+
+  // Step counter: first milestone that is NOT done
+  const activeIndex = milestones.findIndex((m) => !isMilestoneDone(m));
   const effectiveActive =
     activeIndex === -1 ? milestones.length - 1 : activeIndex;
 
-  // Progress = completed milestones + fractional progress of in-progress milestone
-  const completedCount = milestones.filter((m) => m.status === "Completed").length;
-  const inProgressMilestone = milestones.find((m) => m.status === "In Progress");
+  // Progress bar: completed milestones + fractional progress of current milestone
+  const completedCount = milestones.filter(isMilestoneDone).length;
+  const currentMilestone = activeIndex !== -1 ? milestones[activeIndex] : null;
   const inProgressFraction =
-    inProgressMilestone && inProgressMilestone.total_tasks > 0
-      ? inProgressMilestone.completed_tasks / inProgressMilestone.total_tasks
+    currentMilestone && currentMilestone.total_tasks > 0
+      ? currentMilestone.completed_tasks / currentMilestone.total_tasks
       : 0;
   const progressPercent =
     milestones.length <= 1
-      ? milestones[0]?.status === "Completed" ? 100 : Math.round(inProgressFraction * 100)
+      ? isMilestoneDone(milestones[0]) ? 100 : Math.round(inProgressFraction * 100)
       : Math.min(100, Math.round(((completedCount + inProgressFraction) / milestones.length) * 100));
 
   return (
@@ -435,7 +429,8 @@ export default function DashboardPage() {
   const activeProperty = properties.find((p) => p.deal_id === activeDealId) ?? null;
 
   const leadId =
-    typeof window !== "undefined" ? localStorage.getItem("iclosed_lead_id") : null;
+    activeDeal?.lead_id ??
+    (typeof window !== "undefined" ? localStorage.getItem("iclosed_lead_id") : null);
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);

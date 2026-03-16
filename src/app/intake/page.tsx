@@ -336,7 +336,7 @@ export default function ServiceSelection() {
               onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
-                router.push("/intake");
+                router.push(authProfile ? "/dashboard" : "/intake");
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
             >

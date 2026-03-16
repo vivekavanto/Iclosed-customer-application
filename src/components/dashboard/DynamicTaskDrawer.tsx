@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   X,
   Upload,
@@ -79,7 +79,7 @@ function getFileConfig(opts: any): {
 }
 
 const inputBase =
-  "w-full px-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400";
+  "w-full px-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs";
 const inputNormal =
   "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10";
 const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
@@ -236,6 +236,92 @@ function FileSlot({
           <AlertCircle size={11} />
           {error}
         </p>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   CUSTOM SELECT (fixed-position dropdown)
+───────────────────────────────────────────── */
+function CustomSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  hasError,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: FieldOption[];
+  placeholder: string;
+  hasError: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const openDropdown = useCallback(() => {
+    if (triggerRef.current) setRect(triggerRef.current.getBoundingClientRect());
+    setOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={openDropdown}
+        className={[
+          "w-full text-left px-4 py-3 text-sm rounded-lg border outline-none flex items-center justify-between transition-colors",
+          hasError
+            ? "border-[#C10007] ring-2 ring-[#C10007]/10"
+            : open
+              ? "border-[#C10007] ring-2 ring-[#C10007]/10"
+              : "border-gray-200 hover:border-gray-300",
+          selected ? "text-gray-900" : "text-gray-400",
+        ].join(" ")}
+      >
+        <span className={`truncate ${selected ? "text-sm" : "text-xs text-gray-400"}`}>{selected ? selected.label : placeholder}</span>
+        <svg className="w-4 h-4 text-gray-400 flex-shrink-0 ml-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && rect && (
+        <div
+          className="fixed z-[9999] bg-white border border-gray-200 rounded-xl shadow-xl py-1 overflow-y-auto"
+          style={{
+            top: rect.bottom + 4,
+            left: rect.left,
+            width: rect.width,
+            maxHeight: 220,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onMouseDown={() => { onChange(o.value); setOpen(false); }}
+              className={[
+                "w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-gray-50",
+                o.value === value ? "font-semibold text-[#C10007] bg-[#FEF2F2]" : "text-gray-700",
+              ].join(" ")}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -553,6 +639,52 @@ export default function DynamicTaskDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+
+          {/* ── Home Insurance static sections ── */}
+          {taskTitle.toLowerCase().includes("home insurance") && (
+            <>
+              {/* Policy Requirements Checklist */}
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-bold text-gray-900 mb-3">Policy Requirements Checklist</p>
+                <ul className="space-y-2">
+                  {[
+                    "Policy effective date matches or precedes closing date",
+                    "Coverage amount meets lender requirements",
+                    "Property address matches purchase agreement",
+                    "Lender listed as mortgagee (if applicable)",
+                  ].map((item) => (
+                    <li key={item} className="flex items-start gap-2 text-xs text-gray-600">
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0 mt-1.5" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Condominium Insurance Recommendations */}
+              <div>
+                <p className="text-sm font-bold text-gray-900 mb-1">Condominium Insurance Recommendations</p>
+                <p className="text-xs text-gray-400 mb-3">For condominium purchases, consider these additional coverage options:</p>
+                <ul className="space-y-2.5">
+                  {[
+                    { title: "Unit Coverage", desc: "Covers improvements, fixtures, and personal property within your unit" },
+                    { title: "Contents Insurance", desc: "Protects your personal belongings and furniture" },
+                    { title: "Loss Assessment Coverage", desc: "Covers special assessments from the condo corporation" },
+                    { title: "Additional Living Expenses", desc: "Covers temporary accommodation if your unit becomes uninhabitable" },
+                  ].map((item) => (
+                    <li key={item.title} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#C10007] flex-shrink-0 mt-1.5" />
+                      <div>
+                        <p className="text-xs font-semibold text-gray-800">{item.title}:</p>
+                        <p className="text-xs text-[#C10007]">{item.desc}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+
           {/* Success state */}
           {saved && (
             <div className="flex items-center gap-3 rounded-xl bg-green-50 border border-green-200 px-4 py-4">
@@ -726,7 +858,7 @@ export default function DynamicTaskDrawer({
                         inputBase,
                         errors[field.id] ? inputError : inputNormal,
                         "appearance-none cursor-pointer",
-                        !values[field.id] ? "text-gray-400" : "text-gray-900",
+                        !values[field.id] ? "text-gray-400 text-xs" : "text-gray-900 text-sm",
                       ].join(" ")}
                       style={{
                         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,

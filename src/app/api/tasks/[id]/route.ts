@@ -73,7 +73,7 @@ export async function PATCH(
           .from("milestones")
           .update({ status: "In Progress" })
           .eq("id", task.milestone_id)
-          .neq("status", "Completed"); // don't downgrade a completed milestone
+          .neq("status", "Completed");
       }
     }
 
