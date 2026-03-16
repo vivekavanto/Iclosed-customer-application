@@ -15,6 +15,7 @@ interface ContactData {
     phone: string;
     meetingDate: Date | null;
     meetingTime: string | null;
+    coPersons: CoPerson[];
 }
 
 interface CoPerson {
@@ -173,7 +174,7 @@ export default function Step5Contact({
     }, [formData]);
     const handleComplete = () => {
         if (!isCompleteEnabled) return;
-        onComplete({ ...formData, meetingDate: null, meetingTime: null });
+        onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons });
         setShowSuccessModal(true);
     };
     return (

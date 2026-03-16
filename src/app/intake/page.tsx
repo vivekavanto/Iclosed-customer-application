@@ -256,6 +256,7 @@ export default function ServiceSelection() {
                     }),
 
                     aps_signed: agreementSigned === "yes",
+                    co_persons: contactData.coPersons ?? [],
                   }),
                 });
 
@@ -335,7 +336,7 @@ export default function ServiceSelection() {
               onClick={() => {
                 setShowSuccessModal(false);
                 resetForm();
-                router.push("/dashboard");
+                router.push("/intake");
               }}
               className="px-8 py-3 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
             >

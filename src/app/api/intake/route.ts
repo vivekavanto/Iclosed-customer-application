@@ -25,6 +25,7 @@ export async function POST(req: Request) {
       selling_address_postal_code,
       selling_address_province,
       aps_signed,
+      co_persons,
     } = body;
 
     // ── Lead type ─────────────────────────────────────────────
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
         selling_address_postal_code,
         selling_address_province,
         aps_signed,
+        co_persons: co_persons ?? [],
       })
       .select()
       .single();
