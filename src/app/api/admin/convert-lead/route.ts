@@ -122,7 +122,7 @@ export async function POST(req: Request) {
 
     const { data: stages } = await supabaseAdmin
       .from("stage_templates")
-      .select("id, name, order_index")
+      .select("id, name, order_index, email_template_id")
       .eq("lead_type", leadType)
       .order("order_index", { ascending: true });
 
@@ -139,6 +139,7 @@ export async function POST(req: Request) {
             title: cleanName,
             status: stage.order_index === 1 ? "In Progress" : "Pending",
             order_index: stage.order_index,
+            email_template_id: stage.email_template_id ?? null,
           })
           .select("id")
           .single();
