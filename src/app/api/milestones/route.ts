@@ -4,6 +4,21 @@ import { getAuthClientDeal } from "@/lib/getAuthClient";
 
 export const dynamic = "force-dynamic";
 
+// Map deal type to stage template lead_type
+// "Purchase & Sale" uses Purchase stage templates
+function getStageTemplateType(dealType: string): string {
+  switch (dealType) {
+    case "Purchase & Sale":
+      return "Purchase";
+    case "Sale":
+      return "Sale";
+    case "Refinance":
+      return "Refinance";
+    default:
+      return "Purchase";
+  }
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -67,6 +82,68 @@ export async function GET(req: Request) {
 
     if (!dealIds.length) {
       return NextResponse.json({ success: true, milestones: [] });
+    }
+
+    // ─────────────────────────────────────────
+    // Auto-insert missing default milestones
+    // from stage_templates for each deal
+    // ─────────────────────────────────────────
+    for (const dId of dealIds) {
+      // Get deal type
+      const { data: dealData } = await supabaseAdmin
+        .from("deals")
+        .select("type")
+        .eq("id", dId)
+        .single();
+
+      const dealType = dealData?.type ?? "Purchase";
+      const stageType = getStageTemplateType(dealType);
+
+      // Fetch stage templates for this deal type
+      const { data: stageTemplates } = await supabaseAdmin
+        .from("stage_templates")
+        .select("id, name, order_index, email_template_id")
+        .eq("lead_type", stageType)
+        .order("order_index", { ascending: true });
+
+      if (!stageTemplates || stageTemplates.length === 0) continue;
+
+      // Fetch existing milestones for this deal
+      const { data: existingMilestones } = await supabaseAdmin
+        .from("milestones")
+        .select("title")
+        .eq("deal_id", dId);
+
+      const existingTitles = new Set(
+        (existingMilestones ?? []).map((m: any) => m.title?.trim().toLowerCase())
+      );
+
+      // Find templates that are NOT already in milestones (match by title)
+      const missingMilestones = stageTemplates
+        .filter((st: any) => {
+          const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "").toLowerCase();
+          return !existingTitles.has(cleanName);
+        })
+        .map((st: any) => {
+          const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? st.name;
+          return {
+            deal_id: dId,
+            title: cleanName,
+            status: "Pending",
+            order_index: st.order_index,
+            email_template_id: st.email_template_id ?? null,
+          };
+        });
+
+      if (missingMilestones.length > 0) {
+        const { error: insertError } = await supabaseAdmin
+          .from("milestones")
+          .insert(missingMilestones);
+
+        if (insertError) {
+          console.error(`[milestones] Auto-insert failed for deal ${dId}:`, insertError.message);
+        }
+      }
     }
 
     // ─────────────────────────────────────────

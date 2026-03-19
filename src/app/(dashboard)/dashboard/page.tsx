@@ -297,22 +297,14 @@ function StatusTimeline({
   const isMilestoneDone = (m: Milestone) =>
     m.status === "Completed" || (m.total_tasks > 0 && m.completed_tasks === m.total_tasks);
 
-  // Step counter: first milestone that is NOT done
-  const activeIndex = milestones.findIndex((m) => !isMilestoneDone(m));
-  const effectiveActive =
-    activeIndex === -1 ? milestones.length - 1 : activeIndex;
-
-  // Progress bar: completed milestones + fractional progress of current milestone
+  // Count completed milestones (starts at 0)
   const completedCount = milestones.filter(isMilestoneDone).length;
-  const currentMilestone = activeIndex !== -1 ? milestones[activeIndex] : null;
-  const inProgressFraction =
-    currentMilestone && currentMilestone.total_tasks > 0
-      ? currentMilestone.completed_tasks / currentMilestone.total_tasks
-      : 0;
+
+  // Progress bar: based on completed milestones out of total
   const progressPercent =
-    milestones.length <= 1
-      ? isMilestoneDone(milestones[0]) ? 100 : Math.round(inProgressFraction * 100)
-      : Math.min(100, Math.round(((completedCount + inProgressFraction) / milestones.length) * 100));
+    milestones.length === 0
+      ? 0
+      : Math.min(100, Math.round((completedCount / milestones.length) * 100));
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm">
@@ -320,7 +312,7 @@ function StatusTimeline({
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-base font-bold text-gray-900">Status Overview</h2>
         <span className="text-xs font-semibold text-[#C10007] bg-[#FEF2F2] px-2.5 py-1 rounded-full">
-          Step {effectiveActive + 1} of {milestones.length}
+          Step {completedCount}/{milestones.length}
         </span>
       </div>
 

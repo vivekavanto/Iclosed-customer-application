@@ -120,11 +120,15 @@ export async function POST(req: Request) {
     // ── 6. Copy milestones from stage_templates ───────────────────────────────
     const leadType = lead.lead_type ?? "Purchase";
 
-    const { data: stages } = await supabaseAdmin
+    const { data: stages, error: stageTemplateError } = await supabaseAdmin
       .from("stage_templates")
       .select("id, name, order_index, email_template_id")
       .eq("lead_type", leadType)
       .order("order_index", { ascending: true });
+
+    if (stageTemplateError) {
+      console.error("[convert-lead] Failed to fetch stage_templates:", stageTemplateError.message);
+    }
 
     const milestoneMap: Record<string, string> = {}; // stage_template_id → milestone_id
 
@@ -132,7 +136,7 @@ export async function POST(req: Request) {
       for (const stage of stages) {
         const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
 
-        const { data: ms } = await supabaseAdmin
+        const { data: ms, error: msError } = await supabaseAdmin
           .from("milestones")
           .insert({
             deal_id: dealId,
@@ -144,20 +148,29 @@ export async function POST(req: Request) {
           .select("id")
           .single();
 
+        if (msError) {
+          console.error(`[convert-lead] Failed to insert milestone "${cleanName}":`, msError.message);
+        }
         if (ms) milestoneMap[stage.id] = ms.id;
       }
     }
 
     // ── 7. Copy tasks from task_templates ─────────────────────────────────────
-    const { data: taskTemplates } = await supabaseAdmin
+    const { data: taskTemplates, error: taskTemplateError } = await supabaseAdmin
       .from("task_templates")
-      .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
+      .select("id, name, role_type, order_index, deadline_rule")
       .eq("lead_type", leadType)
+      .eq("is_deleted", false)
       .order("order_index", { ascending: true });
 
+    if (taskTemplateError) {
+      console.error("[convert-lead] Failed to fetch task_templates:", taskTemplateError.message);
+    }
+
     if (taskTemplates && taskTemplates.length > 0) {
-      // Find first milestone to assign tasks to by default
-      const firstMilestoneId = Object.values(milestoneMap)[0] ?? null;
+      // Build ordered list of milestone IDs to distribute tasks across milestones
+      const milestoneIds = Object.values(milestoneMap);
+      const firstMilestoneId = milestoneIds[0] ?? null;
 
       const taskRows = taskTemplates
         .filter((t) => {
@@ -166,7 +179,7 @@ export async function POST(req: Request) {
         })
         .map((t) => ({
           deal_id: dealId,
-          milestone_id: milestoneMap[t.stage_template_id] ?? firstMilestoneId,
+          milestone_id: firstMilestoneId,
           task_template_id: t.id,
           title: t.name?.trim() ?? t.name,
           status: "Pending",
@@ -175,7 +188,10 @@ export async function POST(req: Request) {
         }));
 
       if (taskRows.length > 0) {
-        await supabaseAdmin.from("tasks").insert(taskRows);
+        const { error: taskInsertError } = await supabaseAdmin.from("tasks").insert(taskRows);
+        if (taskInsertError) {
+          console.error("[convert-lead] Failed to insert tasks:", taskInsertError.message);
+        }
       }
     }
 
@@ -256,6 +272,11 @@ export async function POST(req: Request) {
       deal_id: dealId,
       file_number: generatedFileNumber,
       client_id: clientId,
+      milestones_created: Object.keys(milestoneMap).length,
+      tasks_created: taskTemplates?.filter((t) => {
+        const role = (t.role_type ?? "").toLowerCase();
+        return role === "client" || role === "both" || role === "";
+      }).length ?? 0,
       invite_sent: inviteSent,
       auth_error: authError,
       message: inviteSent
