@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import {
   Menu,
@@ -131,6 +131,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState<{
     first_name?: string;
@@ -152,6 +153,20 @@ export default function DashboardLayout({
       })
       .catch((err) => console.error("Failed to fetch user:", err));
   }, []);
+
+  // Guard: redirect to /retainer if not signed (skip if already on /retainer)
+  useEffect(() => {
+    if (pathname === "/retainer") return;
+
+    fetch("/api/retainer/check")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.signed === false && !data.error) {
+          router.push("/retainer");
+        }
+      })
+      .catch(() => {});
+  }, [pathname, router]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });

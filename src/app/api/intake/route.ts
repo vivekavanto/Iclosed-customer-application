@@ -31,12 +31,12 @@ export async function POST(req: Request) {
     // ── Lead type ─────────────────────────────────────────────
     let lead_type = null;
     if (service === "closing") {
-      if (sub_service === "buying")       lead_type = "Purchase";
+      if (sub_service === "buying") lead_type = "Purchase";
       else if (sub_service === "selling") lead_type = "Sale";
-      else if (sub_service === "both")    lead_type = "Purchase & Sale";
+      else if (sub_service === "both") lead_type = "Purchase & Sale";
     }
     if (service === "refinance") lead_type = "Refinance";
-    if (service === "condo")     lead_type = "Condo";
+    if (service === "condo") lead_type = "Condo";
 
     // Strip currency formatting from price (e.g. "$6,567,876" → "6567876")
     const cleanPrice = price ? String(price).replace(/[^0-9.]/g, "") : null;
@@ -73,6 +73,14 @@ export async function POST(req: Request) {
       console.error("Insert error:", error);
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
+
+    // Trigger welcome email via admin portal (fire and forget)
+    const adminUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-panel.vercel.app";
+    fetch(`${adminUrl}/api/webhooks/new-lead`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lead_id: lead.id }),
+    }).catch((err) => console.error("[Intake] Welcome email trigger failed:", err));
 
     // ── Auto-link to client if user is logged in ──────────────
     // When an authenticated user fills the intake form, immediately create

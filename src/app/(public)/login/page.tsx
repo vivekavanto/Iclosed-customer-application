@@ -42,7 +42,18 @@ export default function LoginPage() {
       if (!res.ok) {
         setError(data.error || "Login failed");
       } else if (data.success) {
-        router.push("/dashboard");
+        // Check if retainer is signed before redirecting
+        try {
+          const retainerRes = await fetch("/api/retainer/check");
+          const retainerData = await retainerRes.json();
+          if (retainerData.signed) {
+            router.push("/dashboard");
+          } else {
+            router.push("/retainer");
+          }
+        } catch {
+          router.push("/retainer");
+        }
         router.refresh();
       }
     } catch (err: any) {

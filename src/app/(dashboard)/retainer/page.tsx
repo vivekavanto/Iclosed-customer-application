@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { FileText, MapPin, Tag, Shield, ArrowRight } from "lucide-react";
 import FAQAccordion, { FAQItem } from "@/components/retainer/FAQAccordion";
 import Button from "@/components/ui/Button";
@@ -113,6 +114,7 @@ export default function RetainerPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -124,9 +126,28 @@ export default function RetainerPage() {
 
     setLoading(true);
     try {
-      // TODO: Replace with actual API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const res = await fetch("/api/retainer/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: name,
+          signature,
+          signed_date: date,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrors({ name: data.error || "Something went wrong. Please try again." });
+        return;
+      }
+
       setSubmitted(true);
+      setTimeout(() => {
+        router.push("/dashboard");
+        router.refresh();
+      }, 2000);
     } catch {
       setErrors({ name: "Something went wrong. Please try again." });
     } finally {

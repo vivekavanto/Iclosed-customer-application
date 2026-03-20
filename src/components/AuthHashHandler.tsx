@@ -71,9 +71,17 @@ export default function AuthHashHandler() {
           console.log("[AuthHashHandler] Redirecting to /set-password");
           window.location.href = "/set-password";
         } else {
-          // Regular login → go to dashboard
-          console.log("[AuthHashHandler] Redirecting to /dashboard");
-          window.location.href = "/dashboard";
+          // Regular login → check retainer before going to dashboard
+          try {
+            const retainerRes = await fetch("/api/retainer/check");
+            const retainerData = await retainerRes.json();
+            const dest = retainerData.signed ? "/dashboard" : "/retainer";
+            console.log("[AuthHashHandler] Redirecting to", dest);
+            window.location.href = dest;
+          } catch {
+            console.log("[AuthHashHandler] Retainer check failed, defaulting to /retainer");
+            window.location.href = "/retainer";
+          }
         }
       } catch (err) {
         console.error("[AuthHashHandler] Unexpected error:", err);

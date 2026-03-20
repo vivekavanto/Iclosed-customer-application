@@ -102,8 +102,15 @@ export default function SetPasswordPage() {
       fetch("/api/auth/welcome-email", { method: "POST" }).catch(() => {});
 
       setSuccess(true);
+      // Check retainer status before redirecting
+      let redirectTo = "/retainer";
+      try {
+        const retainerRes = await fetch("/api/retainer/check");
+        const retainerData = await retainerRes.json();
+        if (retainerData.signed) redirectTo = "/dashboard";
+      } catch {}
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push(redirectTo);
         router.refresh();
       }, 2000);
     } catch (err: any) {
