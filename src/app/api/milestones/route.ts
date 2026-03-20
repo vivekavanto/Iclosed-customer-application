@@ -102,7 +102,7 @@ export async function GET(req: Request) {
       // Fetch stage templates for this deal type
       const { data: stageTemplates } = await supabaseAdmin
         .from("stage_templates")
-        .select("id, name, order_index, email_template_id")
+        .select("id, name, order_index, email_template_id, description")
         .eq("lead_type", stageType)
         .order("order_index", { ascending: true });
 
@@ -133,6 +133,7 @@ export async function GET(req: Request) {
             order_index: st.order_index,
             email_template_id: st.email_template_id ?? null,
             stage_template_id: st.id,
+            description: st.description ?? null,
           };
         });
 
@@ -155,7 +156,7 @@ export async function GET(req: Request) {
         supabaseAdmin
           .from("milestones")
           .select(
-            "id, title, status, milestone_date, order_index, completed_at, deal_id"
+            "id, title, status, milestone_date, order_index, completed_at, deal_id, description"
           )
           .in("deal_id", dealIds)
           .order("order_index", { ascending: true }),
@@ -189,6 +190,7 @@ export async function GET(req: Request) {
         order_index: m.order_index,
         completed_at: m.completed_at,
         deal_id: m.deal_id,
+        description: m.description ?? null,
         total_tasks: mTasks.length,
         completed_tasks: mTasks.filter((t: any) => t.completed).length,
       };

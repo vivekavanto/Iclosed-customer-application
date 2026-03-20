@@ -43,6 +43,7 @@ interface Milestone {
   milestone_date: string | null;
   order_index: number;
   completed_at: string | null;
+  description: any | null;
   total_tasks: number;
   completed_tasks: number;
 }
@@ -109,6 +110,7 @@ function AttentionCard({
   loading: boolean;
   onTaskClick: (task: Task) => void;
 }) {
+  // Only show incomplete tasks
   const pending = tasks.filter((t) => !t.completed);
   const allDone = !loading && tasks.length > 0 && pending.length === 0;
   const isEmpty = !loading && tasks.length === 0;
@@ -123,17 +125,17 @@ function AttentionCard({
       >
         <div className="flex items-center gap-3">
           <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${allDone ? "bg-[#dcfce7]" : "bg-[#FEF2F2]"}`}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${allDone ? "bg-[#dcfce7]" : "bg-[#FEF2F2]"}`}
           >
             {allDone ? (
               <CheckCircle2
-                size={17}
+                size={18}
                 className="text-[#22c55e]"
                 strokeWidth={2.2}
               />
             ) : (
               <AlertTriangle
-                size={17}
+                size={18}
                 className="text-[#C10007]"
                 strokeWidth={2}
               />
@@ -141,28 +143,23 @@ function AttentionCard({
           </div>
           <div>
             <h2
-              className={`text-sm font-bold ${allDone ? "text-[#15803d]" : "text-gray-900"}`}
+              className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-gray-900"}`}
             >
               Needs Your Attention
             </h2>
             <p
-              className={`text-xs ${allDone ? "text-[#4ade80]" : "text-gray-400"}`}
+              className={`text-sm ${allDone ? "text-[#4ade80]" : "text-gray-400"}`}
             >
               {loading
                 ? "Loading tasks..."
                 : allDone
-                  ? "No pending tasks require your attention."
+                  ? "All tasks completed!"
                   : isEmpty
-                    ? "No tasks assigned yet. Your lawyer will assign tasks soon."
-                    : `${pending.length} task${pending.length > 1 ? "s" : ""} require${pending.length === 1 ? "s" : ""} your attention`}
+                    ? "No tasks assigned yet."
+                    : `${pending.length} task${pending.length > 1 ? "s" : ""} require${pending.length === 1 ? "s" : ""} your action`}
             </p>
           </div>
         </div>
-        {!loading && !allDone && !isEmpty && (
-          <span className="flex-shrink-0 text-xs font-bold text-[#C10007] bg-[#FEF2F2] border border-[#fca5a5] px-2.5 py-1 rounded-full">
-            {pending.length} pending
-          </span>
-        )}
       </div>
 
       {/* Body */}
@@ -199,9 +196,8 @@ function AttentionCard({
           </p>
         </div>
       ) : (
-        <div className="divide-y divide-gray-50">
-          {tasks.map((task) => {
-            const s = statusConfig[task.status] ?? statusConfig["Pending"];
+        <div className="p-2">
+          {pending.map((task) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
                   month: "short",
@@ -213,55 +209,21 @@ function AttentionCard({
             return (
               <div
                 key={task.id}
-                onClick={() => !task.completed && onTaskClick(task)}
-                className={`flex items-start gap-4 px-5 sm:px-6 py-4 transition-colors duration-200 ${task.completed ? "opacity-40" : "hover:bg-gray-50/60 cursor-pointer"}`}
+                onClick={() => onTaskClick(task)}
+                className="rounded-lg border border-gray-100 px-4 py-3 mb-1.5 last:mb-0 hover:border-[#C10007]/30 hover:bg-[#FEF2F2]/30 transition-all duration-200 cursor-pointer group"
               >
-                {/* Status indicator */}
-                <div className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                  task.completed
-                    ? "bg-[#22c55e] border-[#22c55e]"
-                    : "border-gray-300"
-                }`}>
-                  {task.completed && (
-                    <CheckCircle2 size={12} className="text-white" strokeWidth={3} />
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                    <p
-                      className={`text-sm font-semibold leading-snug ${task.completed ? "line-through text-gray-400" : "text-gray-900"}`}
-                    >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
                       {task.title}
                     </p>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${s.bg} ${s.text} ${s.border}`}
-                    >
-                      {s.label}
-                    </span>
-                  </div>
-                  {task.milestones && (
-                    <p className="text-[10px] text-gray-400 mb-0.5">
-                      Stage: {task.milestones.title}
-                    </p>
-                  )}
-                  {formattedDate && (
                     <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-1">
                       <Clock size={11} strokeWidth={2} />
-                      <span>Due {formattedDate}</span>
+                      <span>{formattedDate ? `Due ${formattedDate}` : "No due date"}</span>
                     </div>
-                  )}
+                  </div>
+                  <ChevronRight size={14} className="flex-shrink-0 text-gray-300 group-hover:text-[#C10007]" strokeWidth={2.5} />
                 </div>
-
-                {/* Arrow */}
-                {!task.completed && (
-                  <ChevronRight
-                    size={13}
-                    className="flex-shrink-0 mt-1 text-gray-400"
-                    strokeWidth={2.5}
-                  />
-                )}
               </div>
             );
           })}
@@ -281,6 +243,8 @@ function StatusTimeline({
   milestones: Milestone[];
   loading: boolean;
 }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   if (loading) {
     return (
       <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm flex items-center justify-center py-16">
@@ -328,9 +292,11 @@ function StatusTimeline({
       <div className="relative">
         <div className="absolute left-[27px] top-4 bottom-4 w-px bg-gray-100" />
         <div className="space-y-0.5">
-          {milestones.map((milestone, idx) => {
+          {milestones.map((milestone) => {
             const isCompleted = milestone.status === "Completed";
             const isInProgress = milestone.status === "In Progress";
+            const isSelected = selectedId === milestone.id;
+            const hasDescription = milestone.description;
             const formattedDate = milestone.milestone_date
               ? new Date(milestone.milestone_date).toLocaleDateString("en-CA", {
                   month: "short",
@@ -339,53 +305,104 @@ function StatusTimeline({
                 })
               : null;
 
+            // Extract description text from jsonb — use "modal" for the full description
+            let descriptionText = "";
+            if (milestone.description) {
+              if (typeof milestone.description === "string") {
+                descriptionText = milestone.description;
+              } else if (typeof milestone.description === "object") {
+                descriptionText = milestone.description.modal ?? "";
+              }
+            }
+
             return (
               <div
                 key={milestone.id}
-                className={`relative flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${isInProgress ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"}`}
+                className="relative"
+                onMouseEnter={() => hasDescription && setSelectedId(milestone.id)}
+                onMouseLeave={() => setSelectedId(null)}
               >
-                {/* Node */}
-                <div className="z-10 flex-shrink-0 mt-0.5">
-                  {isCompleted ? (
-                    <div className="w-[30px] h-[30px] rounded-full bg-gray-100 flex items-center justify-center">
-                      <CheckCircle2
-                        size={15}
-                        className="text-gray-400"
-                        strokeWidth={2}
-                      />
+                <div
+                  className={`flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${
+                    isInProgress ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"
+                  } ${hasDescription ? "cursor-pointer" : ""}`}
+                >
+                  {/* Node */}
+                  <div className="z-10 flex-shrink-0 mt-0.5">
+                    {isCompleted ? (
+                      <div className="w-[30px] h-[30px] rounded-full bg-gray-100 flex items-center justify-center">
+                        <CheckCircle2
+                          size={15}
+                          className="text-gray-400"
+                          strokeWidth={2}
+                        />
+                      </div>
+                    ) : isInProgress ? (
+                      <div className="w-[30px] h-[30px] rounded-full bg-[#C10007] flex items-center justify-center ring-4 ring-[rgba(193,0,7,0.12)]">
+                        <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                      </div>
+                    ) : (
+                      <div className="w-[30px] h-[30px] rounded-full border-2 border-gray-200 bg-white" />
+                    )}
+                  </div>
+
+                  {/* Label + meta */}
+                  <div className="flex-1 pt-0.5 min-w-0">
+                    <p
+                      className={`text-sm font-semibold leading-snug ${isInProgress ? "text-[#C10007]" : isCompleted ? "text-gray-400" : "text-gray-700"}`}
+                    >
+                      {milestone.title}
+                    </p>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      {formattedDate && (
+                        <p
+                          className={`text-xs ${isInProgress ? "text-[#C10007]/70" : "text-gray-400"}`}
+                        >
+                          {formattedDate}
+                        </p>
+                      )}
+                      {milestone.total_tasks > 0 && (
+                        <p className="text-xs text-gray-400">
+                          {milestone.completed_tasks}/{milestone.total_tasks}{" "}
+                          tasks
+                        </p>
+                      )}
                     </div>
-                  ) : isInProgress ? (
-                    <div className="w-[30px] h-[30px] rounded-full bg-[#C10007] flex items-center justify-center ring-4 ring-[rgba(193,0,7,0.12)]">
-                      <div className="w-2.5 h-2.5 rounded-full bg-white" />
-                    </div>
-                  ) : (
-                    <div className="w-[30px] h-[30px] rounded-full border-2 border-gray-200 bg-white" />
+                  </div>
+
+                  {/* Expand indicator */}
+                  {hasDescription && (
+                    <ChevronRight
+                      size={14}
+                      className={`flex-shrink-0 mt-1.5 text-gray-300 transition-transform duration-200 ${isSelected ? "rotate-90" : ""}`}
+                      strokeWidth={2.5}
+                    />
                   )}
                 </div>
 
-                {/* Label + meta */}
-                <div className="flex-1 pt-0.5 min-w-0">
-                  <p
-                    className={`text-sm font-semibold leading-snug ${isInProgress ? "text-[#C10007]" : isCompleted ? "text-gray-400" : "text-gray-700"}`}
-                  >
-                    {milestone.title}
-                  </p>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    {formattedDate && (
-                      <p
-                        className={`text-xs ${isInProgress ? "text-[#C10007]/70" : "text-gray-400"}`}
-                      >
-                        {formattedDate}
+                {/* Hover description popover */}
+                {isSelected && descriptionText && (
+                  <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 w-[280px] sm:w-[340px] z-20 bg-white rounded-xl border border-gray-200 shadow-lg flex flex-col">
+                    <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
+                      <h4 className="text-sm font-bold text-gray-900">
+                        {milestone.title}
+                      </h4>
+                      <p className={`text-xs mt-1 flex items-center gap-1.5 ${
+                        isCompleted ? "text-green-500" : isInProgress ? "text-[#C10007]" : "text-gray-400"
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full inline-block ${
+                          isCompleted ? "bg-green-500" : isInProgress ? "bg-[#C10007]" : "bg-gray-400"
+                        }`} />
+                        {isCompleted ? "Completed" : isInProgress ? "In Progress" : "Pending"}
                       </p>
-                    )}
-                    {milestone.total_tasks > 0 && (
-                      <p className="text-xs text-gray-400">
-                        {milestone.completed_tasks}/{milestone.total_tasks}{" "}
-                        tasks
+                    </div>
+                    <div className="px-5 py-4">
+                      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+                        {descriptionText}
                       </p>
-                    )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}
@@ -464,17 +481,19 @@ export default function DashboardPage() {
       setTasks([]);
       setMilestones([]);
       try {
-        const [tasksRes, msRes] = await Promise.allSettled([
-          fetch(`/api/tasks?deal_id=${activeDealId}`),
-          fetch(`/api/milestones?deal_id=${activeDealId}`),
-        ]);
-        if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
-          const d = await tasksRes.value.json();
-          if (d.success) setTasks(d.tasks);
-        }
-        if (msRes.status === "fulfilled" && msRes.value.ok) {
-          const d = await msRes.value.json();
+        // Fetch milestones FIRST (auto-inserts default milestones)
+        // Then tasks (needs milestones to exist for linking)
+        const msRes = await fetch(`/api/milestones?deal_id=${activeDealId}`);
+        if (msRes.ok) {
+          const d = await msRes.json();
           if (d.success) setMilestones(d.milestones);
+        }
+        setMilestonesLoading(false);
+
+        const tasksRes = await fetch(`/api/tasks?deal_id=${activeDealId}`);
+        if (tasksRes.ok) {
+          const d = await tasksRes.json();
+          if (d.success) setTasks(d.tasks);
         }
       } catch (err) {
         console.error("Deal data fetch error:", err);

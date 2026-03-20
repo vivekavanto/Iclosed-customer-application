@@ -122,7 +122,7 @@ export async function POST(req: Request) {
 
     const { data: stages, error: stageTemplateError } = await supabaseAdmin
       .from("stage_templates")
-      .select("id, name, order_index, email_template_id")
+      .select("id, name, order_index, email_template_id, description")
       .eq("lead_type", leadType)
       .order("order_index", { ascending: true });
 
@@ -145,6 +145,7 @@ export async function POST(req: Request) {
             order_index: stage.order_index,
             email_template_id: stage.email_template_id ?? null,
             stage_template_id: stage.id,
+            description: stage.description ?? null,
           })
           .select("id")
           .single();
