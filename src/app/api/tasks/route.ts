@@ -87,7 +87,7 @@ export async function GET(req: Request) {
 
       const { data: taskTemplates } = await supabaseAdmin
         .from("task_templates")
-        .select("id, name, role_type, order_index, deadline_rule")
+        .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
         .in("lead_type", templateTypes)
         .eq("is_deleted", false)
         .order("order_index", { ascending: true });
@@ -104,16 +104,20 @@ export async function GET(req: Request) {
         (existingTasks ?? []).map((t: any) => t.title?.trim().toLowerCase())
       );
 
-      // Get first milestone for this deal to link tasks
-      const { data: firstMilestone } = await supabaseAdmin
+      // Get all milestones for this deal (with stage_template_id for matching)
+      const { data: dealMilestones } = await supabaseAdmin
         .from("milestones")
-        .select("id")
+        .select("id, stage_template_id")
         .eq("deal_id", dId)
-        .order("order_index", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .order("order_index", { ascending: true });
 
-      const firstMilestoneId = firstMilestone?.id ?? null;
+      // Build map: stage_template_id → milestone_id
+      const stageToMilestone: Record<string, string> = {};
+      let firstMilestoneId: string | null = null;
+      for (const ms of dealMilestones ?? []) {
+        if (!firstMilestoneId) firstMilestoneId = ms.id;
+        if (ms.stage_template_id) stageToMilestone[ms.stage_template_id] = ms.id;
+      }
 
       // Find templates not yet inserted (deduplicate by title)
       const seenTitles = new Set<string>();
@@ -131,7 +135,8 @@ export async function GET(req: Request) {
         })
         .map((tt: any) => ({
           deal_id: dId,
-          milestone_id: firstMilestoneId,
+          milestone_id: tt.stage_template_id ? (stageToMilestone[tt.stage_template_id] ?? firstMilestoneId) : firstMilestoneId,
+          task_template_id: tt.id,
           title: tt.name?.trim() ?? tt.name,
           status: "Pending",
           completed: false,

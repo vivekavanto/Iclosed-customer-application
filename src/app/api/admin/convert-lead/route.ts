@@ -144,6 +144,7 @@ export async function POST(req: Request) {
             status: stage.order_index === 1 ? "In Progress" : "Pending",
             order_index: stage.order_index,
             email_template_id: stage.email_template_id ?? null,
+            stage_template_id: stage.id,
           })
           .select("id")
           .single();
@@ -158,7 +159,7 @@ export async function POST(req: Request) {
     // ── 7. Copy tasks from task_templates ─────────────────────────────────────
     const { data: taskTemplates, error: taskTemplateError } = await supabaseAdmin
       .from("task_templates")
-      .select("id, name, role_type, order_index, deadline_rule")
+      .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
       .eq("lead_type", leadType)
       .eq("is_deleted", false)
       .order("order_index", { ascending: true });
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
         })
         .map((t) => ({
           deal_id: dealId,
-          milestone_id: firstMilestoneId,
+          milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? firstMilestoneId) : firstMilestoneId,
           task_template_id: t.id,
           title: t.name?.trim() ?? t.name,
           status: "Pending",
