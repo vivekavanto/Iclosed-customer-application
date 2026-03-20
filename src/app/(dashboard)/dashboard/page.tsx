@@ -217,9 +217,17 @@ function AttentionCard({
                     <p className="text-sm font-semibold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
                       {task.title}
                     </p>
-                    <div className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-1">
-                      <Clock size={11} strokeWidth={2} />
-                      <span>{formattedDate ? `Due ${formattedDate}` : "No due date"}</span>
+                    <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-400 mt-1">
+                      <span className="flex items-center gap-1.5">
+                        <Clock size={11} strokeWidth={2} />
+                        {formattedDate ? `Due ${formattedDate}` : "No due date"}
+                      </span>
+                      {task.milestones && (
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-1 h-1 rounded-full bg-gray-300" />
+                          {task.milestones.title}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <ChevronRight size={14} className="flex-shrink-0 text-gray-300 group-hover:text-[#C10007]" strokeWidth={2.5} />
