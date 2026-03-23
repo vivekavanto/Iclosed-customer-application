@@ -129,7 +129,7 @@ export async function GET(req: Request) {
           return {
             deal_id: dId,
             title: cleanName,
-            status: "Pending",
+            status: st.order_index === 1 ? "In Progress" : st.order_index === 2 ? "Waiting" : "Pending",
             order_index: st.order_index,
             email_template_id: st.email_template_id ?? null,
             stage_template_id: st.id,

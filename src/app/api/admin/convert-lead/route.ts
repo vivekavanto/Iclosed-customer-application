@@ -141,7 +141,7 @@ export async function POST(req: Request) {
           .insert({
             deal_id: dealId,
             title: cleanName,
-            status: stage.order_index === 1 ? "In Progress" : "Pending",
+            status: stage.order_index === 1 ? "In Progress" : stage.order_index === 2 ? "Waiting" : "Pending",
             order_index: stage.order_index,
             email_template_id: stage.email_template_id ?? null,
             stage_template_id: stage.id,

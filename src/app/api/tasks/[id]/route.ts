@@ -65,6 +65,26 @@ export async function PATCH(
               .from("milestones")
               .update({ status: "In Progress" })
               .eq("id", nextMilestone.id);
+
+            // 5️⃣ Find the milestone after the next one → mark it "Waiting"
+            const { data: waitingMilestone } = await supabaseAdmin
+              .from("milestones")
+              .select("id")
+              .eq("deal_id", task.deal_id)
+              .neq("id", nextMilestone.id)
+              .neq("status", "Completed")
+              .neq("status", "In Progress")
+              .gt("order_index", currentMilestone.order_index)
+              .order("order_index", { ascending: true })
+              .limit(1)
+              .maybeSingle();
+
+            if (waitingMilestone) {
+              await supabaseAdmin
+                .from("milestones")
+                .update({ status: "Waiting" })
+                .eq("id", waitingMilestone.id);
+            }
           }
         }
       } else if (anyDone) {

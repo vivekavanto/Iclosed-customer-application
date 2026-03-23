@@ -303,6 +303,7 @@ function StatusTimeline({
           {milestones.map((milestone) => {
             const isCompleted = milestone.status === "Completed";
             const isInProgress = milestone.status === "In Progress";
+            const isWaiting = milestone.status === "Waiting";
             const isSelected = selectedId === milestone.id;
             const hasDescription = milestone.description;
             const formattedDate = milestone.milestone_date
@@ -331,40 +332,42 @@ function StatusTimeline({
                 onMouseLeave={() => setSelectedId(null)}
               >
                 <div
-                  className={`flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 ${
-                    isInProgress ? "bg-[#FEF2F2]" : "hover:bg-gray-50/70"
-                  } ${hasDescription ? "cursor-pointer" : ""}`}
+                  className={`flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 hover:bg-gray-50/70 ${hasDescription ? "cursor-pointer" : ""}`}
                 >
                   {/* Node */}
                   <div className="z-10 flex-shrink-0 mt-0.5">
                     {isCompleted ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-gray-100 flex items-center justify-center">
+                      <div className="w-[30px] h-[30px] rounded-full bg-green-500 flex items-center justify-center">
                         <CheckCircle2
                           size={15}
-                          className="text-gray-400"
-                          strokeWidth={2}
+                          className="text-white"
+                          strokeWidth={2.5}
                         />
                       </div>
                     ) : isInProgress ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-[#C10007] flex items-center justify-center ring-4 ring-[rgba(193,0,7,0.12)]">
+                      <div className="w-[30px] h-[30px] rounded-full bg-orange-400 flex items-center justify-center">
+                        <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                      </div>
+                    ) : isWaiting ? (
+                      <div className="w-[30px] h-[30px] rounded-full bg-blue-500 flex items-center justify-center">
                         <div className="w-2.5 h-2.5 rounded-full bg-white" />
                       </div>
                     ) : (
-                      <div className="w-[30px] h-[30px] rounded-full border-2 border-gray-200 bg-white" />
+                      <div className="w-[30px] h-[30px] rounded-full bg-gray-300" />
                     )}
                   </div>
 
                   {/* Label + meta */}
                   <div className="flex-1 pt-0.5 min-w-0">
                     <p
-                      className={`text-sm font-semibold leading-snug ${isInProgress ? "text-[#C10007]" : isCompleted ? "text-gray-400" : "text-gray-700"}`}
+                      className={`text-sm font-semibold leading-snug ${isCompleted ? "text-gray-400" : "text-gray-700"}`}
                     >
                       {milestone.title}
                     </p>
                     <div className="flex items-center gap-3 mt-0.5">
                       {formattedDate && (
                         <p
-                          className={`text-xs ${isInProgress ? "text-[#C10007]/70" : "text-gray-400"}`}
+                          className="text-xs text-gray-400"
                         >
                           {formattedDate}
                         </p>
@@ -396,12 +399,12 @@ function StatusTimeline({
                         {milestone.title}
                       </h4>
                       <p className={`text-xs mt-1 flex items-center gap-1.5 ${
-                        isCompleted ? "text-green-500" : isInProgress ? "text-[#C10007]" : "text-gray-400"
+                        isCompleted ? "text-green-500" : isInProgress ? "text-orange-500" : isWaiting ? "text-blue-500" : "text-gray-400"
                       }`}>
                         <span className={`w-2 h-2 rounded-full inline-block ${
-                          isCompleted ? "bg-green-500" : isInProgress ? "bg-[#C10007]" : "bg-gray-400"
+                          isCompleted ? "bg-green-500" : isInProgress ? "bg-orange-400" : isWaiting ? "bg-blue-500" : "bg-gray-300"
                         }`} />
-                        {isCompleted ? "Completed" : isInProgress ? "In Progress" : "Pending"}
+                        {isCompleted ? "Completed" : isInProgress ? "In Progress" : isWaiting ? "Waiting" : "Pending"}
                       </p>
                     </div>
                     <div className="px-5 py-4">
