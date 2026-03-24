@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
+import { useToast } from "@/components/ui/Toast";
 
 
 interface Task {
@@ -349,9 +350,7 @@ function StatusTimeline({
                         <div className="w-2.5 h-2.5 rounded-full bg-white" />
                       </div>
                     ) : isWaiting ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-blue-500 flex items-center justify-center">
-                        <div className="w-2.5 h-2.5 rounded-full bg-white" />
-                      </div>
+                      <div className="w-[30px] h-[30px] rounded-full bg-blue-500" />
                     ) : (
                       <div className="w-[30px] h-[30px] rounded-full bg-gray-300" />
                     )}
@@ -517,14 +516,19 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDealId]);
 
+  // ── Toast ────────────────────────────────────────────────
+  const { success: toastSuccess, error: toastError } = useToast();
+
   // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string) {
+    const taskTitle = tasks.find((t) => t.id === id)?.title ?? "Task";
     setTasks((prev) =>
       prev.map((t) => t.id === id ? { ...t, completed: true, status: "Completed" as const } : t),
     );
     try {
       const res = await fetch(`/api/tasks/${id}`, { method: "PATCH" });
       if (!res.ok) throw new Error("Failed");
+      toastSuccess(`"${taskTitle}" completed successfully!`);
       if (activeDealId) {
         const [msRes, tasksRes] = await Promise.all([
           fetch(`/api/milestones?deal_id=${activeDealId}`),
@@ -534,6 +538,7 @@ export default function DashboardPage() {
         if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) setTasks(d.tasks); }
       }
     } catch {
+      toastError(`Failed to complete "${taskTitle}". Please try again.`);
       setTasks((prev) =>
         prev.map((t) => t.id === id ? { ...t, completed: false, status: "In Progress" as const } : t),
       );

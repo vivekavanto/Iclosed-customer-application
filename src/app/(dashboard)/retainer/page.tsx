@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, MapPin, Tag, Shield, ArrowRight } from "lucide-react";
 import FAQAccordion, { FAQItem } from "@/components/retainer/FAQAccordion";
@@ -111,10 +111,37 @@ export default function RetainerPage() {
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
   const [signature, setSignature] = useState("");
+  const [propertyAddress, setPropertyAddress] = useState("");
+  const [leadType, setLeadType] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    async function prefill() {
+      try {
+        const res = await fetch("/api/retainer/check");
+        const data = await res.json();
+        if (data.full_name) {
+          setName(data.full_name);
+          setSignature(data.full_name);
+        }
+        if (data.signed_date) {
+          setDate(data.signed_date);
+        }
+        if (data.property_address) {
+          setPropertyAddress(data.property_address);
+        }
+        if (data.lead_type) {
+          setLeadType(data.lead_type);
+        }
+      } catch {
+        // silently fail — user can fill manually
+      }
+    }
+    prefill();
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -187,10 +214,10 @@ export default function RetainerPage() {
             Retainer Agreement
           </h1>
           <p className="text-sm text-gray-500 mt-2">
-            10 Milner Business Ct, Toronto, CA, Scarborough, ON
+            {propertyAddress || "Address not available"}
           </p>
           <p className="text-sm text-gray-400 mt-0.5">
-            Transaction Type: Purchase
+            Transaction Type: {leadType || "N/A"}
           </p>
         </div>
         <span className="flex-shrink-0 w-11 h-11 rounded-full border-2 border-[#C10007] flex items-center justify-center text-sm font-bold text-[#C10007]">

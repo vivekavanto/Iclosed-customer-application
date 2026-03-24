@@ -38,8 +38,32 @@ export async function GET() {
       .in("lead_id", leadIds)
       .limit(1);
 
+    // Fetch lead details from the most recent lead
+    const { data: lead } = await supabaseAdmin
+      .from("leads")
+      .select("first_name, last_name, lead_type, address_street,  address_city, address_province, address_postal_code")
+      .eq("id", leadIds[0])
+      .single();
+
+    const fullName = lead
+      ? `${lead.first_name ?? ""} ${lead.last_name ?? ""}`.trim()
+      : "";
+
+    const addressParts = lead
+      ? [
+          lead.address_street,
+          lead.address_city,
+          lead.address_province,
+          lead.address_postal_code,
+        ].filter(Boolean).join(", ")
+      : "";
+
     return NextResponse.json({
       signed: signatures !== null && signatures.length > 0,
+      full_name: fullName,
+      signed_date: new Date().toISOString().split("T")[0],
+      property_address: addressParts,
+      lead_type: lead?.lead_type ?? "",
     });
   } catch (err: any) {
     console.error("[Retainer Check] Server error:", err);

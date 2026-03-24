@@ -175,7 +175,6 @@ export default function Step5Contact({
     const handleComplete = () => {
         if (!isCompleteEnabled) return;
         onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons });
-        setShowSuccessModal(true);
     };
     return (
         <div className="min-h-screen bg-white w-full">

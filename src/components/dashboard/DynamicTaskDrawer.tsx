@@ -355,6 +355,7 @@ export default function DynamicTaskDrawer({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [saving, setSaving] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [saved, setSaved] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
@@ -586,8 +587,61 @@ export default function DynamicTaskDrawer({
     }
   }
 
+  async function handleSaveDraft() {
+    if (!taskId) return;
+    setSavingDraft(true);
+    setGlobalError(null);
+
+    try {
+      // Save text/select/textarea responses without validation
+      const textResponses = fields
+        .filter((f) => f.field_type !== "file" && f.field_type !== "checkbox")
+        .filter((f) => values[f.id]?.trim())
+        .map((f) => ({
+          field_id: f.id,
+          field_label: f.label,
+          field_type: f.field_type,
+          value: values[f.id] ?? "",
+        }));
+
+      // Keep existing file responses
+      const existingFileResponses = Object.entries(existingFiles)
+        .map(([fieldId, info]) => {
+          const field = fields.find((f) => f.id === fieldId);
+          return {
+            field_id: fieldId,
+            field_label: field?.label ?? "",
+            field_type: "file",
+            file_url: info.url,
+            file_name: info.name,
+          };
+        });
+
+      const allResponses = [...textResponses, ...existingFileResponses];
+
+      if (allResponses.length > 0) {
+        const res = await fetch("/api/task-responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task_id: taskId, responses: allResponses }),
+        });
+        const result = await res.json();
+        if (!result.success)
+          throw new Error(result.error ?? "Failed to save draft.");
+      }
+
+      setSaved(true);
+      setTimeout(() => handleClose(), 1500);
+    } catch (err: any) {
+      setGlobalError(err.message ?? "An error occurred. Please try again.");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   const isCalendlyTask = fields.some((f) => f.field_type === "checkbox");
   const hasFileFields = fields.some((f) => f.field_type === "file");
+  const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
 
   return (
     <>
@@ -621,11 +675,13 @@ export default function DynamicTaskDrawer({
               {taskTitle}
             </h2>
             <p className="text-xs text-gray-400 mt-1">
-              {hasFileFields
-                ? "Upload the required documents to complete this task."
-                : isCalendlyTask
-                  ? "Book your appointment and confirm below."
-                  : "Fill in the required information to complete this task."}
+              {taskTitle.toLowerCase().includes("upload identification")
+                ? "Upload your identification documents to verify your identity for the property transaction."
+                : hasFileFields
+                  ? "Upload the required documents to complete this task."
+                  : isCalendlyTask
+                    ? "Book your appointment and confirm below."
+                    : "Fill in the required information to complete this task."}
             </p>
           </div>
           <button
@@ -660,26 +716,78 @@ export default function DynamicTaskDrawer({
                   ))}
                 </ul>
               </div>
+            </>
+          )}
 
-              {/* Condominium Insurance Recommendations */}
+          {/* ── Upload Identification static sections ── */}
+          {taskTitle.toLowerCase().includes("upload identification") && (
+            <>
+              {/* Upload status */}
+              {(() => {
+                const idFields = fields.filter((f) => f.field_type === "file");
+                const uploaded = idFields.filter(
+                  (f) => files[f.id] || existingFiles[f.id]
+                ).length;
+                const total = idFields.length || 4;
+                const allDone = uploaded === total && total > 0;
+                return (
+                  <div
+                    className={`flex items-center gap-2 rounded-lg px-4 py-3 text-xs font-semibold ${
+                      allDone
+                        ? "bg-green-50 border border-green-200 text-green-700"
+                        : "bg-amber-50 border border-amber-200 text-amber-700"
+                    }`}
+                  >
+                    {allDone ? (
+                      <CheckCircle2 size={14} strokeWidth={2.5} />
+                    ) : (
+                      <AlertCircle size={14} strokeWidth={2.5} />
+                    )}
+                    Upload Status: {uploaded} of {total} required documents uploaded
+                    {allDone && " - Task Complete!"}
+                  </div>
+                );
+              })()}
+
+              {/* Why is Identification Required? */}
+              <div className="rounded-xl border-l-4 border-l-[#C10007] border border-[#fca5a5] bg-[#FEF2F2] px-5 py-4">
+                <p className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+                  <AlertCircle size={15} className="text-[#C10007]" strokeWidth={2} />
+                  Why is Identification Required?
+                </p>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Government-issued identification is required to verify your identity and comply with legal requirements for property transactions.
+                </p>
+                <p className="text-xs text-gray-600 leading-relaxed mt-2">
+                  This helps prevent fraud and ensures all parties are properly identified before proceeding with the closing.
+                </p>
+              </div>
+
+              {/* Required Documents */}
               <div>
-                <p className="text-sm font-bold text-gray-900 mb-1">Condominium Insurance Recommendations</p>
-                <p className="text-xs text-gray-400 mb-3">For condominium purchases, consider these additional coverage options:</p>
-                <ul className="space-y-2.5">
-                  {[
-                    { title: "Unit Coverage", desc: "Covers improvements, fixtures, and personal property within your unit" },
-                    { title: "Contents Insurance", desc: "Protects your personal belongings and furniture" },
-                    { title: "Loss Assessment Coverage", desc: "Covers special assessments from the condo corporation" },
-                    { title: "Additional Living Expenses", desc: "Covers temporary accommodation if your unit becomes uninhabitable" },
-                  ].map((item) => (
-                    <li key={item.title} className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#C10007] flex-shrink-0 mt-1.5" />
-                      <div>
-                        <p className="text-xs font-semibold text-gray-800">{item.title}:</p>
-                        <p className="text-xs text-[#C10007]">{item.desc}</p>
-                      </div>
-                    </li>
-                  ))}
+                <p className="text-sm font-bold text-gray-900 mb-3">Required Documents</p>
+                <ul className="space-y-3">
+                  <li className="flex items-start gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#C10007] flex-shrink-0 mt-1" />
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">Primary ID:</p>
+                      <p className="text-xs text-gray-500">Valid passport, citizenship card, or permanent resident card</p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#C10007] flex-shrink-0 mt-1" />
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">Secondary ID:</p>
+                      <p className="text-xs text-gray-500">Driver&apos;s license, provincial photo card, or SIN card (not paper version)</p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#C10007] flex-shrink-0 mt-1" />
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">Important Note:</p>
+                      <p className="text-xs text-gray-500">Health card is not a valid government ID</p>
+                    </div>
+                  </li>
                 </ul>
               </div>
             </>
@@ -758,9 +866,29 @@ export default function DynamicTaskDrawer({
           {/* Render dynamic fields */}
           {!fieldsLoading &&
             fields.map((field) => {
+              const isIdTask = taskTitle.toLowerCase().includes("upload identification");
+              const fileFields = fields.filter((f) => f.field_type === "file");
+              const fileIdx = fileFields.indexOf(field);
+
               if (field.field_type === "file") {
+                // Section headers for identification task
+                const showPrimaryHeader = isIdTask && fileIdx === 0;
+                const showSecondaryHeader = isIdTask && fileIdx === 2;
+
                 return (
                   <div key={field.id}>
+                    {showPrimaryHeader && (
+                      <div className="mb-3">
+                        <p className="text-sm font-bold text-gray-900">Upload Primary Identification (Front and Back)</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Passport, Citizenship Card, or Permanent Resident Card</p>
+                      </div>
+                    )}
+                    {showSecondaryHeader && (
+                      <div className="mb-3 mt-2">
+                        <p className="text-sm font-bold text-gray-900">Upload Secondary Identification (Required - Front and Back)</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Driver&apos;s License, Provincial Photo Card, or SIN Card (not paper version)</p>
+                      </div>
+                    )}
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
                       {field.required && (
@@ -944,6 +1072,32 @@ export default function DynamicTaskDrawer({
               );
             })}
 
+          {/* ── Upload Identification: Document Requirements Checklist ── */}
+          {taskTitle.toLowerCase().includes("upload identification") && (
+            <div className="rounded-xl border border-gray-200 p-4">
+              <p className="text-sm font-bold text-gray-900 mb-3">Document Requirements Checklist</p>
+              <ul className="space-y-2">
+                {[
+                  { text: "Two pieces of identification are required", highlight: "(Primary and Secondary)" },
+                  { text: "Both front and back of each ID document (if applicable)", highlight: "" },
+                  { text: "Documents are clear and legible", highlight: "" },
+                  { text: "IDs are current and not expired", highlight: "" },
+                  { text: "Names match your personal information", highlight: "" },
+                ].map((item) => (
+                  <li key={item.text} className="flex items-start gap-2 text-xs text-gray-600">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-900 flex-shrink-0 mt-1.5" />
+                    <span>
+                      {item.text}
+                      {item.highlight && (
+                        <span className="text-[#C10007] font-semibold"> {item.highlight}</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Global error */}
           {globalError && (
             <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
@@ -960,28 +1114,57 @@ export default function DynamicTaskDrawer({
         {/* Footer */}
         {!fieldsLoading && fields.length > 0 && !saved && (
           <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3">
-            <Button
-              variant="secondary"
-              fullWidth
-              onClick={handleClose}
-              disabled={saving}
-              className="sm:flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              fullWidth
-              loading={saving}
-              onClick={handleSubmit}
-              className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
-            >
-              {isCalendlyTask
-                ? "Confirm Appointment"
-                : hasFileFields
-                  ? "Upload & Submit"
-                  : "Save & Continue"}
-            </Button>
+            {isPersonalInfoTask ? (
+              <>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  loading={savingDraft}
+                  disabled={saving}
+                  onClick={handleSaveDraft}
+                  className="sm:flex-1"
+                >
+                  Save as Draft
+                </Button>
+                <Button
+                  variant="primary"
+                  fullWidth
+                  loading={saving}
+                  disabled={savingDraft}
+                  onClick={handleSubmit}
+                  className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
+                >
+                  Save &amp; Continue
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={handleClose}
+                  disabled={saving}
+                  className="sm:flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  fullWidth
+                  loading={saving}
+                  onClick={handleSubmit}
+                  className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
+                >
+                  {isCalendlyTask
+                    ? "Confirm Appointment"
+                    : taskTitle.toLowerCase().includes("upload identification")
+                      ? "Upload Identification Documents"
+                      : hasFileFields
+                        ? "Upload & Submit"
+                        : "Save & Continue"}
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>
