@@ -321,7 +321,7 @@ function StatusTimeline({
               if (typeof milestone.description === "string") {
                 descriptionText = milestone.description;
               } else if (typeof milestone.description === "object") {
-                descriptionText = milestone.description.modal ?? "";
+                descriptionText = milestone.description.modal || milestone.description.short || "";
               }
             }
 
