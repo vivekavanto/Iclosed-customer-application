@@ -4,10 +4,18 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-// Default tasks should display for ALL lead types
-// Fetch all task templates regardless of deal type
-function getTaskTemplateTypes(): string[] {
-  return ["Purchase", "Sale", "Refinance"];
+// Map deal type to task_template lead_type
+function getTaskTemplateType(dealType: string): string {
+  switch (dealType) {
+    case "Purchase & Sale":
+      return "Purchase";
+    case "Sale":
+      return "Sale";
+    case "Refinance":
+      return "Refinance";
+    default:
+      return "Purchase";
+  }
 }
 
 export async function GET(req: Request) {
@@ -82,24 +90,36 @@ export async function GET(req: Request) {
     // task_templates for each deal
     // ─────────────────────────────────────────
     for (const dId of dealIds) {
-      // Fetch task templates for all lead types (default tasks apply to all deals)
-      const templateTypes = getTaskTemplateTypes();
+      // Get deal type to filter correct templates
+      const { data: dealData } = await supabaseAdmin
+        .from("deals")
+        .select("type")
+        .eq("id", dId)
+        .single();
 
+      const dealType = dealData?.type ?? "Purchase";
+      const templateType = getTaskTemplateType(dealType);
+
+      // Fetch only default task templates for this deal's lead type
       const { data: taskTemplates } = await supabaseAdmin
         .from("task_templates")
         .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
-        .in("lead_type", templateTypes)
+        .eq("lead_type", templateType)
+        .eq("is_default", true)
         .eq("is_deleted", false)
         .order("order_index", { ascending: true });
 
       if (!taskTemplates || taskTemplates.length === 0) continue;
 
-      // Fetch existing tasks for this deal (title only — task_template_id may not exist)
+      // Fetch existing tasks for this deal — match by task_template_id
       const { data: existingTasks } = await supabaseAdmin
         .from("tasks")
-        .select("title")
+        .select("task_template_id, title")
         .eq("deal_id", dId);
 
+      const existingTemplateIds = new Set(
+        (existingTasks ?? []).map((t: any) => t.task_template_id).filter(Boolean)
+      );
       const existingTitles = new Set(
         (existingTasks ?? []).map((t: any) => t.title?.trim().toLowerCase())
       );
@@ -119,23 +139,22 @@ export async function GET(req: Request) {
         if (ms.stage_template_id) stageToMilestone[ms.stage_template_id] = ms.id;
       }
 
-      // Find templates not yet inserted (deduplicate by title)
-      const seenTitles = new Set<string>();
+      // Find templates not yet inserted — match by task_template_id first, fallback to title
       const missingTasks = taskTemplates
         .filter((tt: any) => {
-          const cleanTitle = tt.name?.trim().toLowerCase();
-          // Skip if a task with same title already exists in DB
-          if (existingTitles.has(cleanTitle)) return false;
-          // Skip duplicate template names (e.g. same task in Purchase + Sale)
-          if (seenTitles.has(cleanTitle)) return false;
-          seenTitles.add(cleanTitle);
+          // Skip if already inserted by template ID
+          if (existingTemplateIds.has(tt.id)) return false;
+          // Fallback: skip if a task with same title already exists
+          if (existingTitles.has(tt.name?.trim().toLowerCase())) return false;
           // Only client-facing tasks
           const role = (tt.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
         })
         .map((tt: any) => ({
           deal_id: dId,
-          milestone_id: tt.stage_template_id ? (stageToMilestone[tt.stage_template_id] ?? firstMilestoneId) : firstMilestoneId,
+          milestone_id: tt.stage_template_id
+            ? (stageToMilestone[tt.stage_template_id] ?? firstMilestoneId)
+            : firstMilestoneId,
           task_template_id: tt.id,
           title: tt.name?.trim() ?? tt.name,
           status: "Pending",
