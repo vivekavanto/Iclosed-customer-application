@@ -12,6 +12,7 @@ import {
   CalendarCheck,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
+import Modal from "@/components/ui/Modal";
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -66,6 +67,19 @@ function isSelectOptions(opts: any): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
+// Format phone as (416) 555-1234
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 10);
+  if (digits.length <= 3) return digits.length ? `(${digits}` : "";
+  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+// Validate (XXX) XXX-XXXX format
+function isValidPhone(v: string) {
+  return /^\(\d{3}\) \d{3}-\d{4}$/.test(v.trim());
+}
+
 function getFileConfig(opts: any): {
   accept: string;
   max_mb: number;
@@ -103,23 +117,30 @@ function FileSlot({
   error: string | null;
   onFile: (fieldId: string, file: File) => void;
   onClear: (fieldId: string) => void;
+  onError?: (fieldId: string, error: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const cfg = getFileConfig(field.options);
 
-  function validate(f: File): string | null {
+  function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
     const allowed = cfg.accept.split(",").map((s) => s.trim());
-    if (!allowed.includes(ext)) return `Only ${cfg.accept} files allowed.`;
+    if (!allowed.includes(ext))
+      return `Invalid file type. Only ${cfg.accept.replace(/\./g, "").toUpperCase()} files are allowed.`;
     if (f.size > cfg.max_mb * 1024 * 1024)
-      return `Max file size is ${cfg.max_mb}MB.`;
+      return `File size (${(f.size / 1024 / 1024).toFixed(1)}MB) exceeds the ${cfg.max_mb}MB limit.`;
     return null;
   }
 
   function handlePick(f: File) {
-    const err = validate(f);
-    if (!err) onFile(field.id, f);
+    const err = validateFile(f);
+    if (err) {
+      onError?.(field.id, err);
+    } else {
+      onError?.(field.id, "");
+      onFile(field.id, f);
+    }
   }
 
   if (existingUrl && !file) {
@@ -357,11 +378,13 @@ export default function DynamicTaskDrawer({
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
   // Calendly checkbox (for Schedule Appointment task)
   const [calendlyConfirmed, setCalendlyConfirmed] = useState(false);
-  const CALENDLY_URL = "https://calendly.com";
+  const CALENDLY_URL = "https://calendly.com/mathan-tamilcentre/30min";
 
   // ── Fetch fields when drawer opens ──
   useEffect(() => {
@@ -374,6 +397,7 @@ export default function DynamicTaskDrawer({
     setFileErrors({});
     setGlobalError(null);
     setSaved(false);
+    setDraftSaved(false);
     setCalendlyConfirmed(false);
 
     fetch(`/api/task-form-fields?task_id=${taskId}`)
@@ -420,6 +444,7 @@ export default function DynamicTaskDrawer({
 
   function handleClose() {
     setSaved(false);
+    setDraftSaved(false);
     onClose();
   }
 
@@ -449,15 +474,22 @@ export default function DynamicTaskDrawer({
   function validate(): boolean {
     const newErrors: Record<string, string> = {};
     for (const field of fields) {
-      if (!field.required) continue;
+      const val = values[field.id]?.trim() ?? "";
+
       if (field.field_type === "file") {
-        if (!files[field.id] && !existingFiles[field.id]) {
+        if (field.required && !files[field.id] && !existingFiles[field.id]) {
           newErrors[field.id] = `${field.label} is required.`;
         }
       } else if (field.field_type === "checkbox") {
         // handled separately for Calendly
+      } else if (field.field_type === "phone") {
+        if (field.required && !val) {
+          newErrors[field.id] = `${field.label} is required.`;
+        } else if (val && !isValidPhone(val)) {
+          newErrors[field.id] = "Enter a valid phone number in (416) 555-1234 format.";
+        }
       } else {
-        if (!values[field.id]?.trim()) {
+        if (field.required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
         }
       }
@@ -623,14 +655,14 @@ export default function DynamicTaskDrawer({
         const res = await fetch("/api/task-responses", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ task_id: taskId, responses: allResponses }),
+          body: JSON.stringify({ task_id: taskId, responses: allResponses, draft: true }),
         });
         const result = await res.json();
         if (!result.success)
           throw new Error(result.error ?? "Failed to save draft.");
       }
 
-      setSaved(true);
+      setDraftSaved(true);
       setTimeout(() => handleClose(), 1500);
     } catch (err: any) {
       setGlobalError(err.message ?? "An error occurred. Please try again.");
@@ -812,6 +844,25 @@ export default function DynamicTaskDrawer({
             </div>
           )}
 
+          {/* Draft saved state */}
+          {draftSaved && !saved && (
+            <div className="flex items-center gap-3 rounded-xl bg-blue-50 border border-blue-200 px-4 py-4">
+              <CheckCircle2
+                size={20}
+                className="text-blue-600 flex-shrink-0"
+                strokeWidth={2}
+              />
+              <div>
+                <p className="text-sm font-bold text-blue-700">
+                  Draft saved!
+                </p>
+                <p className="text-xs text-blue-600 mt-0.5">
+                  Your progress has been saved. You can continue later.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Loading state */}
           {fieldsLoading && (
             <div className="flex items-center justify-center py-16">
@@ -820,7 +871,7 @@ export default function DynamicTaskDrawer({
           )}
 
           {/* No fields found */}
-          {!fieldsLoading && fields.length === 0 && !saved && (
+          {!fieldsLoading && fields.length === 0 && !saved && !draftSaved && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
               <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center">
                 <CheckCircle2
@@ -903,6 +954,7 @@ export default function DynamicTaskDrawer({
                       error={fileErrors[field.id] ?? null}
                       onFile={setFile}
                       onClear={clearFile}
+                      onError={(id, err) => setFileErrors((prev) => ({ ...prev, [id]: err }))}
                     />
                     {errors[field.id] && (
                       <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
@@ -1056,8 +1108,12 @@ export default function DynamicTaskDrawer({
                       field.field_type === "phone" ? "tel" : field.field_type
                     }
                     value={values[field.id] ?? ""}
-                    onChange={(e) => setValue(field.id, e.target.value)}
-                    placeholder={field.placeholder ?? ""}
+                    onChange={(e) =>
+                      field.field_type === "phone"
+                        ? setValue(field.id, formatPhone(e.target.value))
+                        : setValue(field.id, e.target.value)
+                    }
+                    placeholder={field.placeholder ?? (field.field_type === "phone" ? "(416) 555-1234" : "")}
                     className={[
                       inputBase,
                       errors[field.id] ? inputError : inputNormal,
@@ -1112,7 +1168,7 @@ export default function DynamicTaskDrawer({
         </div>
 
         {/* Footer */}
-        {!fieldsLoading && fields.length > 0 && !saved && (
+        {!fieldsLoading && fields.length > 0 && !saved && !draftSaved && (
           <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3">
             {isPersonalInfoTask ? (
               <>
@@ -1131,7 +1187,10 @@ export default function DynamicTaskDrawer({
                   fullWidth
                   loading={saving}
                   disabled={savingDraft}
-                  onClick={handleSubmit}
+                  onClick={() => {
+                    if (!validate()) return;
+                    setShowConfirmModal(true);
+                  }}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
                   Save &amp; Continue
@@ -1168,6 +1227,72 @@ export default function DynamicTaskDrawer({
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal for Personal Information */}
+      <Modal
+        open={showConfirmModal}
+        onClose={() => setShowConfirmModal(false)}
+        size="sm"
+      >
+        <div className="relative text-center py-2">
+          {/* Close button */}
+          <button
+            onClick={() => setShowConfirmModal(false)}
+            className="absolute -top-1 -right-1 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          {/* Icon */}
+          <div className="flex justify-center mb-4">
+            <div className="w-14 h-14 rounded-full bg-[#FEF2F2] flex items-center justify-center">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="#C10007" strokeWidth="2" />
+                <path d="M12 8v4" stroke="#C10007" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="12" cy="16" r="1" fill="#C10007" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Title */}
+          <h3 className="text-lg font-bold text-[#C10007] mb-2">
+            Important Notice
+          </h3>
+
+          {/* Message */}
+          <p className="text-sm text-gray-600 leading-relaxed mb-6 px-2">
+            If you need any modifications after submitting, please contact the clerks at{" "}
+            <a
+              href="mailto:iclosed@navawilson.law"
+              className="text-blue-600 hover:underline font-medium"
+            >
+              iclosed@navawilson.law
+            </a>{" "}
+            for modifications.
+          </p>
+
+          {/* Buttons */}
+          <div className="flex gap-3 px-2">
+            <button
+              onClick={() => setShowConfirmModal(false)}
+              className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                setShowConfirmModal(false);
+                handleSubmit();
+              }}
+              disabled={saving}
+              className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-[#C10007] border border-[#C10007] rounded-lg hover:bg-[#a30006] transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {saving ? "Submitting..." : "Confirm Submission"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

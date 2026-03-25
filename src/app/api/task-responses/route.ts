@@ -23,7 +23,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { task_id, responses } = body;
+    const { task_id, responses, draft } = body;
 
     if (!task_id || !Array.isArray(responses) || responses.length === 0) {
       return NextResponse.json(
@@ -52,6 +52,11 @@ export async function POST(req: Request) {
 
     if (insertError) {
       return NextResponse.json({ success: false, error: insertError.message }, { status: 400 });
+    }
+
+    // If draft, save responses only — do NOT mark task as completed
+    if (draft) {
+      return NextResponse.json({ success: true, draft: true });
     }
 
     // Auto-mark the task as completed on submit
