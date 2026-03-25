@@ -51,6 +51,29 @@ export async function POST(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
+    // Sync user metadata from leads table if missing
+    const userMeta = data.user?.user_metadata;
+    if (!userMeta?.first_name) {
+      const { data: lead } = await supabaseAdmin
+        .from("leads")
+        .select("first_name, last_name")
+        .eq("email", email)
+        .limit(1)
+        .single();
+
+      if (lead?.first_name) {
+        await supabaseAdmin.auth.admin.updateUserById(data.user!.id, {
+          user_metadata: {
+            ...userMeta,
+            first_name: lead.first_name,
+            last_name: lead.last_name ?? "",
+            display_name: `${lead.first_name} ${lead.last_name ?? ""}`.trim(),
+          },
+        });
+        console.log("[LOGIN] Synced user metadata from leads table");
+      }
+    }
+
     // Get client record
     const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
