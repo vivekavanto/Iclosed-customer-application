@@ -290,7 +290,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Lender portal link */}
+          {/* Lender portal link - hidden for now
           <p className="mt-8 text-center text-[0.8rem] text-gray-500">
             Are you a lender?{" "}
             <a
@@ -300,6 +300,7 @@ export default function LoginPage() {
               Sign in to Lender Portal →
             </a>
           </p>
+          */}
         </div>
       </main>
     </div>
