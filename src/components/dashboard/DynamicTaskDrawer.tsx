@@ -109,6 +109,7 @@ function FileSlot({
   error,
   onFile,
   onClear,
+  onError,
 }: {
   field: FormField;
   file: File | null;
