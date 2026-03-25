@@ -27,6 +27,33 @@ export default function SetPasswordPage() {
 
     const checkInitialSession = async () => {
       try {
+        // Handle PKCE code from password reset email link
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+        if (code) {
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) {
+            console.error("[SetPassword] Code exchange failed:", exchangeError.message);
+          }
+          // Clean the URL
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+
+        // Also handle hash fragment tokens (invite flow)
+        const hash = window.location.hash;
+        if (hash && hash.includes("access_token")) {
+          const hashParams = new URLSearchParams(hash.substring(1));
+          const accessToken = hashParams.get("access_token");
+          const refreshToken = hashParams.get("refresh_token");
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            window.history.replaceState(null, "", window.location.pathname);
+          }
+        }
+
         const {
           data: { session },
         } = await supabase.auth.getSession();
