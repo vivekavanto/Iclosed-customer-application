@@ -5,11 +5,12 @@ import { cookies } from "next/headers";
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
+  const type = requestUrl.searchParams.get("type"); // "recovery", "invite", "signup", etc.
   const next = requestUrl.searchParams.get("next") ?? "/dashboard";
   const origin = requestUrl.origin;
 
   console.log(`[Auth Callback] URL: ${request.url}`);
-  console.log(`[Auth Callback] Code present: ${!!code}, Next: ${next}`);
+  console.log(`[Auth Callback] Code present: ${!!code}, Type: ${type}, Next: ${next}`);
 
   if (code) {
     const cookieStore = await cookies();
@@ -30,11 +31,22 @@ export async function GET(request: Request) {
       }
     );
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
     if (!error) {
-      console.log(`[Auth Callback] Success! Redirecting to ${next}`);
-      return NextResponse.redirect(`${origin}${next}`);
+      // Detect password recovery/invite flow from:
+      // 1. Explicit "type" query param from Supabase
+      // 2. The "next" param pointing to set-password
+      // 3. The session's AMR (Authentication Methods Reference) indicating recovery
+      const amrMethods = (data.session as any)?.amr?.map((a: any) => a.method) ?? [];
+      const isRecovery = type === "recovery" || type === "invite"
+        || next === "/set-password"
+        || amrMethods.includes("recovery")
+        || amrMethods.includes("otp");
+
+      const redirectTo = isRecovery ? "/set-password" : next;
+      console.log(`[Auth Callback] Success! type: ${type}, AMR: ${amrMethods.join(",")}, Redirecting to ${redirectTo}`);
+      return NextResponse.redirect(`${origin}${redirectTo}`);
     } else {
       console.error(`[Auth Callback] Exchange Error: ${error.message}`);
       return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
