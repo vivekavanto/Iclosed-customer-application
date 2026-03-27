@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Mail, ArrowRight, KeyRound } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 
 export default function ForgotPasswordPage() {
@@ -10,17 +10,16 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   // Show error from expired/invalid reset links
   useEffect(() => {
-    const errorMsg = searchParams.get("error");
+    const params = new URLSearchParams(window.location.search);
+    const errorMsg = params.get("error");
     if (errorMsg) {
       setError(errorMsg);
-      // Clean the URL
       window.history.replaceState(null, "", window.location.pathname);
     }
-  }, [searchParams]);
+  }, []);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -137,19 +137,11 @@ export default function SetPasswordPage() {
 
       if (updateError) throw updateError;
 
-      // Trigger welcome email on first login (fire and forget)
-      fetch("/api/auth/welcome-email", { method: "POST" }).catch(() => {});
-
       setSuccess(true);
-      // Check retainer status before redirecting
-      let redirectTo = "/retainer";
-      try {
-        const retainerRes = await fetch("/api/retainer/check");
-        const retainerData = await retainerRes.json();
-        if (retainerData.signed) redirectTo = "/dashboard";
-      } catch {}
+      // Sign out and redirect to login so user logs in with new password
+      await supabase.auth.signOut();
       setTimeout(() => {
-        router.push(redirectTo);
+        router.push("/login");
         router.refresh();
       }, 2000);
     } catch (err: any) {
@@ -248,7 +240,7 @@ export default function SetPasswordPage() {
                   Password Saved!
                 </h3>
                 <p className="text-sm text-gray-500">
-                  Redirecting you to your dashboard...
+                  Redirecting you to login...
                 </p>
               </div>
             ) : (
