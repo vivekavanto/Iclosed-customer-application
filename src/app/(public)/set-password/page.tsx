@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Lock, ArrowRight, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { KeyRound, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 
 export default function SetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -21,6 +23,16 @@ export default function SetPasswordPage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
+
+  // Password validation rules
+  const validations = useMemo(() => ({
+    minLength: password.length >= 8,
+    hasUppercase: /[A-Z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
+  }), [password]);
+
+  const allValid = validations.minLength && validations.hasUppercase && validations.hasNumber && validations.hasSpecial;
 
   useEffect(() => {
     let mounted = true;
@@ -106,8 +118,8 @@ export default function SetPasswordPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (!allValid) {
+      setError("Please meet all password requirements");
       setLoading(false);
       return;
     }
@@ -208,14 +220,20 @@ export default function SetPasswordPage() {
           </div>
 
           <div className="mb-8 p-6 bg-white border border-gray-100 rounded-2xl shadow-sm">
-            <h1 className="mb-1.5 text-2xl font-bold text-gray-900 tracking-tight">
-              {success ? "Success!" : "Create a Password"}
-            </h1>
-            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-              {success
-                ? "Your password has been set successfully."
-                : "Please choose a secure password to protect your real estate transaction details."}
-            </p>
+            {/* Header with key icon */}
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border-2 border-red-100 bg-red-50">
+                <KeyRound size={24} className="text-[#c0392b]" />
+              </div>
+              <h1 className="mb-1.5 text-2xl font-bold text-gray-900 tracking-tight">
+                {success ? "Success!" : "Set your new password"}
+              </h1>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                {success
+                  ? "Your password has been set successfully."
+                  : "To keep your account secure, create a strong, unique password below."}
+              </p>
+            </div>
 
             {success ? (
               <div className="flex flex-col items-center justify-center py-6">
@@ -235,7 +253,7 @@ export default function SetPasswordPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-                {/* Password field */}
+                {/* New Password field */}
                 <div className="flex flex-col gap-1.5">
                   <label
                     htmlFor="password"
@@ -244,19 +262,27 @@ export default function SetPasswordPage() {
                     New Password
                   </label>
                   <div className="relative flex items-center">
-                    <Lock
+                    <KeyRound
                       size={16}
                       className="pointer-events-none absolute left-3.5 text-gray-400"
                     />
                     <input
                       id="password"
-                      type="password"
-                      placeholder="••••••••"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter a password with at least 8 characters"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-3 pl-10 pr-4 text-sm text-gray-900 outline-none placeholder:text-gray-400 transition-all focus:border-[#c0392b] focus:bg-white focus:ring-2 focus:ring-[#c0392b]/10"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-3 pl-10 pr-11 text-sm text-gray-900 outline-none placeholder:text-gray-400 transition-all focus:border-[#c0392b] focus:bg-white focus:ring-2 focus:ring-[#c0392b]/10"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
 
@@ -269,20 +295,44 @@ export default function SetPasswordPage() {
                     Confirm Password
                   </label>
                   <div className="relative flex items-center">
-                    <Lock
+                    <KeyRound
                       size={16}
                       className="pointer-events-none absolute left-3.5 text-gray-400"
                     />
                     <input
                       id="confirmPassword"
-                      type="password"
-                      placeholder="••••••••"
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="Re-enter the same password to confirm"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-3 pl-10 pr-4 text-sm text-gray-900 outline-none placeholder:text-gray-400 transition-all focus:border-[#c0392b] focus:bg-white focus:ring-2 focus:ring-[#c0392b]/10"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-3 pl-10 pr-11 text-sm text-gray-900 outline-none placeholder:text-gray-400 transition-all focus:border-[#c0392b] focus:bg-white focus:ring-2 focus:ring-[#c0392b]/10"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
+                </div>
+
+                {/* Password validation rules */}
+                <div className="text-sm text-gray-500 space-y-1">
+                  <p className="font-medium text-gray-700">Use at least 8 characters, with a mix of:</p>
+                  <ul className="space-y-0.5 ml-1">
+                    <li className={`flex items-center gap-1.5 ${validations.hasUppercase ? "text-green-600" : "text-gray-400"}`}>
+                      <span className="text-xs">{validations.hasUppercase ? "✓" : "•"}</span> One uppercase letter
+                    </li>
+                    <li className={`flex items-center gap-1.5 ${validations.hasNumber ? "text-green-600" : "text-gray-400"}`}>
+                      <span className="text-xs">{validations.hasNumber ? "✓" : "•"}</span> One number
+                    </li>
+                    <li className={`flex items-center gap-1.5 ${validations.hasSpecial ? "text-green-600" : "text-gray-400"}`}>
+                      <span className="text-xs">{validations.hasSpecial ? "✓" : "•"}</span> One special character (like !, @, #)
+                    </li>
+                  </ul>
                 </div>
 
                 {error && (
@@ -294,19 +344,13 @@ export default function SetPasswordPage() {
                 {/* Submit button */}
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !allValid || password !== confirmPassword}
                   className="group mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#c0392b] px-5 py-3 text-sm font-semibold text-white shadow-md shadow-[#c0392b]/20 transition-all hover:enabled:bg-[#a93226] hover:enabled:-translate-y-px disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" />
                   ) : (
-                    <>
-                      Save and Continue
-                      <ArrowRight
-                        size={16}
-                        className="transition-transform duration-150 group-hover:translate-x-1"
-                      />
-                    </>
+                    "Confirm"
                   )}
                 </button>
               </form>

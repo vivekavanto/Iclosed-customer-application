@@ -25,11 +25,37 @@ export default function AuthHashHandler() {
     // Only run in the browser
     if (typeof window === "undefined") return;
 
-    const hash = window.location.hash;
-    if (!hash || !hash.includes("access_token")) return;
+    // Handle auth errors from Supabase (expired/invalid links)
+    // Supabase sends errors in both query params and hash fragment
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashStr = window.location.hash;
+    const hashParams = hashStr ? new URLSearchParams(hashStr.substring(1)) : null;
+
+    const errorCode = searchParams.get("error_code") || hashParams?.get("error_code");
+    const errorDesc = searchParams.get("error_description") || hashParams?.get("error_description");
+
+    if (errorCode || errorDesc) {
+      console.log("[AuthHashHandler] Auth error detected:", errorCode, errorDesc);
+      const message = errorCode === "otp_expired"
+        ? "Your password reset link has expired. Please request a new one."
+        : errorDesc || "Authentication failed";
+      window.location.replace("/forgot-password?error=" + encodeURIComponent(message));
+      return;
+    }
+
+    // Handle PKCE code that lands on the wrong page (e.g. home page)
+    // This happens when Supabase ignores redirectTo and sends code to Site URL
+    const code = searchParams.get("code");
+    if (code && window.location.pathname !== "/set-password" && window.location.pathname !== "/api/auth/callback") {
+      console.log("[AuthHashHandler] PKCE code detected on wrong page, redirecting to /set-password");
+      window.location.replace("/set-password?code=" + encodeURIComponent(code));
+      return;
+    }
+
+    if (!hashStr || !hashStr.includes("access_token")) return;
 
     // Parse the hash fragment
-    const params = new URLSearchParams(hash.substring(1));
+    const params = new URLSearchParams(hashStr.substring(1));
     const accessToken = params.get("access_token");
     const refreshToken = params.get("refresh_token");
     const type = params.get("type"); // "invite", "recovery", "signup", etc.
