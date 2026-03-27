@@ -17,13 +17,8 @@ export default function ResetLinkSentPage() {
         <div className="pointer-events-none absolute -bottom-16 -left-20 h-60 w-60 rounded-full bg-white opacity-[0.12]" />
 
         <div className="relative z-10 mt-4">
-          <div className="mb-12 flex items-baseline gap-0.5">
-            <span className="font-serif text-[2rem] font-extrabold italic leading-none text-white">
-              i
-            </span>
-            <span className="text-[1.6rem] font-extrabold leading-none tracking-tight text-white">
-              Closed
-            </span>
+          <div className="mb-12">
+            <img src="/logo.png" alt="iClosed" className="h-8 brightness-0 invert" />
           </div>
 
           <h2 className="mb-4 text-[1.75rem] font-bold leading-snug text-white">
@@ -45,13 +40,8 @@ export default function ResetLinkSentPage() {
       <main className="flex flex-1 items-start justify-center px-6 pt-12 md:items-center md:pt-8">
         <div className="w-full max-w-[400px]">
           {/* Mobile-only logo */}
-          <div className="mb-8 flex items-baseline gap-0.5 md:hidden">
-            <span className="font-serif text-[2rem] font-extrabold italic leading-none text-[#c0392b]">
-              i
-            </span>
-            <span className="text-[1.6rem] font-extrabold leading-none tracking-tight text-gray-900">
-              Closed
-            </span>
+          <div className="mb-8 md:hidden">
+            <img src="/logo.png" alt="iClosed" className="h-8" />
           </div>
 
           {/* Success card */}

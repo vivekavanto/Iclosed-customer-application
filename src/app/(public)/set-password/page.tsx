@@ -174,13 +174,8 @@ export default function SetPasswordPage() {
             "linear-gradient(145deg, #c0392b 0%, #8b1a12 60%, #5a0d09 100%)",
         }}
       >
-        <div className="relative z-10 flex items-baseline gap-0.5">
-          <span className="font-serif text-[2.4rem] font-extrabold italic leading-none text-white drop-shadow-md">
-            i
-          </span>
-          <span className="text-[2rem] font-extrabold leading-none tracking-tight text-white/95">
-            Closed
-          </span>
+        <div className="relative z-10">
+          <img src="/logo.png" alt="iClosed" className="h-8 brightness-0 invert" />
         </div>
 
         <div className="relative z-10">
@@ -202,13 +197,8 @@ export default function SetPasswordPage() {
       <main className="flex flex-1 items-start justify-center px-6 pt-12 md:items-center md:pt-8 bg-gray-50/30">
         <div className="w-full max-w-[400px]">
           {/* Mobile-only logo */}
-          <div className="mb-8 flex items-baseline gap-0.5 md:hidden">
-            <span className="font-serif text-[2rem] font-extrabold italic leading-none text-[#c0392b]">
-              i
-            </span>
-            <span className="text-[1.6rem] font-extrabold leading-none tracking-tight text-gray-900">
-              Closed
-            </span>
+          <div className="mb-8 md:hidden">
+            <img src="/logo.png" alt="iClosed" className="h-8" />
           </div>
 
           <div className="mb-8 p-6 bg-white border border-gray-100 rounded-2xl shadow-sm">
