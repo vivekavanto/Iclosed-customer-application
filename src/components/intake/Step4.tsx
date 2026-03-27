@@ -2,20 +2,24 @@
 
 import React, { useState, useEffect } from "react";
 import Button from "@/components/ui/Button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
 
 interface Step4Props {
   agreementSigned: "yes" | "no" | null;
   setAgreementSigned: (value: "yes" | "no") => void;
   setStep: (step: number) => void;
   step: number;
+  uploadedFile: File | null;
+  setUploadedFile: (file: File | null) => void;
 }
 
 const Step4: React.FC<Step4Props> = ({
   agreementSigned,
   setAgreementSigned,
   setStep,
-  step
+  step,
+  uploadedFile,
+  setUploadedFile,
 }) => {
   const [isSelected, setIsSelected] = useState<"yes" | "no" | null>(agreementSigned);
 
@@ -23,29 +27,16 @@ const Step4: React.FC<Step4Props> = ({
     setIsSelected(agreementSigned);
   }, [agreementSigned]);
 
-
   const leftSteps = [
     { id: 1, label: "Select Service" },
-    { id: 2, label: "Price" },
-    { id: 3, label: "Address" },
-    { id: 4, label: "Agreement Signed" },
-    ...(agreementSigned === "yes"
-      ? [{ id: 5, label: "Upload Document" }]
-      : []),
-    {
-      id: agreementSigned === "yes" ? 6 : 5,
-      label: "Contact Info",
-    },
+    { id: 2, label: "Price & Address" },
+    { id: 3, label: "Agreement" },
+    { id: 4, label: "Contact Info" },
   ];
 
   const handleNext = () => {
     if (!isSelected) return;
-
-    if (isSelected === "yes") {
-      setStep(5); // Upload step
-    } else {
-      setStep(5); // Contact step (parent already handles condition)
-    }
+    setStep(4); // Contact step
   };
 
   return (
@@ -109,10 +100,11 @@ const Step4: React.FC<Step4Props> = ({
 
         </div>
 
-        {/* RIGHT PANEL (UNCHANGED) */}
-        <div className="flex-1 p-6 sm:p-10 lg:p-12 overflow-y-auto">
+        {/* RIGHT PANEL */}
+        <div className="flex-1 p-6 sm:p-10 lg:p-12 pb-28 lg:pb-12 overflow-y-auto">
           <div className="space-y-6 w-full">
 
+            {/* Agreement selection cards */}
             <div
               onClick={() => setAgreementSigned("yes")}
               className={`cursor-pointer rounded-2xl border-2 p-8 transition-all duration-200 ${
@@ -137,9 +129,60 @@ const Step4: React.FC<Step4Props> = ({
               <p className="mt-2 text-gray-500">I haven't signed it yet.</p>
             </div>
 
-            {/* Desktop button row — right below the cards */}
+            {/* Upload section — shown when agreement is signed */}
+            {agreementSigned === "yes" && (
+              <>
+                <div className="border-t border-gray-200" />
+
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Upload your Agreement of Purchase and Sale
+                    </p>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 uppercase tracking-wide">
+                      Optional
+                    </span>
+                  </div>
+
+                  {/* Upload zone */}
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-2xl p-14 flex flex-col items-center justify-center bg-white cursor-pointer hover:border-[#C10007] transition-colors"
+                    onClick={() => document.getElementById("agreement-file")?.click()}
+                  >
+                    <UploadCloud size={28} className="text-gray-400 mb-4" />
+                    <p className="text-gray-600 text-lg text-center">
+                      Click to <span className="text-[#C10007] font-medium">browse</span> or drag & drop your file
+                    </p>
+                    <p className="text-gray-400 text-sm mt-2">PDF, JPG, PNG — max 10 MB</p>
+                    <input
+                      id="agreement-file"
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={(e) => e.target.files && setUploadedFile(e.target.files[0])}
+                    />
+                  </div>
+
+                  {uploadedFile && (
+                    <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4">
+                      <p className="text-green-700 text-sm font-medium truncate">
+                        ✓ {uploadedFile.name}
+                      </p>
+                      <button
+                        onClick={() => setUploadedFile(null)}
+                        className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Desktop button row */}
             <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
-              <Button onClick={() => setStep(3)} variant="secondary" size="md">
+              <Button onClick={() => setStep(2)} variant="secondary" size="md">
                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
               </Button>
               <Button onClick={handleNext} disabled={!isSelected} variant="primary" size="md">
@@ -149,7 +192,7 @@ const Step4: React.FC<Step4Props> = ({
 
             {/* Mobile fixed bottom buttons */}
             <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
-              <Button onClick={() => setStep(3)} variant="secondary" size="lg" className="flex-1">
+              <Button onClick={() => setStep(2)} variant="secondary" size="lg" className="flex-1">
                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
               </Button>
               <Button onClick={handleNext} disabled={!isSelected} variant="primary" size="lg" className="flex-1">

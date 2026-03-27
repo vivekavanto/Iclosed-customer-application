@@ -1,5 +1,6 @@
 "use client";
-import { Home, FileText, Repeat, Check, ChevronRight } from "lucide-react";
+import { Home, FileText, Repeat, Check, ChevronRight, Info, ChevronDown } from "lucide-react";
+import { useState } from "react";
 import Button from "@/components/ui/Button";
 
 interface Service {
@@ -31,6 +32,26 @@ export function Step1({
   step,
   agreementSigned,
 }: Step1Props) {
+  const [showDisbursements, setShowDisbursements] = useState(false);
+
+  const administrationFees = [
+    "Courier & postage",
+    "Paper & photocopying",
+    "File administration & storage",
+    "Fax transmission",
+    "All communication with us",
+  ];
+
+  const thirdPartyFees = [
+    "Title search fees",
+    "Registration costs",
+    "Execution search fees",
+    "Transaction levy surcharge",
+    "Tax certificate",
+    "Title insurance",
+    "Conveyancing software",
+  ];
+
   const handleNext = () => {
     if (!selected) return alert("Please select a service to continue.");
     if (selected === "closing" && !selectedClosingOption)
@@ -43,11 +64,9 @@ export function Step1({
 
   const leftSteps = [
     { id: 1, label: "Select Service" },
-    { id: 2, label: " Price" },
-    { id: 3, label: "Address" },
-    { id: 4, label: "Agreement Signed" },
-    ...(agreementSigned === "yes" ? [{ id: 5, label: "Upload Document" }] : []),
-    { id: agreementSigned === "yes" ? 6 : 5, label: "Contact Info" },
+    { id: 2, label: "Price & Address" },
+    { id: 3, label: "Agreement" },
+    { id: 4, label: "Contact Info" },
   ];
 
   const closingCards = [
@@ -57,7 +76,7 @@ export function Step1({
       title: "I am buying a property",
       description:
         "You're buying a property? We'll handle the legal steps to complete your purchase securely.",
-      price: "$1029",
+      price: "$1229",
     },
     {
       id: "selling",
@@ -65,7 +84,7 @@ export function Step1({
       title: "I am selling a property",
       description:
         "Selling a property? We'll prepare your documents and manage the legal side of your sale.",
-      price: "$1029",
+      price: "$1129",
     },
     {
       id: "both",
@@ -73,7 +92,7 @@ export function Step1({
       title: "I am buying and selling a property",
       description:
         "Doing both? iClosed will coordinate both ends to ensure a smooth and connected closing.",
-      price: "$1999",
+      price: "$2099",
     },
   ];
 
@@ -251,11 +270,94 @@ export function Step1({
                           {card.price}
                         </p>
 
-                        <p className="text-xs text-gray-400">+ Disbursements</p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowDisbursements((prev) => !prev);
+                          }}
+                          className="text-xs text-[#C10007] underline underline-offset-2 hover:text-[#a30006] transition-colors cursor-pointer font-medium mt-0.5 inline-flex items-center gap-1"
+                        >
+                          + Disbursements
+                          <ChevronDown
+                            size={12}
+                            className={`transition-transform duration-200 ${showDisbursements ? "rotate-180" : ""}`}
+                          />
+                        </button>
                       </div>
                     );
                   })}
                 </div>
+
+                {/* Disbursements inline section */}
+                {showDisbursements && (
+                  <div className="mt-6 rounded-2xl border border-gray-200 overflow-hidden">
+
+                    {/* Header */}
+                    <div className="bg-gray-900  px-5 sm:px-6 py-5 sm:py-6">
+                      <h3 className="text-base sm:text-lg font-bold" style={{ color: "#ffffff" }}>What are disbursements?</h3>
+                      <p className="mt-2 text-xs sm:text-sm text-gray-300 leading-relaxed">
+                        When you close on a property, your lawyer pays certain costs on your behalf — things like government registration fees, title searches, and insurance. These are called disbursements. They're not a source of profit for your lawyer; they're simply passed through to you, at cost.
+                      </p>
+                    </div>
+
+                    {/* Body */}
+                    <div className="px-5 sm:px-6 py-5 sm:py-6 space-y-5">
+
+                      {/* Administration fees */}
+                      <div>
+                        <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-[#C10007] bg-[#FEF2F2] px-2.5 py-1 rounded-full mb-3">
+                          Included in our fee
+                        </span>
+                        <h4 className="text-sm sm:text-base font-bold text-gray-900 mb-1">Administration fees</h4>
+                        <p className="text-xs sm:text-sm text-gray-500 leading-relaxed mb-3">
+                          The overhead costs of delivering your legal service. At iClosed, we don't nickel-and-dime you for these — they're already built into our flat fee.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {administrationFees.map((fee) => (
+                            <div key={fee} className="flex items-center gap-2.5">
+                              <div className="w-1.5 h-1.5 rounded-full bg-[#C10007] flex-shrink-0" />
+                              <span className="text-xs sm:text-sm text-gray-700">{fee}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100" />
+
+                      {/* Third-party fees */}
+                      <div>
+                        <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full mb-3">
+                          Billed separately
+                        </span>
+                        <h4 className="text-sm sm:text-base font-bold text-gray-900 mb-1">Third-party fees</h4>
+                        <p className="text-xs sm:text-sm text-gray-500 leading-relaxed mb-3">
+                          Costs charged by outside service providers that are directly tied to your closing. These vary by transaction, so they're billed as disbursements only when required.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {thirdPartyFees.map((fee) => (
+                            <div key={fee} className="flex items-center gap-2.5">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                              <span className="text-xs sm:text-sm text-gray-700">{fee}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border-t border-gray-100" />
+
+                      {/* Transparency note */}
+                      <div className="flex gap-3 bg-gray-50 rounded-xl p-3 sm:p-4">
+                        <Info size={14} className="text-gray-400 flex-shrink-0 mt-0.5" strokeWidth={2} />
+                        <p className="text-[11px] sm:text-xs text-gray-500 leading-relaxed">
+                          <span className="font-semibold text-gray-700">Why the transparency?</span>{" "}
+                          We believe you should know exactly what you're paying for — and why. If you have questions about any disbursement on your statement, just ask.
+                        </p>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
               </div>
             )}
 

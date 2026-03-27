@@ -16,6 +16,7 @@ interface ContactData {
     meetingDate: Date | null;
     meetingTime: string | null;
     coPersons: CoPerson[];
+    referralSource: string;
 }
 
 interface CoPerson {
@@ -95,11 +96,9 @@ export default function Step5Contact({
 
     const leftSteps = [
         { id: 1, label: "Select Service" },
-        { id: 2, label: "Price" },
-        { id: 3, label: "Address" },
-        { id: 4, label: "Agreement Signed" },
-        ...(agreementSigned === "yes" ? [{ id: 5, label: "Upload Document" }] : []),
-        { id: agreementSigned === "yes" ? 6 : 5, label: "Contact Info" },
+        { id: 2, label: "Price & Address" },
+        { id: 3, label: "Agreement" },
+        { id: 4, label: "Contact Info" },
     ];
 
     const formatPhone = (value: string): string => {
@@ -108,6 +107,17 @@ export default function Step5Contact({
         if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
         return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
     };
+
+    const REFERRAL_OPTIONS = [
+        "Real estate agent",
+        "Mortgage broker",
+        "Friend or family member",
+        "Online search",
+        "Repeat client",
+        "Other",
+    ];
+    const [referralSource, setReferralSource] = React.useState("");
+    const [referralOther, setReferralOther] = React.useState("");
 
     const [isValid, setIsValid] = React.useState(false);
     const [calendlyBooked, setCalendlyBooked] = React.useState(false);
@@ -142,8 +152,7 @@ export default function Step5Contact({
 
     // Calendly booking success is passed as a callback to CalScheduler
 
-    const isCompleteEnabled =
-        isValid && (agreementSigned === "yes" || (agreementSigned === "no" && calendlyBooked));
+    const isCompleteEnabled = isValid;
 
     React.useEffect(() => {
         const newErrors: typeof errors = {};
@@ -174,7 +183,8 @@ export default function Step5Contact({
     }, [formData]);
     const handleComplete = () => {
         if (!isCompleteEnabled) return;
-        onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons });
+        const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;
+        onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons, referralSource: finalReferral });
     };
     return (
         <div className="min-h-screen bg-white w-full">
@@ -299,6 +309,36 @@ export default function Step5Contact({
                         {touched.phone && errors.phone && (
                             <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
                         )}
+
+                        {/* How did you hear about us? (optional) */}
+                        <div className="flex flex-col gap-1.5 w-full">
+                            <label className="text-sm font-medium text-gray-900">
+                                How did you hear about us?{" "}
+                                <span className="text-gray-400 font-normal">(optional)</span>
+                            </label>
+                            <select
+                                value={referralSource}
+                                onChange={(e) => {
+                                    setReferralSource(e.target.value);
+                                    if (e.target.value !== "Other") setReferralOther("");
+                                }}
+                                className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
+                            >
+                                <option value="">Select an option</option>
+                                {REFERRAL_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                            </select>
+                            {referralSource === "Other" && (
+                                <input
+                                    type="text"
+                                    placeholder="Please specify..."
+                                    value={referralOther}
+                                    onChange={(e) => setReferralOther(e.target.value)}
+                                    className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                />
+                            )}
+                        </div>
 
                         {/* Co-person cards */}
                         {coPersons.length > 0 && (
@@ -442,19 +482,21 @@ export default function Step5Contact({
                             </>
                         )}
 
-                        {/* ── Calendly Inline Scheduler ── */}
-                        {agreementSigned === "no" && (
-                            <div>
-                                {/* Section header */}
-                                <div className="flex items-center gap-3 mb-3">
-                                    <div className="w-8 h-8 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-                                        <CalendarCheck size={15} className="text-[#C10007]" strokeWidth={2} />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-gray-900">Schedule Your Initial Meeting</p>
-                                        <p className="text-xs text-gray-400">Pick a date and time that works for you</p>
-                                    </div>
+                        {/* ── Calendly Inline Scheduler (Optional) ── */}
+                        <div>
+                            {/* Section header */}
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-8 h-8 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+                                    <CalendarCheck size={15} className="text-[#C10007]" strokeWidth={2} />
                                 </div>
+                                <div>
+                                    <p className="text-sm font-bold text-gray-900">
+                                        Schedule Your Initial Meeting{" "}
+                                        <span className="text-gray-400 font-normal">(optional)</span>
+                                    </p>
+                                    <p className="text-xs text-gray-400">Pick a date and time that works for you</p>
+                                </div>
+                            </div>
 
                                 {/* Quick info strip */}
                                 <div className="flex flex-wrap gap-4 mb-4 px-1">
@@ -493,7 +535,6 @@ export default function Step5Contact({
                                     </div>
                                 )}
                             </div>
-                        )}
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
@@ -501,12 +542,10 @@ export default function Step5Contact({
                                 variant="secondary"
                                 size="md"
                                 onClick={() => {
-                                    if (agreementSigned === "yes") {
-                                        setStep(5); // back to upload step
-                                    } else {
+                                    if (agreementSigned === "no") {
                                         setAgreementSigned(null);
-                                        setStep(4);
                                     }
+                                    setStep(3);
                                 }}
                             >
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
@@ -523,12 +562,10 @@ export default function Step5Contact({
                                 size="lg"
                                 className="flex-1"
                                 onClick={() => {
-                                    if (agreementSigned === "yes") {
-                                        setStep(5); // back to upload step
-                                    } else {
+                                    if (agreementSigned === "no") {
                                         setAgreementSigned(null);
-                                        setStep(4);
                                     }
+                                    setStep(3);
                                 }}
                             >
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back

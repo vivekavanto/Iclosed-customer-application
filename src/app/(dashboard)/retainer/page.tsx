@@ -231,12 +231,12 @@ export default function RetainerPage() {
       {/* ═══════════════════════════════════════
          ENGAGEMENT LETTER
       ═══════════════════════════════════════ */}
-      <div className="px-6 sm:px-10 lg:px-16 pt-8 sm:pt-10">
+      {/* <div className="px-6 sm:px-10 lg:px-16 pt-8 sm:pt-10">
         <h2 className="text-lg sm:text-xl font-bold text-gray-900">
           Engagement Letter
         </h2>
         <div className="border-t border-gray-200 mt-4" />
-      </div>
+      </div> */}
 
       {/* FAQ Section */}
       <div className="px-6 sm:px-10 lg:px-16">

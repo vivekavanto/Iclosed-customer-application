@@ -189,7 +189,7 @@ export default function LoginPage() {
                 </label>
                 <a
                   href="/forgot-password"
-                  className="text-[0.78rem] text-[#c0392b] no-underline transition-colors duration-150 hover:text-[#a93226]"
+                  className="text-[0.78rem] text-[#c0392b] no-underline transition-colors duration-150 hover:text-[#a93226] cursor-pointer"
                 >
                   Forgot password?
                 </a>
@@ -213,7 +213,7 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
                   aria-label={showPassword ? "Hide password" : "Show password"}
-                  className="absolute right-3 flex items-center rounded p-1 text-gray-400 transition-colors duration-150 hover:text-gray-700"
+                  className="absolute right-3 flex items-center rounded p-1 text-gray-400 transition-colors duration-150 hover:text-gray-700 cursor-pointer"
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -226,7 +226,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-[#c0392b] px-5 py-[0.78rem] text-[0.9rem] font-semibold tracking-[0.01em] text-white shadow-[0_4px_14px_rgba(192,57,43,0.35)] transition-all duration-200 hover:enabled:bg-[#a93226] hover:enabled:-translate-y-px hover:enabled:shadow-[0_6px_18px_rgba(192,57,43,0.4)] active:enabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
+              className="cursor-pointer group mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-[#c0392b] px-5 py-[0.78rem] text-[0.9rem] font-semibold tracking-[0.01em] text-white shadow-[0_4px_14px_rgba(192,57,43,0.35)] transition-all duration-200 hover:enabled:bg-[#a93226] hover:enabled:-translate-y-px hover:enabled:shadow-[0_6px_18px_rgba(192,57,43,0.4)] active:enabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {loading ? (
                 <span className="h-[18px] w-[18px] animate-spin rounded-full border-2 border-white/35 border-t-white" />

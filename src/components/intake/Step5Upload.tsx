@@ -22,14 +22,13 @@ export default function Step5Upload({
 }: Step5UploadProps): React.ReactElement {
     const leftSteps = [
         { id: 1, label: "Select Service" },
-        { id: 2, label: "Price" },
-        { id: 3, label: "Address" },
-        { id: 4, label: "Agreement Signed" },
+        { id: 2, label: "Price & Address" },
+        { id: 3, label: "Agreement Signed" },
         ...(agreementSigned === "yes"
-            ? [{ id: 5, label: "Upload Document" }]
+            ? [{ id: 4, label: "Upload Document" }]
             : []),
         {
-            id: agreementSigned === "yes" ? 6 : 5,
+            id: agreementSigned === "yes" ? 5 : 4,
             label: "Contact Info",
         },
     ];
@@ -141,7 +140,7 @@ export default function Step5Upload({
                             <p className="text-center text-sm text-gray-400">
                                 Don't have it yet?{" "}
                                 <button
-                                    onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)}
+                                    onClick={() => setStep(agreementSigned === "yes" ? 5 : 4)}
                                     className="text-gray-500 underline underline-offset-2 hover:text-[#C10007] transition-colors cursor-pointer font-medium"
                                 >
                                     Skip for now
@@ -151,20 +150,20 @@ export default function Step5Upload({
 
                         {/* Desktop button row */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
-                            <Button onClick={() => setStep(4)} variant="secondary" size="md">
+                            <Button onClick={() => setStep(3)} variant="secondary" size="md">
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)} variant="primary" size="md">
+                            <Button onClick={() => setStep(agreementSigned === "yes" ? 5 : 4)} variant="primary" size="md">
                                 Continue <ChevronRight size={16} strokeWidth={2.5} />
                             </Button>
                         </div>
 
                         {/* Mobile fixed bottom buttons */}
                         <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
-                            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setStep(4)}>
+                            <Button variant="secondary" size="lg" className="flex-1" onClick={() => setStep(3)}>
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button variant="primary" size="lg" className="flex-1" onClick={() => setStep(agreementSigned === "yes" ? 6 : 5)}>
+                            <Button variant="primary" size="lg" className="flex-1" onClick={() => setStep(agreementSigned === "yes" ? 5 : 4)}>
                                 Continue <ChevronRight size={18} strokeWidth={2.5} />
                             </Button>
                         </div>

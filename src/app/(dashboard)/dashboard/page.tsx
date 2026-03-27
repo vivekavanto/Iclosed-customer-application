@@ -282,17 +282,14 @@ function StatusTimeline({
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm">
       {/* Header row */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="mb-2">
         <h2 className="text-base font-bold text-gray-900">Status Overview</h2>
-        <span className="text-xs font-semibold text-[#C10007] bg-[#FEF2F2] px-2.5 py-1 rounded-full">
-          Step {completedCount}/{milestones.length}
-        </span>
       </div>
 
       {/* Progress bar */}
       <div className="w-full h-1.5 bg-gray-100 rounded-full mb-6 overflow-hidden">
         <div
-          className="h-full bg-[#C10007] rounded-full transition-all duration-500"
+          className="h-full bg-gray-600 rounded-full transition-all duration-500"
           style={{ width: `${progressPercent}%` }}
         />
       </div>
@@ -301,10 +298,11 @@ function StatusTimeline({
       <div className="relative">
         <div className="absolute left-[27px] top-4 bottom-4 w-px bg-gray-100" />
         <div className="space-y-0.5">
-          {milestones.map((milestone) => {
+          {milestones
+            .filter((m) => m.status !== "Waiting")
+            .map((milestone) => {
             const isCompleted = milestone.status === "Completed";
             const isInProgress = milestone.status === "In Progress";
-            const isWaiting = milestone.status === "Waiting";
             const isSelected = selectedId === milestone.id;
             const hasDescription = milestone.description;
             const formattedDate = milestone.milestone_date
@@ -315,7 +313,6 @@ function StatusTimeline({
                 })
               : null;
 
-            // Extract description text from jsonb — use "modal" for the full description
             let descriptionText = "";
             if (milestone.description) {
               if (typeof milestone.description === "string") {
@@ -335,10 +332,10 @@ function StatusTimeline({
                 <div
                   className={`flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 hover:bg-gray-50/70 ${hasDescription ? "cursor-pointer" : ""}`}
                 >
-                  {/* Node */}
+                  {/* Node — grey only */}
                   <div className="z-10 flex-shrink-0 mt-0.5">
                     {isCompleted ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-green-500 flex items-center justify-center">
+                      <div className="w-[30px] h-[30px] rounded-full bg-gray-400 flex items-center justify-center">
                         <CheckCircle2
                           size={15}
                           className="text-white"
@@ -346,13 +343,11 @@ function StatusTimeline({
                         />
                       </div>
                     ) : isInProgress ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-orange-400 flex items-center justify-center">
+                      <div className="w-[30px] h-[30px] rounded-full bg-gray-300 flex items-center justify-center">
                         <div className="w-2.5 h-2.5 rounded-full bg-white" />
                       </div>
-                    ) : isWaiting ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-blue-500" />
                     ) : (
-                      <div className="w-[30px] h-[30px] rounded-full bg-gray-300" />
+                      <div className="w-[30px] h-[30px] rounded-full bg-gray-200" />
                     )}
                   </div>
 
@@ -365,29 +360,18 @@ function StatusTimeline({
                     </p>
                     <div className="flex items-center gap-3 mt-0.5">
                       {formattedDate && (
-                        <p
-                          className="text-xs text-gray-400"
-                        >
+                        <p className="text-xs text-gray-400">
                           {formattedDate}
                         </p>
                       )}
-                      {milestone.total_tasks > 0 && (
-                        <p className="text-xs text-gray-400">
-                          {milestone.completed_tasks}/{milestone.total_tasks}{" "}
-                          tasks
-                        </p>
+                      {milestone.total_tasks > 0 && milestone.completed_tasks < milestone.total_tasks && (
+                        <span className="flex items-center gap-1 text-xs text-gray-400" title="Action needed from you">
+                          <User size={11} strokeWidth={2} />
+                          Action needed
+                        </span>
                       )}
                     </div>
                   </div>
-
-                  {/* Expand indicator */}
-                  {hasDescription && (
-                    <ChevronRight
-                      size={14}
-                      className={`flex-shrink-0 mt-1.5 text-gray-300 transition-transform duration-200 ${isSelected ? "rotate-90" : ""}`}
-                      strokeWidth={2.5}
-                    />
-                  )}
                 </div>
 
                 {/* Hover description popover */}
@@ -397,13 +381,11 @@ function StatusTimeline({
                       <h4 className="text-sm font-bold text-gray-900">
                         {milestone.title}
                       </h4>
-                      <p className={`text-xs mt-1 flex items-center gap-1.5 ${
-                        isCompleted ? "text-green-500" : isInProgress ? "text-orange-500" : isWaiting ? "text-blue-500" : "text-gray-400"
-                      }`}>
+                      <p className="text-xs mt-1 flex items-center gap-1.5 text-gray-400">
                         <span className={`w-2 h-2 rounded-full inline-block ${
-                          isCompleted ? "bg-green-500" : isInProgress ? "bg-orange-400" : isWaiting ? "bg-blue-500" : "bg-gray-300"
+                          isCompleted ? "bg-gray-400" : isInProgress ? "bg-gray-300" : "bg-gray-200"
                         }`} />
-                        {isCompleted ? "Completed" : isInProgress ? "In Progress" : isWaiting ? "Waiting" : "Pending"}
+                        {isCompleted ? "Completed" : isInProgress ? "In Progress" : "Pending"}
                       </p>
                     </div>
                     <div className="px-5 py-4">

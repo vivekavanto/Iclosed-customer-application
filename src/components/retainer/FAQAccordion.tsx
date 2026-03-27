@@ -13,16 +13,26 @@ interface FAQAccordionProps {
 }
 
 export default function FAQAccordion({ items }: FAQAccordionProps) {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [openIndices, setOpenIndices] = useState<Set<number>>(
+    () => new Set(items.map((_, i) => i))
+  );
 
   const toggle = (index: number) => {
-    setOpenIndex((prev) => (prev === index ? null : index));
+    setOpenIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
   };
 
   return (
     <div className="py-2">
       {items.map((item, index) => {
-        const isOpen = openIndex === index;
+        const isOpen = openIndices.has(index);
         return (
           <div key={index}>
             <button

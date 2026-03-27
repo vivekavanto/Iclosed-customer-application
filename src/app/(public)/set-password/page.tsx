@@ -179,10 +179,10 @@ export default function SetPasswordPage() {
         </div>
 
         <div className="relative z-10">
-          <h2 className="mb-4 text-3xl font-bold leading-tight text-white tracking-tight">
+          <h2 className="mb-4 text-3xl font-bold leading-tight tracking-tight" style={{ color: "#f7f2f2" }}>
             Welcome to your Closing Portal
           </h2>
-          <p className="text-[0.95rem] leading-relaxed text-white/80 max-w-[85%]">
+          <p className="text-[0.95rem] leading-relaxed text-white/50 max-w-[85%]">
             Set your password to gain access to your secure portal, track
             milestones, and easily manage your closing documents online.
           </p>
@@ -260,7 +260,7 @@ export default function SetPasswordPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+                      className="absolute right-3.5 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                       tabIndex={-1}
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -293,7 +293,7 @@ export default function SetPasswordPage() {
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+                      className="absolute right-3.5 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                       tabIndex={-1}
                     >
                       {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -327,7 +327,7 @@ export default function SetPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading || !allValid || password !== confirmPassword}
-                  className="group mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#c0392b] px-5 py-3 text-sm font-semibold text-white shadow-md shadow-[#c0392b]/20 transition-all hover:enabled:bg-[#a93226] hover:enabled:-translate-y-px disabled:opacity-70 disabled:cursor-not-allowed"
+                  className="cursor-pointer group mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#c0392b] px-5 py-3 text-sm font-semibold text-white shadow-md shadow-[#c0392b]/20 transition-all hover:enabled:bg-[#a93226] hover:enabled:-translate-y-px disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" />

@@ -10,9 +10,7 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { Step1 } from "@/components/intake/Step1";
 import Step2 from "@/components/intake/Step2";
-import Step3 from "@/components/intake/Step3";
 import Step4 from "@/components/intake/Step4";
-import Step5Upload from "@/components/intake/Step5Upload";
 import Step5Contact from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
@@ -110,17 +108,9 @@ export default function ServiceSelection() {
 
   const progressSteps: Step[] = [
     { id: 1, label: "Service", status: getStatus(step, 1) },
-    { id: 2, label: " Price", status: getStatus(step, 2) },
-    { id: 3, label: "Address", status: getStatus(step, 3) },
-    { id: 4, label: "Agreement", status: getStatus(step, 4) },
-    ...(agreementSigned === "yes"
-      ? [{ id: 5, label: "Upload", status: getStatus(step, 5) }]
-      : []),
-    {
-      id: agreementSigned === "yes" ? 6 : 5,
-      label: "Contact",
-      status: getStatus(step, agreementSigned === "yes" ? 6 : 5),
-    },
+    { id: 2, label: "Price & Address", status: getStatus(step, 2) },
+    { id: 3, label: "Agreement", status: getStatus(step, 3) },
+    { id: 4, label: "Contact", status: getStatus(step, 4) },
   ];
 
   const resetForm = () => {
@@ -165,21 +155,11 @@ export default function ServiceSelection() {
           />
         )}
 
-        {/* STEP 2 */}
+        {/* STEP 2 — Price & Address */}
         {step === 2 && (
           <Step2
             purchasePrice={purchasePrice}
             setPurchasePrice={setPurchasePrice}
-            setStep={setStep}
-            step={step}
-            agreementSigned={agreementSigned}
-            selectedClosingOption={selectedClosingOption}
-          />
-        )}
-
-        {/* STEP 3*/}
-        {step === 3 && (
-          <Step3
             formData={addressData}
             setFormData={setAddressData}
             sellingFormData={sellingAddressData}
@@ -191,27 +171,20 @@ export default function ServiceSelection() {
           />
         )}
 
-        {/* STEP 4 */}
-        {step === 4 && (
+        {/* STEP 3 — Agreement & Upload */}
+        {step === 3 && (
           <Step4
             agreementSigned={agreementSigned}
             setAgreementSigned={setAgreementSigned}
             setStep={setStep}
             step={step}
-          />
-        )}
-        {step === 5 && agreementSigned === "yes" && (
-          <Step5Upload
-            setStep={setStep}
             uploadedFile={uploadedFile}
             setUploadedFile={setUploadedFile}
-            agreementSigned={agreementSigned}
-            step={step}
           />
         )}
 
-        {(step === 5 && agreementSigned === "no") ||
-        (step === 6 && agreementSigned === "yes") ? (
+        {/* STEP 4 — Contact */}
+        {step === 4 ? (
           <Step5Contact
             step={step}
             setStep={setStep}
@@ -257,6 +230,7 @@ export default function ServiceSelection() {
 
                     aps_signed: agreementSigned === "yes",
                     co_persons: contactData.coPersons ?? [],
+                    referral_source: contactData.referralSource || "",
                   }),
                 });
 
