@@ -212,6 +212,10 @@ export async function POST(req: Request) {
         lead.email,
         {
           redirectTo: `${customerPortalUrl}/api/auth/callback?next=/set-password`,
+          data: {
+            first_name: lead.first_name,
+            last_name: lead.last_name ?? "",
+          },
         }
       );
 
