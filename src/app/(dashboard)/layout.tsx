@@ -13,7 +13,7 @@ import {
   Info,
   BookOpen,
 } from "lucide-react";
-import Footer from "@/components/layout/Footer";
+// import Footer from "@/components/layout/Footer";
 
 const navLinks = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -290,7 +290,7 @@ export default function DashboardLayout({
         </div>
       </main>
 
-      <Footer />
+      {/* <Footer /> */}
 
       {/* ── Mobile Bottom Navigation Bar ── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around h-16 px-2 safe-area-pb">
