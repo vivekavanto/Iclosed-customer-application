@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 
 /**
  * POST /api/admin/convert-lead
@@ -160,7 +161,7 @@ export async function POST(req: Request) {
     // ── 7. Copy tasks from task_templates ─────────────────────────────────────
     const { data: taskTemplates, error: taskTemplateError } = await supabaseAdmin
       .from("task_templates")
-      .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
+      .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
       .eq("lead_type", leadType)
       .eq("is_deleted", false)
       .order("order_index", { ascending: true });
@@ -187,6 +188,7 @@ export async function POST(req: Request) {
           status: "Pending",
           completed: false,
           role_type: t.role_type ?? "client",
+          is_shared: t.is_shared ?? false,
         }));
 
       if (taskRows.length > 0) {
@@ -272,6 +274,57 @@ export async function POST(req: Request) {
       .from("leads")
       .update({ status: "Converted" })
       .eq("id", lead_id);
+
+    // ── 10. Sync shared tasks with linked deals (co-purchaser) ───────────────
+    try {
+      const linkedDealIds = await getLinkedDealIds(dealId);
+
+      if (linkedDealIds.length > 0) {
+        // Get all shared tasks from linked deals that are already completed
+        const { data: completedSharedTasks } = await supabaseAdmin
+          .from("tasks")
+          .select("id, deal_id, task_template_id")
+          .in("deal_id", linkedDealIds)
+          .eq("is_shared", true)
+          .eq("completed", true);
+
+        if (completedSharedTasks && completedSharedTasks.length > 0) {
+          for (const srcTask of completedSharedTasks) {
+            // Find the matching task on the new deal
+            const { data: targetTask } = await supabaseAdmin
+              .from("tasks")
+              .select("id, milestone_id")
+              .eq("deal_id", dealId)
+              .eq("task_template_id", srcTask.task_template_id)
+              .eq("completed", false)
+              .maybeSingle();
+
+            if (targetTask) {
+              // Copy responses
+              const { data: srcResponses } = await supabaseAdmin
+                .from("task_responses")
+                .select("field_label, field_type, value, file_url, file_name")
+                .eq("task_id", srcTask.id);
+
+              if (srcResponses && srcResponses.length > 0) {
+                await supabaseAdmin.from("task_responses").insert(
+                  srcResponses.map((r) => ({ task_id: targetTask.id, ...r }))
+                );
+              }
+
+              // Mark completed
+              await supabaseAdmin
+                .from("tasks")
+                .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
+                .eq("id", targetTask.id);
+            }
+          }
+        }
+      }
+    } catch (syncErr) {
+      // Non-blocking
+      console.warn("[convert-lead] Shared task sync failed (non-blocking):", syncErr);
+    }
 
     return NextResponse.json({
       success: true,

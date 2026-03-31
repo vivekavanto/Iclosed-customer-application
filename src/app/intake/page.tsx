@@ -27,6 +27,7 @@ export default function ServiceSelection() {
     null,
   );
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Pre-fill contact info for logged-in users
   const [authProfile, setAuthProfile] = useState<{
@@ -193,7 +194,9 @@ export default function ServiceSelection() {
             setShowSuccessModal={setShowSuccessModal}
             initialData={authProfile}
             selectedClosingOption={selectedClosingOption}
+            submitError={submitError}
             onComplete={async (contactData) => {
+              setSubmitError(null);
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
                 const lastName = rest.join(" ");
@@ -238,8 +241,10 @@ export default function ServiceSelection() {
 
                 if (!intakeResult.success) {
                   console.error(intakeResult.error);
+                  setSubmitError(intakeResult.error || "Submission failed. Please try again.");
                   return;
                 }
+                setSubmitError(null);
 
                 const leadId = intakeResult.lead_id;
 

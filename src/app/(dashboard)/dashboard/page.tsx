@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   ChevronRight,
   Loader2,
+  FileCheck,
+  Shield,
 } from "lucide-react";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
@@ -116,51 +118,42 @@ function AttentionCard({
   const allDone = !loading && tasks.length > 0 && pending.length === 0;
   const isEmpty = !loading && tasks.length === 0;
 
+  // Task icon map
+  const taskIconMap: Record<string, React.ReactNode> = {
+    "provide personal information": <User size={18} className="text-[#C10007]" strokeWidth={2} />,
+    "upload identification": <FileCheck size={18} className="text-[#C10007]" strokeWidth={2} />,
+    "upload home insurance policy": <Shield size={18} className="text-[#C10007]" strokeWidth={2} />,
+    "schedule an appointment": <Calendar size={18} className="text-[#C10007]" strokeWidth={2} />,
+  };
+
+  const getTaskIcon = (title: string) => {
+    const key = title.toLowerCase().trim();
+    for (const [pattern, icon] of Object.entries(taskIconMap)) {
+      if (key.includes(pattern)) return icon;
+    }
+    return <AlertTriangle size={18} className="text-[#C10007]" strokeWidth={2} />;
+  };
+
   return (
     <div
       className={`rounded-2xl border overflow-hidden shadow-sm transition-all duration-300 ${allDone ? "bg-[#f0fdf4] border-[#bbf7d0]" : "bg-white border-gray-100"}`}
     >
-      {/* Header */}
+      {/* Header — gradient */}
       <div
-        className={`flex items-center justify-between px-5 sm:px-6 py-4 border-b ${allDone ? "border-[#bbf7d0]" : "border-gray-100"}`}
+        className={`flex items-center gap-3 px-5 sm:px-6 py-4 ${allDone ? "bg-[#dcfce7]" : "bg-[#C10007]/15"}`}
       >
-        <div className="flex items-center gap-3">
-          <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${allDone ? "bg-[#dcfce7]" : "bg-[#FEF2F2]"}`}
-          >
-            {allDone ? (
-              <CheckCircle2
-                size={18}
-                className="text-[#22c55e]"
-                strokeWidth={2.2}
-              />
-            ) : (
-              <AlertTriangle
-                size={18}
-                className="text-[#C10007]"
-                strokeWidth={2}
-              />
-            )}
-          </div>
-          <div>
-            <h2
-              className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-gray-900"}`}
-            >
-              Needs Your Attention
-            </h2>
-            <p
-              className={`text-sm ${allDone ? "text-[#4ade80]" : "text-gray-400"}`}
-            >
-              {loading
-                ? "Loading tasks..."
-                : allDone
-                  ? "All tasks completed!"
-                  : isEmpty
-                    ? "No tasks assigned yet."
-                    : `${pending.length} task${pending.length > 1 ? "s" : ""} require${pending.length === 1 ? "s" : ""} your action`}
-            </p>
-          </div>
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${allDone ? "bg-[#bbf7d0]" : "bg-[#C10007]"}`}
+        >
+          {allDone ? (
+            <CheckCircle2 size={18} className="text-[#15803d]" strokeWidth={2.2} />
+          ) : (
+            <AlertTriangle size={18} className="text-white" strokeWidth={2} />
+          )}
         </div>
+        <h2 className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-[#7a0004]"}`}>
+          Needs Your Attention
+        </h2>
       </div>
 
       {/* Body */}
@@ -171,15 +164,9 @@ function AttentionCard({
       ) : allDone ? (
         <div className="flex flex-col items-center justify-center py-8 px-6 gap-2">
           <div className="w-12 h-12 rounded-full bg-[#dcfce7] flex items-center justify-center mb-1">
-            <CheckCircle2
-              size={24}
-              className="text-[#22c55e]"
-              strokeWidth={2}
-            />
+            <CheckCircle2 size={24} className="text-[#22c55e]" strokeWidth={2} />
           </div>
-          <p className="text-sm font-bold text-[#15803d]">
-            All tasks completed!
-          </p>
+          <p className="text-sm font-bold text-[#15803d]">All tasks completed!</p>
           <p className="text-xs text-[#86efac] text-center">
             Great job! Your lawyer will assign new tasks when needed.
           </p>
@@ -189,21 +176,26 @@ function AttentionCard({
           <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center mb-1">
             <Clock size={22} className="text-gray-300" strokeWidth={1.5} />
           </div>
-          <p className="text-sm text-gray-500 font-medium">
-            No tasks assigned yet
-          </p>
+          <p className="text-sm text-gray-500 font-medium">No tasks assigned yet</p>
           <p className="text-xs text-gray-400 text-center">
             Your lawyer will assign tasks once your file is active.
           </p>
         </div>
       ) : (
-        <div className="p-2">
+        <div className="p-3 sm:p-4 space-y-3">
           {pending.map((task) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
-                  month: "short",
+                  month: "long",
                   day: "numeric",
                   year: "numeric",
+                })
+              : null;
+            const formattedTime = task.due_date
+              ? new Date(task.due_date).toLocaleTimeString("en-CA", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true,
                 })
               : null;
 
@@ -211,27 +203,30 @@ function AttentionCard({
               <div
                 key={task.id}
                 onClick={() => onTaskClick(task)}
-                className="rounded-lg border border-gray-100 px-4 py-3 mb-1.5 last:mb-0 hover:border-[#C10007]/30 hover:bg-[#FEF2F2]/30 transition-all duration-200 cursor-pointer group"
+                className="rounded-xl border border-gray-200 bg-white px-4 sm:px-5 py-4 hover:border-[#C10007]/30 hover:shadow-md transition-all duration-200 cursor-pointer group"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  {/* Icon */}
+                  <div className="w-11 h-11 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+                    {getTaskIcon(task.title)}
+                  </div>
+
+                  {/* Text */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
+                    <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
                       {task.title}
                     </p>
-                    <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-400 mt-1">
-                      <span className="flex items-center gap-1.5">
-                        <Clock size={11} strokeWidth={2} />
-                        {formattedDate ? `Due ${formattedDate}` : "No due date"}
-                      </span>
-                      {task.milestones && (
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-1 h-1 rounded-full bg-gray-300" />
-                          {task.milestones.title}
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+                      {formattedDate
+                        ? `Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`
+                        : "No due date"}
+                    </p>
                   </div>
-                  <ChevronRight size={14} className="flex-shrink-0 text-gray-300 group-hover:text-[#C10007]" strokeWidth={2.5} />
+
+                  {/* Arrow */}
+                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FEF2F2] transition-colors">
+                    <ChevronRight size={16} className="text-gray-400 group-hover:text-[#C10007]" strokeWidth={2} />
+                  </div>
                 </div>
               </div>
             );
@@ -253,6 +248,22 @@ function StatusTimeline({
   loading: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
+
+  const handleMouseEnter = (milestone: Milestone, e: React.MouseEvent) => {
+    if (!milestone.description) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setSelectedId(milestone.id);
+    setTooltipPos({
+      top: rect.top + rect.height / 2,
+      right: window.innerWidth - rect.left + 12,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setSelectedId(null);
+    setTooltipPos(null);
+  };
 
   if (loading) {
     return (
@@ -266,18 +277,26 @@ function StatusTimeline({
     return null;
   }
 
-  // A milestone is "done" if status=Completed OR all its tasks are completed
   const isMilestoneDone = (m: Milestone) =>
     m.status === "Completed" || (m.total_tasks > 0 && m.completed_tasks === m.total_tasks);
-
-  // Count completed milestones (starts at 0)
   const completedCount = milestones.filter(isMilestoneDone).length;
-
-  // Progress bar: based on completed milestones out of total
   const progressPercent =
     milestones.length === 0
       ? 0
       : Math.min(100, Math.round((completedCount / milestones.length) * 100));
+
+  const filtered = milestones.filter((m) => m.status !== "Waiting");
+
+  // Find selected milestone for tooltip
+  const selectedMilestone = filtered.find((m) => m.id === selectedId);
+  let selectedDesc = "";
+  if (selectedMilestone?.description) {
+    if (typeof selectedMilestone.description === "string") {
+      selectedDesc = selectedMilestone.description;
+    } else if (typeof selectedMilestone.description === "object") {
+      selectedDesc = selectedMilestone.description.modal || selectedMilestone.description.short || "";
+    }
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm">
@@ -294,17 +313,14 @@ function StatusTimeline({
         />
       </div>
 
-      {/* Steps */}
-      <div className="relative">
-        <div className="absolute left-[27px] top-4 bottom-4 w-px bg-gray-100" />
-        <div className="space-y-0.5">
-          {milestones
-            .filter((m) => m.status !== "Waiting")
-            .map((milestone) => {
+      {/* Steps — scrollable */}
+      <div className="max-h-[350px] overflow-y-auto">
+        <div>
+          {filtered.map((milestone, idx) => {
             const isCompleted = milestone.status === "Completed";
             const isInProgress = milestone.status === "In Progress";
-            const isSelected = selectedId === milestone.id;
             const hasDescription = milestone.description;
+            const isLast = idx === filtered.length - 1;
             const formattedDate = milestone.milestone_date
               ? new Date(milestone.milestone_date).toLocaleDateString("en-CA", {
                   month: "short",
@@ -313,93 +329,90 @@ function StatusTimeline({
                 })
               : null;
 
-            let descriptionText = "";
-            if (milestone.description) {
-              if (typeof milestone.description === "string") {
-                descriptionText = milestone.description;
-              } else if (typeof milestone.description === "object") {
-                descriptionText = milestone.description.modal || milestone.description.short || "";
-              }
-            }
-
             return (
               <div
                 key={milestone.id}
                 className="relative"
-                onMouseEnter={() => hasDescription && setSelectedId(milestone.id)}
-                onMouseLeave={() => setSelectedId(null)}
+                onMouseEnter={(e) => handleMouseEnter(milestone, e)}
+                onMouseLeave={handleMouseLeave}
               >
+                {/* Connector line */}
+                {!isLast && (
+                  <div className="absolute left-[26px] top-[30px] h-full w-px bg-gray-200 z-0" />
+                )}
+
                 <div
-                  className={`flex items-start gap-4 px-3 py-3 rounded-xl transition-all duration-200 hover:bg-gray-50/70 ${hasDescription ? "cursor-pointer" : ""}`}
+                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-gray-50/70 ${hasDescription ? "cursor-pointer" : ""}`}
                 >
-                  {/* Node — grey only */}
-                  <div className="z-10 flex-shrink-0 mt-0.5">
+                  {/* Node */}
+                  <div className="z-10 flex-shrink-0">
                     {isCompleted ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-gray-400 flex items-center justify-center">
-                        <CheckCircle2
-                          size={15}
-                          className="text-white"
-                          strokeWidth={2.5}
-                        />
+                      <div className="w-[28px] h-[28px] rounded-full bg-gray-400 flex items-center justify-center">
+                        <CheckCircle2 size={14} className="text-white" strokeWidth={2.5} />
                       </div>
                     ) : isInProgress ? (
-                      <div className="w-[30px] h-[30px] rounded-full bg-gray-300 flex items-center justify-center">
+                      <div className="w-[28px] h-[28px] rounded-full bg-gray-300 flex items-center justify-center">
                         <div className="w-2.5 h-2.5 rounded-full bg-white" />
                       </div>
                     ) : (
-                      <div className="w-[30px] h-[30px] rounded-full bg-gray-200" />
+                      <div className="w-[28px] h-[28px] rounded-full bg-gray-200" />
                     )}
                   </div>
 
                   {/* Label + meta */}
-                  <div className="flex-1 pt-0.5 min-w-0">
+                  <div className="flex-1 min-w-0">
                     <p
                       className={`text-sm font-semibold leading-snug ${isCompleted ? "text-gray-400" : "text-gray-700"}`}
                     >
                       {milestone.title}
                     </p>
-                    <div className="flex items-center gap-3 mt-0.5">
+                    <div className="flex items-center gap-2 mt-0.5">
                       {formattedDate && (
-                        <p className="text-xs text-gray-400">
-                          {formattedDate}
-                        </p>
+                        <p className="text-xs text-gray-400">{formattedDate}</p>
                       )}
                       {milestone.total_tasks > 0 && milestone.completed_tasks < milestone.total_tasks && (
                         <span className="flex items-center gap-1 text-xs text-gray-400" title="Action needed from you">
-                          <User size={11} strokeWidth={2} />
+                          <User size={10} strokeWidth={2} />
                           Action needed
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
-
-                {/* Hover description popover */}
-                {isSelected && descriptionText && (
-                  <div className="absolute right-full top-1/2 -translate-y-1/2 mr-3 w-[280px] sm:w-[340px] z-20 bg-white rounded-xl border border-gray-200 shadow-lg flex flex-col">
-                    <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
-                      <h4 className="text-sm font-bold text-gray-900">
-                        {milestone.title}
-                      </h4>
-                      <p className="text-xs mt-1 flex items-center gap-1.5 text-gray-400">
-                        <span className={`w-2 h-2 rounded-full inline-block ${
-                          isCompleted ? "bg-gray-400" : isInProgress ? "bg-gray-300" : "bg-gray-200"
-                        }`} />
-                        {isCompleted ? "Completed" : isInProgress ? "In Progress" : "Pending"}
-                      </p>
-                    </div>
-                    <div className="px-5 py-4">
-                      <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
-                        {descriptionText}
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Fixed-position tooltip — renders outside scroll container */}
+      {selectedId && selectedDesc && tooltipPos && selectedMilestone && (
+        <div
+          className="fixed z-50 w-[280px] sm:w-[320px] bg-white rounded-xl border border-gray-200 shadow-lg flex flex-col"
+          style={{
+            top: tooltipPos.top,
+            right: tooltipPos.right,
+            transform: "translateY(-50%)",
+          }}
+        >
+          <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
+            <h4 className="text-sm font-bold text-gray-900">
+              {selectedMilestone.title}
+            </h4>
+            <p className="text-xs mt-1 flex items-center gap-1.5 text-gray-400">
+              <span className={`w-2 h-2 rounded-full inline-block ${
+                selectedMilestone.status === "Completed" ? "bg-gray-400" : selectedMilestone.status === "In Progress" ? "bg-gray-300" : "bg-gray-200"
+              }`} />
+              {selectedMilestone.status === "Completed" ? "Completed" : selectedMilestone.status === "In Progress" ? "In Progress" : "Pending"}
+            </p>
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+              {selectedDesc}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -663,18 +676,20 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── 3. Main Grid: Tasks (left) + Status & Assistance (right) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+      {/* ── 3. Main Grid: Tasks (left 3/4) + Status & Assistance (right 1/4) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 
-        {/* ── Left: Needs Your Attention ── */}
-        <AttentionCard
-          tasks={tasks}
-          loading={tasksLoading}
-          onTaskClick={handleTaskClick}
-        />
+        {/* ── Left: Needs Your Attention (3/4) ── */}
+        <div className="lg:col-span-7">
+          <AttentionCard
+            tasks={tasks}
+            loading={tasksLoading}
+            onTaskClick={handleTaskClick}
+          />
+        </div>
 
-        {/* ── Right: Status Overview + Need Assistance stacked ── */}
-        <div className="flex flex-col gap-5">
+        {/* ── Right: Status Overview + Need Assistance stacked (1/4) ── */}
+        <div className="lg:col-span-5 flex flex-col gap-5">
           <StatusTimeline milestones={milestones} loading={milestonesLoading} />
 
           {/* ── Need Assistance ── */}

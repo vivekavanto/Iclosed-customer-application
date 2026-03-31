@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { syncSharedTaskCompletion } from "@/lib/syncSharedTask";
 
 /**
  * POST /api/task-responses
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     // Auto-mark the task as completed on submit
     const { data: task, error: taskFetchError } = await supabaseAdmin
       .from("tasks")
-      .select("id, deal_id, milestone_id")
+      .select("id, deal_id, milestone_id, is_shared, task_template_id")
       .eq("id", task_id)
       .single();
 
@@ -71,6 +72,15 @@ export async function POST(req: Request) {
         .from("tasks")
         .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
         .eq("id", task_id);
+
+      // Sync shared task to linked deals (co-purchaser)
+      if (task.is_shared && task.task_template_id) {
+        syncSharedTaskCompletion({
+          taskId: task.id,
+          dealId: task.deal_id,
+          taskTemplateId: task.task_template_id,
+        }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+      }
 
       // Check if all tasks in the milestone are now completed
       if (task.milestone_id) {

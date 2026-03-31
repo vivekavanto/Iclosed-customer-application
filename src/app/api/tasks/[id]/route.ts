@@ -1,5 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
+import { syncSharedTaskCompletion } from "@/lib/syncSharedTask";
 
 export async function PATCH(
   _req: Request,
@@ -17,11 +18,20 @@ export async function PATCH(
         completed_at: new Date().toISOString(),
       })
       .eq("id", id)
-      .select("id, deal_id, milestone_id")
+      .select("id, deal_id, milestone_id, is_shared, task_template_id")
       .single();
 
     if (taskError) {
       return NextResponse.json({ success: false, error: taskError.message }, { status: 400 });
+    }
+
+    // 1b. Sync shared task to linked deals (co-purchaser)
+    if (task?.is_shared && task.task_template_id) {
+      syncSharedTaskCompletion({
+        taskId: task.id,
+        dealId: task.deal_id,
+        taskTemplateId: task.task_template_id,
+      }).catch((err) => console.error("[SharedTaskSync] Error:", err));
     }
 
     // 2️⃣ If task belongs to a milestone → update milestone status

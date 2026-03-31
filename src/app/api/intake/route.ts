@@ -26,6 +26,7 @@ export async function POST(req: Request) {
       selling_address_province,
       aps_signed,
       co_persons,
+      referral_source,
     } = body;
 
     // ── Lead type ─────────────────────────────────────────────
@@ -40,6 +41,35 @@ export async function POST(req: Request) {
 
     // Strip currency formatting from price (e.g. "$6,567,876" → "6567876")
     const cleanPrice = price ? String(price).replace(/[^0-9.]/g, "") : null;
+
+    // ── Duplicate check: same email + same address ────────────
+    const normEmail = (email ?? "").trim().toLowerCase();
+    const normStreet = (address_street ?? "").trim().toLowerCase();
+    const normCity = (address_city ?? "").trim().toLowerCase();
+    const normPostal = (address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+
+    if (normEmail && normStreet && normCity) {
+      const { data: existingLeads, error: dupCheckErr } = await supabaseAdmin
+        .from("leads")
+        .select("id, email, address_street, address_city, address_postal_code")
+        .ilike("email", normEmail);
+
+      if (!dupCheckErr && existingLeads && existingLeads.length > 0) {
+        const duplicate = existingLeads.find((l) => {
+          const lStreet = (l.address_street ?? "").trim().toLowerCase();
+          const lCity = (l.address_city ?? "").trim().toLowerCase();
+          const lPostal = (l.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+          return lStreet === normStreet && lCity === normCity && lPostal === normPostal;
+        });
+
+        if (duplicate) {
+          return NextResponse.json(
+            { success: false, error: "You already have a submission for this address. Please contact us if you need to make changes." },
+            { status: 409 }
+          );
+        }
+      }
+    }
 
     // ── Insert Lead ───────────────────────────────────────────
     const { data: lead, error } = await supabaseAdmin
@@ -65,6 +95,7 @@ export async function POST(req: Request) {
         selling_address_province,
         aps_signed,
         co_persons: co_persons ?? [],
+        referral_source: referral_source || null,
       })
       .select()
       .single();
@@ -72,6 +103,51 @@ export async function POST(req: Request) {
     if (error) {
       console.error("Insert error:", error);
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    }
+
+    // ── Address duplicate detection (co-purchaser flag) ─────
+    // Only flags when a DIFFERENT person (different email) submits for the same address.
+    // Same person re-submitting is ignored.
+    let addressMatch = false;
+    try {
+      const normStreet = (address_street ?? "").trim().toLowerCase();
+      const normCity = (address_city ?? "").trim().toLowerCase();
+      const normPostal = (address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+      const normEmail = (email ?? "").trim().toLowerCase();
+
+      if (normStreet && normCity && normPostal) {
+        const { data: matchingLeads } = await supabaseAdmin
+          .from("leads")
+          .select("id, address_postal_code")
+          .neq("id", lead.id)
+          .neq("email", normEmail)  // Exclude same email (same person re-submitting)
+          .ilike("address_street", normStreet)
+          .ilike("address_city", normCity);
+
+        if (matchingLeads && matchingLeads.length > 0) {
+          // Find one with matching postal code (normalize by removing spaces)
+          const matchedLead = matchingLeads.find((ml) => {
+            const mlPostal = (ml.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+            return mlPostal === normPostal;
+          });
+
+          if (matchedLead) {
+            await supabaseAdmin
+              .from("leads")
+              .update({
+                address_match_flag: {
+                  matched_lead_id: matchedLead.id,
+                  status: "pending",
+                },
+              })
+              .eq("id", lead.id);
+            addressMatch = true;
+          }
+        }
+      }
+    } catch (matchErr) {
+      // Non-blocking — intake still succeeds even if matching fails
+      console.warn("[Intake] Address match check failed (non-blocking):", matchErr);
     }
 
     // Trigger welcome email via admin portal (fire and forget)
@@ -145,6 +221,7 @@ export async function POST(req: Request) {
       success: true,
       lead_id: lead.id,
       auto_linked: autoLinked,
+      address_match: addressMatch,
     });
 
   } catch (err) {

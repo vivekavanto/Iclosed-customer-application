@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const { data: leads, error } = await supabaseAdmin
       .from("leads")
-      .select("id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_postal_code, status, price, created_at, is_corporate, corporate_name, inc_number")
+      .select("id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_postal_code, status, price, created_at, is_corporate, corporate_name, inc_number, address_match_flag, parent_lead_id")
       .order("created_at", { ascending: false });
 
     if (error) {
