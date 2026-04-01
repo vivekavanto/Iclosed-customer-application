@@ -5,6 +5,7 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
 
 interface AddressData {
     street: string;
@@ -186,6 +187,7 @@ const Step2: React.FC<Step2Props> = ({
     const isSelling = selectedClosingOption === "selling";
     const isBoth = selectedClosingOption === "both";
     const priceLabel = isSelling ? "Sale Price" : "Purchase Price";
+    const { error: toastError } = useToast();
 
     // Price validation
     const [priceValid, setPriceValid] = useState(false);
@@ -257,6 +259,10 @@ const Step2: React.FC<Step2Props> = ({
     };
 
     const handleContinue = () => {
+        if (sameAddressError) {
+            toastError("The purchasing and selling property addresses cannot be the same.");
+            return;
+        }
         if (!isValid) {
             setSubmitAttempted(true);
             return;
@@ -379,13 +385,6 @@ const Step2: React.FC<Step2Props> = ({
                                     prefix="sell"
                                 />
 
-                                {sameAddressError && (submitAttempted || (sellTouched.street && sellTouched.city)) && (
-                                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                                        <p className="text-sm text-red-700 font-medium">
-                                            The purchasing and selling property addresses cannot be the same.
-                                        </p>
-                                    </div>
-                                )}
                             </>
                         ) : (
                             <AddressForm
