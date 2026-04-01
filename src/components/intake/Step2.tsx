@@ -225,8 +225,17 @@ const Step2: React.FC<Step2Props> = ({
     const buyErrors = validateAddress(formData);
     const sellErrors = validateAddress(sellingFormData);
 
+    // Check if buying and selling addresses are the same
+    const sameAddressError = isBoth
+        && formData.street.trim().toLowerCase() === sellingFormData.street.trim().toLowerCase()
+        && formData.city.trim().toLowerCase() === sellingFormData.city.trim().toLowerCase()
+        && formData.postalCode.trim().toLowerCase().replace(/\s/g, "") === sellingFormData.postalCode.trim().toLowerCase().replace(/\s/g, "")
+        && formData.street.trim() !== ""
+        && formData.city.trim() !== ""
+        && formData.postalCode.trim() !== "";
+
     const addressValid = isBoth
-        ? Object.keys(buyErrors).length === 0 && Object.keys(sellErrors).length === 0
+        ? Object.keys(buyErrors).length === 0 && Object.keys(sellErrors).length === 0 && !sameAddressError
         : Object.keys(buyErrors).length === 0;
 
     const isValid = priceValid && addressValid;
@@ -369,6 +378,14 @@ const Step2: React.FC<Step2Props> = ({
                                     submitAttempted={submitAttempted}
                                     prefix="sell"
                                 />
+
+                                {sameAddressError && (submitAttempted || (sellTouched.street && sellTouched.city)) && (
+                                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                                        <p className="text-sm text-red-700 font-medium">
+                                            The purchasing and selling property addresses cannot be the same.
+                                        </p>
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <AddressForm

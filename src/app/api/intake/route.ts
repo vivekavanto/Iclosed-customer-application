@@ -42,6 +42,23 @@ export async function POST(req: Request) {
     // Strip currency formatting from price (e.g. "$6,567,876" → "6567876")
     const cleanPrice = price ? String(price).replace(/[^0-9.]/g, "") : null;
 
+    // ── Purchase & Sale: buying and selling address can't be the same ──
+    if (sub_service === "both" && address_street && selling_address_street) {
+      const buyStreet = (address_street ?? "").trim().toLowerCase();
+      const sellStreet = (selling_address_street ?? "").trim().toLowerCase();
+      const buyCity = (address_city ?? "").trim().toLowerCase();
+      const sellCity = (selling_address_city ?? "").trim().toLowerCase();
+      const buyPostal = (address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+      const sellPostal = (selling_address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+
+      if (buyStreet === sellStreet && buyCity === sellCity && buyPostal === sellPostal) {
+        return NextResponse.json(
+          { success: false, error: "The purchasing and selling property addresses cannot be the same." },
+          { status: 400 }
+        );
+      }
+    }
+
     // ── Duplicate check: same email + same address ────────────
     const normEmail = (email ?? "").trim().toLowerCase();
     const normStreet = (address_street ?? "").trim().toLowerCase();
