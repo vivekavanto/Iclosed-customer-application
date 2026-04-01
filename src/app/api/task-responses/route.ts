@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { syncSharedTaskCompletion } from "@/lib/syncSharedTask";
+import { syncSharedTaskCompletion, syncSharedTaskResponses } from "@/lib/syncSharedTask";
 
 /**
  * POST /api/task-responses
@@ -55,18 +55,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: insertError.message }, { status: 400 });
     }
 
-    // If draft, save responses only — do NOT mark task as completed
-    if (draft) {
-      return NextResponse.json({ success: true, draft: true });
-    }
-
-    // Auto-mark the task as completed on submit
+    // Fetch task context for shared-task syncing
     const { data: task, error: taskFetchError } = await supabaseAdmin
       .from("tasks")
       .select("id, deal_id, milestone_id, is_shared, task_template_id")
       .eq("id", task_id)
       .single();
 
+    // If draft, save responses only — do NOT mark task as completed
+    if (draft) {
+      // Sync shared task responses to linked deals (co-purchaser) without completing
+      if (!taskFetchError && task?.is_shared && task.task_template_id) {
+        syncSharedTaskResponses({
+          taskId: task.id,
+          dealId: task.deal_id,
+          taskTemplateId: task.task_template_id,
+        }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+      }
+      return NextResponse.json({ success: true, draft: true });
+    }
+
+    // Auto-mark the task as completed on submit
     if (!taskFetchError && task) {
       await supabaseAdmin
         .from("tasks")

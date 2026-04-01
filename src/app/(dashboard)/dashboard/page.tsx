@@ -27,6 +27,7 @@ interface Task {
   status: "Pending" | "In Progress" | "Completed";
   due_date: string | null;
   completed: boolean;
+  is_shared: boolean;
   assignee: string | null;
   document_name: string | null;
   document_url: string | null;
@@ -46,7 +47,7 @@ interface Milestone {
   milestone_date: string | null;
   order_index: number;
   completed_at: string | null;
-  description: any | null;
+  description: unknown | null;
   total_tasks: number;
   completed_tasks: number;
 }
@@ -216,6 +217,11 @@ function AttentionCard({
                     <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
                       {task.title}
                     </p>
+                    {task.is_shared && (
+                      <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+                        Shared Task
+                      </span>
+                    )}
                     <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
                       {formattedDate
                         ? `Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`
@@ -517,11 +523,13 @@ export default function DashboardPage() {
   // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string) {
     const taskTitle = tasks.find((t) => t.id === id)?.title ?? "Task";
-    setTasks((prev) =>
-      prev.map((t) => t.id === id ? { ...t, completed: true, status: "Completed" as const } : t),
-    );
+    const isShared = tasks.find((t) => t.id === id)?.is_shared ?? false;
     try {
-      const res = await fetch(`/api/tasks/${id}`, { method: "PATCH" });
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Completed", completed: true, is_shared: isShared }),
+      });
       if (!res.ok) throw new Error("Failed");
       toastSuccess(`"${taskTitle}" completed successfully!`);
       if (activeDealId) {
@@ -534,9 +542,6 @@ export default function DashboardPage() {
       }
     } catch {
       toastError(`Failed to complete "${taskTitle}". Please try again.`);
-      setTasks((prev) =>
-        prev.map((t) => t.id === id ? { ...t, completed: false, status: "In Progress" as const } : t),
-      );
     }
   }
 

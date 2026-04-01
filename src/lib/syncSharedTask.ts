@@ -67,6 +67,79 @@ export async function syncSharedTaskCompletion(params: {
 }
 
 /**
+ * When a shared task's responses are saved (draft or resubmit), sync responses
+ * to all linked deals without changing completion state.
+ */
+export async function syncSharedTaskResponses(params: {
+  taskId: string;
+  dealId: string;
+  taskTemplateId: string;
+}): Promise<void> {
+  const { taskId, dealId, taskTemplateId } = params;
+
+  const linkedDealIds = await getLinkedDealIds(dealId);
+  if (linkedDealIds.length === 0) return;
+
+  // Find matching tasks on linked deals (same template)
+  const { data: linkedTasks } = await supabaseAdmin
+    .from("tasks")
+    .select("id")
+    .in("deal_id", linkedDealIds)
+    .eq("task_template_id", taskTemplateId);
+
+  if (!linkedTasks || linkedTasks.length === 0) return;
+
+  // Get source task responses to copy
+  const { data: sourceResponses } = await supabaseAdmin
+    .from("task_responses")
+    .select("field_label, field_type, value, file_url, file_name")
+    .eq("task_id", taskId);
+
+  for (const linkedTask of linkedTasks) {
+    await supabaseAdmin.from("task_responses").delete().eq("task_id", linkedTask.id);
+
+    if (sourceResponses && sourceResponses.length > 0) {
+      const responseRows = sourceResponses.map((r) => ({
+        task_id: linkedTask.id,
+        field_label: r.field_label,
+        field_type: r.field_type,
+        value: r.value,
+        file_url: r.file_url,
+        file_name: r.file_name,
+      }));
+
+      await supabaseAdmin.from("task_responses").insert(responseRows);
+    }
+  }
+}
+
+/**
+ * Sync non-response fields for a shared task (e.g. status/document_url) to all
+ * linked deals' matching tasks (same task_template_id).
+ */
+export async function syncSharedTaskPatch(params: {
+  dealId: string;
+  taskTemplateId: string;
+  patch: {
+    status?: string;
+    completed?: boolean;
+    completed_at?: string | null;
+    document_url?: string | null;
+    document_name?: string | null;
+  };
+}): Promise<void> {
+  const { dealId, taskTemplateId, patch } = params;
+  const linkedDealIds = await getLinkedDealIds(dealId);
+  if (linkedDealIds.length === 0) return;
+
+  await supabaseAdmin
+    .from("tasks")
+    .update(patch)
+    .in("deal_id", linkedDealIds)
+    .eq("task_template_id", taskTemplateId);
+}
+
+/**
  * Check milestone completion and advance to next milestone if all tasks done.
  */
 async function advanceMilestone(dealId: string, milestoneId: string) {

@@ -1,22 +1,45 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
-import { syncSharedTaskCompletion } from "@/lib/syncSharedTask";
+import { syncSharedTaskCompletion, syncSharedTaskPatch } from "@/lib/syncSharedTask";
 
 export async function PATCH(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
 
-    // 1️⃣ Mark the task as completed
+    // Optional body: allow status/document updates while keeping old behavior.
+    let body: unknown = null;
+    try {
+      body = await req.json();
+    } catch {
+      body = null;
+    }
+
+    const bodyObj = (body && typeof body === "object") ? (body as Record<string, unknown>) : null;
+    const incomingStatus = typeof bodyObj?.status === "string" ? bodyObj.status : null;
+    const incomingCompleted = typeof bodyObj?.completed === "boolean" ? bodyObj.completed : null;
+    const incomingDocUrl = typeof bodyObj?.document_url === "string" ? bodyObj.document_url : null;
+    const incomingDocName = typeof bodyObj?.document_name === "string" ? bodyObj.document_name : null;
+
+    const markCompleted = incomingCompleted ?? (incomingStatus === "Completed" ? true : null) ?? true;
+
+    const patch: Record<string, any> = {
+      status: incomingStatus ?? "Completed",
+      completed: markCompleted,
+    };
+
+    if (markCompleted) {
+      patch.completed_at = new Date().toISOString();
+    }
+    if (incomingDocUrl !== null) patch.document_url = incomingDocUrl;
+    if (incomingDocName !== null) patch.document_name = incomingDocName;
+
+    // 1️⃣ Update the task
     const { data: task, error: taskError } = await supabaseAdmin
       .from("tasks")
-      .update({
-        completed: true,
-        status: "Completed",
-        completed_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq("id", id)
       .select("id, deal_id, milestone_id, is_shared, task_template_id")
       .single();
@@ -27,15 +50,31 @@ export async function PATCH(
 
     // 1b. Sync shared task to linked deals (co-purchaser)
     if (task?.is_shared && task.task_template_id) {
-      syncSharedTaskCompletion({
-        taskId: task.id,
+      // Keep status/doc fields aligned across all linked tasks
+      syncSharedTaskPatch({
         dealId: task.deal_id,
         taskTemplateId: task.task_template_id,
+        patch: {
+          status: patch.status,
+          completed: patch.completed,
+          completed_at: patch.completed_at ?? null,
+          document_url: patch.document_url ?? null,
+          document_name: patch.document_name ?? null,
+        },
       }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+
+      // If completed, also copy responses + advance milestones
+      if (patch.completed) {
+        syncSharedTaskCompletion({
+          taskId: task.id,
+          dealId: task.deal_id,
+          taskTemplateId: task.task_template_id,
+        }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+      }
     }
 
     // 2️⃣ If task belongs to a milestone → update milestone status
-    if (task?.milestone_id) {
+    if (task?.milestone_id && patch.completed) {
       const { data: siblingsData } = await supabaseAdmin
         .from("tasks")
         .select("id, completed")

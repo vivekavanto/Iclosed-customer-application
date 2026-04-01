@@ -103,7 +103,7 @@ export async function GET(req: Request) {
       // Fetch only default task templates for this deal's lead type
       const { data: taskTemplates } = await supabaseAdmin
         .from("task_templates")
-        .select("id, name, role_type, order_index, deadline_rule, stage_template_id")
+        .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
         .eq("lead_type", templateType)
         .eq("is_default", true)
         .eq("is_deleted", false)
@@ -160,6 +160,7 @@ export async function GET(req: Request) {
           status: "Pending",
           completed: false,
           role_type: tt.role_type ?? "client",
+          is_shared: tt.is_shared ?? false,
         }));
 
       if (missingTasks.length > 0) {
