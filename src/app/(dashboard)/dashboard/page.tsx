@@ -300,7 +300,10 @@ function StatusTimeline({
     if (typeof selectedMilestone.description === "string") {
       selectedDesc = selectedMilestone.description;
     } else if (typeof selectedMilestone.description === "object") {
-      selectedDesc = selectedMilestone.description.modal || selectedMilestone.description.short || "";
+      const desc = selectedMilestone.description as Record<string, unknown>;
+      const modal = typeof desc.modal === "string" ? desc.modal : "";
+      const short = typeof desc.short === "string" ? desc.short : "";
+      selectedDesc = modal || short || "";
     }
   }
 
