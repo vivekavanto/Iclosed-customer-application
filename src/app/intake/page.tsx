@@ -14,6 +14,7 @@ import Step4 from "@/components/intake/Step4";
 import Step5Contact from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
+import { useToast } from "@/components/ui/Toast";
 
 export default function ServiceSelection() {
   const [selected, setSelected] = useState<string | null>(null);
@@ -27,7 +28,6 @@ export default function ServiceSelection() {
     null,
   );
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Pre-fill contact info for logged-in users
   const [authProfile, setAuthProfile] = useState<{
@@ -37,6 +37,7 @@ export default function ServiceSelection() {
   } | undefined>(undefined);
 
   const router = useRouter();
+  const { error: toastError } = useToast();
 
   useEffect(() => {
     const loadAuthProfile = async () => {
@@ -194,9 +195,7 @@ export default function ServiceSelection() {
             setShowSuccessModal={setShowSuccessModal}
             initialData={authProfile}
             selectedClosingOption={selectedClosingOption}
-            submitError={submitError}
             onComplete={async (contactData) => {
-              setSubmitError(null);
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
                 const lastName = rest.join(" ");
@@ -240,11 +239,9 @@ export default function ServiceSelection() {
                 const intakeResult = await intakeResponse.json();
 
                 if (!intakeResult.success) {
-                  console.error(intakeResult.error);
-                  setSubmitError(intakeResult.error || "Submission failed. Please try again.");
+                  toastError(intakeResult.error || "Submission failed. Please try again.");
                   return;
                 }
-                setSubmitError(null);
 
                 const leadId = intakeResult.lead_id;
 

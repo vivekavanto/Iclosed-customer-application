@@ -33,7 +33,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (!error) {
+    if (!error && data.session) {
       // Detect password recovery/invite flow from:
       // 1. Explicit "type" query param from Supabase
       // 2. The "next" param pointing to set-password
@@ -46,10 +46,20 @@ export async function GET(request: Request) {
 
       const redirectTo = isRecovery ? "/set-password" : next;
       console.log(`[Auth Callback] Success! type: ${type}, AMR: ${amrMethods.join(",")}, Redirecting to ${redirectTo}`);
+
+      // For set-password flow, pass tokens via hash so the client can establish its own session
+      if (isRecovery) {
+        const accessToken = data.session.access_token;
+        const refreshToken = data.session.refresh_token;
+        return NextResponse.redirect(
+          `${origin}/set-password#access_token=${accessToken}&refresh_token=${refreshToken}&type=recovery`
+        );
+      }
+
       return NextResponse.redirect(`${origin}${redirectTo}`);
     } else {
-      console.error(`[Auth Callback] Exchange Error: ${error.message}`);
-      return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
+      console.error(`[Auth Callback] Exchange Error: ${error?.message}`);
+      return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error?.message ?? "Authentication failed")}`);
     }
   }
 

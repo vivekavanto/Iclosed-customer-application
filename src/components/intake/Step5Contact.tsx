@@ -37,8 +37,6 @@ interface Step5ContactProps {
     initialData?: { fullName: string; email: string; phone: string };
     /** Determines co-person label: purchase→Co-Purchaser, sale→Co-Seller, both→Co-Purchaser */
     selectedClosingOption?: string | null;
-    /** Error from submission (e.g. duplicate address) */
-    submitError?: string | null;
 }
 
 export default function Step5Contact({
@@ -50,7 +48,6 @@ export default function Step5Contact({
     onComplete,
     initialData,
     selectedClosingOption,
-    submitError,
 }: Step5ContactProps) {
     const coLabel = selectedClosingOption === "selling" ? "Co-Seller" : "Co-Purchaser";
 
@@ -270,9 +267,11 @@ export default function Step5Contact({
                             required
                             placeholder="John Doe"
                             value={formData.fullName}
-                            onChange={(e) =>
-                                setFormData({ ...formData, fullName: e.target.value })
-                            }
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                const capitalized = val.replace(/\b\w/g, (c) => c.toUpperCase());
+                                setFormData({ ...formData, fullName: capitalized });
+                            }}
                             onBlur={() =>
                                 setTouched((prev) => ({ ...prev, fullName: true }))
                             }
@@ -539,12 +538,6 @@ export default function Step5Contact({
                                 )}
                             </div>}
 
-                        {/* Submit error */}
-                        {submitError && (
-                            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-                                <p className="text-sm text-red-700 font-medium">{submitError}</p>
-                            </div>
-                        )}
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
