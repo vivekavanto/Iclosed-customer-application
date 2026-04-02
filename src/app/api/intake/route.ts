@@ -122,6 +122,55 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
 
+    // ── Create separate leads for co-persons ──────────────────
+    // Each co-person from the modal becomes a real lead with parent_lead_id
+    // pointing to the primary lead. Admin converts them independently.
+    const coPersonLeadIds: string[] = [];
+    if (Array.isArray(co_persons) && co_persons.length > 0) {
+      for (const cp of co_persons) {
+        try {
+          const [cpFirst, ...cpRest] = (cp.fullName ?? "").split(" ");
+          const cpLast = cpRest.join(" ");
+
+          const { data: cpLead, error: cpError } = await supabaseAdmin
+            .from("leads")
+            .insert({
+              first_name: cpFirst || "",
+              last_name: cpLast || "",
+              email: cp.email,
+              phone: cp.phone || null,
+              service,
+              sub_service: service === "closing" ? sub_service : null,
+              lead_type,
+              price: cleanPrice,
+              address_street,
+              address_unit,
+              address_city,
+              address_postal_code,
+              address_province,
+              selling_address_street,
+              selling_address_unit,
+              selling_address_city,
+              selling_address_postal_code,
+              selling_address_province,
+              aps_signed,
+              co_persons: [],
+              parent_lead_id: lead.id,
+            })
+            .select("id")
+            .single();
+
+          if (cpError) {
+            console.warn(`[Intake] Co-person lead insert failed for ${cp.email}:`, cpError.message);
+          } else if (cpLead) {
+            coPersonLeadIds.push(cpLead.id);
+          }
+        } catch (cpErr) {
+          console.warn("[Intake] Co-person lead creation failed (non-blocking):", cpErr);
+        }
+      }
+    }
+
     // ── Address duplicate detection (co-purchaser flag) ─────
     // Only flags when a DIFFERENT person (different email) submits for the same address.
     // Same person re-submitting is ignored.
@@ -133,11 +182,14 @@ export async function POST(req: Request) {
       const normEmail = (email ?? "").trim().toLowerCase();
 
       if (normStreet && normCity && normPostal) {
+        // Exclude: this lead, same email, and co-persons we just created (they have parent_lead_id = lead.id)
+        const excludeIds = [lead.id, ...coPersonLeadIds];
         const { data: matchingLeads } = await supabaseAdmin
           .from("leads")
           .select("id, address_postal_code")
-          .neq("id", lead.id)
+          .not("id", "in", `(${excludeIds.join(",")})`)
           .neq("email", normEmail)  // Exclude same email (same person re-submitting)
+          .is("parent_lead_id", null)  // Only match against primary leads, not existing co-persons
           .ilike("address_street", normStreet)
           .ilike("address_city", normCity);
 
@@ -174,6 +226,15 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lead_id: lead.id }),
     }).catch((err) => console.error("[Intake] Welcome email trigger failed:", err));
+
+    // Trigger welcome email for each co-person lead
+    for (const cpLeadId of coPersonLeadIds) {
+      fetch(`${adminUrl}/api/webhooks/new-lead`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: cpLeadId }),
+      }).catch((err) => console.error(`[Intake] Co-person welcome email failed for ${cpLeadId}:`, err));
+    }
 
     // ── Auto-link to client if user is logged in ──────────────
     // When an authenticated user fills the intake form, immediately create
@@ -239,6 +300,7 @@ export async function POST(req: Request) {
       lead_id: lead.id,
       auto_linked: autoLinked,
       address_match: addressMatch,
+      co_person_leads_created: coPersonLeadIds.length,
     });
 
   } catch (err) {
