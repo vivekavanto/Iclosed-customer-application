@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
 
@@ -180,6 +181,7 @@ const Step3: React.FC<Step3Props> = ({
   agreementSigned,
 }) => {
   const isBoth = selectedClosingOption === "both";
+  const { error: toastError } = useToast();
 
   const [buyTouched, setBuyTouched] = useState<Partial<Record<keyof FormData, boolean>>>({});
   const [sellTouched, setSellTouched] = useState<Partial<Record<keyof FormData, boolean>>>({});
@@ -203,6 +205,7 @@ const Step3: React.FC<Step3Props> = ({
 
   const handleContinue = () => {
     if (!isValid) {
+      toastError("Please fill in all required address fields.");
       setSubmitAttempted(true);
       return;
     }
@@ -311,7 +314,7 @@ const Step3: React.FC<Step3Props> = ({
               <Button onClick={() => setStep(2)} variant="secondary" size="md">
                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
               </Button>
-              <Button onClick={handleContinue} variant="primary" size="md" disabled={!isValid}>
+              <Button onClick={handleContinue} variant="primary" size="md">
                 Continue <ChevronRight size={16} strokeWidth={2.5} />
               </Button>
             </div>
@@ -321,7 +324,7 @@ const Step3: React.FC<Step3Props> = ({
               <Button onClick={() => setStep(2)} variant="secondary" size="lg" className="flex-1">
                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
               </Button>
-              <Button onClick={handleContinue} variant="primary" size="lg" className="flex-1" disabled={!isValid}>
+              <Button onClick={handleContinue} variant="primary" size="lg" className="flex-1">
                 Continue <ChevronRight size={18} strokeWidth={2.5} />
               </Button>
             </div>

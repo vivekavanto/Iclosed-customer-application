@@ -263,6 +263,16 @@ const Step2: React.FC<Step2Props> = ({
             toastError("The purchasing and selling property addresses cannot be the same.");
             return;
         }
+        if (!priceValid) {
+            toastError(priceError || "Please enter a valid price.");
+            setSubmitAttempted(true);
+            return;
+        }
+        if (!addressValid) {
+            toastError("Please fill in all required address fields.");
+            setSubmitAttempted(true);
+            return;
+        }
         if (!isValid) {
             setSubmitAttempted(true);
             return;
@@ -404,7 +414,7 @@ const Step2: React.FC<Step2Props> = ({
                             <Button onClick={() => setStep(1)} variant="secondary" size="md">
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button onClick={handleContinue} disabled={!isValid} variant="primary" size="md">
+                            <Button onClick={handleContinue} variant="primary" size="md">
                                 Continue <ChevronRight size={16} strokeWidth={2.5} />
                             </Button>
                         </div>
@@ -414,7 +424,7 @@ const Step2: React.FC<Step2Props> = ({
                             <Button onClick={() => setStep(1)} variant="secondary" size="lg" className="flex-1">
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button onClick={handleContinue} disabled={!isValid} variant="primary" size="lg" className="flex-1">
+                            <Button onClick={handleContinue} variant="primary" size="lg" className="flex-1">
                                 Continue <ChevronRight size={18} strokeWidth={2.5} />
                             </Button>
                         </div>

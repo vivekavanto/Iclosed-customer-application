@@ -5,6 +5,7 @@ import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import CalScheduler from "@/components/shared/CalScheduler";
+import { useToast } from "@/components/ui/Toast";
 
 const CALENDLY_URL =
   process.env.NEXT_PUBLIC_CALENDLY_URL ?? "https://calendly.com/navawilson/iclosed-lead-meeting";
@@ -50,6 +51,7 @@ export default function Step5Contact({
     selectedClosingOption,
 }: Step5ContactProps) {
     const coLabel = selectedClosingOption === "selling" ? "Co-Seller" : "Co-Purchaser";
+    const { error: toastError } = useToast();
 
     // ── Co-person state ──
     const [coPersons, setCoPersons] = React.useState<CoPerson[]>([]);
@@ -182,7 +184,12 @@ export default function Step5Contact({
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
     const handleComplete = () => {
-        if (!isCompleteEnabled) return;
+        if (!isCompleteEnabled) {
+            setTouched({ fullName: true, email: true, phone: true });
+            const firstError = errors.fullName || errors.email || errors.phone;
+            toastError(firstError || "Please fill in all required fields.");
+            return;
+        }
         const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;
         onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons, referralSource: finalReferral });
     };
@@ -553,7 +560,7 @@ export default function Step5Contact({
                             >
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button variant="primary" size="md" disabled={!isCompleteEnabled} onClick={handleComplete}>
+                            <Button variant="primary" size="md" onClick={handleComplete}>
                                 <CheckCircle2 size={16} strokeWidth={2.5} /> Submit
                             </Button>
                         </div>
@@ -573,7 +580,7 @@ export default function Step5Contact({
                             >
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button variant="primary" size="lg" className="flex-1" disabled={!isCompleteEnabled} onClick={handleComplete}>
+                            <Button variant="primary" size="lg" className="flex-1" onClick={handleComplete}>
                                 <CheckCircle2 size={18} strokeWidth={2.5} /> Submit
                             </Button>
                         </div>

@@ -2,6 +2,7 @@
 import { Home, FileText, Repeat, Check, ChevronRight, Info, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
 
 interface Service {
   id: string;
@@ -32,6 +33,7 @@ export function Step1({
   step,
   agreementSigned,
 }: Step1Props) {
+  const { error: toastError } = useToast();
   const [showDisbursements, setShowDisbursements] = useState(false);
 
   const administrationFees = [
@@ -53,14 +55,11 @@ export function Step1({
   ];
 
   const handleNext = () => {
-    if (!selected) return alert("Please select a service to continue.");
+    if (!selected) return toastError("Please select a service to continue.");
     if (selected === "closing" && !selectedClosingOption)
-      return alert("Please select a closing option.");
+      return toastError("Please select a closing option.");
     setStep(2);
   };
-
-  const isNextDisabled =
-    !selected || (selected === "closing" && !selectedClosingOption);
 
   const leftSteps = [
     { id: 1, label: "Select Service" },
@@ -159,7 +158,7 @@ export function Step1({
         <div className="flex-1 p-5 sm:p-10 lg:p-16 pb-28 sm:pb-10 lg:pb-16 overflow-y-auto">
           {/* Mobile fixed bottom button */}
           <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
-            <Button onClick={handleNext} disabled={isNextDisabled} variant="primary" size="lg" fullWidth>
+            <Button onClick={handleNext} variant="primary" size="lg" fullWidth>
               Continue <ChevronRight size={18} strokeWidth={2.5} />
             </Button>
           </div>
@@ -363,7 +362,7 @@ export function Step1({
 
             {/* Desktop Continue button — right below the form content */}
             <div className="hidden lg:flex justify-end mt-8 pt-6 border-t border-gray-100">
-              <Button onClick={handleNext} disabled={isNextDisabled} variant="primary" size="md">
+              <Button onClick={handleNext} variant="primary" size="md">
                 Continue <ChevronRight size={16} strokeWidth={2.5} />
               </Button>
             </div>

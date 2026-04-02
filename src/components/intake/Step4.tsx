@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
 import { ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
 
 interface Step4Props {
@@ -22,6 +23,7 @@ const Step4: React.FC<Step4Props> = ({
   setUploadedFile,
 }) => {
   const [isSelected, setIsSelected] = useState<"yes" | "no" | null>(agreementSigned);
+  const { error: toastError } = useToast();
 
   useEffect(() => {
     setIsSelected(agreementSigned);
@@ -35,7 +37,10 @@ const Step4: React.FC<Step4Props> = ({
   ];
 
   const handleNext = () => {
-    if (!isSelected) return;
+    if (!isSelected) {
+      toastError("Please select whether you have a signed agreement.");
+      return;
+    }
     setStep(4); // Contact step
   };
 
@@ -185,7 +190,7 @@ const Step4: React.FC<Step4Props> = ({
               <Button onClick={() => setStep(2)} variant="secondary" size="md">
                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
               </Button>
-              <Button onClick={handleNext} disabled={!isSelected} variant="primary" size="md">
+              <Button onClick={handleNext} variant="primary" size="md">
                 Continue <ChevronRight size={16} strokeWidth={2.5} />
               </Button>
             </div>
@@ -195,7 +200,7 @@ const Step4: React.FC<Step4Props> = ({
               <Button onClick={() => setStep(2)} variant="secondary" size="lg" className="flex-1">
                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
               </Button>
-              <Button onClick={handleNext} disabled={!isSelected} variant="primary" size="lg" className="flex-1">
+              <Button onClick={handleNext} variant="primary" size="lg" className="flex-1">
                 Continue <ChevronRight size={18} strokeWidth={2.5} />
               </Button>
             </div>
