@@ -424,7 +424,7 @@ export default function Step5Contact({
                                                     type="text"
                                                     placeholder="John Doe"
                                                     value={coForm.fullName}
-                                                    onChange={(e) => { setCoForm(f => ({ ...f, fullName: e.target.value })); if (coTouched.fullName) setCoErrors(validateCoForm()); }}
+                                                    onChange={(e) => { const val = e.target.value.replace(/\b\w/g, (c) => c.toUpperCase()); setCoForm(f => ({ ...f, fullName: val })); if (coTouched.fullName) setCoErrors(validateCoForm()); }}
                                                     onBlur={() => { setCoTouched(t => ({ ...t, fullName: true })); setCoErrors(validateCoForm()); }}
                                                     className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors ${coTouched.fullName && coErrors.fullName ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
                                                 />
