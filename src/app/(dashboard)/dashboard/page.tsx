@@ -187,17 +187,17 @@ function AttentionCard({
           {pending.map((task) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })
               : null;
             const formattedTime = task.due_date
               ? new Date(task.due_date).toLocaleTimeString("en-CA", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  hour12: true,
-                })
+                hour: "numeric",
+                minute: "2-digit",
+                hour12: true,
+              })
               : null;
 
             return (
@@ -259,10 +259,27 @@ function StatusTimeline({
 
   const handleMouseEnter = (milestone: Milestone, e: React.MouseEvent) => {
     if (!milestone.description) return;
+
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+    const tooltipHeight = 180; // approx height (adjust if needed)
+    const padding = 12;
+
+    let top = rect.top + rect.height / 2;
+
+    // 🚀 Prevent overflow TOP
+    if (top - tooltipHeight / 2 < padding) {
+      top = tooltipHeight / 2 + padding;
+    }
+
+    // 🚀 Prevent overflow BOTTOM
+    if (top + tooltipHeight / 2 > window.innerHeight - padding) {
+      top = window.innerHeight - tooltipHeight / 2 - padding;
+    }
+
     setSelectedId(milestone.id);
     setTooltipPos({
-      top: rect.top + rect.height / 2,
+      top,
       right: window.innerWidth - rect.left + 12,
     });
   };
@@ -333,10 +350,10 @@ function StatusTimeline({
             const isLast = idx === filtered.length - 1;
             const formattedDate = milestone.milestone_date
               ? new Date(milestone.milestone_date).toLocaleDateString("en-CA", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })
               : null;
 
             return (
@@ -380,12 +397,6 @@ function StatusTimeline({
                       {formattedDate && (
                         <p className="text-xs text-gray-400">{formattedDate}</p>
                       )}
-                      {milestone.total_tasks > 0 && milestone.completed_tasks < milestone.total_tasks && (
-                        <span className="flex items-center gap-1 text-xs text-gray-400" title="Action needed from you">
-                          <User size={10} strokeWidth={2} />
-                          Action needed
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -402,7 +413,7 @@ function StatusTimeline({
           style={{
             top: tooltipPos.top,
             right: tooltipPos.right,
-            transform: "translateY(-50%)",
+            transform: "none",
           }}
         >
           <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
@@ -410,9 +421,8 @@ function StatusTimeline({
               {selectedMilestone.title}
             </h4>
             <p className="text-xs mt-1 flex items-center gap-1.5 text-gray-400">
-              <span className={`w-2 h-2 rounded-full inline-block ${
-                selectedMilestone.status === "Completed" ? "bg-gray-400" : selectedMilestone.status === "In Progress" ? "bg-gray-300" : "bg-gray-200"
-              }`} />
+              <span className={`w-2 h-2 rounded-full inline-block ${selectedMilestone.status === "Completed" ? "bg-gray-400" : selectedMilestone.status === "In Progress" ? "bg-gray-300" : "bg-gray-200"
+                }`} />
               {selectedMilestone.status === "Completed" ? "Completed" : selectedMilestone.status === "In Progress" ? "In Progress" : "Pending"}
             </p>
           </div>
@@ -484,7 +494,7 @@ export default function DashboardPage() {
       }
     };
     fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── When active deal changes: reload tasks + milestones ───
@@ -518,7 +528,7 @@ export default function DashboardPage() {
       }
     };
     fetchDealData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDealId]);
 
   // ── Toast ────────────────────────────────────────────────
@@ -559,10 +569,10 @@ export default function DashboardPage() {
 
   const closingFormatted = activeDeal?.closing_date
     ? new Date(activeDeal.closing_date).toLocaleDateString("en-CA", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    })
     : "TBD";
 
   return (
@@ -703,69 +713,69 @@ export default function DashboardPage() {
 
           {/* ── Need Assistance ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#C10007"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#C10007"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.5 10.5a19.79 19.79 0 0 1-3-8.57A2 2 0 0 1 3.47 0h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 7.91a16 16 0 0 0 6 6l.72-.72a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Need Assistance?
+                </h3>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 leading-relaxed mb-5">
+              Our team is here to help you through every step of your closing
+              process.
+            </p>
+
+            <div className="space-y-2.5">
+              {/* Call */}
+              <a
+                href="tel:416-321-1100"
+                className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
               >
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.5 10.5a19.79 19.79 0 0 1-3-8.57A2 2 0 0 1 3.47 0h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 7.91a16 16 0 0 0 6 6l.72-.72a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">
-                Need Assistance?
-              </h3>
+                <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
+                  <Phone size={14} className="text-[#C10007]" strokeWidth={2} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                    Call us
+                  </p>
+                  <p className="text-sm font-bold text-gray-900">416-321-1100</p>
+                </div>
+              </a>
+
+              {/* Email */}
+              <a
+                href="mailto:iclosed@navawilson.law"
+                className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
+              >
+                <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
+                  <Mail size={14} className="text-[#C10007]" strokeWidth={2} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                    Email us
+                  </p>
+                  <p className="text-xs font-bold text-gray-900 break-all">
+                    iclosed@navawilson.law
+                  </p>
+                </div>
+              </a>
             </div>
           </div>
-
-          <p className="text-xs text-gray-500 leading-relaxed mb-5">
-            Our team is here to help you through every step of your closing
-            process.
-          </p>
-
-          <div className="space-y-2.5">
-            {/* Call */}
-            <a
-              href="tel:416-321-1100"
-              className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
-            >
-              <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
-                <Phone size={14} className="text-[#C10007]" strokeWidth={2} />
-              </div>
-              <div>
-                <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                  Call us
-                </p>
-                <p className="text-sm font-bold text-gray-900">416-321-1100</p>
-              </div>
-            </a>
-
-            {/* Email */}
-            <a
-              href="mailto:iclosed@navawilson.law"
-              className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
-            >
-              <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
-                <Mail size={14} className="text-[#C10007]" strokeWidth={2} />
-              </div>
-              <div>
-                <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                  Email us
-                </p>
-                <p className="text-xs font-bold text-gray-900 break-all">
-                  iclosed@navawilson.law
-                </p>
-              </div>
-            </a>
-          </div>
-        </div>
         </div>{/* end right column */}
       </div>{/* end main grid */}
     </div>

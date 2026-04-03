@@ -1,22 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { MapPin, Loader2 } from "lucide-react";
-
-interface NominatimResult {
-  display_name: string;
-  address: {
-    house_number?: string;
-    road?: string;
-    city?: string;
-    town?: string;
-    village?: string;
-    municipality?: string;
-    state?: string;
-    postcode?: string;
-    country_code?: string;
-  };
-}
 
 interface SelectedAddress {
   street: string;
@@ -32,6 +17,80 @@ interface AddressAutocompleteProps {
   hasError?: boolean;
 }
 
+/* ── Load Google Maps script once globally ── */
+let googleScriptPromise: Promise<void> | null = null;
+
+function loadGoogleMapsScript(): Promise<void> {
+  if (googleScriptPromise) return googleScriptPromise;
+
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
+  if (!apiKey) {
+    console.error("Missing NEXT_PUBLIC_GOOGLE_PLACES_API_KEY env variable");
+    return Promise.reject(new Error("Missing Google Places API key"));
+  }
+
+  if (typeof window !== "undefined" && window.google?.maps?.places) {
+    googleScriptPromise = Promise.resolve();
+    return googleScriptPromise;
+  }
+
+  googleScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      googleScriptPromise = null;
+      reject(new Error("Failed to load Google Maps script"));
+    };
+    document.head.appendChild(script);
+  });
+
+  return googleScriptPromise;
+}
+
+/* ── Extract address components from a Place result ── */
+function extractAddress(
+  place: { address_components?: google.maps.GeocoderAddressComponent[] }
+): SelectedAddress {
+  const components = place.address_components ?? [];
+  let streetNumber = "";
+  let route = "";
+  let city = "";
+  let postalCode = "";
+
+  for (const c of components) {
+    const type = c.types[0];
+    switch (type) {
+      case "street_number":
+        streetNumber = c.long_name;
+        break;
+      case "route":
+        route = c.long_name;
+        break;
+      case "locality":
+        city = c.long_name;
+        break;
+      case "sublocality_level_1":
+        if (!city) city = c.long_name;
+        break;
+      case "administrative_area_level_3":
+        if (!city) city = c.long_name;
+        break;
+      case "postal_code":
+        postalCode = c.long_name;
+        break;
+    }
+  }
+
+  return {
+    street: [streetNumber, route].filter(Boolean).join(" "),
+    city,
+    postalCode,
+  };
+}
+
 export default function AddressAutocomplete({
   value,
   onChange,
@@ -39,85 +98,59 @@ export default function AddressAutocomplete({
   onBlur,
   hasError,
 }: AddressAutocompleteProps) {
-  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [scriptError, setScriptError] = useState(false);
 
+  // Stable refs for callbacks (avoids re-initializing autocomplete)
+  const onChangeRef = useRef(onChange);
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+
+  // Load the Google Maps script
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    loadGoogleMapsScript()
+      .then(() => setScriptLoaded(true))
+      .catch(() => setScriptError(true));
   }, []);
 
-
+  // Initialize the autocomplete once the script is loaded
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!scriptLoaded || !inputRef.current || autocompleteRef.current) return;
 
-    if (value.trim().length < 3) {
-      setSuggestions([]);
-      setOpen(false);
-      return;
-    }
+    const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
+      componentRestrictions: { country: "ca" },
+      types: ["address"],
+      fields: ["address_components", "formatted_address"],
+    });
 
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const params = new URLSearchParams({
-          q: `${value}, Ontario, Canada`,
-          format: "json",
-          addressdetails: "1",
-          countrycodes: "ca",
-          limit: "7",
-        });
+    autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace();
+      if (!place.address_components) return;
 
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?${params}`,
-          { headers: { "Accept-Language": "en-CA" } }
-        );
-        const data: NominatimResult[] = await res.json();
+      const extracted = extractAddress(place);
+      onChangeRef.current(extracted.street);
+      onSelectRef.current(extracted);
+    });
 
-        const filtered = data.filter(
-          (d) =>
-            d.address.state === "Ontario" &&
-            d.address.country_code === "ca" &&
-            d.address.road
-        );
+    autocompleteRef.current = autocomplete;
+  }, [scriptLoaded]);
 
-        setSuggestions(filtered);
-        setOpen(filtered.length > 0);
-      } catch {
-        setSuggestions([]);
-        setOpen(false);
-      } finally {
-        setLoading(false);
-      }
-    }, 350);
-  }, [value]);
-
-  const handleSelect = (result: NominatimResult) => {
-    const { house_number, road, city, town, village, municipality, postcode } =
-      result.address;
-    const street = [house_number, road].filter(Boolean).join(" ");
-    const resolvedCity = city || town || village || municipality || "";
-    const postalCode = postcode || "";
-
-    onChange(street);
-    onSelect({ street, city: resolvedCity, postalCode });
-    setOpen(false);
-  };
+  // Keep the input value in sync (Google overwrites the DOM input)
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      onChange(e.target.value);
+    },
+    [onChange]
+  );
 
   return (
-    <div ref={containerRef} className="relative w-full">
-      {/* Input */}
+    <div className="relative w-full">
       <div className="relative">
         <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          {loading ? (
+          {!scriptLoaded && !scriptError ? (
             <Loader2 size={15} className="text-gray-400 animate-spin" />
           ) : (
             <MapPin size={15} className="text-gray-400" />
@@ -125,12 +158,12 @@ export default function AddressAutocomplete({
         </div>
 
         <input
+          ref={inputRef}
           type="text"
           autoComplete="off"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={handleChange}
           onBlur={onBlur}
-          onFocus={() => suggestions.length > 0 && setOpen(true)}
           placeholder="123 Main Street"
           className={[
             "w-full pl-9 pr-4 py-2.5 rounded-sm border text-sm transition-colors duration-150",
@@ -142,31 +175,10 @@ export default function AddressAutocomplete({
         />
       </div>
 
-      {/* Dropdown */}
-      {open && suggestions.length > 0 && (
-        <ul className="absolute z-50 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
-          {suggestions.map((s, i) => {
-            const { house_number, road, city, town, village, municipality, postcode } = s.address;
-            const streetLine = [house_number, road].filter(Boolean).join(" ");
-            const cityLine = city || town || village || municipality || "";
-
-            return (
-              <li
-                key={i}
-                onMouseDown={() => handleSelect(s)}
-                className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 border-b last:border-0 border-gray-100 transition-colors"
-              >
-                <MapPin size={14} className="text-[#C10007] mt-0.5 flex-shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{streetLine}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {[cityLine, "ON", postcode].filter(Boolean).join(", ")}
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+      {scriptError && (
+        <p className="text-xs text-amber-600 mt-1">
+          Address suggestions unavailable. Please type your address manually.
+        </p>
       )}
     </div>
   );

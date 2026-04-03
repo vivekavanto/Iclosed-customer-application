@@ -40,11 +40,11 @@ function validate(formData: FormData) {
     errors.city = "City name is too short.";
   }
 
-  const postalRegex = /^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$/;
+  const postalRegex = /^[A-Za-z]\d[A-Za-z]([ -]?\d[A-Za-z]\d)?$/;
   if (!formData.postalCode.trim()) {
     errors.postalCode = "Postal code is required.";
   } else if (!postalRegex.test(formData.postalCode.trim())) {
-    errors.postalCode = "Enter a valid Ontario postal code (e.g. M5V 3A8).";
+    errors.postalCode = "Enter a valid postal code (e.g. M5V 3A8 or M5V).";
   }
 
   if (formData.unit.trim()) {
