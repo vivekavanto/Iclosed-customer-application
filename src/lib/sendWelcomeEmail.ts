@@ -19,7 +19,7 @@ export async function sendWelcomeEmail(leadId: string): Promise<boolean> {
       return false;
     }
 
-    const html = buildWelcomeEmailHtml({
+    const { html, subject } = await buildWelcomeEmailHtml({
       firstName: lead.first_name || "there",
     });
 
@@ -27,7 +27,7 @@ export async function sendWelcomeEmail(leadId: string): Promise<boolean> {
       from: EMAIL_FROM,
       replyTo: EMAIL_REPLY_TO,
       to: lead.email,
-      subject: "Welcome to iClosed!",
+      subject,
       html,
     });
 
