@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { advanceMilestone } from "@/lib/syncSharedTask";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -458,23 +459,18 @@ export async function POST(req: Request) {
           if (matched) {
             matchedLeadId = matched.id;
 
-            // Flag this lead as a co-purchaser match (auto-approved, no admin action needed)
+            // Flag this lead as a potential co-purchaser match (pending admin approval)
             await supabaseAdmin
               .from("leads")
               .update({
                 address_match_flag: {
                   matched_lead_id: matched.id,
-                  status: "approved",
+                  status: "pending",
                 },
               })
               .eq("id", lead.id);
 
-            // Link as co-purchaser: set parent_lead_id to the matched lead
-            await supabaseAdmin
-              .from("leads")
-              .update({ parent_lead_id: matched.id })
-              .eq("id", lead.id);
-
+            // Do NOT set parent_lead_id yet — admin must approve via link-co-purchaser
             addressMatch = true;
           }
         }
@@ -526,6 +522,11 @@ export async function POST(req: Request) {
                   .from("tasks")
                   .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
                   .eq("id", targetTask.id);
+
+                // Advance milestone + trigger email
+                if (targetTask.milestone_id && dealId) {
+                  await advanceMilestone(dealId, targetTask.milestone_id);
+                }
               }
             }
           }

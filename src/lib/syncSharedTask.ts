@@ -143,7 +143,7 @@ export async function syncSharedTaskPatch(params: {
 /**
  * Check milestone completion and advance to next milestone if all tasks done.
  */
-async function advanceMilestone(dealId: string, milestoneId: string) {
+export async function advanceMilestone(dealId: string, milestoneId: string) {
   const { data: siblings } = await supabaseAdmin
     .from("tasks")
     .select("id, completed")

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { advanceMilestone } from "@/lib/syncSharedTask";
 
 /**
  * POST /api/admin/convert-lead
@@ -428,6 +429,11 @@ export async function POST(req: Request) {
                 .from("tasks")
                 .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
                 .eq("id", targetTask.id);
+
+              // Advance milestone + trigger email (same as syncSharedTaskCompletion)
+              if (targetTask.milestone_id) {
+                await advanceMilestone(dealId, targetTask.milestone_id);
+              }
             }
           }
         }
