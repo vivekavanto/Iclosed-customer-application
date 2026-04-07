@@ -16,19 +16,40 @@ export async function GET() {
       );
     }
 
-    // ── Fetch ALL leads for this client (primary only, no co-persons) ──
-    const { data: leads, error: leadError } = await supabaseAdmin
+    // ── Fetch ALL leads for this client ──
+    const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, parent_lead_id"
       )
       .eq("client_id", client.id)
-      .is("parent_lead_id", null)
       .order("created_at", { ascending: false });
 
     if (leadError) {
       console.error("Lead fetch error:", leadError);
       return NextResponse.json({ success: false, error: "Lead fetch failed" });
+    }
+
+    // ── Filter out same-client co-person leads (added via intake form) ──
+    // Keep: primary leads (no parent) + co-purchaser leads (parent belongs to different client)
+    let leads = allLeads ?? [];
+    const coPersonLeads = leads.filter((l) => l.parent_lead_id);
+    if (coPersonLeads.length > 0) {
+      const parentIds = [...new Set(coPersonLeads.map((l) => l.parent_lead_id))];
+      const { data: parentLeads } = await supabaseAdmin
+        .from("leads")
+        .select("id, client_id")
+        .in("id", parentIds);
+
+      const sameClientParentIds = new Set(
+        (parentLeads ?? [])
+          .filter((p) => p.client_id === client.id)
+          .map((p) => p.id)
+      );
+
+      leads = leads.filter(
+        (l) => !l.parent_lead_id || !sameClientParentIds.has(l.parent_lead_id)
+      );
     }
 
     // ── Fetch ALL deals for this client ───────────────────────

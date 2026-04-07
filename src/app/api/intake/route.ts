@@ -458,13 +458,13 @@ export async function POST(req: Request) {
           if (matched) {
             matchedLeadId = matched.id;
 
-            // Flag this lead as a co-purchaser match
+            // Flag this lead as a co-purchaser match (auto-approved, no admin action needed)
             await supabaseAdmin
               .from("leads")
               .update({
                 address_match_flag: {
                   matched_lead_id: matched.id,
-                  status: "pending",
+                  status: "approved",
                 },
               })
               .eq("id", lead.id);
