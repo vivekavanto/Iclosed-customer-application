@@ -34,7 +34,7 @@ export function buildWelcomeEmailHtml(params: {
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
                 <tr>
                   <td style="background-color:#1e3a5f;border-radius:6px;">
-                    <a href="${process.env.NEXT_PUBLIC_SITE_URL || "https://iclosed.com"}/login"
+                    <a href="${process.env.NEXT_PUBLIC_SITE_URL || "https://https://iclosed-customer-application-rosy.vercel.app/"}/login"
                        style="display:inline-block;padding:14px 32px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;">
                       Go to Your Dashboard
                     </a>
