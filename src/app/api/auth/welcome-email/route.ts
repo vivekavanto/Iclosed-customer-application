@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 
 /**
  * POST /api/auth/welcome-email
@@ -108,38 +109,11 @@ export async function POST() {
       return NextResponse.json({ success: true, message: "Already sent" });
     }
 
-    const adminPortalUrl =
-      process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL ||
-      "https://iclosed-admin-panel.vercel.app";
-
     let sentCount = 0;
 
     for (const lead of unsent) {
-      try {
-        console.log("[Welcome Email] Sending for lead:", lead.id);
-        const webhookRes = await fetch(
-          `${adminPortalUrl}/api/admin/send-welcome-email`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lead_id: lead.id }),
-          }
-        );
-        const responseText = await webhookRes.text();
-        console.log("[Welcome Email] Response:", webhookRes.status, responseText);
-
-        if (webhookRes.ok) {
-          // The admin endpoint now also updates welcome_email_sent,
-          // but we update it here too as a backup
-          await supabaseAdmin
-            .from("leads")
-            .update({ welcome_email_sent: true })
-            .eq("id", lead.id);
-          sentCount++;
-        }
-      } catch (err) {
-        console.error("[Welcome Email] Error for lead:", lead.id, err);
-      }
+      const sent = await sendWelcomeEmail(lead.id);
+      if (sent) sentCount++;
     }
 
     return NextResponse.json({

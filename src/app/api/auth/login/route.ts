@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
+import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
 
 export async function POST(request: Request) {
   try {
@@ -120,30 +121,8 @@ export async function POST(request: Request) {
 
         console.log("[LOGIN] Unsent leads:", unsent, "Error:", unsentErr?.message);
 
-        const adminPortalUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-panel.vercel.app";
-        console.log("[LOGIN] Admin portal URL:", adminPortalUrl);
-
         for (const lead of unsent || []) {
-          try {
-            console.log("[LOGIN] Sending welcome email for lead:", lead.id);
-            const res = await fetch(`${adminPortalUrl}/api/admin/send-welcome-email`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ lead_id: lead.id }),
-            });
-            const resText = await res.text();
-            console.log("[LOGIN] Welcome email response:", res.status, resText);
-
-            if (res.ok) {
-              await supabaseAdmin
-                .from("leads")
-                .update({ welcome_email_sent: true })
-                .eq("id", lead.id);
-              console.log("[LOGIN] Marked welcome_email_sent=true for lead:", lead.id);
-            }
-          } catch (err) {
-            console.error("[LOGIN] Welcome email error for lead:", lead.id, err);
-          }
+          await sendWelcomeEmail(lead.id);
         }
       } else {
         console.log("[LOGIN] No lead IDs found from deals");

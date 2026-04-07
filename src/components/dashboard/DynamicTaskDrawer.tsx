@@ -80,6 +80,11 @@ function isValidPhone(v: string) {
   return /^\(\d{3}\) \d{3}-\d{4}$/.test(v.trim());
 }
 
+// Validate email format
+function isValidEmail(v: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+
 function getFileConfig(opts: any): {
   accept: string;
   max_mb: number;
@@ -383,8 +388,6 @@ export default function DynamicTaskDrawer({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
 
-  // Calendly checkbox (for Schedule Appointment task)
-  const [calendlyConfirmed, setCalendlyConfirmed] = useState(false);
   const CALENDLY_URL = "https://calendly.com/iclosed-navawilson/iclosed-lead-meeting";
 
   // ── Fetch fields when drawer opens ──
@@ -399,7 +402,6 @@ export default function DynamicTaskDrawer({
     setGlobalError(null);
     setSaved(false);
     setDraftSaved(false);
-    setCalendlyConfirmed(false);
 
     fetch(`/api/task-form-fields?task_id=${taskId}`)
       .then((r) => r.json())
@@ -482,7 +484,15 @@ export default function DynamicTaskDrawer({
           newErrors[field.id] = `${field.label} is required.`;
         }
       } else if (field.field_type === "checkbox") {
-        // handled separately for Calendly
+        if (field.required && values[field.id] !== "true") {
+          newErrors[field.id] = `${field.label} is required.`;
+        }
+      } else if (field.field_type === "email") {
+        if (field.required && !val) {
+          newErrors[field.id] = `${field.label} is required.`;
+        } else if (val && !isValidEmail(val)) {
+          newErrors[field.id] = "Enter a valid email address.";
+        }
       } else if (field.field_type === "phone") {
         if (field.required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
@@ -508,14 +518,7 @@ export default function DynamicTaskDrawer({
   async function handleSubmit() {
     if (!taskId) return;
 
-    // Calendly task: just needs checkbox
-    const isCalendlyTask = fields.some((f) => f.field_type === "checkbox");
-    if (isCalendlyTask && !calendlyConfirmed) {
-      setGlobalError("Please confirm you have scheduled the appointment.");
-      return;
-    }
-
-    if (!isCalendlyTask && !validate()) return;
+    if (!validate()) return;
 
     setSaving(true);
     setGlobalError(null);
@@ -567,14 +570,14 @@ export default function DynamicTaskDrawer({
           value: values[f.id] ?? "",
         }));
 
-      // ── 3. Checkbox responses (Calendly confirmation) ──
+      // ── 3. Checkbox responses ──
       const checkboxResponses = fields
         .filter((f) => f.field_type === "checkbox")
         .map((f) => ({
           field_id: f.id,
           field_label: f.label,
           field_type: "checkbox",
-          value: calendlyConfirmed ? "true" : "false",
+          value: values[f.id] === "true" ? "true" : "false",
         }));
 
       // ── 4. Keep existing file responses that weren't replaced ──
@@ -672,9 +675,11 @@ export default function DynamicTaskDrawer({
     }
   }
 
-  const isCalendlyTask = fields.some((f) => f.field_type === "checkbox");
+  const isCalendlyTask = taskTitle.toLowerCase().includes("schedule an appointment");
   const hasFileFields = fields.some((f) => f.field_type === "file");
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
+  const isMortgageTask = taskTitle.toLowerCase().includes("status of mortgage");
+  const hasDraftOption = isPersonalInfoTask || isMortgageTask;
 
   return (
     <>
@@ -968,55 +973,64 @@ export default function DynamicTaskDrawer({
               }
 
               if (field.field_type === "checkbox") {
+                const isChecked = values[field.id] === "true";
                 return (
-                  <label
-                    key={field.id}
-                    className="flex items-start gap-3 cursor-pointer group select-none"
-                  >
-                    <div className="relative flex-shrink-0 mt-0.5">
-                      <input
-                        type="checkbox"
-                        checked={calendlyConfirmed}
-                        onChange={(e) => setCalendlyConfirmed(e.target.checked)}
-                        className="sr-only"
-                      />
-                      <div
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <label
+                      className="flex items-start gap-3 cursor-pointer group select-none"
+                    >
+                      <div className="relative flex-shrink-0 mt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) =>
+                            setValue(field.id, e.target.checked ? "true" : "false")
+                          }
+                          className="sr-only"
+                        />
+                        <div
+                          className={[
+                            "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                            isChecked
+                              ? "bg-[#C10007] border-[#C10007]"
+                              : "border-gray-300 bg-white group-hover:border-[#C10007]/60",
+                          ].join(" ")}
+                        >
+                          {isChecked && (
+                            <svg
+                              width="10"
+                              height="8"
+                              viewBox="0 0 10 8"
+                              fill="none"
+                            >
+                              <path
+                                d="M1 4L3.5 6.5L9 1"
+                                stroke="white"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                      <span
                         className={[
-                          "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
-                          calendlyConfirmed
-                            ? "bg-[#C10007] border-[#C10007]"
-                            : "border-gray-300 bg-white group-hover:border-[#C10007]/60",
+                          "text-sm leading-snug pt-0.5",
+                          isChecked
+                            ? "text-gray-800 font-medium"
+                            : "text-gray-500",
                         ].join(" ")}
                       >
-                        {calendlyConfirmed && (
-                          <svg
-                            width="10"
-                            height="8"
-                            viewBox="0 0 10 8"
-                            fill="none"
-                          >
-                            <path
-                              d="M1 4L3.5 6.5L9 1"
-                              stroke="white"
-                              strokeWidth="1.8"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      className={[
-                        "text-sm leading-snug pt-0.5",
-                        calendlyConfirmed
-                          ? "text-gray-800 font-medium"
-                          : "text-gray-500",
-                      ].join(" ")}
-                    >
-                      {field.label}
-                    </span>
-                  </label>
+                        {field.placeholder || field.label}
+                      </span>
+                    </label>
+                    {errors[field.id] && (
+                      <p className="mt-1.5 text-xs text-[#C10007]">
+                        {errors[field.id]}
+                      </p>
+                    )}
+                  </div>
                 );
               }
 
@@ -1100,8 +1114,10 @@ export default function DynamicTaskDrawer({
                 <div key={field.id} id={`field-${field.id}`}>
                   <label className="text-sm font-semibold text-gray-800 mb-2 block">
                     {field.label}
-                    {field.required && (
+                    {field.required ? (
                       <span className="text-[#C10007] ml-1">*</span>
+                    ) : (
+                      <span className="text-gray-400 font-normal text-xs ml-2">(Optional)</span>
                     )}
                   </label>
                   <input
@@ -1171,7 +1187,7 @@ export default function DynamicTaskDrawer({
         {/* Footer */}
         {!fieldsLoading && fields.length > 0 && !saved && !draftSaved && (
           <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3">
-            {isPersonalInfoTask ? (
+            {hasDraftOption ? (
               <>
                 <Button
                   variant="secondary"
@@ -1188,13 +1204,13 @@ export default function DynamicTaskDrawer({
                   fullWidth
                   loading={saving}
                   disabled={savingDraft}
-                  onClick={() => {
+                  onClick={isPersonalInfoTask ? () => {
                     if (!validate()) return;
                     setShowConfirmModal(true);
-                  }}
+                  } : handleSubmit}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
-                  Save &amp; Continue
+                  Submit Information
                 </Button>
               </>
             ) : (

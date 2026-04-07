@@ -2,6 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { advanceMilestone } from "@/lib/syncSharedTask";
+import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -537,19 +538,14 @@ export async function POST(req: Request) {
     }
 
     // ── 10. Trigger welcome email (fire and forget) ───────────
-    const adminUrl = process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL || "https://iclosed-admin-panel.vercel.app";
-    fetch(`${adminUrl}/api/webhooks/new-lead`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lead_id: lead.id }),
-    }).catch((err) => console.error("[Intake] Welcome email trigger failed:", err));
+    sendWelcomeEmail(lead.id).catch((err) =>
+      console.error("[Intake] Welcome email trigger failed:", err)
+    );
 
     for (const cpLeadId of coPersonLeadIds) {
-      fetch(`${adminUrl}/api/webhooks/new-lead`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: cpLeadId }),
-      }).catch((err) => console.error(`[Intake] Co-person welcome email failed for ${cpLeadId}:`, err));
+      sendWelcomeEmail(cpLeadId).catch((err) =>
+        console.error(`[Intake] Co-person welcome email failed for ${cpLeadId}:`, err)
+      );
     }
 
     return NextResponse.json({
