@@ -199,12 +199,41 @@ export async function GET(req: Request) {
     }
 
     // ─────────────────────────────────────────
-    // Attach milestone info to tasks
+    // Auto-sync: if milestone is Completed but
+    // task is not, mark task as completed
     // ─────────────────────────────────────────
     const milestoneMap = Object.fromEntries(
       (milestones ?? []).map((m: any) => [m.id, m])
     );
 
+    const outOfSyncTaskIds: string[] = [];
+    for (const t of tasks ?? []) {
+      if (t.milestone_id && !t.completed) {
+        const ms = milestoneMap[t.milestone_id];
+        if (ms && ms.status === "Completed") {
+          outOfSyncTaskIds.push(t.id);
+        }
+      }
+    }
+
+    if (outOfSyncTaskIds.length > 0) {
+      await supabaseAdmin
+        .from("tasks")
+        .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
+        .in("id", outOfSyncTaskIds);
+
+      // Update local task data to reflect the change
+      for (const t of tasks ?? []) {
+        if (outOfSyncTaskIds.includes(t.id)) {
+          t.completed = true;
+          t.status = "Completed";
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────
+    // Attach milestone info to tasks
+    // ─────────────────────────────────────────
     const enriched = (tasks ?? []).map((t: any) => ({
       ...t,
       milestones: t.milestone_id ? milestoneMap[t.milestone_id] ?? null : null,

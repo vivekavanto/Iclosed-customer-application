@@ -1,5 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
 
 /**
  * When a shared task is completed, sync it to all linked deals.
@@ -156,6 +157,11 @@ async function advanceMilestone(dealId: string, milestoneId: string) {
       .from("milestones")
       .update({ status: "Completed", completed_at: new Date().toISOString() })
       .eq("id", milestoneId);
+
+    // Trigger milestone email for co-purchaser's milestone
+    triggerMilestoneEmail(milestoneId).catch((err) =>
+      console.error("[MilestoneEmail] Co-purchaser trigger failed:", err)
+    );
 
     // Find and advance next milestone
     const { data: currentMs } = await supabaseAdmin

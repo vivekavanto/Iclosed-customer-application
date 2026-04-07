@@ -41,14 +41,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Lead not found" }, { status: 404 });
     }
 
-    // Check that this lead hasn't already been converted
+    // Check if a deal was already auto-created by the intake route
     const { data: existingDeal } = await supabaseAdmin
       .from("deals")
-      .select("id, file_number")
+      .select("id, file_number, status")
       .eq("lead_id", lead_id)
       .maybeSingle();
 
-    if (existingDeal) {
+    // If the deal already exists AND is Active/Converted, skip re-creation
+    if (existingDeal && existingDeal.status !== "Pending") {
       return NextResponse.json({
         success: false,
         error: `Lead already converted to deal ${existingDeal.file_number}`,
@@ -58,143 +59,230 @@ export async function POST(req: Request) {
     // ── 2. Create or find client record ───────────────────────────────────────
     let clientId: string;
 
-    const { data: existingClients } = await supabaseAdmin
-      .from("clients")
-      .select("id")
-      .eq("email", lead.email)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (existingClients && existingClients.length > 0) {
-      clientId = existingClients[0].id;
+    if (lead.client_id) {
+      clientId = lead.client_id;
     } else {
-      const { data: newClient, error: clientError } = await supabaseAdmin
+      // Prefer an existing client with auth_user_id (prevents duplicate clients)
+      const { data: authedClients } = await supabaseAdmin
         .from("clients")
-        .insert({
-          email: lead.email,
-          first_name: lead.first_name,
-          last_name: lead.last_name,
-          phone: lead.phone ?? null,
-        })
         .select("id")
-        .single();
+        .ilike("email", lead.email)
+        .not("auth_user_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-      if (clientError || !newClient) {
-        return NextResponse.json({ success: false, error: `Failed to create client: ${clientError?.message}` }, { status: 500 });
+      if (authedClients && authedClients.length > 0) {
+        clientId = authedClients[0].id;
+      } else {
+        const { data: existingClients } = await supabaseAdmin
+          .from("clients")
+          .select("id")
+          .ilike("email", lead.email)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (existingClients && existingClients.length > 0) {
+          clientId = existingClients[0].id;
+        } else {
+          const { data: newClient, error: clientError } = await supabaseAdmin
+            .from("clients")
+            .insert({
+              email: lead.email,
+              first_name: lead.first_name,
+              last_name: lead.last_name,
+              phone: lead.phone ?? null,
+            })
+            .select("id")
+            .single();
+
+          if (clientError || !newClient) {
+            return NextResponse.json({ success: false, error: `Failed to create client: ${clientError?.message}` }, { status: 500 });
+          }
+
+          clientId = newClient.id;
+        }
       }
+    }
 
-      clientId = newClient.id;
+    // Back-fill lead.client_id so future flows stay linked
+    if (!lead.client_id && clientId) {
+      await supabaseAdmin
+        .from("leads")
+        .update({ client_id: clientId })
+        .eq("id", lead_id);
     }
 
     // ── 3. Generate file number if not provided ───────────────────────────────
     const leadTypePrefix = lead.lead_type?.charAt(0)?.toUpperCase() ?? "X";
     const year = new Date().getFullYear().toString().slice(-2);
-    const shortId = lead_id.substring(0, 4).toUpperCase();
-    const generatedFileNumber = file_number ?? `${year}${leadTypePrefix}-${shortId}`;
+    const prefix = `${year}${leadTypePrefix}-`;
+
+    let generatedFileNumber = file_number;
+    if (!generatedFileNumber) {
+      // Find the highest existing sequential number for this prefix
+      const { data: lastDeal } = await supabaseAdmin
+        .from("deals")
+        .select("file_number")
+        .like("file_number", `${prefix}%`)
+        .order("file_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let nextNum = 1;
+      if (lastDeal?.file_number) {
+        const lastNum = parseInt(lastDeal.file_number.replace(prefix, ""), 10);
+        if (!isNaN(lastNum)) nextNum = lastNum + 1;
+      }
+
+      generatedFileNumber = `${prefix}${String(nextNum).padStart(4, "0")}`;
+    }
 
     // ── 4. Clean price (strip currency formatting) ────────────────────────────
     const rawPrice = lead.price ? String(lead.price).replace(/[^0-9.]/g, "") : null;
     const cleanPrice = rawPrice ? parseFloat(rawPrice) : null;
 
-    // ── 5. Create the deal ────────────────────────────────────────────────────
-    const { data: deal, error: dealError } = await supabaseAdmin
-      .from("deals")
-      .insert({
-        lead_id,
-        client_id: clientId,
-        file_number: generatedFileNumber,
-        type: lead.lead_type ?? "Purchase",
-        status: "Active",
-        property_address: lead.address_street ?? "Address TBD",
-        closing_date: closing_date ?? null,
-        price: cleanPrice ?? 0,
-      })
-      .select("id")
-      .single();
+    // ── 5. Create or upgrade the deal ───────────────────────────────────────
+    let dealId: string;
 
-    if (dealError || !deal) {
-      return NextResponse.json({ success: false, error: `Failed to create deal: ${dealError?.message}` }, { status: 500 });
+    if (existingDeal) {
+      // Upgrade the auto-created Pending deal to Active
+      const { error: updateErr } = await supabaseAdmin
+        .from("deals")
+        .update({
+          client_id: clientId,
+          file_number: generatedFileNumber,
+          type: lead.lead_type ?? "Purchase",
+          status: "Active",
+          property_address: lead.address_street ?? "Address TBD",
+          closing_date: closing_date ?? null,
+          price: cleanPrice ?? 0,
+        })
+        .eq("id", existingDeal.id);
+
+      if (updateErr) {
+        return NextResponse.json({ success: false, error: `Failed to update deal: ${updateErr.message}` }, { status: 500 });
+      }
+      dealId = existingDeal.id;
+    } else {
+      const { data: deal, error: dealError } = await supabaseAdmin
+        .from("deals")
+        .insert({
+          lead_id,
+          client_id: clientId,
+          file_number: generatedFileNumber,
+          type: lead.lead_type ?? "Purchase",
+          status: "Active",
+          property_address: lead.address_street ?? "Address TBD",
+          closing_date: closing_date ?? null,
+          price: cleanPrice ?? 0,
+        })
+        .select("id")
+        .single();
+
+      if (dealError || !deal) {
+        return NextResponse.json({ success: false, error: `Failed to create deal: ${dealError?.message}` }, { status: 500 });
+      }
+      dealId = deal.id;
     }
 
-    const dealId = deal.id;
-
-    // ── 6. Copy milestones from stage_templates ───────────────────────────────
+    // ── 6. Copy milestones from stage_templates (skip if already exist) ─────
     const leadType = lead.lead_type ?? "Purchase";
-
-    const { data: stages, error: stageTemplateError } = await supabaseAdmin
-      .from("stage_templates")
-      .select("id, name, order_index, email_template_id, description")
-      .eq("lead_type", leadType)
-      .order("order_index", { ascending: true });
-
-    if (stageTemplateError) {
-      console.error("[convert-lead] Failed to fetch stage_templates:", stageTemplateError.message);
-    }
-
     const milestoneMap: Record<string, string> = {}; // stage_template_id → milestone_id
 
-    if (stages && stages.length > 0) {
-      for (const stage of stages) {
-        const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
+    // Check if milestones already exist (auto-created by intake)
+    const { data: existingMilestones } = await supabaseAdmin
+      .from("milestones")
+      .select("id, stage_template_id")
+      .eq("deal_id", dealId);
 
-        const { data: ms, error: msError } = await supabaseAdmin
-          .from("milestones")
-          .insert({
-            deal_id: dealId,
-            title: cleanName,
-            status: stage.order_index === 1 ? "In Progress" : stage.order_index === 2 ? "Waiting" : "Pending",
-            order_index: stage.order_index,
-            email_template_id: stage.email_template_id ?? null,
-            stage_template_id: stage.id,
-            description: stage.description ?? null,
-          })
-          .select("id")
-          .single();
+    if (existingMilestones && existingMilestones.length > 0) {
+      // Use existing milestones
+      for (const ms of existingMilestones) {
+        if (ms.stage_template_id) milestoneMap[ms.stage_template_id] = ms.id;
+      }
+    } else {
+      // Create milestones from templates
+      const { data: stages, error: stageTemplateError } = await supabaseAdmin
+        .from("stage_templates")
+        .select("id, name, order_index, email_template_id, description")
+        .eq("lead_type", leadType)
+        .order("order_index", { ascending: true });
 
-        if (msError) {
-          console.error(`[convert-lead] Failed to insert milestone "${cleanName}":`, msError.message);
+      if (stageTemplateError) {
+        console.error("[convert-lead] Failed to fetch stage_templates:", stageTemplateError.message);
+      }
+
+      if (stages && stages.length > 0) {
+        for (const stage of stages) {
+          const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
+
+          const { data: ms, error: msError } = await supabaseAdmin
+            .from("milestones")
+            .insert({
+              deal_id: dealId,
+              title: cleanName,
+              status: stage.order_index === 1 ? "In Progress" : stage.order_index === 2 ? "Waiting" : "Pending",
+              order_index: stage.order_index,
+              email_template_id: stage.email_template_id ?? null,
+              stage_template_id: stage.id,
+              description: stage.description ?? null,
+            })
+            .select("id")
+            .single();
+
+          if (msError) {
+            console.error(`[convert-lead] Failed to insert milestone "${cleanName}":`, msError.message);
+          }
+          if (ms) milestoneMap[stage.id] = ms.id;
         }
-        if (ms) milestoneMap[stage.id] = ms.id;
       }
     }
 
-    // ── 7. Copy tasks from task_templates ─────────────────────────────────────
-    const { data: taskTemplates, error: taskTemplateError } = await supabaseAdmin
-      .from("task_templates")
-      .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
-      .eq("lead_type", leadType)
-      .eq("is_deleted", false)
-      .order("order_index", { ascending: true });
+    // ── 7. Copy tasks from task_templates (skip if already exist) ─────────────
+    // Check if tasks already exist (auto-created by intake)
+    const { data: existingTasksCheck } = await supabaseAdmin
+      .from("tasks")
+      .select("id")
+      .eq("deal_id", dealId)
+      .limit(1);
 
-    if (taskTemplateError) {
-      console.error("[convert-lead] Failed to fetch task_templates:", taskTemplateError.message);
-    }
+    if (!existingTasksCheck || existingTasksCheck.length === 0) {
+      const { data: taskTemplates, error: taskTemplateError } = await supabaseAdmin
+        .from("task_templates")
+        .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
+        .eq("lead_type", leadType)
+        .eq("is_deleted", false)
+        .order("order_index", { ascending: true });
 
-    if (taskTemplates && taskTemplates.length > 0) {
-      // Build ordered list of milestone IDs to distribute tasks across milestones
-      const milestoneIds = Object.values(milestoneMap);
-      const firstMilestoneId = milestoneIds[0] ?? null;
+      if (taskTemplateError) {
+        console.error("[convert-lead] Failed to fetch task_templates:", taskTemplateError.message);
+      }
 
-      const taskRows = taskTemplates
-        .filter((t) => {
-          const role = (t.role_type ?? "").toLowerCase();
-          return role === "client" || role === "both" || role === "";
-        })
-        .map((t) => ({
-          deal_id: dealId,
-          milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? firstMilestoneId) : firstMilestoneId,
-          task_template_id: t.id,
-          title: t.name?.trim() ?? t.name,
-          status: "Pending",
-          completed: false,
-          role_type: t.role_type ?? "client",
-          is_shared: t.is_shared ?? false,
-        }));
+      if (taskTemplates && taskTemplates.length > 0) {
+        const milestoneIds = Object.values(milestoneMap);
+        const firstMilestoneId = milestoneIds[0] ?? null;
 
-      if (taskRows.length > 0) {
-        const { error: taskInsertError } = await supabaseAdmin.from("tasks").insert(taskRows);
-        if (taskInsertError) {
-          console.error("[convert-lead] Failed to insert tasks:", taskInsertError.message);
+        const taskRows = taskTemplates
+          .filter((t) => {
+            const role = (t.role_type ?? "").toLowerCase();
+            return role === "client" || role === "both" || role === "";
+          })
+          .map((t) => ({
+            deal_id: dealId,
+            milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? firstMilestoneId) : firstMilestoneId,
+            task_template_id: t.id,
+            title: t.name?.trim() ?? t.name,
+            status: "Pending",
+            completed: false,
+            role_type: t.role_type ?? "client",
+            is_shared: t.is_shared ?? false,
+          }));
+
+        if (taskRows.length > 0) {
+          const { error: taskInsertError } = await supabaseAdmin.from("tasks").insert(taskRows);
+          if (taskInsertError) {
+            console.error("[convert-lead] Failed to insert tasks:", taskInsertError.message);
+          }
         }
       }
     }
@@ -332,10 +420,6 @@ export async function POST(req: Request) {
       file_number: generatedFileNumber,
       client_id: clientId,
       milestones_created: Object.keys(milestoneMap).length,
-      tasks_created: taskTemplates?.filter((t) => {
-        const role = (t.role_type ?? "").toLowerCase();
-        return role === "client" || role === "both" || role === "";
-      }).length ?? 0,
       invite_sent: inviteSent,
       auth_error: authError,
       message: inviteSent

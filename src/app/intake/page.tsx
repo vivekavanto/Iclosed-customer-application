@@ -245,10 +245,6 @@ export default function ServiceSelection() {
 
                 const leadId = intakeResult.lead_id;
 
-                // ✅ Save lead identity to localStorage so dashboard can identify customer
-                localStorage.setItem("iclosed_lead_id", leadId);
-                localStorage.setItem("iclosed_email", contactData.email);
-
                 // 2️⃣ If user uploaded file, upload it
                 if (uploadedFile && agreementSigned === "yes") {
                   const formData = new FormData();

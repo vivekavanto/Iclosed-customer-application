@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses } from "@/lib/syncSharedTask";
+import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
 
 /**
  * POST /api/task-responses
@@ -113,6 +114,11 @@ export async function POST(req: Request) {
             .from("milestones")
             .update({ status: "Completed", completed_at: new Date().toISOString() })
             .eq("id", task.milestone_id);
+
+          // Trigger milestone email if it has an email_template_id
+          triggerMilestoneEmail(task.milestone_id).catch((err) =>
+            console.error("[MilestoneEmail] Trigger failed:", err)
+          );
 
           // Advance next milestone to In Progress
           const { data: currentMs } = await supabaseAdmin

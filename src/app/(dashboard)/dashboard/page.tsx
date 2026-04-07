@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Phone,
   Mail,
@@ -53,7 +53,8 @@ interface Milestone {
 }
 
 interface PropertyData {
-  deal_id: string;
+  lead_id: string;
+  deal_id: string | null;
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
@@ -256,26 +257,21 @@ function StatusTimeline({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = (milestone: Milestone, e: React.MouseEvent) => {
     if (!milestone.description) return;
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const padding = 16;
 
-    const tooltipHeight = 180; // approx height (adjust if needed)
-    const padding = 12;
-
-    let top = rect.top + rect.height / 2;
-
-    // 🚀 Prevent overflow TOP
-    if (top - tooltipHeight / 2 < padding) {
-      top = tooltipHeight / 2 + padding;
-    }
-
-    // 🚀 Prevent overflow BOTTOM
-    if (top + tooltipHeight / 2 > window.innerHeight - padding) {
-      top = window.innerHeight - tooltipHeight / 2 - padding;
-    }
+    const minTop = padding + 100;
+    const maxTop = window.innerHeight - padding - 100;
+    const top = Math.min(Math.max(rect.top + rect.height / 2, minTop), maxTop);
 
     setSelectedId(milestone.id);
     setTooltipPos({
@@ -285,6 +281,20 @@ function StatusTimeline({
   };
 
   const handleMouseLeave = () => {
+    hideTimeoutRef.current = setTimeout(() => {
+      setSelectedId(null);
+      setTooltipPos(null);
+    }, 150);
+  };
+
+  const handleTooltipEnter = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  };
+
+  const handleTooltipLeave = () => {
     setSelectedId(null);
     setTooltipPos(null);
   };
@@ -409,11 +419,13 @@ function StatusTimeline({
       {/* Fixed-position tooltip — renders outside scroll container */}
       {selectedId && selectedDesc && tooltipPos && selectedMilestone && (
         <div
-          className="fixed z-50 w-[280px] sm:w-[320px] bg-white rounded-xl border border-gray-200 shadow-lg flex flex-col"
+          onMouseEnter={handleTooltipEnter}
+          onMouseLeave={handleTooltipLeave}
+          className="fixed z-50 w-[320px] sm:w-[380px] lg:w-[420px] bg-white rounded-xl border border-gray-200 shadow-xl flex flex-col max-h-[80vh] overflow-y-auto"
           style={{
             top: tooltipPos.top,
             right: tooltipPos.right,
-            transform: "none",
+            transform: "translateY(-50%)",
           }}
         >
           <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
@@ -427,7 +439,7 @@ function StatusTimeline({
             </p>
           </div>
           <div className="px-5 py-4">
-            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+            <p className="text-[13px] text-gray-600 leading-[1.7] whitespace-pre-line">
               {selectedDesc}
             </p>
           </div>
@@ -441,10 +453,10 @@ function StatusTimeline({
    PAGE
 ───────────────────────────────────────────── */
 export default function DashboardPage() {
-  // ── Multiple properties / deals (one tab per deal) ────────
+  // ── Multiple properties / deals (one tab per lead) ─────────
   const [properties, setProperties] = useState<PropertyData[]>([]);
   const [deals, setDeals] = useState<DealData[]>([]);
-  const [activeDealId, setActiveDealId] = useState<string | null>(null);
+  const [activeLeadId, setActiveLeadId] = useState<string | null>(null);
   const [propertyLoading, setPropertyLoading] = useState(true);
 
   // ── Tasks + milestones for the active deal ────────────────
@@ -459,12 +471,11 @@ export default function DashboardPage() {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   // ── Derived: active property + deal ──────────────────────
-  const activeDeal = deals.find((d) => d.id === activeDealId) ?? null;
-  const activeProperty = properties.find((p) => p.deal_id === activeDealId) ?? null;
+  const activeProperty = properties.find((p) => p.lead_id === activeLeadId) ?? null;
+  const activeDealId = activeProperty?.deal_id ?? null;
+  const activeDeal = activeDealId ? (deals.find((d) => d.id === activeDealId) ?? null) : null;
 
-  const leadId =
-    activeDeal?.lead_id ??
-    (typeof window !== "undefined" ? localStorage.getItem("iclosed_lead_id") : null);
+  const leadId = activeLeadId;
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);
@@ -474,16 +485,15 @@ export default function DashboardPage() {
   // ── On mount: fetch all properties + deals ────────────────
   useEffect(() => {
     const fetchData = async () => {
-      const params = leadId ? `?lead_id=${leadId}` : "";
       try {
-        const res = await fetch(`/api/dashboardproperty${params}`);
+        const res = await fetch("/api/dashboardproperty");
         if (res.ok) {
           const data = await res.json();
           if (data.success) {
             setProperties(data.properties ?? []);
             setDeals(data.deals ?? []);
-            if (data.deals?.length > 0) {
-              setActiveDealId(data.deals[0].id);
+            if (data.properties?.length > 0) {
+              setActiveLeadId(data.properties[0].lead_id);
             }
           }
         }
@@ -497,9 +507,14 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── When active deal changes: reload tasks + milestones ───
+  // ── When active lead/deal changes: reload tasks + milestones ──
   useEffect(() => {
-    if (!activeDealId) return;
+    // No deal yet for this lead → clear tasks/milestones
+    if (!activeDealId) {
+      setTasks([]);
+      setMilestones([]);
+      return;
+    }
     const fetchDealData = async () => {
       setTasksLoading(true);
       setMilestonesLoading(true);
@@ -603,7 +618,7 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── 1. Property Selector Tabs (one per deal) ── */}
+      {/* ── 1. Property Selector Tabs (one per lead) ── */}
       <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide">
         {propertyLoading ? (
           <div className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400">
@@ -613,12 +628,12 @@ export default function DashboardPage() {
           <div className="px-4 py-2 text-sm text-gray-400">No properties yet</div>
         ) : (
           properties.map((p, i) => {
-            const isActive = p.deal_id === activeDealId;
+            const isActive = p.lead_id === activeLeadId;
             return (
               <button
-                key={p.deal_id}
+                key={p.lead_id}
                 type="button"
-                onClick={() => setActiveDealId(p.deal_id)}
+                onClick={() => setActiveLeadId(p.lead_id)}
                 className={[
                   "cursor-pointer flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200",
                   isActive
