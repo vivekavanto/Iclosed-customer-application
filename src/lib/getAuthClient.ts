@@ -72,7 +72,28 @@ export async function getAuthClient() {
     .limit(1);
 
   if (clientsByAuthId && clientsByAuthId.length > 0) {
-    return clientsByAuthId[0];
+    const client = clientsByAuthId[0];
+
+    // Self-heal: if the client's email doesn't match the auth user's email,
+    // this is a co-purchaser whose auth_user_id was incorrectly set on the
+    // primary purchaser's client during conversion. Remove it and fall through
+    // so we can find/create the correct client.
+    if (
+      user.email &&
+      client.email?.toLowerCase().trim() !== user.email.toLowerCase().trim()
+    ) {
+      console.log(
+        `[getAuthClient] Email mismatch: client ${client.id} (${client.email}) vs auth user (${user.email}) — detaching auth_user_id`
+      );
+      await supabaseAdmin
+        .from("clients")
+        .update({ auth_user_id: null })
+        .eq("id", client.id)
+        .eq("auth_user_id", user.id);
+      // Fall through to Step 2+
+    } else {
+      return client;
+    }
   }
 
   // ── Step 2: match by email ────────────────────────────────────────────────
@@ -90,7 +111,7 @@ export async function getAuthClient() {
       const client = clientsByEmail[0];
 
       // Back-fill auth_user_id so future requests hit Step 1 directly
-      if (!client.auth_user_id) {
+      if (!client.auth_user_id || client.auth_user_id !== user.id) {
         await supabaseAdmin
           .from("clients")
           .update({ auth_user_id: user.id })
@@ -98,6 +119,32 @@ export async function getAuthClient() {
 
         console.log(
           `[getAuthClient] Back-filled auth_user_id for client ${client.id} (${client.email})`
+        );
+      }
+
+      // Self-heal: ensure leads + deals with this email point to this client.
+      // Fixes co-purchasers from intake whose leads still have the parent's client_id.
+      const { data: mismatchedLeads } = await supabaseAdmin
+        .from("leads")
+        .select("id")
+        .ilike("email", user.email.trim())
+        .neq("client_id", client.id);
+
+      if (mismatchedLeads && mismatchedLeads.length > 0) {
+        const leadIds = mismatchedLeads.map((l) => l.id);
+
+        await supabaseAdmin
+          .from("leads")
+          .update({ client_id: client.id })
+          .in("id", leadIds);
+
+        await supabaseAdmin
+          .from("deals")
+          .update({ client_id: client.id })
+          .in("lead_id", leadIds);
+
+        console.log(
+          `[getAuthClient] Re-linked ${leadIds.length} mismatched lead(s) + deals to client ${client.id}`
         );
       }
 
@@ -122,29 +169,37 @@ export async function getAuthClient() {
     if (leadWithClient && leadWithClient.length > 0) {
       const existingClientId = leadWithClient[0].client_id;
 
-      // Back-fill auth_user_id on the existing client
-      await supabaseAdmin
-        .from("clients")
-        .update({ auth_user_id: user.id })
-        .eq("id", existingClientId);
-
+      // Verify the client's email matches — if it doesn't, this lead is a
+      // co-purchaser sharing the parent's client_id. Skip and create own client.
       const { data: linkedClient } = await supabaseAdmin
         .from("clients")
         .select("id, email, first_name, last_name, phone, auth_user_id")
         .eq("id", existingClientId)
         .single();
 
-      if (linkedClient) {
+      if (
+        linkedClient &&
+        linkedClient.email?.toLowerCase().trim() === user.email.toLowerCase().trim()
+      ) {
+        // Back-fill auth_user_id on the existing client
+        if (!linkedClient.auth_user_id) {
+          await supabaseAdmin
+            .from("clients")
+            .update({ auth_user_id: user.id })
+            .eq("id", existingClientId);
+        }
+
         console.log(
           `[getAuthClient] Linked auth user to existing client ${existingClientId} via lead email`
         );
         return linkedClient;
       }
+      // Email mismatch — co-purchaser sharing parent's client. Fall through.
     }
 
-    // ── Step 4: truly no client anywhere — create minimal record ───────────
-    console.warn(
-      `[getAuthClient] No client found for auth user ${user.id} (${user.email}) — creating minimal record`
+    // ── Step 4: create own client + fix lead/deal linkage ─────────────────
+    console.log(
+      `[getAuthClient] Creating own client for auth user ${user.id} (${user.email})`
     );
 
     const nameParts = (
@@ -179,6 +234,32 @@ export async function getAuthClient() {
         createErr.message
       );
       return null;
+    }
+
+    // Self-heal: update leads + deals with this email to point to the new client
+    if (newClient) {
+      const { data: userLeads } = await supabaseAdmin
+        .from("leads")
+        .select("id")
+        .ilike("email", user.email.trim());
+
+      if (userLeads && userLeads.length > 0) {
+        const leadIds = userLeads.map((l) => l.id);
+
+        await supabaseAdmin
+          .from("leads")
+          .update({ client_id: newClient.id })
+          .in("id", leadIds);
+
+        await supabaseAdmin
+          .from("deals")
+          .update({ client_id: newClient.id })
+          .in("lead_id", leadIds);
+
+        console.log(
+          `[getAuthClient] Re-linked ${leadIds.length} lead(s) + their deals to new client ${newClient.id}`
+        );
+      }
     }
 
     return newClient;

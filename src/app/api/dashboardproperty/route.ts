@@ -16,6 +16,8 @@ export async function GET() {
       );
     }
 
+    console.log(`[dashboardproperty] Resolved client: ${client.id} (${client.email})`);
+
     // ── Fetch ALL leads for this client ──
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
@@ -51,6 +53,8 @@ export async function GET() {
         (l) => !l.parent_lead_id || !sameClientParentIds.has(l.parent_lead_id)
       );
     }
+
+    console.log(`[dashboardproperty] Leads after filter: ${leads.length}`, leads.map(l => ({ id: l.id, email: l.email, parent_lead_id: l.parent_lead_id })));
 
     // ── Fetch ALL deals for this client ───────────────────────
     const { data: deals, error: dealError } = await supabaseAdmin
