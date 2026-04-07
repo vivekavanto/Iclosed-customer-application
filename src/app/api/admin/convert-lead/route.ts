@@ -57,9 +57,31 @@ export async function POST(req: Request) {
     }
 
     // ── 2. Create or find client record ───────────────────────────────────────
+    // If this is a co-purchaser added via intake (has parent_lead_id and different
+    // email than parent), they need their OWN client record so their dashboard
+    // works independently. Don't reuse the parent's client_id.
     let clientId: string;
+    let needsSeparateClient = false;
 
-    if (lead.client_id) {
+    if (lead.parent_lead_id) {
+      const { data: parentLead } = await supabaseAdmin
+        .from("leads")
+        .select("email, client_id")
+        .eq("id", lead.parent_lead_id)
+        .single();
+
+      if (parentLead && parentLead.email?.toLowerCase() !== lead.email?.toLowerCase()) {
+        // Co-purchaser with different email — needs own client
+        needsSeparateClient = true;
+
+        // If the lead currently shares the parent's client_id, ignore it
+        if (lead.client_id && lead.client_id === parentLead.client_id) {
+          lead.client_id = null;
+        }
+      }
+    }
+
+    if (lead.client_id && !needsSeparateClient) {
       clientId = lead.client_id;
     } else {
       // Prefer an existing client with auth_user_id (prevents duplicate clients)
