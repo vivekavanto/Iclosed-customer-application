@@ -127,7 +127,8 @@ export async function POST(req: Request) {
     }
 
     // Back-fill lead.client_id so future flows stay linked
-    if (!lead.client_id && clientId) {
+    // Always update when we created a separate client for a co-purchaser
+    if (clientId && (!lead.client_id || needsSeparateClient)) {
       await supabaseAdmin
         .from("leads")
         .update({ client_id: clientId })
