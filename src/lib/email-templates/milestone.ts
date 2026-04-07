@@ -17,13 +17,20 @@ export function renderMilestoneTemplate(
     rendered = rendered.replace(pattern, value ?? "");
   }
 
-  // If the template is plain text (no HTML tags), wrap in basic HTML
-  if (!/<[a-z][\s\S]*>/i.test(rendered)) {
+  const hasHtml = /<[a-z][\s\S]*>/i.test(rendered);
+  const hasDoctype = /<!DOCTYPE/i.test(rendered) || /<html/i.test(rendered);
+
+  if (!hasDoctype) {
+    const bodyContent = !hasHtml ? rendered.replace(/\n/g, "<br>") : rendered;
+    
     rendered = `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8" /></head>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
 <body style="margin:0;padding:40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#374151;font-size:16px;line-height:1.6;">
-${rendered.replace(/\n/g, "<br>")}
+${bodyContent}
 </body>
 </html>`;
   }
