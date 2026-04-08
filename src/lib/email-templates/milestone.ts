@@ -22,7 +22,8 @@ export function renderMilestoneTemplate(
   // Strip any existing full HTML wrapper — use only the inner content
   const bodyContent = extractBodyContent(rendered);
 
-  return `<div>${bodyContent}<img src="${LOGO_URL}" alt="iClosed by Nava Wilson" style="width:70px;height:auto;" /></div>`;
+  return `<div>${bodyContent}
+  <img src="${LOGO_URL}" alt="iClosed by Nava Wilson" style="width:70px;height:auto;" /></div>`;
 }
 
 /**
