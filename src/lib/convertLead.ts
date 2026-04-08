@@ -204,6 +204,28 @@ export async function convertSingleLead(params: {
 
     if (taskRows.length > 0) {
       await supabaseAdmin.from("tasks").insert(taskRows);
+
+      // Auto-complete "Upload APS Document" task if file was uploaded during intake
+      if (lead.aps_uploaded) {
+        const { data: apsTask } = await supabaseAdmin
+          .from("tasks")
+          .select("id, milestone_id")
+          .eq("deal_id", deal.id)
+          .ilike("title", "%agreement of purchase and sale%")
+          .maybeSingle();
+
+        if (apsTask) {
+          await supabaseAdmin
+            .from("tasks")
+            .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
+            .eq("id", apsTask.id);
+
+          // Advance the linked milestone (completes it if all its tasks are done)
+          if (apsTask.milestone_id) {
+            await advanceMilestone(deal.id, apsTask.milestone_id);
+          }
+        }
+      }
     }
   }
 

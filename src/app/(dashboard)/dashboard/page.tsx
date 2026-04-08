@@ -106,6 +106,17 @@ const statusConfig = {
 ════════════════════════════════════════════════════ */
 
 
+// ── Stage-1 tasks: shown first. Remaining tasks unlock after these are all completed.
+const STAGE_1_TITLES = [
+  "upload complete agreement of purchase and sale and amendments",
+  "provide personal information",
+  "upload identification",
+];
+
+function isStage1(title: string) {
+  return STAGE_1_TITLES.some((s) => title.toLowerCase().trim().includes(s));
+}
+
 function AttentionCard({
   tasks,
   loading,
@@ -116,8 +127,18 @@ function AttentionCard({
   onTaskClick: (task: Task) => void;
 }) {
   // Only show incomplete tasks
-  const pending = tasks.filter((t) => !t.completed);
-  const allDone = !loading && tasks.length > 0 && pending.length === 0;
+  const allPending = tasks.filter((t) => !t.completed);
+
+  // Progressive visibility: show stage-2 tasks only after all stage-1 tasks are completed
+  const stage1AllDone = tasks
+    .filter((t) => isStage1(t.title))
+    .every((t) => t.completed);
+
+  const pending = stage1AllDone
+    ? allPending
+    : allPending.filter((t) => isStage1(t.title));
+
+  const allDone = !loading && tasks.length > 0 && allPending.length === 0;
   const isEmpty = !loading && tasks.length === 0;
 
   // Task icon map

@@ -263,6 +263,13 @@ export default function ServiceSelection() {
                     console.error("Upload failed:", uploadResult.error);
                     return;
                   }
+
+                  // Mark aps_uploaded on the lead so the task is auto-completed during conversion
+                  await fetch("/api/intake/mark-aps-uploaded", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ lead_id: leadId }),
+                  });
                 }
 
                 // 3️⃣ Success
