@@ -51,25 +51,29 @@ export async function PATCH(
 
     // 1b. Sync shared task to linked deals (co-purchaser)
     if (task?.is_shared && task.task_template_id) {
-      // Keep status/doc fields aligned across all linked tasks
-      syncSharedTaskPatch({
-        dealId: task.deal_id,
-        taskTemplateId: task.task_template_id,
-        patch: {
-          status: patch.status,
-          completed: patch.completed,
-          completed_at: patch.completed_at ?? null,
-          document_url: patch.document_url ?? null,
-          document_name: patch.document_name ?? null,
-        },
-      }).catch((err) => console.error("[SharedTaskSync] Error:", err));
-
-      // If completed, also copy responses + advance milestones
       if (patch.completed) {
+        // When completing: use syncSharedTaskCompletion which handles
+        // marking complete + copying responses + advancing milestones.
+        // Do NOT also call syncSharedTaskPatch — it would race and mark
+        // linked tasks as completed before syncSharedTaskCompletion can
+        // find them (queries WHERE completed=false).
         syncSharedTaskCompletion({
           taskId: task.id,
           dealId: task.deal_id,
           taskTemplateId: task.task_template_id,
+        }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+      } else {
+        // Non-completion updates (status change, document upload) — sync fields only
+        syncSharedTaskPatch({
+          dealId: task.deal_id,
+          taskTemplateId: task.task_template_id,
+          patch: {
+            status: patch.status,
+            completed: patch.completed,
+            completed_at: patch.completed_at ?? null,
+            document_url: patch.document_url ?? null,
+            document_name: patch.document_name ?? null,
+          },
         }).catch((err) => console.error("[SharedTaskSync] Error:", err));
       }
     }
