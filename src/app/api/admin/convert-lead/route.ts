@@ -42,18 +42,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Lead not found" }, { status: 404 });
     }
 
-    // Check if a deal was already auto-created by the intake route
+    // Check if lead is already converted
+    if (lead.status === "Converted") {
+      return NextResponse.json({
+        success: false,
+        error: "Lead is already converted",
+      }, { status: 409 });
+    }
+
+    // Check if a deal already exists for this lead
     const { data: existingDeal } = await supabaseAdmin
       .from("deals")
-      .select("id, file_number, status")
+      .select("id, file_number")
       .eq("lead_id", lead_id)
       .maybeSingle();
 
-    // If the deal already exists AND is Active/Converted, skip re-creation
-    if (existingDeal && existingDeal.status !== "Pending") {
+    if (existingDeal) {
       return NextResponse.json({
         success: false,
-        error: `Lead already converted to deal ${existingDeal.file_number}`,
+        error: `Lead already has deal ${existingDeal.file_number}`,
       }, { status: 409 });
     }
 
@@ -165,49 +172,26 @@ export async function POST(req: Request) {
     const rawPrice = lead.price ? String(lead.price).replace(/[^0-9.]/g, "") : null;
     const cleanPrice = rawPrice ? parseFloat(rawPrice) : null;
 
-    // ── 5. Create or upgrade the deal ───────────────────────────────────────
-    let dealId: string;
+    // ── 5. Create the deal ──────────────────────────────────────────────────
+    const { data: deal, error: dealError } = await supabaseAdmin
+      .from("deals")
+      .insert({
+        lead_id,
+        client_id: clientId,
+        file_number: generatedFileNumber,
+        type: lead.lead_type ?? "Purchase",
+        status: "Active",
+        property_address: lead.address_street ?? "Address TBD",
+        closing_date: closing_date ?? null,
+        price: cleanPrice ?? 0,
+      })
+      .select("id")
+      .single();
 
-    if (existingDeal) {
-      // Upgrade the auto-created Pending deal to Active
-      const { error: updateErr } = await supabaseAdmin
-        .from("deals")
-        .update({
-          client_id: clientId,
-          file_number: generatedFileNumber,
-          type: lead.lead_type ?? "Purchase",
-          status: "Active",
-          property_address: lead.address_street ?? "Address TBD",
-          closing_date: closing_date ?? null,
-          price: cleanPrice ?? 0,
-        })
-        .eq("id", existingDeal.id);
-
-      if (updateErr) {
-        return NextResponse.json({ success: false, error: `Failed to update deal: ${updateErr.message}` }, { status: 500 });
-      }
-      dealId = existingDeal.id;
-    } else {
-      const { data: deal, error: dealError } = await supabaseAdmin
-        .from("deals")
-        .insert({
-          lead_id,
-          client_id: clientId,
-          file_number: generatedFileNumber,
-          type: lead.lead_type ?? "Purchase",
-          status: "Active",
-          property_address: lead.address_street ?? "Address TBD",
-          closing_date: closing_date ?? null,
-          price: cleanPrice ?? 0,
-        })
-        .select("id")
-        .single();
-
-      if (dealError || !deal) {
-        return NextResponse.json({ success: false, error: `Failed to create deal: ${dealError?.message}` }, { status: 500 });
-      }
-      dealId = deal.id;
+    if (dealError || !deal) {
+      return NextResponse.json({ success: false, error: `Failed to create deal: ${dealError?.message}` }, { status: 500 });
     }
+    const dealId = deal.id;
 
     // ── 6. Copy milestones from stage_templates (skip if already exist) ─────
     const leadType = lead.lead_type ?? "Purchase";
@@ -312,13 +296,13 @@ export async function POST(req: Request) {
     }
 
     // ── 8. Create Supabase Auth user + send invite email ──────────────────────
+    const customerPortalUrl = (process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ?? "https://iclosed-customer-application-rosy.vercel.app").replace(/\/+$/, "");
     let authUserId: string | null = null;
     let inviteSent = false;
     let authError: string | null = null;
 
     try {
       // inviteUserByEmail sends a magic link — client sets their password via the email
-      const customerPortalUrl = (process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ?? "https://iclosed-customer-application-rosy.vercel.app").replace(/\/+$/, "");
 
       console.log(`[Inviting User] Email: ${lead.email}, Redirect: ${customerPortalUrl}/api/auth/callback?next=/set-password`);
 
@@ -387,59 +371,269 @@ export async function POST(req: Request) {
       .update({ status: "Converted" })
       .eq("id", lead_id);
 
-    // ── 10. Sync shared tasks with linked deals (co-purchaser) ───────────────
-    try {
-      const linkedDealIds = await getLinkedDealIds(dealId);
+    // ── 10. Auto-convert co-purchaser leads ─────────────────────────────────
+    const coResults: Array<{ lead_id: string; deal_id: string; file_number: string; invite_sent: boolean; error?: string }> = [];
 
-      if (linkedDealIds.length > 0) {
-        // Get all shared tasks from linked deals that are already completed
+    try {
+      const { data: coLeads } = await supabaseAdmin
+        .from("leads")
+        .select("*")
+        .eq("parent_lead_id", lead_id)
+        .neq("status", "Converted");
+
+      if (coLeads && coLeads.length > 0) {
+        for (const coLead of coLeads) {
+          try {
+            // ── 10a. Create or find client for co-purchaser ──────
+            let coClientId: string;
+
+            const needsSeparate = coLead.email?.toLowerCase() !== lead.email?.toLowerCase();
+
+            if (!needsSeparate && clientId) {
+              coClientId = clientId;
+            } else {
+              // Search for existing client by email
+              const { data: existingCoClients } = await supabaseAdmin
+                .from("clients")
+                .select("id")
+                .ilike("email", coLead.email)
+                .order("created_at", { ascending: false })
+                .limit(1);
+
+              if (existingCoClients && existingCoClients.length > 0) {
+                coClientId = existingCoClients[0].id;
+              } else {
+                const { data: newCoClient, error: coClientErr } = await supabaseAdmin
+                  .from("clients")
+                  .insert({
+                    email: coLead.email,
+                    first_name: coLead.first_name,
+                    last_name: coLead.last_name,
+                    phone: coLead.phone ?? null,
+                  })
+                  .select("id")
+                  .single();
+
+                if (coClientErr || !newCoClient) {
+                  console.error(`[convert-lead] Co-purchaser client creation failed for ${coLead.email}:`, coClientErr?.message);
+                  coResults.push({ lead_id: coLead.id, deal_id: "", file_number: "", invite_sent: false, error: `Client creation failed: ${coClientErr?.message}` });
+                  continue;
+                }
+                coClientId = newCoClient.id;
+              }
+            }
+
+            // Back-fill client_id on co-purchaser lead
+            await supabaseAdmin
+              .from("leads")
+              .update({ client_id: coClientId })
+              .eq("id", coLead.id);
+
+            // ── 10b. Generate file number for co-purchaser ───────
+            const coPrefix = `${year}${leadTypePrefix}-`;
+            const { data: lastCoDeal } = await supabaseAdmin
+              .from("deals")
+              .select("file_number")
+              .like("file_number", `${coPrefix}%`)
+              .order("file_number", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            let coNextNum = 1;
+            if (lastCoDeal?.file_number) {
+              const lastNum = parseInt(lastCoDeal.file_number.replace(coPrefix, ""), 10);
+              if (!isNaN(lastNum)) coNextNum = lastNum + 1;
+            }
+            const coFileNumber = `${coPrefix}${String(coNextNum).padStart(4, "0")}`;
+
+            // ── 10c. Create deal for co-purchaser ────────────────
+            const { data: coDeal, error: coDealErr } = await supabaseAdmin
+              .from("deals")
+              .insert({
+                lead_id: coLead.id,
+                client_id: coClientId,
+                file_number: coFileNumber,
+                type: lead.lead_type ?? "Purchase",
+                status: "Active",
+                property_address: lead.address_street ?? "Address TBD",
+                closing_date: closing_date ?? null,
+                price: cleanPrice ?? 0,
+              })
+              .select("id")
+              .single();
+
+            if (coDealErr || !coDeal) {
+              console.error(`[convert-lead] Co-purchaser deal creation failed for ${coLead.email}:`, coDealErr?.message);
+              coResults.push({ lead_id: coLead.id, deal_id: "", file_number: coFileNumber, invite_sent: false, error: `Deal creation failed: ${coDealErr?.message}` });
+              continue;
+            }
+
+            // ── 10d. Create milestones for co-purchaser ──────────
+            const coMilestoneMap: Record<string, string> = {};
+
+            const { data: coStages } = await supabaseAdmin
+              .from("stage_templates")
+              .select("id, name, order_index, email_template_id, description")
+              .eq("lead_type", leadType)
+              .order("order_index", { ascending: true });
+
+            if (coStages && coStages.length > 0) {
+              for (const stage of coStages) {
+                const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
+                const { data: ms } = await supabaseAdmin
+                  .from("milestones")
+                  .insert({
+                    deal_id: coDeal.id,
+                    title: cleanName,
+                    status: stage.order_index === 1 ? "In Progress" : stage.order_index === 2 ? "Waiting" : "Pending",
+                    order_index: stage.order_index,
+                    email_template_id: stage.email_template_id ?? null,
+                    stage_template_id: stage.id,
+                    description: stage.description ?? null,
+                  })
+                  .select("id")
+                  .single();
+                if (ms) coMilestoneMap[stage.id] = ms.id;
+              }
+            }
+
+            // ── 10e. Create tasks for co-purchaser ───────────────
+            const { data: coTaskTemplates } = await supabaseAdmin
+              .from("task_templates")
+              .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
+              .eq("lead_type", leadType)
+              .eq("is_deleted", false)
+              .order("order_index", { ascending: true });
+
+            if (coTaskTemplates && coTaskTemplates.length > 0) {
+              const coMilestoneIds = Object.values(coMilestoneMap);
+              const coFirstMilestoneId = coMilestoneIds[0] ?? null;
+
+              const coTaskRows = coTaskTemplates
+                .filter((t) => {
+                  const role = (t.role_type ?? "").toLowerCase();
+                  return role === "client" || role === "both" || role === "";
+                })
+                .map((t) => ({
+                  deal_id: coDeal.id,
+                  milestone_id: t.stage_template_id ? (coMilestoneMap[t.stage_template_id] ?? coFirstMilestoneId) : coFirstMilestoneId,
+                  task_template_id: t.id,
+                  title: t.name?.trim() ?? t.name,
+                  status: "Pending",
+                  completed: false,
+                  role_type: t.role_type ?? "client",
+                  is_shared: t.is_shared ?? false,
+                }));
+
+              if (coTaskRows.length > 0) {
+                await supabaseAdmin.from("tasks").insert(coTaskRows);
+              }
+            }
+
+            // ── 10f. Send invite to co-purchaser ─────────────────
+            let coInviteSent = false;
+            try {
+              const { data: coInviteData, error: coInviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+                coLead.email,
+                {
+                  redirectTo: `${customerPortalUrl}/api/auth/callback?next=/set-password`,
+                  data: { first_name: coLead.first_name, last_name: coLead.last_name ?? "" },
+                }
+              );
+
+              if (!coInviteError && coInviteData?.user) {
+                await supabaseAdmin.from("clients").update({ auth_user_id: coInviteData.user.id }).eq("id", coClientId);
+                coInviteSent = true;
+              } else if (coInviteError?.code === "user_already_exists") {
+                const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
+                const existingUser = usersData.users.find(u => u.email?.toLowerCase() === coLead.email.toLowerCase());
+                if (existingUser) {
+                  await supabaseAdmin.from("clients").update({ auth_user_id: existingUser.id }).eq("id", coClientId);
+                  const { error: resetErr } = await supabaseAdmin.auth.resetPasswordForEmail(
+                    coLead.email,
+                    { redirectTo: `${customerPortalUrl}/api/auth/callback?next=/set-password` }
+                  );
+                  coInviteSent = !resetErr;
+                }
+              }
+            } catch (invErr) {
+              console.warn(`[convert-lead] Co-purchaser invite failed for ${coLead.email}:`, invErr);
+            }
+
+            // ── 10g. Mark co-purchaser lead as Converted ─────────
+            await supabaseAdmin
+              .from("leads")
+              .update({ status: "Converted" })
+              .eq("id", coLead.id);
+
+            coResults.push({ lead_id: coLead.id, deal_id: coDeal.id, file_number: coFileNumber, invite_sent: coInviteSent });
+          } catch (coErr: any) {
+            console.error(`[convert-lead] Co-purchaser conversion failed for lead ${coLead.id}:`, coErr);
+            coResults.push({ lead_id: coLead.id, deal_id: "", file_number: "", invite_sent: false, error: coErr.message });
+          }
+        }
+      }
+    } catch (coQueryErr) {
+      console.warn("[convert-lead] Co-purchaser query failed (non-blocking):", coQueryErr);
+    }
+
+    // ── 11. Sync shared tasks across ALL linked deals ─────────────────────────
+    // Run AFTER all co-purchaser deals exist so sync works correctly
+    try {
+      const allLinkedDealIds = await getLinkedDealIds(dealId);
+
+      if (allLinkedDealIds.length > 0) {
+        const allDealIds = [dealId, ...allLinkedDealIds];
+
+        // Get all completed shared tasks across all linked deals
         const { data: completedSharedTasks } = await supabaseAdmin
           .from("tasks")
           .select("id, deal_id, task_template_id")
-          .in("deal_id", linkedDealIds)
+          .in("deal_id", allDealIds)
           .eq("is_shared", true)
           .eq("completed", true);
 
         if (completedSharedTasks && completedSharedTasks.length > 0) {
           for (const srcTask of completedSharedTasks) {
-            // Find the matching task on the new deal
-            const { data: targetTask } = await supabaseAdmin
-              .from("tasks")
-              .select("id, milestone_id")
-              .eq("deal_id", dealId)
-              .eq("task_template_id", srcTask.task_template_id)
-              .eq("completed", false)
-              .maybeSingle();
+            // Sync to ALL linked deals (not just the primary)
+            for (const targetDealId of allDealIds) {
+              if (targetDealId === srcTask.deal_id) continue; // skip source deal
 
-            if (targetTask) {
-              // Copy responses
-              const { data: srcResponses } = await supabaseAdmin
-                .from("task_responses")
-                .select("field_label, field_type, value, file_url, file_name")
-                .eq("task_id", srcTask.id);
-
-              if (srcResponses && srcResponses.length > 0) {
-                await supabaseAdmin.from("task_responses").insert(
-                  srcResponses.map((r) => ({ task_id: targetTask.id, ...r }))
-                );
-              }
-
-              // Mark completed
-              await supabaseAdmin
+              const { data: targetTask } = await supabaseAdmin
                 .from("tasks")
-                .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
-                .eq("id", targetTask.id);
+                .select("id, milestone_id")
+                .eq("deal_id", targetDealId)
+                .eq("task_template_id", srcTask.task_template_id)
+                .eq("completed", false)
+                .maybeSingle();
 
-              // Advance milestone + trigger email (same as syncSharedTaskCompletion)
-              if (targetTask.milestone_id) {
-                await advanceMilestone(dealId, targetTask.milestone_id);
+              if (targetTask) {
+                // Copy responses
+                const { data: srcResponses } = await supabaseAdmin
+                  .from("task_responses")
+                  .select("field_label, field_type, value, file_url, file_name")
+                  .eq("task_id", srcTask.id);
+
+                if (srcResponses && srcResponses.length > 0) {
+                  await supabaseAdmin.from("task_responses").insert(
+                    srcResponses.map((r) => ({ task_id: targetTask.id, ...r }))
+                  );
+                }
+
+                await supabaseAdmin
+                  .from("tasks")
+                  .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
+                  .eq("id", targetTask.id);
+
+                if (targetTask.milestone_id) {
+                  await advanceMilestone(targetDealId, targetTask.milestone_id);
+                }
               }
             }
           }
         }
       }
     } catch (syncErr) {
-      // Non-blocking
       console.warn("[convert-lead] Shared task sync failed (non-blocking):", syncErr);
     }
 
@@ -451,6 +645,7 @@ export async function POST(req: Request) {
       milestones_created: Object.keys(milestoneMap).length,
       invite_sent: inviteSent,
       auth_error: authError,
+      co_purchasers_converted: coResults,
       message: inviteSent
         ? `Deal created and invite email sent to ${lead.email}`
         : `Deal created, but invite could not be sent: ${authError || "Create login manually"}`,
