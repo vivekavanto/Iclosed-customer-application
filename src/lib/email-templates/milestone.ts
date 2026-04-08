@@ -1,10 +1,13 @@
 /**
  * Renders an email template from the database by replacing
- * {{ placeholder }} tokens with actual values.
+ * {{ placeholder }} tokens with actual values, then wraps
+ * the result in the same format used by the admin panel.
  *
  * Handles both `{{ var }}` (with spaces) and `{{var}}` (without).
- * If the body is plain text (no HTML tags), wraps it in basic HTML.
  */
+
+const LOGO_URL = "https://iclosed-admin-panel.vercel.app/logo.png";
+
 export function renderMilestoneTemplate(
   templateBody: string,
   variables: Record<string, string>
@@ -12,30 +15,39 @@ export function renderMilestoneTemplate(
   let rendered = templateBody;
 
   for (const [key, value] of Object.entries(variables)) {
-    // Match both {{ key }} and {{key}} (with flexible whitespace)
     const pattern = new RegExp(`\\{\\{\\s*${escapeRegex(key)}\\s*\\}\\}`, "g");
     rendered = rendered.replace(pattern, value ?? "");
   }
 
-  const hasHtml = /<[a-z][\s\S]*>/i.test(rendered);
-  const hasDoctype = /<!DOCTYPE/i.test(rendered) || /<html/i.test(rendered);
+  // Strip any existing full HTML wrapper — use only the inner content
+  const bodyContent = extractBodyContent(rendered);
 
-  if (!hasDoctype) {
-    const bodyContent = !hasHtml ? rendered.replace(/\n/g, "<br>") : rendered;
-    
-    rendered = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-</head>
-<body style="margin:0;padding:40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#374151;font-size:16px;line-height:1.6;">
-${bodyContent}
-</body>
-</html>`;
+  return `<div>${bodyContent}<img src="${LOGO_URL}" alt="iClosed by Nava Wilson" style="width:70px;height:auto;" /></div>`;
+}
+
+/**
+ * If the template already has a full HTML document, extract just the <body> content.
+ * If it's plain text, convert newlines to <br>.
+ */
+function extractBodyContent(html: string): string {
+  const hasDoctype = /<!DOCTYPE/i.test(html) || /<html/i.test(html);
+
+  if (hasDoctype) {
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) {
+      return bodyMatch[1].trim();
+    }
+    return html
+      .replace(/<\/?(!DOCTYPE|html|head|meta|body)[^>]*>/gi, "")
+      .trim();
   }
 
-  return rendered;
+  const hasHtml = /<[a-z][\s\S]*>/i.test(html);
+  if (!hasHtml) {
+    return html.replace(/\n/g, "<br>");
+  }
+
+  return html;
 }
 
 function escapeRegex(str: string): string {

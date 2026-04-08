@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
+import { convertSingleLead, syncSharedTasksAcrossDeals } from "@/lib/convertLead";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -207,14 +208,16 @@ export async function POST(req: Request) {
 
     // ── 4. Address match detection (co-purchaser) ─────────────
     // Flags when a DIFFERENT person (different email) submits for the same address.
+    // If the matched lead is already Converted (has a deal), auto-link + auto-convert.
     let addressMatch = false;
+    let autoConverted = false;
 
     try {
       if (normStreet && normCity && normPostal) {
         const excludeIds = [lead.id, ...coPersonLeadIds];
         const { data: matchingLeads } = await supabaseAdmin
           .from("leads")
-          .select("id, address_postal_code")
+          .select("id, status, address_postal_code")
           .not("id", "in", `(${excludeIds.join(",")})`)
           .neq("email", normEmail)
           .is("parent_lead_id", null)
@@ -228,19 +231,74 @@ export async function POST(req: Request) {
           });
 
           if (matched) {
-            // Flag this lead as a potential co-purchaser match (pending admin approval)
-            await supabaseAdmin
-              .from("leads")
-              .update({
-                address_match_flag: {
-                  matched_lead_id: matched.id,
-                  status: "pending",
-                },
-              })
-              .eq("id", lead.id);
-
-            // Do NOT set parent_lead_id yet — admin must approve via link-co-purchaser
             addressMatch = true;
+
+            if (matched.status === "Converted") {
+              // Matched lead already has a deal — auto-link + auto-convert this lead
+              // Set parent_lead_id to link as co-purchaser
+              await supabaseAdmin
+                .from("leads")
+                .update({
+                  parent_lead_id: matched.id,
+                  address_match_flag: { matched_lead_id: matched.id, status: "approved" },
+                })
+                .eq("id", lead.id);
+
+              // Also link any co-person leads
+              for (const cpId of coPersonLeadIds) {
+                await supabaseAdmin
+                  .from("leads")
+                  .update({ parent_lead_id: matched.id })
+                  .eq("id", cpId);
+              }
+
+              // Re-fetch lead with updated parent_lead_id
+              const { data: updatedLead } = await supabaseAdmin
+                .from("leads")
+                .select("*")
+                .eq("id", lead.id)
+                .single();
+
+              if (updatedLead) {
+                // Auto-convert this lead (creates client, deal, milestones, tasks, invite)
+                const result = await convertSingleLead({ lead: updatedLead });
+
+                if (result.success) {
+                  autoConverted = true;
+
+                  // Auto-convert co-person leads too
+                  for (const cpId of coPersonLeadIds) {
+                    const { data: cpLead } = await supabaseAdmin
+                      .from("leads")
+                      .select("*")
+                      .eq("id", cpId)
+                      .single();
+
+                    if (cpLead) {
+                      await convertSingleLead({
+                        lead: cpLead,
+                        parentClientId: result.client_id,
+                      });
+                    }
+                  }
+
+                  // Sync shared tasks across all linked deals
+                  try {
+                    await syncSharedTasksAcrossDeals(result.deal_id);
+                  } catch (syncErr) {
+                    console.warn("[Intake] Shared task sync failed (non-blocking):", syncErr);
+                  }
+                }
+              }
+            } else {
+              // Matched lead is NOT converted yet — just flag for admin review
+              await supabaseAdmin
+                .from("leads")
+                .update({
+                  address_match_flag: { matched_lead_id: matched.id, status: "pending" },
+                })
+                .eq("id", lead.id);
+            }
           }
         }
       }
@@ -249,19 +307,23 @@ export async function POST(req: Request) {
     }
 
     // ── 5. Trigger welcome email ───────────────────────────────
-    try {
-      await sendWelcomeEmail(lead.id);
-      await Promise.all(
-        coPersonLeadIds.map((cpLeadId) => sendWelcomeEmail(cpLeadId))
-      );
-    } catch (err) {
-      console.error("[Intake] Welcome email failed:", err);
+    // Skip welcome email if auto-converted (invite email already sent by convertSingleLead)
+    if (!autoConverted) {
+      try {
+        await sendWelcomeEmail(lead.id);
+        await Promise.all(
+          coPersonLeadIds.map((cpLeadId) => sendWelcomeEmail(cpLeadId))
+        );
+      } catch (err) {
+        console.error("[Intake] Welcome email failed:", err);
+      }
     }
 
     return NextResponse.json({
       success: true,
       lead_id: lead.id,
       address_match: addressMatch,
+      auto_converted: autoConverted,
       co_person_leads_created: coPersonLeadIds.length,
     });
 
