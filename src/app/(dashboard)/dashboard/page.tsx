@@ -112,9 +112,27 @@ const STAGE_1_TITLES = [
   "provide personal information",
   "upload identification",
 ];
+const TASK_BATCH_SIZE = 3;
 
 function isStage1(title: string) {
-  return STAGE_1_TITLES.some((s) => title.toLowerCase().trim().includes(s));
+  const key = title.toLowerCase().trim();
+  return STAGE_1_TITLES.some((s) => key.includes(s));
+}
+
+// Deduplicate tasks by title — keep the incomplete one if both exist
+function deduplicateTasks(tasks: Task[]): Task[] {
+  const map = new Map<string, Task>();
+  for (const t of tasks) {
+    const key = t.title.toLowerCase().trim();
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, t);
+    } else if (existing.completed && !t.completed) {
+      // Prefer the incomplete task so it stays actionable
+      map.set(key, t);
+    }
+  }
+  return Array.from(map.values());
 }
 
 function AttentionCard({
@@ -126,20 +144,33 @@ function AttentionCard({
   loading: boolean;
   onTaskClick: (task: Task) => void;
 }) {
+  // Deduplicate tasks so no task title appears twice
+  const uniqueTasks = deduplicateTasks(tasks);
+
   // Only show incomplete tasks
-  const allPending = tasks.filter((t) => !t.completed);
+  const allPending = uniqueTasks.filter((t) => !t.completed);
 
-  // Progressive visibility: show stage-2 tasks only after all stage-1 tasks are completed
-  const stage1AllDone = tasks
-    .filter((t) => isStage1(t.title))
-    .every((t) => t.completed);
+  // Progressive visibility rules:
+  // 1) If stage-1 tasks exist and any are incomplete, only show those stage-1 tasks.
+  // 2) After stage-1 is fully complete (or absent), unlock remaining tasks in strict batches of 3.
+  const stage1Tasks = uniqueTasks.filter((t) => isStage1(t.title));
+  const stage1Pending = stage1Tasks.filter((t) => !t.completed);
+  const hasStage1 = stage1Tasks.length > 0;
+  const stage1AllDone = !hasStage1 || stage1Pending.length === 0;
 
-  const pending = stage1AllDone
-    ? allPending
-    : allPending.filter((t) => isStage1(t.title));
+  const nonStage1Tasks = uniqueTasks.filter((t) => !isStage1(t.title));
+  const completedNonStage1Count = nonStage1Tasks.filter((t) => t.completed).length;
+  const unlockedNonStage1Count =
+    (Math.floor(completedNonStage1Count / TASK_BATCH_SIZE) + 1) * TASK_BATCH_SIZE;
 
-  const allDone = !loading && tasks.length > 0 && allPending.length === 0;
-  const isEmpty = !loading && tasks.length === 0;
+  const pending = !stage1AllDone
+    ? stage1Pending.slice(0, TASK_BATCH_SIZE)
+    : nonStage1Tasks
+      .slice(0, unlockedNonStage1Count)
+      .filter((t) => !t.completed);
+
+  const allDone = !loading && uniqueTasks.length > 0 && allPending.length === 0;
+  const isEmpty = !loading && uniqueTasks.length === 0;
 
   // Task icon map
   const taskIconMap: Record<string, React.ReactNode> = {
