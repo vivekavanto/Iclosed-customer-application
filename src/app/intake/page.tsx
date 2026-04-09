@@ -250,7 +250,7 @@ export default function ServiceSelection() {
                   const formData = new FormData();
                   formData.append("file", uploadedFile);
                   formData.append("lead_id", leadId);
-                  formData.append("doc_type", "Other");
+                  formData.append("doc_type", "aps");
 
                   const uploadResponse = await fetch("/api/uploadblobstorage", {
                     method: "POST",

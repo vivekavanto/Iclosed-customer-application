@@ -193,7 +193,7 @@ export async function convertSingleLead(params: {
       })
       .map((t) => ({
         deal_id: deal.id,
-        milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? firstMilestoneId) : firstMilestoneId,
+        milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? null) : null,
         task_template_id: t.id,
         title: t.name?.trim() ?? t.name,
         status: "Pending",

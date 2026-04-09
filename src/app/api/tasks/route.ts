@@ -153,8 +153,8 @@ export async function GET(req: Request) {
         .map((tt: any) => ({
           deal_id: dId,
           milestone_id: tt.stage_template_id
-            ? (stageToMilestone[tt.stage_template_id] ?? firstMilestoneId)
-            : firstMilestoneId,
+            ? (stageToMilestone[tt.stage_template_id] ?? null)
+            : null,
           task_template_id: tt.id,
           title: tt.name?.trim() ?? tt.name,
           status: "Pending",
