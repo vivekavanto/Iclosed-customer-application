@@ -206,7 +206,21 @@ export async function convertSingleLead(params: {
       await supabaseAdmin.from("tasks").insert(taskRows);
 
       // Auto-complete "Upload APS Document" task if file was uploaded during intake
-      if (lead.aps_uploaded) {
+      // Check this lead OR any linked lead in the same group (APS is deal-level)
+      let apsWasUploaded = !!lead.aps_uploaded;
+
+      if (!apsWasUploaded) {
+        const groupLeadId = lead.parent_lead_id || lead.id;
+        const { data: groupLeads } = await supabaseAdmin
+          .from("leads")
+          .select("aps_uploaded")
+          .or(`id.eq.${groupLeadId},parent_lead_id.eq.${groupLeadId}`)
+          .neq("id", lead.id);
+
+        apsWasUploaded = (groupLeads ?? []).some((l) => l.aps_uploaded);
+      }
+
+      if (apsWasUploaded) {
         const { data: apsTask } = await supabaseAdmin
           .from("tasks")
           .select("id, milestone_id")
