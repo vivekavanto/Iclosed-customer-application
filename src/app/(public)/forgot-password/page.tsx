@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { Mail, ArrowRight, KeyRound } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -21,11 +20,6 @@ export default function ForgotPasswordPage() {
     }
   }, []);
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -38,14 +32,21 @@ export default function ForgotPasswordPage() {
     }
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        email,
+      const res = await fetch(
+        "https://iclosed-admin-panel.vercel.app/api/admin/reset-password",
         {
-          redirectTo: `${window.location.origin}/api/auth/callback?next=/set-password`,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
         },
       );
 
-      if (resetError) throw resetError;
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(
+          data?.error || "Something went wrong. Please try again.",
+        );
+      }
 
       // Always redirect to success page (don't reveal if email exists or not)
       router.push("/reset-link-sent");
