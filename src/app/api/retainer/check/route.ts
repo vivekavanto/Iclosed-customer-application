@@ -31,18 +31,25 @@ export async function GET() {
       return NextResponse.json({ signed: false });
     }
 
-    // Check if any lead has a retainer signature
+    // Fetch all existing retainer signatures for the user's leads
     const { data: signatures } = await supabaseAdmin
       .from("retainer_signatures")
-      .select("id")
-      .in("lead_id", leadIds)
-      .limit(1);
+      .select("lead_id")
+      .in("lead_id", leadIds);
 
-    // Fetch lead details from the most recent lead
+    const signedLeadIds = new Set((signatures || []).map((s) => s.lead_id));
+    const unsignedLeadId = leadIds.find((id) => !signedLeadIds.has(id));
+
+    // All deals are signed
+    if (!unsignedLeadId) {
+      return NextResponse.json({ signed: true });
+    }
+
+    // Fetch lead details for the unsigned deal
     const { data: lead } = await supabaseAdmin
       .from("leads")
-      .select("first_name, last_name, lead_type, address_street,  address_city, address_province, address_postal_code")
-      .eq("id", leadIds[0])
+      .select("first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code")
+      .eq("id", unsignedLeadId)
       .single();
 
     const fullName = lead
@@ -59,7 +66,7 @@ export async function GET() {
       : "";
 
     return NextResponse.json({
-      signed: signatures !== null && signatures.length > 0,
+      signed: false,
       full_name: fullName,
       signed_date: new Date().toISOString().split("T")[0],
       property_address: addressParts,

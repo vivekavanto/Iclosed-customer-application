@@ -44,8 +44,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // Use the most recent lead
-    const leadId = leadIds[0];
+    // Find the first unsigned deal
+    const { data: signatures } = await supabaseAdmin
+      .from("retainer_signatures")
+      .select("lead_id")
+      .in("lead_id", leadIds);
+
+    const signedLeadIds = new Set((signatures || []).map((s) => s.lead_id));
+    const unsignedLeadId = leadIds.find((id) => !signedLeadIds.has(id));
+
+    if (!unsignedLeadId) {
+      return NextResponse.json({
+        success: true,
+        message: "All retainers already signed",
+        already_signed: true,
+      });
+    }
+
+    const leadId = unsignedLeadId;
 
     // Fetch the lead to validate name match
     const { data: lead } = await supabaseAdmin

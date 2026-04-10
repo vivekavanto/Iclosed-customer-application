@@ -33,7 +33,7 @@ interface Step5ContactProps {
     setAgreementSigned: (value: "yes" | "no" | null) => void;
     setShowSuccessModal: (show: boolean) => void;
     step: number;
-    onComplete: (data: ContactData) => void;
+    onComplete: (data: ContactData) => Promise<void> | void;
     /** Pre-fill contact fields when user is already logged in */
     initialData?: { fullName: string; email: string; phone: string };
     /** Determines co-person label: purchase→Co-Purchaser, sale→Co-Seller, both→Co-Purchaser */
@@ -54,6 +54,7 @@ export default function Step5Contact({
     const { error: toastError } = useToast();
 
     // ── Co-person state ──
+    const [submitting, setSubmitting] = React.useState(false);
     const [coPersons, setCoPersons] = React.useState<CoPerson[]>([]);
     const [showCoModal, setShowCoModal] = React.useState(false);
     const [coForm, setCoForm] = React.useState({ fullName: "", email: "", phone: "" });
@@ -183,7 +184,7 @@ export default function Step5Contact({
         setErrors(newErrors);
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
-    const handleComplete = () => {
+    const handleComplete = async () => {
         if (!isCompleteEnabled) {
             setTouched({ fullName: true, email: true, phone: true });
             const firstError = errors.fullName || errors.email || errors.phone;
@@ -191,7 +192,12 @@ export default function Step5Contact({
             return;
         }
         const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;
-        onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons, referralSource: finalReferral });
+        setSubmitting(true);
+        try {
+            await onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons, referralSource: finalReferral });
+        } finally {
+            setSubmitting(false);
+        }
     };
     return (
         <div className="min-h-screen bg-white w-full">
@@ -560,7 +566,7 @@ export default function Step5Contact({
                             >
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button variant="primary" size="md" onClick={handleComplete}>
+                            <Button variant="primary" size="md" onClick={handleComplete} loading={submitting}>
                                 <CheckCircle2 size={16} strokeWidth={2.5} /> Submit
                             </Button>
                         </div>
@@ -580,7 +586,7 @@ export default function Step5Contact({
                             >
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
                             </Button>
-                            <Button variant="primary" size="lg" className="flex-1" onClick={handleComplete}>
+                            <Button variant="primary" size="lg" className="flex-1" onClick={handleComplete} loading={submitting}>
                                 <CheckCircle2 size={18} strokeWidth={2.5} /> Submit
                             </Button>
                         </div>
