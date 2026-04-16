@@ -106,18 +106,7 @@ const statusConfig = {
 ════════════════════════════════════════════════════ */
 
 
-// ── Stage-1 tasks: shown first. Remaining tasks unlock after these are all completed.
-const STAGE_1_TITLES = [
-  "upload complete agreement of purchase and sale and amendments",
-  "provide personal information",
-  "upload identification",
-];
 const TASK_BATCH_SIZE = 3;
-
-function isStage1(title: string) {
-  const key = title.toLowerCase().trim();
-  return STAGE_1_TITLES.some((s) => key.includes(s));
-}
 
 // Deduplicate tasks by title — keep the incomplete one if both exist
 function deduplicateTasks(tasks: Task[]): Task[] {
@@ -144,30 +133,48 @@ function AttentionCard({
   loading: boolean;
   onTaskClick: (task: Task) => void;
 }) {
+  const hasInitializedVisibleTasksRef = useRef(false);
+  const seenTaskIdsRef = useRef<Set<string>>(new Set());
+  const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
+
   // Deduplicate tasks so no task title appears twice
   const uniqueTasks = deduplicateTasks(tasks);
 
-  // Only show incomplete tasks
+  // Rolling visibility: always show the first 3 incomplete tasks.
   const allPending = uniqueTasks.filter((t) => !t.completed);
+  const pending = allPending.slice(0, TASK_BATCH_SIZE);
 
-  // Progressive visibility rules:
-  // 1) If stage-1 tasks exist and any are incomplete, only show those stage-1 tasks.
-  // 2) After stage-1 is fully complete (or absent), unlock remaining tasks in strict batches of 3.
-  const stage1Tasks = uniqueTasks.filter((t) => isStage1(t.title));
-  const stage1Pending = stage1Tasks.filter((t) => !t.completed);
-  const hasStage1 = stage1Tasks.length > 0;
-  const stage1AllDone = !hasStage1 || stage1Pending.length === 0;
+  useEffect(() => {
+    if (loading) return;
 
-  const nonStage1Tasks = uniqueTasks.filter((t) => !isStage1(t.title));
-  const completedNonStage1Count = nonStage1Tasks.filter((t) => t.completed).length;
-  const unlockedNonStage1Count =
-    (Math.floor(completedNonStage1Count / TASK_BATCH_SIZE) + 1) * TASK_BATCH_SIZE;
+    const visibleIds = pending.map((task) => task.id);
 
-  const pending = !stage1AllDone
-    ? stage1Pending.slice(0, TASK_BATCH_SIZE)
-    : nonStage1Tasks
-      .slice(0, unlockedNonStage1Count)
-      .filter((t) => !t.completed);
+    // First render of visible tasks is the baseline; don't mark them as new.
+    if (!hasInitializedVisibleTasksRef.current) {
+      hasInitializedVisibleTasksRef.current = true;
+      seenTaskIdsRef.current = new Set(visibleIds);
+      setNewTaskIds(new Set());
+      return;
+    }
+
+    const newlyVisible: string[] = [];
+    const nextSeen = new Set(seenTaskIdsRef.current);
+    for (const taskId of visibleIds) {
+      if (!nextSeen.has(taskId)) {
+        nextSeen.add(taskId);
+        newlyVisible.push(taskId);
+      }
+    }
+    seenTaskIdsRef.current = nextSeen;
+
+    if (newlyVisible.length > 0) {
+      setNewTaskIds((prev) => {
+        const next = new Set(prev);
+        newlyVisible.forEach((taskId) => next.add(taskId));
+        return next;
+      });
+    }
+  }, [loading, pending]);
 
   const allDone = !loading && uniqueTasks.length > 0 && allPending.length === 0;
   const isEmpty = !loading && uniqueTasks.length === 0;
@@ -270,6 +277,11 @@ function AttentionCard({
                     <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
                       {task.title}
                     </p>
+                    {newTaskIds.has(task.id) && (
+                      <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
+                        New
+                      </span>
+                    )}
                     {/* Shared task badge hidden
                     {task.is_shared && (
                       <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
@@ -768,6 +780,7 @@ export default function DashboardPage() {
         {/* ── Left: Needs Your Attention (3/4) ── */}
         <div className="lg:col-span-7">
           <AttentionCard
+            key={activeLeadId ?? "no-active-lead"}
             tasks={tasks}
             loading={tasksLoading}
             onTaskClick={handleTaskClick}

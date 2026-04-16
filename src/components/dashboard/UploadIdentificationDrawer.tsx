@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { X, Upload, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import NextImage from "next/image";
+import Webcam from "react-webcam";
+import { X, Upload, CheckCircle2, AlertCircle, RefreshCw, Camera, RotateCcw, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 
 interface UploadIdentificationDrawerProps {
@@ -40,6 +42,7 @@ const SLOT_DOC_TYPES: Record<SlotKey, string> = {
   secondaryFront: "id_secondary_front",
   secondaryBack:  "id_secondary_back",
 };
+const CAMERA_STEPS: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront", "secondaryBack"];
 
 const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".heic"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -54,6 +57,69 @@ function validateFile(f: File): string | null {
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function computeImageSharpnessScore(dataUrl: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const size = 360;
+      const srcSide = Math.min(img.width, img.height);
+      const sx = (img.width - srcSide) / 2;
+      const sy = (img.height - srcSide) / 2;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Unable to process image."));
+        return;
+      }
+
+      ctx.drawImage(img, sx, sy, srcSide, srcSide, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+
+      let sum = 0;
+      let sumSq = 0;
+      let count = 0;
+
+      for (let y = 0; y < size - 1; y++) {
+        for (let x = 0; x < size - 1; x++) {
+          const i = (y * size + x) * 4;
+          const right = (y * size + (x + 1)) * 4;
+          const down = ((y + 1) * size + x) * 4;
+
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          const grayR = 0.299 * data[right] + 0.587 * data[right + 1] + 0.114 * data[right + 2];
+          const grayD = 0.299 * data[down] + 0.587 * data[down + 1] + 0.114 * data[down + 2];
+
+          const gx = gray - grayR;
+          const gy = gray - grayD;
+          const magnitude = gx * gx + gy * gy;
+          sum += magnitude;
+          sumSq += magnitude * magnitude;
+          count++;
+        }
+      }
+
+      if (!count) {
+        resolve(0);
+        return;
+      }
+
+      const mean = sum / count;
+      const variance = Math.max(0, sumSq / count - mean * mean);
+      resolve(variance);
+    };
+    img.onerror = () => reject(new Error("Unable to read captured image."));
+    img.src = dataUrl;
+  });
+}
+
+async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const blob = await fetch(dataUrl).then((r) => r.blob());
+  return new File([blob], filename, { type: "image/jpeg" });
 }
 
 // ── Upload Slot ───────────────────────────────────────────────────────────────
@@ -208,6 +274,34 @@ export default function UploadIdentificationDrawer({
   const [dragOverSlot, setDragOverSlot] = useState<SlotKey | null>(null);
   const [uploading, setUploading] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const webcamRef = useRef<Webcam | null>(null);
+  const [cameraFlowOpen, setCameraFlowOpen] = useState(false);
+  const [cameraStepIndex, setCameraStepIndex] = useState(0);
+  const [cameraCapturedFiles, setCameraCapturedFiles] = useState<Partial<Record<SlotKey, File>>>({});
+  const [cameraCapturedPreview, setCameraCapturedPreview] = useState<Partial<Record<SlotKey, string>>>({});
+  const [currentCapture, setCurrentCapture] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [sharpnessScore, setSharpnessScore] = useState<number | null>(null);
+  const [sharpnessOk, setSharpnessOk] = useState(false);
+  const [validatingImage, setValidatingImage] = useState(false);
+  const [cameraSubmitting, setCameraSubmitting] = useState(false);
+
+  const handleClose = useCallback(() => {
+    setSlots(INITIAL_SLOTS);
+    setGlobalError(null);
+    setUploading(false);
+    setCameraFlowOpen(false);
+    setCameraStepIndex(0);
+    setCameraCapturedFiles({});
+    setCameraCapturedPreview({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+    setCameraSubmitting(false);
+    onClose();
+  }, [onClose]);
 
   // Close on Escape
   useEffect(() => {
@@ -216,7 +310,7 @@ export default function UploadIdentificationDrawer({
     };
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
-  }, [open]);
+  }, [open, handleClose]);
 
   // Lock body scroll
   useEffect(() => {
@@ -249,11 +343,146 @@ export default function UploadIdentificationDrawer({
     }));
   }
 
-  function handleClose() {
-    setSlots(INITIAL_SLOTS);
-    setGlobalError(null);
-    setUploading(false);
-    onClose();
+  const currentCameraSlot = CAMERA_STEPS[cameraStepIndex] ?? null;
+  const cameraCapturedCount = Object.keys(cameraCapturedFiles).length;
+  const cameraFlowReadyToSubmit = CAMERA_STEPS.every((k) => !!cameraCapturedFiles[k]);
+
+  function openCameraFlow() {
+    setCameraFlowOpen(true);
+    setCameraStepIndex(0);
+    setCameraCapturedFiles({});
+    setCameraCapturedPreview({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+    setCameraSubmitting(false);
+  }
+
+  function closeCameraFlow() {
+    setCameraFlowOpen(false);
+    setCameraStepIndex(0);
+    setCameraCapturedFiles({});
+    setCameraCapturedPreview({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+    setCameraSubmitting(false);
+  }
+
+  async function handleCaptureImage() {
+    const img = webcamRef.current?.getScreenshot();
+    if (!img) {
+      setCameraError("Could not capture image. Please allow camera access and try again.");
+      return;
+    }
+
+    setCurrentCapture(img);
+    setCameraError(null);
+    setValidatingImage(true);
+
+    try {
+      const score = await computeImageSharpnessScore(img);
+      const isSharp = score >= 2200;
+      setSharpnessScore(score);
+      setSharpnessOk(isSharp);
+      if (!isSharp) {
+        setCameraError("Image appears blurry. Please hold steady, improve lighting, and retake.");
+      }
+    } catch (err: unknown) {
+      setCameraError(err instanceof Error ? err.message : "Unable to validate image quality.");
+      setSharpnessScore(null);
+      setSharpnessOk(false);
+    } finally {
+      setValidatingImage(false);
+    }
+  }
+
+  async function handleUseCapturedImageForStep() {
+    if (!currentCameraSlot || !currentCapture) return;
+    if (!sharpnessOk) {
+      setCameraError("Please retake a clearer image before using it.");
+      return;
+    }
+
+    const file = await dataUrlToFile(currentCapture, `${currentCameraSlot}-${Date.now()}.jpg`);
+    setCameraCapturedFiles((prev) => ({ ...prev, [currentCameraSlot]: file }));
+    setCameraCapturedPreview((prev) => ({ ...prev, [currentCameraSlot]: currentCapture }));
+
+    if (cameraStepIndex < CAMERA_STEPS.length - 1) {
+      setCameraStepIndex((prev) => prev + 1);
+      setCurrentCapture(null);
+      setCameraError(null);
+      setSharpnessScore(null);
+      setSharpnessOk(false);
+      setValidatingImage(false);
+      return;
+    }
+
+    setCameraStepIndex(CAMERA_STEPS.length);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+  }
+
+  function openCameraStep(stepKey: SlotKey) {
+    const nextIndex = CAMERA_STEPS.indexOf(stepKey);
+    if (nextIndex < 0) return;
+    setCameraStepIndex(nextIndex);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+  }
+
+  async function uploadFilesBySlot(filesBySlot: Partial<Record<SlotKey, File>>) {
+    const uploadKeys = allKeys.filter((k) => filesBySlot[k]);
+    if (!uploadKeys.length) return;
+
+    const uploads = uploadKeys.map(async (k) => {
+      const fd = new FormData();
+      fd.append("file", filesBySlot[k] as File);
+      fd.append("lead_id", leadId ?? "unknown");
+      fd.append("doc_type", SLOT_DOC_TYPES[k]);
+      const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!data.success) throw new Error(`${SLOT_LABELS[k]}: ${data.error ?? "Upload failed"}`);
+      return k;
+    });
+
+    const uploaded = await Promise.all(uploads);
+
+    if (taskId) {
+      const respRes = await fetch("/api/task-responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_id: taskId,
+          responses: allKeys.filter((k) => filesBySlot[k] || slots[k].previouslyUploaded).map((k) => ({
+            field_label: SLOT_LABELS[k],
+            field_type: "file",
+            value: filesBySlot[k]?.name || "ID Document"
+          }))
+        })
+      });
+
+      if (!respRes.ok) throw new Error("Files uploaded, but failed to record task completion.");
+      if (onSaved) onSaved();
+    }
+
+    setSlots((prev) => {
+      const next = { ...prev };
+      uploaded.forEach((k) => {
+        next[k] = { file: null, previouslyUploaded: true, error: null };
+      });
+      return next;
+    });
   }
 
   async function handleUpload() {
@@ -261,65 +490,34 @@ export default function UploadIdentificationDrawer({
     setUploading(true);
     setGlobalError(null);
     try {
-      const uploads = allKeys
-        .filter((k) => slots[k].file !== null)
-        .map(async (k) => {
-          const fd = new FormData();
-          fd.append("file", slots[k].file!);
-          fd.append("lead_id", leadId ?? "unknown");
-          fd.append("doc_type", SLOT_DOC_TYPES[k]);
-          const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
-          const data = await res.json();
-          if (!data.success) throw new Error(`${SLOT_LABELS[k]}: ${data.error ?? "Upload failed"}`);
-          return k;
-        });
-
-      const results = await Promise.all(uploads);
-      const uploaded = results.map(r => r);
-
-      // If we have a taskId, record the response in the DB
-      if (taskId) {
-        // Collect all files (existing and newly uploaded) to mark task as truly done
-        const responses = allKeys.map(k => {
-          const file = slots[k].file;
-          return {
-            field_label: SLOT_LABELS[k],
-            field_type: "file",
-            value: null,
-            // In a real scenario we'd get the URL back from blob storage.
-            // For now we'll just record that the slot is filled. 
-            // The blob storage API returns 'url'.
-          };
-        });
-
-        const respRes = await fetch("/api/task-responses", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            task_id: taskId,
-            responses: allKeys.filter(k => slots[k].file || slots[k].previouslyUploaded).map(k => ({
-              field_label: SLOT_LABELS[k],
-              field_type: "file",
-              value: slots[k].file?.name || "ID Document"
-            }))
-          })
-        });
-
-        if (!respRes.ok) throw new Error("Files uploaded, but failed to record task completion.");
-        if (onSaved) onSaved();
-      }
-
-      setSlots((prev) => {
-        const next = { ...prev };
-        uploaded.forEach((k) => {
-          next[k] = { file: null, previouslyUploaded: true, error: null };
-        });
-        return next;
+      const filesBySlot: Partial<Record<SlotKey, File>> = {};
+      allKeys.forEach((k) => {
+        if (slots[k].file) filesBySlot[k] = slots[k].file;
       });
-    } catch (err: any) {
-      setGlobalError(err.message ?? "One or more uploads failed. Please try again.");
+      await uploadFilesBySlot(filesBySlot);
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : "One or more uploads failed. Please try again.");
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleFinishCameraFlow() {
+    if (!cameraFlowReadyToSubmit) {
+      setCameraError("Please capture front and back for both IDs before finishing.");
+      return;
+    }
+
+    setCameraSubmitting(true);
+    setGlobalError(null);
+
+    try {
+      await uploadFilesBySlot(cameraCapturedFiles);
+      closeCameraFlow();
+    } catch (err: unknown) {
+      setCameraError(err instanceof Error ? err.message : "Unable to submit camera captures.");
+    } finally {
+      setCameraSubmitting(false);
     }
   }
 
@@ -389,6 +587,28 @@ export default function UploadIdentificationDrawer({
               Upload Status: {uploadedCount} of 4 required documents uploaded
               {isTaskComplete ? " – Task Complete!" : ""}
             </span>
+          </div>
+
+          <div className="rounded-xl border border-[#C10007]/20 bg-[#FEF2F2] px-4 py-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold text-gray-900">Use Camera (Guided)</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Capture both front and back images for primary and secondary ID step by step.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={openCameraFlow}
+                disabled={uploading}
+                className="sm:w-auto"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera size={14} />
+                  Use Camera
+                </span>
+              </Button>
+            </div>
           </div>
 
           {/* Why is Identification Required */}
@@ -465,7 +685,7 @@ export default function UploadIdentificationDrawer({
               Upload Secondary Identification (Required - Front and Back)
             </h3>
             <p className="text-xs text-gray-400 mb-3">
-              Driver's License, Provincial Photo Card, or SIN Card (not paper version)
+              Driver&apos;s License, Provincial Photo Card, or SIN Card (not paper version)
             </p>
             <div className="grid grid-cols-2 gap-3">
               <UploadSlot
@@ -491,25 +711,6 @@ export default function UploadIdentificationDrawer({
                 onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
               />
             </div>
-          </div>
-
-          {/* Document Requirements Checklist */}
-          <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-4">
-            <h4 className="text-xs font-bold text-gray-800 mb-3">Document Requirements Checklist</h4>
-            <ul className="space-y-2">
-              {[
-                <><span className="font-semibold">Two pieces of identification are required</span> (Primary and Secondary)</>,
-                <>Both front and back of each ID document (if applicable)</>,
-                <>Documents are clear and legible</>,
-                <>IDs are current and not expired</>,
-                <>Names match your personal information</>,
-              ].map((item, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
-                  <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full bg-gray-400" />
-                  <span className="leading-relaxed">{item}</span>
-                </li>
-              ))}
-            </ul>
           </div>
 
           {/* Global error */}
@@ -544,6 +745,205 @@ export default function UploadIdentificationDrawer({
           </Button>
         </div>
       </div>
+
+      {cameraFlowOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/55"
+            onClick={closeCameraFlow}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Capture ID with camera"
+          >
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-100">
+              <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+                <div className="pr-4">
+                  <h3 className="text-sm font-bold text-gray-900">Use Camera - Guided Capture</h3>
+                  {cameraStepIndex < CAMERA_STEPS.length ? (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Step {cameraStepIndex + 1} of {CAMERA_STEPS.length}: {SLOT_LABELS[currentCameraSlot as SlotKey]}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">Review all captured images, then click Finish.</p>
+                  )}
+                </div>
+                <button
+                  onClick={closeCameraFlow}
+                  className="cursor-pointer rounded-md p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  aria-label="Close camera"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                {cameraStepIndex < CAMERA_STEPS.length ? (
+                  !currentCapture ? (
+                    <>
+                      <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-xl bg-gray-950">
+                        <Webcam
+                          ref={webcamRef}
+                          audio={false}
+                          screenshotFormat="image/jpeg"
+                          screenshotQuality={0.95}
+                          videoConstraints={{ facingMode: "environment" }}
+                          onUserMediaError={() =>
+                            setCameraError("Unable to access camera. Please allow camera permissions.")
+                          }
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                        <div className="pointer-events-none absolute inset-3 rounded-xl border-2 border-dashed border-white/85" />
+                        <div className="pointer-events-none absolute inset-0 ring-1 ring-black/10" />
+                      </div>
+                      <p className="text-[11px] text-gray-500 text-center">
+                        Center the full ID in the square, avoid glare, and hold still before capture.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                        <NextImage
+                          src={currentCapture}
+                          alt="Captured ID preview"
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-gray-700">Review {SLOT_LABELS[currentCameraSlot as SlotKey]}</p>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Ensure text is readable and all corners of the ID are visible.
+                        </p>
+                        {sharpnessScore !== null && (
+                          <p className={`text-[11px] mt-2 ${sharpnessOk ? "text-green-600" : "text-amber-600"}`}>
+                            {sharpnessOk ? "Clarity check passed" : "Clarity check failed"} (score: {Math.round(sharpnessScore)})
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {CAMERA_STEPS.map((key) => (
+                        <div key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">{SLOT_LABELS[key]}</p>
+                          {cameraCapturedPreview[key] ? (
+                            <div className="relative aspect-square overflow-hidden rounded-lg border border-gray-200">
+                              <NextImage
+                                src={cameraCapturedPreview[key] as string}
+                                alt={`${SLOT_LABELS[key]} preview`}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="aspect-square rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-xs text-gray-400">
+                              Not captured
+                            </div>
+                          )}
+                          <button
+                            onClick={() => openCameraStep(key)}
+                            className="mt-2 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
+                          >
+                            Retake
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+                      Captured {cameraCapturedCount} of {CAMERA_STEPS.length} required photos.
+                    </div>
+                  </div>
+                )}
+
+                {cameraError && (
+                  <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+                    <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-100 flex flex-wrap gap-2">
+                {cameraStepIndex < CAMERA_STEPS.length ? (
+                  !currentCapture ? (
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={handleCaptureImage}
+                      className="sm:flex-1"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Camera size={14} />
+                        Capture {SLOT_LABELS[currentCameraSlot as SlotKey]}
+                      </span>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        fullWidth
+                        onClick={() => {
+                          setCurrentCapture(null);
+                          setCameraError(null);
+                          setSharpnessScore(null);
+                          setSharpnessOk(false);
+                        }}
+                        className="sm:flex-1"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <RotateCcw size={14} />
+                          Retake
+                        </span>
+                      </Button>
+                      <Button
+                        variant="primary"
+                        fullWidth
+                        disabled={!sharpnessOk || validatingImage}
+                        onClick={handleUseCapturedImageForStep}
+                        className="sm:flex-1"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          {cameraStepIndex < CAMERA_STEPS.length - 1 ? "Use & Next Step" : "Use & Review All"}
+                          <ArrowRight size={14} />
+                        </span>
+                      </Button>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => openCameraStep(CAMERA_STEPS[0])}
+                      className="sm:flex-1"
+                    >
+                      Capture Again
+                    </Button>
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      loading={cameraSubmitting}
+                      disabled={!cameraFlowReadyToSubmit || cameraSubmitting}
+                      onClick={handleFinishCameraFlow}
+                      className="sm:flex-1"
+                    >
+                      Finish & Submit to Backend
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

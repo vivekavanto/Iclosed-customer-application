@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import NextImage from "next/image";
+import Webcam from "react-webcam";
 import {
   X,
   Upload,
@@ -10,6 +12,9 @@ import {
   RefreshCw,
   Loader2,
   CalendarCheck,
+  Camera,
+  RotateCcw,
+  ArrowRight,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -63,7 +68,7 @@ interface DynamicTaskDrawerProps {
 /* ─────────────────────────────────────────────
    HELPERS
 ───────────────────────────────────────────── */
-function isSelectOptions(opts: any): opts is FieldOption[] {
+function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
@@ -85,16 +90,83 @@ function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 }
 
-function getFileConfig(opts: any): {
+function getFileConfig(opts: unknown): {
   accept: string;
   max_mb: number;
   doc_type: string;
 } {
-  return {
-    accept: opts?.accept ?? ".pdf,.jpg,.jpeg,.png",
-    max_mb: opts?.max_mb ?? 10,
-    doc_type: opts?.doc_type ?? "document",
+  const safeOpts = (opts && typeof opts === "object" ? opts : {}) as {
+    accept?: string;
+    max_mb?: number;
+    doc_type?: string;
   };
+  return {
+    accept: safeOpts.accept ?? ".pdf,.jpg,.jpeg,.png",
+    max_mb: safeOpts.max_mb ?? 10,
+    doc_type: safeOpts.doc_type ?? "document",
+  };
+}
+
+async function computeImageSharpnessScore(dataUrl: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const size = 320;
+      const srcSide = Math.min(img.width, img.height);
+      const sx = (img.width - srcSide) / 2;
+      const sy = (img.height - srcSide) / 2;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Unable to process image."));
+        return;
+      }
+
+      ctx.drawImage(img, sx, sy, srcSide, srcSide, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+
+      let sum = 0;
+      let sumSq = 0;
+      let count = 0;
+
+      for (let y = 0; y < size - 1; y++) {
+        for (let x = 0; x < size - 1; x++) {
+          const i = (y * size + x) * 4;
+          const right = (y * size + (x + 1)) * 4;
+          const down = ((y + 1) * size + x) * 4;
+
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          const grayR = 0.299 * data[right] + 0.587 * data[right + 1] + 0.114 * data[right + 2];
+          const grayD = 0.299 * data[down] + 0.587 * data[down + 1] + 0.114 * data[down + 2];
+
+          const gx = gray - grayR;
+          const gy = gray - grayD;
+          const magnitude = gx * gx + gy * gy;
+          sum += magnitude;
+          sumSq += magnitude * magnitude;
+          count++;
+        }
+      }
+
+      if (!count) {
+        resolve(0);
+        return;
+      }
+
+      const mean = sum / count;
+      resolve(Math.max(0, sumSq / count - mean * mean));
+    };
+    img.onerror = () => reject(new Error("Unable to read captured image."));
+    img.src = dataUrl;
+  });
+}
+
+async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const blob = await fetch(dataUrl).then((r) => r.blob());
+  return new File([blob], filename, { type: "image/jpeg" });
 }
 
 const inputBase =
@@ -387,6 +459,16 @@ export default function DynamicTaskDrawer({
   const [draftSaved, setDraftSaved] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const webcamRef = useRef<Webcam | null>(null);
+  const [cameraFlowOpen, setCameraFlowOpen] = useState(false);
+  const [cameraStepIndex, setCameraStepIndex] = useState(0);
+  const [cameraFiles, setCameraFiles] = useState<Record<string, File>>({});
+  const [cameraPreviews, setCameraPreviews] = useState<Record<string, string>>({});
+  const [currentCapture, setCurrentCapture] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [, setSharpnessScore] = useState<number | null>(null);
+  const [sharpnessOk, setSharpnessOk] = useState(false);
+  const [cameraValidating, setCameraValidating] = useState(false);
 
   const CALENDLY_URL = "https://calendly.com/iclosed-navawilson/iclosed-lead-meeting";
 
@@ -400,6 +482,15 @@ export default function DynamicTaskDrawer({
     setErrors({});
     setFileErrors({});
     setGlobalError(null);
+    setCameraFlowOpen(false);
+    setCameraStepIndex(0);
+    setCameraFiles({});
+    setCameraPreviews({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setCameraValidating(false);
     setSaved(false);
     setDraftSaved(false);
 
@@ -448,6 +539,15 @@ export default function DynamicTaskDrawer({
   function handleClose() {
     setSaved(false);
     setDraftSaved(false);
+    setCameraFlowOpen(false);
+    setCameraStepIndex(0);
+    setCameraFiles({});
+    setCameraPreviews({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setCameraValidating(false);
     onClose();
   }
 
@@ -474,13 +574,13 @@ export default function DynamicTaskDrawer({
     });
   }
 
-  function validate(): boolean {
+  function validate(activeFiles: Record<string, File> = files): boolean {
     const newErrors: Record<string, string> = {};
     for (const field of fields) {
       const val = values[field.id]?.trim() ?? "";
 
       if (field.field_type === "file") {
-        if (field.required && !files[field.id] && !existingFiles[field.id]) {
+        if (field.required && !activeFiles[field.id] && !existingFiles[field.id]) {
           newErrors[field.id] = `${field.label} is required.`;
         }
       } else if (field.field_type === "checkbox") {
@@ -515,10 +615,11 @@ export default function DynamicTaskDrawer({
     return Object.keys(newErrors).length === 0;
   }
 
-  async function handleSubmit() {
-    if (!taskId) return;
+  async function handleSubmit(activeFiles?: Record<string, File>): Promise<boolean> {
+    if (!taskId) return false;
 
-    if (!validate()) return;
+    const workingFiles = activeFiles ?? files;
+    if (!validate(workingFiles)) return false;
 
     setSaving(true);
     setGlobalError(null);
@@ -534,7 +635,7 @@ export default function DynamicTaskDrawer({
       }> = [];
 
       for (const field of fields.filter((f) => f.field_type === "file")) {
-        const file = files[field.id];
+        const file = workingFiles[field.id];
         if (!file) continue; // no new file for this slot
 
         const cfg = getFileConfig(field.options);
@@ -582,7 +683,7 @@ export default function DynamicTaskDrawer({
 
       // ── 4. Keep existing file responses that weren't replaced ──
       const existingFileResponses = Object.entries(existingFiles)
-        .filter(([fieldId]) => !files[fieldId]) // not replaced by new file
+        .filter(([fieldId]) => !workingFiles[fieldId]) // not replaced by new file
         .map(([fieldId, info]) => {
           const field = fields.find((f) => f.id === fieldId);
           return {
@@ -616,8 +717,10 @@ export default function DynamicTaskDrawer({
 
       // Auto-close after 1.5s
       setTimeout(() => handleClose(), 1500);
-    } catch (err: any) {
-      setGlobalError(err.message ?? "An error occurred. Please try again.");
+      return true;
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : "An error occurred. Please try again.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -668,8 +771,8 @@ export default function DynamicTaskDrawer({
 
       setDraftSaved(true);
       setTimeout(() => handleClose(), 1500);
-    } catch (err: any) {
-      setGlobalError(err.message ?? "An error occurred. Please try again.");
+    } catch (err: unknown) {
+      setGlobalError(err instanceof Error ? err.message : "An error occurred. Please try again.");
     } finally {
       setSavingDraft(false);
     }
@@ -677,9 +780,115 @@ export default function DynamicTaskDrawer({
 
   const isCalendlyTask = taskTitle.toLowerCase().includes("schedule an appointment");
   const hasFileFields = fields.some((f) => f.field_type === "file");
+  const isUploadIdTask = taskTitle.toLowerCase().includes("upload identification");
+  const idCameraFields = fields
+    .filter((f) => f.field_type === "file")
+    .sort((a, b) => a.order_index - b.order_index)
+    .slice(0, 4);
+  const currentCameraField = idCameraFields[cameraStepIndex] ?? null;
+  const cameraReadyToFinish =
+    idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
   const isMortgageTask = taskTitle.toLowerCase().includes("status of mortgage");
   const hasDraftOption = isPersonalInfoTask || isMortgageTask;
+
+  function openCameraFlow() {
+    if (idCameraFields.length < 4) {
+      setGlobalError("Camera flow is unavailable until all 4 identification fields are loaded.");
+      return;
+    }
+    setCameraFlowOpen(true);
+    setCameraStepIndex(0);
+    setCameraFiles({});
+    setCameraPreviews({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setCameraValidating(false);
+    setGlobalError(null);
+  }
+
+  function closeCameraFlow() {
+    setCameraFlowOpen(false);
+    setCameraStepIndex(0);
+    setCameraFiles({});
+    setCameraPreviews({});
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setCameraValidating(false);
+  }
+
+  async function handleCameraCapture() {
+    const img = webcamRef.current?.getScreenshot();
+    if (!img) {
+      setCameraError("Could not capture image. Please allow camera access and try again.");
+      return;
+    }
+    setCurrentCapture(img);
+    setCameraError(null);
+    setCameraValidating(true);
+    try {
+      const score = await computeImageSharpnessScore(img);
+      const isSharp = score >= 1700;
+      setSharpnessScore(score);
+      setSharpnessOk(isSharp);
+      if (!isSharp) {
+        setCameraError("Image appears blurry. Please hold steady, improve lighting, and retake.");
+      }
+    } catch (err: unknown) {
+      setCameraError(err instanceof Error ? err.message : "We could not check this image. Please retake.");
+      setSharpnessScore(null);
+      setSharpnessOk(false);
+    } finally {
+      setCameraValidating(false);
+    }
+  }
+
+  async function useCaptureAndContinue() {
+    if (!currentCameraField || !currentCapture) return;
+    if (!sharpnessOk) {
+      setCameraError("Please retake this photo so the ID is clear.");
+      return;
+    }
+    const safeName = currentCameraField.label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const file = await dataUrlToFile(currentCapture, `${safeName}-${Date.now()}.jpg`);
+    setCameraFiles((prev) => ({ ...prev, [currentCameraField.id]: file }));
+    setCameraPreviews((prev) => ({ ...prev, [currentCameraField.id]: currentCapture }));
+    if (cameraStepIndex < idCameraFields.length - 1) {
+      setCameraStepIndex((prev) => prev + 1);
+    } else {
+      setCameraStepIndex(idCameraFields.length);
+    }
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setCameraValidating(false);
+  }
+
+  function retakeSpecificCameraField(fieldId: string) {
+    const idx = idCameraFields.findIndex((f) => f.id === fieldId);
+    if (idx < 0) return;
+    setCameraStepIndex(idx);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setCameraValidating(false);
+  }
+
+  async function finishCameraFlowSubmit() {
+    if (!cameraReadyToFinish) {
+      setCameraError("Please capture front and back of both IDs before finishing.");
+      return;
+    }
+    setFiles((prev) => ({ ...prev, ...cameraFiles }));
+    const ok = await handleSubmit({ ...files, ...cameraFiles });
+    if (ok) closeCameraFlow();
+  }
 
   return (
     <>
@@ -713,7 +922,7 @@ export default function DynamicTaskDrawer({
               {taskTitle}
             </h2>
             <p className="text-xs text-gray-400 mt-1">
-              {taskTitle.toLowerCase().includes("upload identification")
+              {isUploadIdTask
                 ? "Upload your identification documents to verify your identity for the property transaction."
                 : hasFileFields
                   ? "Upload the required documents to complete this task."
@@ -758,7 +967,7 @@ export default function DynamicTaskDrawer({
           )}
 
           {/* ── Upload Identification static sections ── */}
-          {taskTitle.toLowerCase().includes("upload identification") && (
+          {isUploadIdTask && (
             <>
               {/* Upload status */}
               {(() => {
@@ -827,6 +1036,27 @@ export default function DynamicTaskDrawer({
                     </div>
                   </li>
                 </ul>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-5 text-center">
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[#FEF2F2] flex items-center justify-center">
+                  <Camera size={22} className="text-[#C10007]" strokeWidth={1.8} />
+                </div>
+                <p className="text-sm font-bold text-gray-900">Take Photos with Your Camera</p>
+                <p className="text-xs text-gray-500 mt-1 mb-4 max-w-xs mx-auto">
+                  Capture front and back of both IDs step by step — no need to save files first.
+                </p>
+                <Button
+                  variant="primary"
+                  fullWidth
+                  onClick={openCameraFlow}
+                  disabled={saving}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Camera size={16} />
+                    Use Camera
+                  </span>
+                </Button>
               </div>
             </>
           )}
@@ -923,7 +1153,7 @@ export default function DynamicTaskDrawer({
           {/* Render dynamic fields */}
           {!fieldsLoading &&
             fields.map((field) => {
-              const isIdTask = taskTitle.toLowerCase().includes("upload identification");
+              const isIdTask = isUploadIdTask;
               const fileFields = fields.filter((f) => f.field_type === "file");
               const fileIdx = fileFields.indexOf(field);
 
@@ -1146,7 +1376,7 @@ export default function DynamicTaskDrawer({
             })}
 
           {/* ── Upload Identification: Document Requirements Checklist ── */}
-          {taskTitle.toLowerCase().includes("upload identification") && (
+          {isUploadIdTask && (
             <div className="rounded-xl border border-gray-200 p-4">
               <p className="text-sm font-bold text-gray-900 mb-3">Document Requirements Checklist</p>
               <ul className="space-y-2">
@@ -1222,7 +1452,7 @@ export default function DynamicTaskDrawer({
                   disabled={saving}
                   className="sm:flex-1"
                 >
-                  Cancel
+                  {isUploadIdTask ? "Save as Draft" : "Cancel"}
                 </Button>
                 <Button
                   variant="primary"
@@ -1233,8 +1463,8 @@ export default function DynamicTaskDrawer({
                 >
                   {isCalendlyTask
                     ? "Confirm Appointment"
-                    : taskTitle.toLowerCase().includes("upload identification")
-                      ? "Upload Identification Documents"
+                    : isUploadIdTask
+                      ? "Save & Continue"
                       : hasFileFields
                         ? "Upload & Submit"
                         : "Save & Continue"}
@@ -1244,6 +1474,198 @@ export default function DynamicTaskDrawer({
           </div>
         )}
       </div>
+
+      {cameraFlowOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/55"
+            onClick={closeCameraFlow}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Use camera to capture identification"
+          >
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-100">
+              <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+                <div className="pr-4">
+                  <h3 className="text-sm font-bold text-gray-900">Use Camera - Guided Capture</h3>
+                  {cameraStepIndex < idCameraFields.length ? (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Step {cameraStepIndex + 1} of {idCameraFields.length}: {currentCameraField?.label}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Review all captures, then click Submit.
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={closeCameraFlow}
+                  className="cursor-pointer rounded-md p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  aria-label="Close camera flow"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                {cameraStepIndex < idCameraFields.length ? (
+                  !currentCapture ? (
+                    <>
+                      <div className="relative mx-auto w-full max-w-2xl aspect-[4/3] overflow-hidden rounded-xl bg-gray-950">
+                        <Webcam
+                          ref={webcamRef}
+                          audio={false}
+                          screenshotFormat="image/jpeg"
+                          screenshotQuality={0.95}
+                          videoConstraints={{ facingMode: "environment" }}
+                          onUserMediaError={() =>
+                            setCameraError("Unable to access camera. Please allow camera permissions.")
+                          }
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                        <div
+                          className="pointer-events-none absolute left-1/2 top-1/2 w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 border-dashed border-white/90"
+                          style={{ aspectRatio: "1.58 / 1" }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-500 text-center">
+                        Center the full ID or passport page in the guide, avoid glare, and hold still.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative mx-auto w-full max-w-2xl aspect-[5/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                        <NextImage
+                          src={currentCapture}
+                          alt="Captured identification preview"
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-gray-700">Review {currentCameraField?.label}</p>
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {idCameraFields.map((field) => (
+                        <div key={field.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">{field.label}</p>
+                          {cameraPreviews[field.id] ? (
+                            <div className="relative aspect-[5/3] overflow-hidden rounded-lg border border-gray-200">
+                              <NextImage
+                                src={cameraPreviews[field.id]}
+                                alt={`${field.label} preview`}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="aspect-[5/3] rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-xs text-gray-400">
+                              Not captured
+                            </div>
+                          )}
+                          <button
+                            onClick={() => retakeSpecificCameraField(field.id)}
+                            className="mt-2 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
+                          >
+                            Retake
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {cameraError && (
+                  <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+                    <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-100 flex flex-wrap gap-2">
+                {cameraStepIndex < idCameraFields.length ? (
+                  !currentCapture ? (
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={handleCameraCapture}
+                      className="sm:flex-1"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Camera size={14} />
+                        Capture {currentCameraField?.label}
+                      </span>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        fullWidth
+                        onClick={() => {
+                          setCurrentCapture(null);
+                          setCameraError(null);
+                          setSharpnessScore(null);
+                          setSharpnessOk(false);
+                        }}
+                        className="sm:flex-1"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <RotateCcw size={14} />
+                          Retake
+                        </span>
+                      </Button>
+                      <Button
+                        variant="primary"
+                        fullWidth
+                        disabled={!sharpnessOk || cameraValidating}
+                        onClick={useCaptureAndContinue}
+                        className="sm:flex-1"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          {cameraStepIndex < idCameraFields.length - 1 ? "Use & Next Step" : "Use & Review All"}
+                          <ArrowRight size={14} />
+                        </span>
+                      </Button>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => retakeSpecificCameraField(idCameraFields[0]?.id ?? "")}
+                      className="sm:flex-1"
+                    >
+                      Capture Again
+                    </Button>
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      loading={saving}
+                      disabled={!cameraReadyToFinish || saving}
+                      onClick={finishCameraFlowSubmit}
+                      className="sm:flex-1"
+                    >
+                      Submit
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Confirmation Modal for Personal Information */}
       <Modal
@@ -1285,8 +1707,7 @@ export default function DynamicTaskDrawer({
               className="text-blue-600 hover:underline font-medium"
             >
               iclosed@navawilson.law
-            </a>{" "}
-            for modifications.
+            </a>
           </p>
 
           {/* Buttons */}

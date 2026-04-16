@@ -38,6 +38,8 @@ export async function GET() {
       .in("lead_id", leadIds);
 
     const signedLeadIds = new Set((signatures || []).map((s) => s.lead_id));
+    const signedCount = leadIds.filter((id) => signedLeadIds.has(id)).length;
+    const totalRetainers = leadIds.length;
     const unsignedLeadId = leadIds.find((id) => !signedLeadIds.has(id));
 
     // All deals are signed
@@ -71,6 +73,8 @@ export async function GET() {
       signed_date: new Date().toISOString().split("T")[0],
       property_address: addressParts,
       lead_type: lead?.lead_type ?? "",
+      retainer_current: signedCount + 1,
+      retainer_total: totalRetainers,
     });
   } catch (err: any) {
     console.error("[Retainer Check] Server error:", err);

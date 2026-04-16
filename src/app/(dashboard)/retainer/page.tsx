@@ -29,12 +29,7 @@ const faqItems: FAQItem[] = [
   {
     question: "How much will it cost?",
     answer:
-      "Our fees are transparent and competitive. The exact cost depends on the type and complexity of your transaction. A detailed fee breakdown will be provided before you proceed.",
-  },
-  {
-    question: "Are there any additional costs I should know about?",
-    answer:
-      "In addition to legal fees, there may be disbursements such as title insurance, registration fees, and land transfer tax. We will provide a full estimate of all costs upfront so there are no surprises.",
+      "At the start of the intake process, you should have received a fee quote that identifies the expected legal fees. If you have not received a quote, please contact our lawyers.",
   },
   {
     question: "How do I sign documents and communicate with you?",
@@ -82,6 +77,12 @@ interface FormErrors {
   signature?: string;
 }
 
+function getTodayDateString(): string {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return localDate.toISOString().split("T")[0];
+}
+
 function validate(name: string, date: string, signature: string): FormErrors {
   const errors: FormErrors = {};
 
@@ -109,10 +110,12 @@ function validate(name: string, date: string, signature: string): FormErrors {
 ═══════════════════════════════════════════ */
 export default function RetainerPage() {
   const [name, setName] = useState("");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(getTodayDateString());
   const [signature, setSignature] = useState("");
   const [propertyAddress, setPropertyAddress] = useState("");
   const [leadType, setLeadType] = useState("");
+  const [retainerCurrent, setRetainerCurrent] = useState(1);
+  const [retainerTotal, setRetainerTotal] = useState(1);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -127,15 +130,15 @@ export default function RetainerPage() {
           setName(data.full_name);
           setSignature(data.full_name);
         }
-        if (data.signed_date) {
-          setDate(data.signed_date);
-        }
+        setDate(getTodayDateString());
         if (data.property_address) {
           setPropertyAddress(data.property_address);
         }
         if (data.lead_type) {
           setLeadType(data.lead_type);
         }
+        setRetainerCurrent(data.retainer_current ?? 1);
+        setRetainerTotal(data.retainer_total ?? 1);
       } catch {
         // silently fail — user can fill manually
       }
@@ -220,9 +223,11 @@ export default function RetainerPage() {
             Transaction Type: {leadType || "N/A"}
           </p>
         </div>
-        <span className="flex-shrink-0 w-11 h-11 rounded-full border-2 border-[#C10007] flex items-center justify-center text-sm font-bold text-[#C10007]">
-          1/1
-        </span>
+        {retainerTotal >= 2 && (
+          <span className="flex-shrink-0 w-11 h-11 rounded-full border-2 border-[#C10007] flex items-center justify-center text-sm font-bold text-[#C10007]">
+            {retainerCurrent}/{retainerTotal}
+          </span>
+        )}
       </div>
 
       {/* Divider */}
@@ -279,14 +284,13 @@ export default function RetainerPage() {
                 id="retainer-date"
                 type="date"
                 value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  if (errors.date) setErrors((prev) => ({ ...prev, date: undefined }));
-                }}
+                disabled
+                aria-readonly="true"
                 className={[
                   "w-full px-4 py-2.5 rounded-sm border text-sm transition-colors duration-150",
                   "bg-[var(--color-surface)] text-[var(--color-text-heading)]",
                   "placeholder:text-[var(--color-text-muted)]",
+                  "cursor-not-allowed",
                   errors.date
                     ? "border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
                     : "border-[var(--color-border)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-ring)] focus:border-[var(--color-primary)]",

@@ -1,14 +1,10 @@
 "use client";
 
-import { Plus, ChevronLeft, CheckCircle2, CalendarCheck, Clock, Video, X, Trash2, Users } from "lucide-react";
+import { Plus, ChevronLeft, CheckCircle2, X, Trash2, Users } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import CalScheduler from "@/components/shared/CalScheduler";
 import { useToast } from "@/components/ui/Toast";
-
-const CALENDLY_URL =
-  process.env.NEXT_PUBLIC_CALENDLY_URL ?? "https://calendly.com/navawilson/iclosed-lead-meeting";
 
 interface ContactData {
     fullName: string;
@@ -123,7 +119,6 @@ export default function Step5Contact({
     const [referralOther, setReferralOther] = React.useState("");
 
     const [isValid, setIsValid] = React.useState(false);
-    const [calendlyBooked, setCalendlyBooked] = React.useState(false);
     const [formData, setFormData] = React.useState({
         fullName: initialData?.fullName ?? "",
         email: initialData?.email ?? "",
@@ -152,8 +147,6 @@ export default function Step5Contact({
         email?: boolean;
         phone?: boolean;
     }>({});
-
-    // Calendly booking success is passed as a callback to CalScheduler
 
     const isCompleteEnabled = isValid;
 
@@ -220,8 +213,7 @@ export default function Step5Contact({
                             </h1>
 
                             <p className="mt-4 text-gray-500 text-sm leading-relaxed">
-                                Fill in your contact details
-                                {agreementSigned === "no" ? " and schedule a meeting." : "."}
+                                Fill in your contact details.
                             </p>
                         </div>
 
@@ -259,13 +251,6 @@ export default function Step5Contact({
                             })}
                         </div>
 
-                        {/* Meeting booked badge */}
-                        {calendlyBooked && (
-                            <div className="mt-5 flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
-                                <CalendarCheck size={15} className="text-green-600 flex-shrink-0" strokeWidth={2.5} />
-                                <p className="text-xs font-semibold text-green-700">Meeting scheduled!</p>
-                            </div>
-                        )}
                     </div>
 
                 </div>
@@ -496,61 +481,6 @@ export default function Step5Contact({
                                 </div>
                             </>
                         )}
-
-                        {/* ── Calendly Inline Scheduler (Optional) — only when APS not signed ── */}
-                        {agreementSigned === "no" && <div>
-                            {/* Section header */}
-                            <div className="flex items-center gap-3 mb-3">
-                                <div className="w-8 h-8 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-                                    <CalendarCheck size={15} className="text-[#C10007]" strokeWidth={2} />
-                                </div>
-                                <div>
-                                    <p className="text-sm font-bold text-gray-900">
-                                        Schedule Your Initial Meeting{" "}
-                                        <span className="text-gray-400 font-normal">(optional)</span>
-                                    </p>
-                                    <p className="text-xs text-gray-400">Pick a date and time that works for you</p>
-                                </div>
-                            </div>
-
-                                {/* Quick info strip */}
-                                <div className="flex flex-wrap gap-4 mb-4 px-1">
-                                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                                        <Clock size={13} strokeWidth={2} /> 15 min
-                                    </span>
-                                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                                        <Video size={13} strokeWidth={2} />
-                                        Web conferencing details provided upon confirmation
-                                    </span>
-                                </div>
-
-                                {/* After booking: success state */}
-                                {calendlyBooked ? (
-                                    <div className="rounded-2xl border border-green-200 bg-green-50 px-6 py-10 flex flex-col items-center gap-3 text-center">
-                                        <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
-                                            <CheckCircle2 size={28} className="text-green-600" strokeWidth={2} />
-                                        </div>
-                                        <p className="text-base font-bold text-green-700">Meeting successfully scheduled!</p>
-                                        <p className="text-sm text-gray-500 max-w-xs">
-                                            A confirmation has been sent to your email. Click <strong>Submit</strong> to complete your intake.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    /* Calendly InlineWidget */
-                                    <div className="rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
-                                        <CalScheduler
-                                            url={CALENDLY_URL}
-                                            height={700}
-                                            prefill={{
-                                                name: formData.fullName || undefined,
-                                                email: formData.email || undefined,
-                                            }}
-                                            onBookingSuccess={() => setCalendlyBooked(true)}
-                                        />
-                                    </div>
-                                )}
-                            </div>}
-
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">

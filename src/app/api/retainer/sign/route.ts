@@ -6,7 +6,7 @@ import { getAuthClient } from "@/lib/getAuthClient";
  * POST /api/retainer/sign
  *
  * Saves a retainer signature for the authenticated user's lead.
- * Body: { full_name: string, signature: string, signed_date: string }
+ * Body: { full_name: string, signature: string, signed_date?: string }
  */
 export async function POST(req: Request) {
   try {
@@ -19,11 +19,12 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { full_name, signature, signed_date } = body;
+    const { full_name, signature } = body;
+    const signedDate = new Date().toISOString().split("T")[0];
 
-    if (!full_name || !signature || !signed_date) {
+    if (!full_name || !signature) {
       return NextResponse.json(
-        { success: false, error: "full_name, signature, and signed_date are required" },
+        { success: false, error: "full_name and signature are required" },
         { status: 400 }
       );
     }
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
         lead_id: leadId,
         full_name,
         signature,
-        signed_date,
+        signed_date: signedDate,
       });
 
     if (error) {
