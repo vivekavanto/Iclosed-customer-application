@@ -140,7 +140,7 @@ export async function POST(req: Request) {
         // 2. Upload to Vercel Blob
         const blob = await put(
           `corporate-docs/${leadId}/${Date.now()}-retainer-agreement.pdf`,
-          pdfBytes,
+          Buffer.from(pdfBytes),
           { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN! }
         );
 
