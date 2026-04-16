@@ -106,8 +106,18 @@ const Step4: React.FC<Step4Props> = ({
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="flex-1 p-6 sm:p-10 lg:p-12 pb-28 lg:pb-12 overflow-y-auto">
-          <div className="space-y-6 w-full">
+        <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
+          <div className="space-y-6 w-full max-w-2xl">
+
+            {/* Header */}
+            <div>
+              <h2 className="text-3xl font-semibold text-gray-900">
+                Have you signed the APS?
+              </h2>
+              <p className="mt-3 text-gray-500 text-sm leading-relaxed">
+                Let us know if you've already signed the Agreement of Purchase and Sale so we can prepare your file accordingly.
+              </p>
+            </div>
 
             {/* Agreement selection cards */}
             <div

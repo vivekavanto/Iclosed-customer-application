@@ -102,8 +102,8 @@ export default function Step5Upload({
                 </div>
 
                 {/* RIGHT CONTENT PANEL */}
-                <div className="flex-1 p-6 sm:p-10 lg:p-12 pb-28 lg:pb-12 overflow-y-auto">
-                    <div className="space-y-6 w-full">
+                <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
+                    <div className="space-y-6 w-full max-w-2xl">
 
                         {/* Upload zone */}
                         <div

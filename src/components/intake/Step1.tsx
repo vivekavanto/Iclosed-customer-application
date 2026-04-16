@@ -96,10 +96,10 @@ export function Step1({
   ];
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white w-full">
       <div className="max-w-7xl mx-auto flex flex-col lg:flex-row">
         {/* LEFT PANEL */}
-        <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-gray-50 lg:sticky lg:top-0 lg:h-screen flex flex-col border-r border-gray-100 p-5 sm:p-8 lg:p-12">
+        <div className="lg:w-80 xl:w-96 flex-shrink-0 bg-gray-50 lg:sticky lg:top-0 lg:h-screen flex flex-col border-r border-gray-100 p-8 lg:p-12">
           <div className="flex-1 overflow-y-auto">
             <div className="w-10 h-1 bg-[#C10007] rounded-full mb-10" />
 
@@ -107,7 +107,7 @@ export function Step1({
               <span className="text-xs font-bold uppercase tracking-[0.2em] text-[#C10007]">
                 Step {String(step).padStart(2, "0")}
               </span>
-              <h1 className="mt-3 text-xl sm:text-2xl xl:text-3xl font-semibold text-gray-900 leading-snug">
+              <h1 className="mt-3 text-2xl xl:text-3xl font-semibold text-gray-900 leading-snug">
                 How can we assist you today?
               </h1>
               <p className="mt-4 text-gray-500 text-sm leading-relaxed">
@@ -117,7 +117,7 @@ export function Step1({
             </div>
 
             {/* PROGRESS */}
-            <div className="hidden lg:block space-y-4 mt-6">
+            <div className="space-y-4 mt-6">
               {leftSteps.map((item) => {
                 const isCompleted = item.id < step;
                 const isActive = item.id === step;
@@ -155,7 +155,7 @@ export function Step1({
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="flex-1 p-5 sm:p-10 lg:p-16 pb-28 sm:pb-10 lg:pb-16 overflow-y-auto">
+        <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
           {/* Mobile fixed bottom button */}
           <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
             <Button onClick={handleNext} variant="primary" size="lg" fullWidth>
