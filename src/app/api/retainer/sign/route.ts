@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
+import { put } from "@vercel/blob";
+import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
+import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
+import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 
 /**
  * POST /api/retainer/sign
@@ -63,10 +67,10 @@ export async function POST(req: Request) {
 
     const leadId = unsignedLeadId;
 
-    // Fetch the lead to validate name match
+    // Fetch the lead to validate name match and get details for PDF/email
     const { data: lead } = await supabaseAdmin
       .from("leads")
-      .select("first_name, last_name")
+      .select("first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code")
       .eq("id", leadId)
       .single();
 
@@ -114,6 +118,70 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    // ── Generate PDF, upload, and email (non-blocking) ──
+    const propertyAddress = lead
+      ? [lead.address_street, lead.address_city, lead.address_province, lead.address_postal_code]
+          .filter(Boolean)
+          .join(", ")
+      : "";
+
+    (async () => {
+      try {
+        // 1. Generate PDF
+        const pdfBytes = await generateRetainerPdf({
+          fullName: full_name,
+          signature,
+          signedDate: signed_date,
+          propertyAddress,
+          leadType: lead?.lead_type ?? "",
+        });
+
+        // 2. Upload to Vercel Blob
+        const blob = await put(
+          `corporate-docs/${leadId}/${Date.now()}-retainer-agreement.pdf`,
+          pdfBytes,
+          { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN! }
+        );
+
+        // 3. Save to lead_corporate_docs
+        await supabaseAdmin.from("lead_corporate_docs").insert({
+          lead_id: leadId,
+          doc_type: "retainer_agreement",
+          file_name: "retainer-agreement.pdf",
+          file_url: blob.url,
+        });
+
+        // 4. Email PDF to client
+        if (lead?.email) {
+          const { html, subject } = buildRetainerEmailHtml({
+            firstName: lead.first_name ?? "",
+            propertyAddress,
+            leadType: lead.lead_type ?? "",
+          });
+
+          await resend.emails.send({
+            from: EMAIL_FROM,
+            replyTo: EMAIL_REPLY_TO,
+            to: lead.email,
+            subject,
+            html,
+            attachments: [
+              {
+                filename: "retainer-agreement.pdf",
+                content: Buffer.from(pdfBytes),
+              },
+            ],
+          });
+
+          console.log("[Retainer Sign] PDF emailed to:", lead.email);
+        }
+
+        console.log("[Retainer Sign] PDF saved for lead:", leadId);
+      } catch (pdfErr) {
+        console.error("[Retainer Sign] PDF/email error:", pdfErr);
+      }
+    })();
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

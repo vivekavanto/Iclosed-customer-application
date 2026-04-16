@@ -255,19 +255,7 @@ export default function RetainerPage() {
             I agree to retain iClosed to represent me in my real estate transaction under the terms outlined above.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
-              label="Enter your name"
-              required
-              placeholder="Your name"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (errors.name) setErrors((prev) => ({ ...prev, name: undefined }));
-              }}
-              error={errors.name}
-            />
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5 w-full">
               <label
                 htmlFor="retainer-date"
