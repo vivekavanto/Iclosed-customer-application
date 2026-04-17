@@ -8,6 +8,7 @@ interface RetainerPdfParams {
   signedDate: string;
   propertyAddress: string;
   leadType: string;
+  uniqueId: string;
 }
 
 const FAQ_ITEMS = [
@@ -100,7 +101,7 @@ function wrapText(
 export async function generateRetainerPdf(
   params: RetainerPdfParams
 ): Promise<Uint8Array> {
-  const { fullName, signature, signedDate, propertyAddress, leadType } = params;
+  const { fullName, signature, signedDate, propertyAddress, leadType, uniqueId } = params;
 
   const doc = await PDFDocument.create();
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -192,17 +193,39 @@ export async function generateRetainerPdf(
   }
   y -= 16;
 
-  // Signature fields
-  page.drawText("Date:", { x: margin, y, font: bold, size: 9, color: rgb(0.3, 0.3, 0.3) });
-  page.drawText(signedDate, { x: margin + 40, y, font: regular, size: 9, color: rgb(0.1, 0.1, 0.1) });
-  y -= 18;
+  // Signature fields — matching the layout mockup
+  const labelX = margin;
+  const valueX = margin + 90;
 
-  page.drawText("Signed by:", { x: margin, y, font: bold, size: 9, color: rgb(0.3, 0.3, 0.3) });
-  page.drawText(fullName, { x: margin + 65, y, font: regular, size: 9, color: rgb(0.1, 0.1, 0.1) });
-  y -= 18;
+  // Full Name
+  page.drawText("Full Name:", { x: labelX, y, font: bold, size: 10, color: rgb(0.2, 0.2, 0.2) });
+  page.drawText(fullName, { x: valueX, y, font: regular, size: 10, color: rgb(0.1, 0.1, 0.1) });
+  y -= 28;
 
-  page.drawText("Signature:", { x: margin, y, font: bold, size: 9, color: rgb(0.3, 0.3, 0.3) });
-  page.drawText(signature, { x: margin + 65, y, font: italic, size: 14, color: rgb(0.1, 0.1, 0.1) });
+  // Date
+  page.drawText("Date:", { x: labelX, y, font: bold, size: 10, color: rgb(0.2, 0.2, 0.2) });
+  page.drawText(signedDate, { x: valueX, y, font: regular, size: 10, color: rgb(0.1, 0.1, 0.1) });
+  y -= 36;
+
+  // Signature block: signature text on top, underline, unique ID below
+  page.drawText("Signature:", { x: labelX, y, font: bold, size: 10, color: rgb(0.2, 0.2, 0.2) });
+
+  // Signature text (italic) above the line
+  const sigY = y + 4;
+  page.drawText(signature, { x: valueX, y: sigY, font: italic, size: 14, color: rgb(0.1, 0.1, 0.1) });
+
+  // Underline
+  const lineY = y - 2;
+  const sigLineWidth = 220;
+  page.drawLine({
+    start: { x: valueX, y: lineY },
+    end: { x: valueX + sigLineWidth, y: lineY },
+    thickness: 0.8,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+
+  // Unique ID below the line
+  page.drawText(uniqueId, { x: valueX, y: lineY - 14, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
 
   return doc.save();
 }

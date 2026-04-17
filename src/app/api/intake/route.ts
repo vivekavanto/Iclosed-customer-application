@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
+import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { convertSingleLead, syncSharedTasksAcrossDeals } from "@/lib/convertLead";
 import { NextResponse } from "next/server";
 
@@ -318,6 +319,11 @@ export async function POST(req: Request) {
         console.error("[Intake] Welcome email failed:", err);
       }
     }
+
+    // ── 6. Notify iClosed team of new intake (non-blocking) ────
+    sendLeadNotificationEmail(lead.id).catch((err) =>
+      console.error("[Intake] Team notification failed:", err)
+    );
 
     return NextResponse.json({
       success: true,

@@ -129,13 +129,22 @@ export async function POST(req: Request) {
 
     (async () => {
       try {
+        // 0. Generate unique ID (IC-YYYYMMDD-XXXX) — global sequential counter
+        const dateKey = signedDate.replace(/-/g, ""); // YYYYMMDD
+        const { count } = await supabaseAdmin
+          .from("retainer_signatures")
+          .select("id", { count: "exact", head: true });
+        const seq = String(count ?? 1).padStart(4, "0");
+        const uniqueId = `IC-${dateKey}-${seq}`;
+
         // 1. Generate PDF
         const pdfBytes = await generateRetainerPdf({
           fullName: full_name,
           signature,
-          signedDate: signed_date,
+          signedDate,
           propertyAddress,
           leadType: lead?.lead_type ?? "",
+          uniqueId,
         });
 
         // 2. Upload to Vercel Blob
