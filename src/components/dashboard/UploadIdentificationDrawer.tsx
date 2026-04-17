@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
-import { X, Upload, CheckCircle2, AlertCircle, RefreshCw, Camera, RotateCcw, ArrowRight } from "lucide-react";
+import { X, Upload, CheckCircle2, AlertCircle, RefreshCw, Camera, RotateCcw, ArrowRight, ChevronDown, FileText } from "lucide-react";
 import Button from "@/components/ui/Button";
 
 interface UploadIdentificationDrawerProps {
@@ -120,6 +120,197 @@ async function computeImageSharpnessScore(dataUrl: string): Promise<number> {
 async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
   const blob = await fetch(dataUrl).then((r) => r.blob());
   return new File([blob], filename, { type: "image/jpeg" });
+}
+
+// ── Acceptable Documents Dropdown (LSO By-Law 7.1) ────────────────────────────
+
+function AcceptableDocumentsDropdown() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const primaryDocs = [
+    "Canadian Passport",
+    "Canadian Citizenship Card",
+    "Permanent Resident Card",
+    "NEXUS Card",
+    "Secure Indian Status Card (INAC)",
+  ];
+
+  const secondaryDocs = [
+    "Driver's License (Canadian province/territory)",
+    "Provincial/Territorial Photo ID Card",
+    "Canadian Forces ID Card",
+    "SIN Card (plastic, not paper version)",
+    "Foreign Passport (with valid visa if applicable)",
+  ];
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-4 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+      >
+        <span className="text-sm font-semibold text-gray-900">
+          Acceptable Identification Documents
+        </span>
+        <ChevronDown
+          size={18}
+          className={`text-gray-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+      {isOpen && (
+        <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
+          <p className="text-[11px] text-gray-500 leading-relaxed">
+            As per Law Society of Ontario By-Law 7.1, the following government-issued photo identification documents are acceptable for ID verification in property transactions.
+          </p>
+          
+          <div>
+            <p className="text-xs font-bold text-gray-800 mb-2">Primary ID (one required)</p>
+            <ul className="space-y-1.5">
+              {primaryDocs.map((doc) => (
+                <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
+                  <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                  {doc}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <p className="text-xs font-bold text-gray-800 mb-2">Secondary ID (one required)</p>
+            <ul className="space-y-1.5">
+              {secondaryDocs.map((doc) => (
+                <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
+                  <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                  {doc}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex items-start gap-2 pt-2 border-t border-gray-100">
+            <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-gray-500">
+              <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid government ID for these purposes.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Manual Upload Section ─────────────────────────────────────────────────────
+
+function ManualUploadSection({
+  slots,
+  dragOverSlot,
+  setDragOverSlot,
+  handleFile,
+  handleClear,
+  uploading,
+}: {
+  slots: Record<SlotKey, SlotState>;
+  dragOverSlot: SlotKey | null;
+  setDragOverSlot: (key: SlotKey | null) => void;
+  handleFile: (key: SlotKey, file: File) => void;
+  handleClear: (key: SlotKey) => void;
+  uploading: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const inputRefs = {
+    primaryFront: useRef<HTMLInputElement>(null),
+    primaryBack: useRef<HTMLInputElement>(null),
+    secondaryFront: useRef<HTMLInputElement>(null),
+    secondaryBack: useRef<HTMLInputElement>(null),
+  };
+
+  const hasAnyFile = Object.values(slots).some((s) => s.file || s.previouslyUploaded);
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-4 py-3.5 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+            <FileText size={18} className="text-gray-500" strokeWidth={1.5} />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-bold text-gray-900">Upload Files Manually</p>
+            <p className="text-xs text-gray-500">Already have files saved? Upload them here.</p>
+          </div>
+        </div>
+        <ChevronDown
+          size={18}
+          className={`text-gray-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+      {isOpen && (
+        <div className="px-4 py-4 bg-gray-50 border-t border-gray-100 space-y-4">
+          {/* Primary ID */}
+          <div>
+            <p className="text-xs font-bold text-gray-800 mb-2">Primary ID (Front & Back)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <UploadSlot
+                slotKey="primaryFront"
+                label={SLOT_LABELS.primaryFront}
+                state={slots.primaryFront}
+                onFile={handleFile}
+                onClear={handleClear}
+                dragOver={dragOverSlot === "primaryFront"}
+                onDragOver={() => setDragOverSlot("primaryFront")}
+                onDragLeave={() => setDragOverSlot(null)}
+                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
+              />
+              <UploadSlot
+                slotKey="primaryBack"
+                label={SLOT_LABELS.primaryBack}
+                state={slots.primaryBack}
+                onFile={handleFile}
+                onClear={handleClear}
+                dragOver={dragOverSlot === "primaryBack"}
+                onDragOver={() => setDragOverSlot("primaryBack")}
+                onDragLeave={() => setDragOverSlot(null)}
+                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
+              />
+            </div>
+          </div>
+
+          {/* Secondary ID */}
+          <div>
+            <p className="text-xs font-bold text-gray-800 mb-2">Secondary ID (Front & Back)</p>
+            <div className="grid grid-cols-2 gap-3">
+              <UploadSlot
+                slotKey="secondaryFront"
+                label={SLOT_LABELS.secondaryFront}
+                state={slots.secondaryFront}
+                onFile={handleFile}
+                onClear={handleClear}
+                dragOver={dragOverSlot === "secondaryFront"}
+                onDragOver={() => setDragOverSlot("secondaryFront")}
+                onDragLeave={() => setDragOverSlot(null)}
+                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
+              />
+              <UploadSlot
+                slotKey="secondaryBack"
+                label={SLOT_LABELS.secondaryBack}
+                state={slots.secondaryBack}
+                onFile={handleFile}
+                onClear={handleClear}
+                dragOver={dragOverSlot === "secondaryBack"}
+                onDragOver={() => setDragOverSlot("secondaryBack")}
+                onDragLeave={() => setDragOverSlot(null)}
+                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Upload Slot ───────────────────────────────────────────────────────────────
@@ -319,13 +510,7 @@ export default function UploadIdentificationDrawer({
   }, [open]);
 
   const allKeys: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront", "secondaryBack"];
-
-  const uploadedCount = allKeys.filter(
-    (k) => slots[k].previouslyUploaded || slots[k].file
-  ).length;
-
   const hasNewFiles = allKeys.some((k) => slots[k].file !== null);
-  const isTaskComplete = uploadedCount === 4 && !hasNewFiles;
 
   function handleFile(key: SlotKey, file: File) {
     const err = validateFile(file);
@@ -566,51 +751,6 @@ export default function UploadIdentificationDrawer({
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
-          {/* Upload Status Banner */}
-          <div className={[
-            "flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-semibold",
-            isTaskComplete
-              ? "bg-green-50 border-green-200 text-green-700"
-              : uploadedCount > 0
-                ? "bg-amber-50 border-amber-200 text-amber-700"
-                : "bg-gray-50 border-gray-200 text-gray-600",
-          ].join(" ")}>
-            {isTaskComplete ? (
-              <CheckCircle2 size={16} className="text-green-600 flex-shrink-0" strokeWidth={2.5} />
-            ) : (
-              <div className={[
-                "flex-shrink-0 w-4 h-4 rounded-full border-2",
-                uploadedCount > 0 ? "border-amber-400" : "border-gray-300",
-              ].join(" ")} />
-            )}
-            <span>
-              Upload Status: {uploadedCount} of 4 required documents uploaded
-              {isTaskComplete ? " – Task Complete!" : ""}
-            </span>
-          </div>
-
-          <div className="rounded-xl border border-[#C10007]/20 bg-[#FEF2F2] px-4 py-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-bold text-gray-900">Use Camera (Guided)</p>
-                <p className="text-xs text-gray-600 mt-1">
-                  Capture both front and back images for primary and secondary ID step by step.
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                onClick={openCameraFlow}
-                disabled={uploading}
-                className="sm:w-auto"
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <Camera size={14} />
-                  Use Camera
-                </span>
-              </Button>
-            </div>
-          </div>
-
           {/* Why is Identification Required */}
           <div className="rounded-xl border-l-4 border-[#C10007] bg-[#FEF2F2] px-4 py-4">
             <div className="flex items-start gap-2.5 mb-2">
@@ -625,93 +765,44 @@ export default function UploadIdentificationDrawer({
             </div>
           </div>
 
-          {/* Required Documents */}
-          <div>
-            <h3 className="text-sm font-bold text-gray-900 mb-3">Required Documents</h3>
-            <ul className="space-y-2">
-              {[
-                { label: "Primary ID:", desc: "Valid passport, citizenship card, or permanent resident card" },
-                { label: "Secondary ID:", desc: "Driver's license, provincial photo card, or SIN card (not paper version)" },
-                { label: "Important Note:", desc: "Health card is not a valid government ID" },
-              ].map((item) => (
-                <li key={item.label} className="flex items-start gap-2">
-                  <span className="flex-shrink-0 mt-1.5 w-2 h-2 rounded-full bg-[#C10007]" />
-                  <p className="text-xs text-gray-600 leading-relaxed">
-                    <span className="font-semibold text-gray-800">{item.label}</span>{" "}
-                    {item.desc}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {/* Acceptable Documents Dropdown */}
+          <AcceptableDocumentsDropdown />
 
-          {/* Primary ID Upload */}
-          <div>
-            <h3 className="text-sm font-bold text-gray-900 mb-1">
-              Upload Primary Identification (Front and Back)
-            </h3>
-            <p className="text-xs text-gray-400 mb-3">
-              Passport, Citizenship Card, or Permanent Resident Card
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <UploadSlot
-                slotKey="primaryFront"
-                label={SLOT_LABELS.primaryFront}
-                state={slots.primaryFront}
-                onFile={handleFile}
-                onClear={handleClear}
-                dragOver={dragOverSlot === "primaryFront"}
-                onDragOver={() => setDragOverSlot("primaryFront")}
-                onDragLeave={() => setDragOverSlot(null)}
-                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
-              />
-              <UploadSlot
-                slotKey="primaryBack"
-                label={SLOT_LABELS.primaryBack}
-                state={slots.primaryBack}
-                onFile={handleFile}
-                onClear={handleClear}
-                dragOver={dragOverSlot === "primaryBack"}
-                onDragOver={() => setDragOverSlot("primaryBack")}
-                onDragLeave={() => setDragOverSlot(null)}
-                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
-              />
+          {/* Take Photos with Camera Option */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[#FEF2F2] flex items-center justify-center">
+                <Camera size={22} className="text-[#C10007]" strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-gray-900">Take Photos with Your Camera</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Capture front and back of both IDs step by step — no need to save files first.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                onClick={openCameraFlow}
+                disabled={uploading}
+                className="mt-1"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Camera size={14} />
+                  Use Camera
+                </span>
+              </Button>
             </div>
           </div>
 
-          {/* Secondary ID Upload */}
-          <div>
-            <h3 className="text-sm font-bold text-gray-900 mb-1">
-              Upload Secondary Identification (Required - Front and Back)
-            </h3>
-            <p className="text-xs text-gray-400 mb-3">
-              Driver&apos;s License, Provincial Photo Card, or SIN Card (not paper version)
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <UploadSlot
-                slotKey="secondaryFront"
-                label={SLOT_LABELS.secondaryFront}
-                state={slots.secondaryFront}
-                onFile={handleFile}
-                onClear={handleClear}
-                dragOver={dragOverSlot === "secondaryFront"}
-                onDragOver={() => setDragOverSlot("secondaryFront")}
-                onDragLeave={() => setDragOverSlot(null)}
-                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
-              />
-              <UploadSlot
-                slotKey="secondaryBack"
-                label={SLOT_LABELS.secondaryBack}
-                state={slots.secondaryBack}
-                onFile={handleFile}
-                onClear={handleClear}
-                dragOver={dragOverSlot === "secondaryBack"}
-                onDragOver={() => setDragOverSlot("secondaryBack")}
-                onDragLeave={() => setDragOverSlot(null)}
-                onDrop={(k, f) => { setDragOverSlot(null); handleFile(k, f); }}
-              />
-            </div>
-          </div>
+          {/* Manual Upload Option */}
+          <ManualUploadSection
+            slots={slots}
+            dragOverSlot={dragOverSlot}
+            setDragOverSlot={setDragOverSlot}
+            handleFile={handleFile}
+            handleClear={handleClear}
+            uploading={uploading}
+          />
 
           {/* Global error */}
           {globalError && (

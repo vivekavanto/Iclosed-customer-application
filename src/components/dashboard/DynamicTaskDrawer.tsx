@@ -15,6 +15,8 @@ import {
   Camera,
   RotateCcw,
   ArrowRight,
+  ChevronDown,
+  FileText,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -469,6 +471,9 @@ export default function DynamicTaskDrawer({
   const [, setSharpnessScore] = useState<number | null>(null);
   const [sharpnessOk, setSharpnessOk] = useState(false);
   const [cameraValidating, setCameraValidating] = useState(false);
+  const [acceptableDocsOpen, setAcceptableDocsOpen] = useState(false);
+  const [manualUploadOpen, setManualUploadOpen] = useState(false);
+  const [manualUploadStep, setManualUploadStep] = useState(0);
 
   const CALENDLY_URL = "https://calendly.com/iclosed-navawilson/iclosed-lead-meeting";
 
@@ -491,6 +496,9 @@ export default function DynamicTaskDrawer({
     setSharpnessScore(null);
     setSharpnessOk(false);
     setCameraValidating(false);
+    setAcceptableDocsOpen(false);
+    setManualUploadOpen(false);
+    setManualUploadStep(0);
     setSaved(false);
     setDraftSaved(false);
 
@@ -969,33 +977,6 @@ export default function DynamicTaskDrawer({
           {/* ── Upload Identification static sections ── */}
           {isUploadIdTask && (
             <>
-              {/* Upload status */}
-              {(() => {
-                const idFields = fields.filter((f) => f.field_type === "file");
-                const uploaded = idFields.filter(
-                  (f) => files[f.id] || existingFiles[f.id]
-                ).length;
-                const total = idFields.length || 4;
-                const allDone = uploaded === total && total > 0;
-                return (
-                  <div
-                    className={`flex items-center gap-2 rounded-lg px-4 py-3 text-xs font-semibold ${
-                      allDone
-                        ? "bg-green-50 border border-green-200 text-green-700"
-                        : "bg-amber-50 border border-amber-200 text-amber-700"
-                    }`}
-                  >
-                    {allDone ? (
-                      <CheckCircle2 size={14} strokeWidth={2.5} />
-                    ) : (
-                      <AlertCircle size={14} strokeWidth={2.5} />
-                    )}
-                    Upload Status: {uploaded} of {total} required documents uploaded
-                    {allDone && " - Task Complete!"}
-                  </div>
-                );
-              })()}
-
               {/* Why is Identification Required? */}
               <div className="rounded-xl border-l-4 border-l-[#C10007] border border-[#fca5a5] bg-[#FEF2F2] px-5 py-4">
                 <p className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
@@ -1010,34 +991,62 @@ export default function DynamicTaskDrawer({
                 </p>
               </div>
 
-              {/* Required Documents */}
-              <div>
-                <p className="text-sm font-bold text-gray-900 mb-3">Required Documents</p>
-                <ul className="space-y-3">
-                  <li className="flex items-start gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#C10007] flex-shrink-0 mt-1" />
+              {/* Acceptable Documents Dropdown (LSO By-Law 7.1) */}
+              <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAcceptableDocsOpen(!acceptableDocsOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <span className="text-sm font-semibold text-gray-900">
+                    Acceptable Identification Documents
+                  </span>
+                  <ChevronDown
+                    size={18}
+                    className={`text-gray-500 transition-transform duration-200 ${acceptableDocsOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {acceptableDocsOpen && (
+                  <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
+                    <p className="text-[11px] text-gray-500 leading-relaxed">
+                      As per Law Society of Ontario By-Law 7.1, the following government-issued photo identification documents are acceptable for ID verification in property transactions.
+                    </p>
+                    
                     <div>
-                      <p className="text-xs font-bold text-gray-900">Primary ID:</p>
-                      <p className="text-xs text-gray-500">Valid passport, citizenship card, or permanent resident card</p>
+                      <p className="text-xs font-bold text-gray-800 mb-2">Primary ID (one required)</p>
+                      <ul className="space-y-1.5">
+                        {["Canadian Passport", "Canadian Citizenship Card", "Permanent Resident Card", "NEXUS Card", "Secure Indian Status Card (INAC)"].map((doc) => (
+                          <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
+                            <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                            {doc}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#C10007] flex-shrink-0 mt-1" />
+
                     <div>
-                      <p className="text-xs font-bold text-gray-900">Secondary ID:</p>
-                      <p className="text-xs text-gray-500">Driver&apos;s license, provincial photo card, or SIN card (not paper version)</p>
+                      <p className="text-xs font-bold text-gray-800 mb-2">Secondary ID (one required)</p>
+                      <ul className="space-y-1.5">
+                        {["Driver's License (Canadian province/territory)", "Provincial/Territorial Photo ID Card", "Canadian Forces ID Card", "SIN Card (plastic, not paper version)", "Foreign Passport (with valid visa if applicable)"].map((doc) => (
+                          <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
+                            <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                            {doc}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#C10007] flex-shrink-0 mt-1" />
-                    <div>
-                      <p className="text-xs font-bold text-gray-900">Important Note:</p>
-                      <p className="text-xs text-gray-500">Health card is not a valid government ID</p>
+
+                    <div className="flex items-start gap-2 pt-2 border-t border-gray-100">
+                      <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-gray-500">
+                        <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid government ID for these purposes.
+                      </p>
                     </div>
-                  </li>
-                </ul>
+                  </div>
+                )}
               </div>
 
+              {/* Take Photos with Camera Option */}
               <div className="rounded-xl border border-gray-200 bg-white p-5 text-center">
                 <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-[#FEF2F2] flex items-center justify-center">
                   <Camera size={22} className="text-[#C10007]" strokeWidth={1.8} />
@@ -1057,6 +1066,36 @@ export default function DynamicTaskDrawer({
                     Use Camera
                   </span>
                 </Button>
+              </div>
+
+              {/* OR Divider */}
+              <div className="flex items-center gap-4">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">or</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+
+              {/* Manual Upload Section - Collapsible */}
+              <div className="rounded-xl border border-gray-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setManualUploadOpen(!manualUploadOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3.5 bg-white hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                      <FileText size={18} className="text-gray-500" strokeWidth={1.5} />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-bold text-gray-900">Upload Files Manually</p>
+                      <p className="text-xs text-gray-500">Already have files saved? Upload them here.</p>
+                    </div>
+                  </div>
+                  <ChevronDown
+                    size={18}
+                    className={`text-gray-500 transition-transform duration-200 ${manualUploadOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
               </div>
             </>
           )}
@@ -1158,24 +1197,162 @@ export default function DynamicTaskDrawer({
               const fileIdx = fileFields.indexOf(field);
 
               if (field.field_type === "file") {
-                // Section headers for identification task
-                const showPrimaryHeader = isIdTask && fileIdx === 0;
-                const showSecondaryHeader = isIdTask && fileIdx === 2;
+                // For Upload ID task, file fields go inside collapsible manual upload section
+                if (isIdTask && !manualUploadOpen) {
+                  return null;
+                }
 
+                // For ID task, render step-by-step flow
+                if (isIdTask) {
+                  // Only render once (on the first file field)
+                  if (fileIdx !== 0) return null;
+
+                  const stepLabels = [
+                    { label: "Primary ID - Front", desc: "Passport, Citizenship Card, or PR Card" },
+                    { label: "Primary ID - Back", desc: "Back side of your primary ID" },
+                    { label: "Secondary ID - Front", desc: "Driver's License, Provincial Photo Card, or SIN Card" },
+                    { label: "Secondary ID - Back", desc: "Back side of your secondary ID" },
+                  ];
+
+                  // Check which files are uploaded
+                  const uploadedSteps = fileFields.map((ff) => 
+                    !!(files[ff.id] || existingFiles[ff.id])
+                  );
+                  const uploadedCount = uploadedSteps.filter(Boolean).length;
+                  const allUploaded = uploadedCount === fileFields.length;
+                  const currentField = fileFields[manualUploadStep];
+
+                  // Find first missing slot for step-by-step mode
+                  const firstMissingIdx = uploadedSteps.findIndex((uploaded) => !uploaded);
+                  const effectiveStep = firstMissingIdx >= 0 ? firstMissingIdx : manualUploadStep;
+
+                  // Show grid view ONLY when all files have been uploaded at least once
+                  const showGridView = allUploaded;
+
+                  return (
+                    <div key="manual-upload-container" className="rounded-xl border border-gray-200 overflow-hidden -mt-4">
+                      <div className="px-4 py-4 bg-gray-50">
+                        {/* Progress indicators */}
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                          {fileFields.map((ff, idx) => {
+                            const isUploaded = !!(files[ff.id] || existingFiles[ff.id]);
+                            const isCurrent = idx === effectiveStep && !allUploaded && !showGridView;
+                            return (
+                              <div
+                                key={ff.id}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                                  isUploaded
+                                    ? "bg-green-500 text-white"
+                                    : isCurrent
+                                      ? "bg-[#C10007] text-white"
+                                      : "bg-gray-200 text-gray-500"
+                                }`}
+                              >
+                                {isUploaded ? (
+                                  <CheckCircle2 size={14} strokeWidth={2.5} />
+                                ) : (
+                                  idx + 1
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Status message */}
+                        {allUploaded ? (
+                          <div className="flex items-center justify-center gap-2 text-green-600 mb-4">
+                            <CheckCircle2 size={16} strokeWidth={2.5} />
+                            <p className="text-sm font-semibold">All documents uploaded</p>
+                          </div>
+                        ) : (
+                          <div className="text-center mb-4">
+                            <p className="text-xs text-gray-500">
+                              {uploadedCount} of {fileFields.length} documents uploaded
+                            </p>
+                          </div>
+                        )}
+
+                        {showGridView ? (
+                          // Grid view - always show all 4 slots for easy re-uploading
+                          <div className="grid grid-cols-2 gap-3">
+                            {fileFields.map((ff, idx) => {
+                              const isUploaded = !!(files[ff.id] || existingFiles[ff.id]);
+                              const isMissing = !isUploaded;
+                              return (
+                                <div 
+                                  key={ff.id} 
+                                  className={`space-y-1.5 p-2 rounded-lg transition-all ${
+                                    isMissing ? "bg-red-50 border border-red-200" : ""
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    {isMissing && (
+                                      <AlertCircle size={12} className="text-[#C10007]" />
+                                    )}
+                                    <p className={`text-xs font-semibold ${isMissing ? "text-[#C10007]" : "text-gray-700"}`}>
+                                      {stepLabels[idx]?.label}
+                                      {isMissing && " (required)"}
+                                    </p>
+                                  </div>
+                                  <FileSlot
+                                    field={ff}
+                                    file={files[ff.id] ?? null}
+                                    existingUrl={existingFiles[ff.id]?.url ?? null}
+                                    existingName={existingFiles[ff.id]?.name ?? null}
+                                    error={fileErrors[ff.id] ?? null}
+                                    onFile={setFile}
+                                    onClear={clearFile}
+                                    onError={(id, err) => setFileErrors((prev) => ({ ...prev, [id]: err }))}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          // Step-by-step view (only when no files uploaded yet)
+                          <div className="space-y-3">
+                            <div className="text-center mb-4">
+                              <p className="text-sm font-bold text-gray-900">
+                                Step {effectiveStep + 1} of {fileFields.length}: {stepLabels[effectiveStep]?.label}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {stepLabels[effectiveStep]?.desc}
+                              </p>
+                            </div>
+
+                            {currentField && (
+                              <>
+                                <FileSlot
+                                  field={fileFields[effectiveStep]}
+                                  file={files[fileFields[effectiveStep].id] ?? null}
+                                  existingUrl={existingFiles[fileFields[effectiveStep].id]?.url ?? null}
+                                  existingName={existingFiles[fileFields[effectiveStep].id]?.name ?? null}
+                                  error={fileErrors[fileFields[effectiveStep].id] ?? null}
+                                  onFile={(id, file) => {
+                                    setFile(id, file);
+                                  }}
+                                  onClear={clearFile}
+                                  onError={(id, err) => setFileErrors((prev) => ({ ...prev, [id]: err }))}
+                                />
+                                {errors[fileFields[effectiveStep].id] && (
+                                  <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
+                                    <AlertCircle size={11} />
+                                    {errors[fileFields[effectiveStep].id]}
+                                  </p>
+                                )}
+                              </>
+                            )}
+
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Non-ID task file fields render normally
                 return (
                   <div key={field.id}>
-                    {showPrimaryHeader && (
-                      <div className="mb-3">
-                        <p className="text-sm font-bold text-gray-900">Upload Primary Identification (Front and Back)</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Passport, Citizenship Card, or Permanent Resident Card</p>
-                      </div>
-                    )}
-                    {showSecondaryHeader && (
-                      <div className="mb-3 mt-2">
-                        <p className="text-sm font-bold text-gray-900">Upload Secondary Identification (Required - Front and Back)</p>
-                        <p className="text-xs text-gray-400 mt-0.5">Driver&apos;s License, Provincial Photo Card, or SIN Card (not paper version)</p>
-                      </div>
-                    )}
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
                       {field.required && (
@@ -1375,31 +1552,7 @@ export default function DynamicTaskDrawer({
               );
             })}
 
-          {/* ── Upload Identification: Document Requirements Checklist ── */}
-          {isUploadIdTask && (
-            <div className="rounded-xl border border-gray-200 p-4">
-              <p className="text-sm font-bold text-gray-900 mb-3">Document Requirements Checklist</p>
-              <ul className="space-y-2">
-                {[
-                  { text: "Two pieces of identification are required", highlight: "(Primary and Secondary)" },
-                  { text: "Both front and back of each ID document (if applicable)", highlight: "" },
-                  { text: "Documents are clear and legible", highlight: "" },
-                  { text: "IDs are current and not expired", highlight: "" },
-                  { text: "Names match your personal information", highlight: "" },
-                ].map((item) => (
-                  <li key={item.text} className="flex items-start gap-2 text-xs text-gray-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-gray-900 flex-shrink-0 mt-1.5" />
-                    <span>
-                      {item.text}
-                      {item.highlight && (
-                        <span className="text-[#C10007] font-semibold"> {item.highlight}</span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          
 
           {/* Global error */}
           {globalError && (
