@@ -150,19 +150,34 @@ export async function convertSingleLead(params: {
 
   const { data: stages } = await supabaseAdmin
     .from("stage_templates")
-    .select("id, name, order_index, email_template_id, description")
+    .select("id, name, order_index, email_template_id, description, auto_complete")
     .eq("lead_type", leadType)
     .order("order_index", { ascending: true });
 
   if (stages && stages.length > 0) {
+    // Track which order_index slots have an auto-completed milestone so the
+    // next non-completed milestone becomes "In Progress".
+    let firstActiveAssigned = false;
+
     for (const stage of stages) {
       const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
+
+      let status: string;
+      if (stage.auto_complete) {
+        status = "Completed";
+      } else if (!firstActiveAssigned) {
+        status = "In Progress";
+        firstActiveAssigned = true;
+      } else {
+        status = stage.order_index === 2 && !firstActiveAssigned ? "Waiting" : "Pending";
+      }
+
       const { data: ms } = await supabaseAdmin
         .from("milestones")
         .insert({
           deal_id: deal.id,
           title: cleanName,
-          status: stage.order_index === 1 ? "In Progress" : stage.order_index === 2 ? "Waiting" : "Pending",
+          status,
           order_index: stage.order_index,
           email_template_id: stage.email_template_id ?? null,
           stage_template_id: stage.id,
