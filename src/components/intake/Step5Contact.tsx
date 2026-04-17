@@ -1,10 +1,6 @@
 "use client";
 
-<<<<<<< HEAD
-import { Plus, ChevronLeft, CheckCircle2, X, Trash2, Users } from "lucide-react";
-=======
-import { Plus, ChevronLeft, ChevronDown, CheckCircle2, CalendarCheck, Clock, Video, Trash2, Users } from "lucide-react";
->>>>>>> main
+import { Plus, ChevronLeft, ChevronDown, CheckCircle2, CalendarCheck, Clock, Video, X, Trash2, Users } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";

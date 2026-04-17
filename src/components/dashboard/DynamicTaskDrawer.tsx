@@ -1437,7 +1437,7 @@ export default function DynamicTaskDrawer({
                   onClick={isPersonalInfoTask ? () => {
                     if (!validate()) return;
                     setShowConfirmModal(true);
-                  } : handleSubmit}
+                  } : () => handleSubmit()}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
                   Submit Information
@@ -1458,7 +1458,7 @@ export default function DynamicTaskDrawer({
                   variant="primary"
                   fullWidth
                   loading={saving}
-                  onClick={handleSubmit}
+                  onClick={() => handleSubmit()}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
                   {isCalendlyTask
