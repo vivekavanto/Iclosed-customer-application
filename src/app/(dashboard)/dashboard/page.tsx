@@ -124,6 +124,27 @@ function deduplicateTasks(tasks: Task[]): Task[] {
   return Array.from(map.values());
 }
 
+const SEEN_TASKS_STORAGE_KEY = "iclosed_seen_task_ids";
+
+function getSeenTaskIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const stored = localStorage.getItem(SEEN_TASKS_STORAGE_KEY);
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeenTaskIds(ids: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SEEN_TASKS_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 function AttentionCard({
   tasks,
   loading,
@@ -133,9 +154,8 @@ function AttentionCard({
   loading: boolean;
   onTaskClick: (task: Task) => void;
 }) {
-  const hasInitializedVisibleTasksRef = useRef(false);
-  const seenTaskIdsRef = useRef<Set<string>>(new Set());
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
+  const prevPendingIdsRef = useRef<string>("");
 
   // Deduplicate tasks so no task title appears twice
   const uniqueTasks = deduplicateTasks(tasks);
@@ -144,37 +164,46 @@ function AttentionCard({
   const allPending = uniqueTasks.filter((t) => !t.completed);
   const pending = allPending.slice(0, TASK_BATCH_SIZE);
 
+  // Create a stable key from pending task IDs to use as dependency
+  const pendingIdsKey = pending.map((t) => t.id).join(",");
+
   useEffect(() => {
-    if (loading) return;
+    if (loading || !pendingIdsKey) return;
 
-    const visibleIds = pending.map((task) => task.id);
+    const visibleIds = pendingIdsKey.split(",");
+    const seenIds = getSeenTaskIds();
 
-    // First render of visible tasks is the baseline; don't mark them as new.
-    if (!hasInitializedVisibleTasksRef.current) {
-      hasInitializedVisibleTasksRef.current = true;
-      seenTaskIdsRef.current = new Set(visibleIds);
-      setNewTaskIds(new Set());
-      return;
-    }
+    // Check if pendingIdsKey changed (new task rolled in)
+    const isFirstRender = prevPendingIdsRef.current === "";
+    const idsChanged = prevPendingIdsRef.current !== pendingIdsKey;
+    prevPendingIdsRef.current = pendingIdsKey;
 
-    const newlyVisible: string[] = [];
-    const nextSeen = new Set(seenTaskIdsRef.current);
-    for (const taskId of visibleIds) {
-      if (!nextSeen.has(taskId)) {
-        nextSeen.add(taskId);
-        newlyVisible.push(taskId);
+    // Find tasks that haven't been seen before (in localStorage)
+    const unseenIds = visibleIds.filter((id) => !seenIds.has(id));
+
+    if (isFirstRender) {
+      // On first render (page load), show "new" tags for unseen tasks
+      // Then immediately mark them as seen so refresh clears the tags
+      if (unseenIds.length > 0) {
+        setNewTaskIds(new Set(unseenIds));
       }
-    }
-    seenTaskIdsRef.current = nextSeen;
-
-    if (newlyVisible.length > 0) {
+      const updatedSeen = new Set(seenIds);
+      visibleIds.forEach((id) => updatedSeen.add(id));
+      saveSeenTaskIds(updatedSeen);
+    } else if (idsChanged && unseenIds.length > 0) {
+      // Tasks changed mid-session (e.g., completed one, new one rolled in)
+      // Show "new" tag for the newly visible unseen task
       setNewTaskIds((prev) => {
         const next = new Set(prev);
-        newlyVisible.forEach((taskId) => next.add(taskId));
+        unseenIds.forEach((id) => next.add(id));
         return next;
       });
+      // Mark newly visible tasks as seen
+      const updatedSeen = new Set(seenIds);
+      unseenIds.forEach((id) => updatedSeen.add(id));
+      saveSeenTaskIds(updatedSeen);
     }
-  }, [loading, pending]);
+  }, [loading, pendingIdsKey]);
 
   const allDone = !loading && uniqueTasks.length > 0 && allPending.length === 0;
   const isEmpty = !loading && uniqueTasks.length === 0;
