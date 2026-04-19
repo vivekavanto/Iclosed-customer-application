@@ -30,10 +30,10 @@ const INITIAL_SLOTS: Record<SlotKey, SlotState> = {
 };
 
 const SLOT_LABELS: Record<SlotKey, string> = {
-  primaryFront:   "Primary ID - Front",
-  primaryBack:    "Primary ID - Back",
-  secondaryFront: "Secondary ID - Front",
-  secondaryBack:  "Secondary ID - Back",
+  primaryFront:   "First ID - Front",
+  primaryBack:    "First ID - Back",
+  secondaryFront: "Second ID - Front",
+  secondaryBack:  "Second ID - Back",
 };
 
 const SLOT_DOC_TYPES: Record<SlotKey, string> = {
@@ -127,20 +127,17 @@ async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
 function AcceptableDocumentsDropdown() {
   const [isOpen, setIsOpen] = useState(false);
 
-  const primaryDocs = [
+  const acceptableDocs = [
     "Canadian Passport",
+    "Driver's License",
     "Canadian Citizenship Card",
+    "Provincial Photo ID Card",
     "Permanent Resident Card",
-    "NEXUS Card",
-    "Secure Indian Status Card (INAC)",
-  ];
-
-  const secondaryDocs = [
-    "Driver's License (Canadian province/territory)",
-    "Provincial/Territorial Photo ID Card",
     "Canadian Forces ID Card",
-    "SIN Card (plastic, not paper version)",
-    "Foreign Passport (with valid visa if applicable)",
+    "NEXUS Card",
+    "SIN Card (plastic only)",
+    "Foreign Passport",
+    "Foreign National ID Card",
   ];
 
   return (
@@ -161,34 +158,19 @@ function AcceptableDocumentsDropdown() {
       {isOpen && (
         <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
           <p className="text-[11px] text-gray-500 leading-relaxed">
-            As per Law Society of Ontario By-Law 7.1, the following government-issued photo identification documents are acceptable for ID verification in property transactions.
+            As per Law Society of Ontario By-Law 7.1, please provide <span className="font-semibold text-gray-700">two different government-issued photo IDs</span> from the list below for identity verification.
           </p>
           
-          <div>
-            <p className="text-xs font-bold text-gray-800 mb-2">Primary ID (one required)</p>
-            <ul className="space-y-1.5">
-              {primaryDocs.map((doc) => (
-                <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
-                  <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-                  {doc}
-                </li>
-              ))}
-            </ul>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {acceptableDocs.map((doc) => (
+              <div key={doc} className="flex items-center gap-2 text-xs text-gray-600">
+                <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                <span>{doc}</span>
+              </div>
+            ))}
           </div>
 
-          <div>
-            <p className="text-xs font-bold text-gray-800 mb-2">Secondary ID (one required)</p>
-            <ul className="space-y-1.5">
-              {secondaryDocs.map((doc) => (
-                <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
-                  <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-                  {doc}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="flex items-start gap-2 pt-2 border-t border-gray-100">
+          <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
             <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-gray-500">
               <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid government ID for these purposes.
@@ -250,9 +232,9 @@ function ManualUploadSection({
       </button>
       {isOpen && (
         <div className="px-4 py-4 bg-gray-50 border-t border-gray-100 space-y-4">
-          {/* Primary ID */}
+          {/* First ID */}
           <div>
-            <p className="text-xs font-bold text-gray-800 mb-2">Primary ID (Front & Back)</p>
+            <p className="text-xs font-bold text-gray-800 mb-2">First ID (Front & Back)</p>
             <div className="grid grid-cols-2 gap-3">
               <UploadSlot
                 slotKey="primaryFront"
@@ -279,9 +261,9 @@ function ManualUploadSection({
             </div>
           </div>
 
-          {/* Secondary ID */}
+          {/* Second ID */}
           <div>
-            <p className="text-xs font-bold text-gray-800 mb-2">Secondary ID (Front & Back)</p>
+            <p className="text-xs font-bold text-gray-800 mb-2">Second ID (Front & Back)</p>
             <div className="grid grid-cols-2 gap-3">
               <UploadSlot
                 slotKey="secondaryFront"

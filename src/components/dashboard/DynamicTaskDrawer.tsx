@@ -1009,34 +1009,30 @@ export default function DynamicTaskDrawer({
                 {acceptableDocsOpen && (
                   <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
                     <p className="text-[11px] text-gray-500 leading-relaxed">
-                      As per Law Society of Ontario By-Law 7.1, the following government-issued photo identification documents are acceptable for ID verification in property transactions.
+                      As per Law Society of Ontario By-Law 7.1, please provide <span className="font-semibold text-gray-700">two different government-issued photo IDs</span> from the list below for identity verification.
                     </p>
                     
-                    <div>
-                      <p className="text-xs font-bold text-gray-800 mb-2">Primary ID (one required)</p>
-                      <ul className="space-y-1.5">
-                        {["Canadian Passport", "Canadian Citizenship Card", "Permanent Resident Card", "NEXUS Card", "Secure Indian Status Card (INAC)"].map((doc) => (
-                          <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
-                            <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-                            {doc}
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                      {[
+                        "Canadian Passport",
+                        "Driver's License",
+                        "Canadian Citizenship Card",
+                        "Provincial Photo ID Card",
+                        "Permanent Resident Card",
+                        "Canadian Forces ID Card",
+                        "NEXUS Card",
+                        "SIN Card (plastic only)",
+                        "Foreign Passport",
+                        "Foreign National ID Card",
+                      ].map((doc) => (
+                        <div key={doc} className="flex items-center gap-2 text-xs text-gray-600">
+                          <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
+                          <span>{doc}</span>
+                        </div>
+                      ))}
                     </div>
 
-                    <div>
-                      <p className="text-xs font-bold text-gray-800 mb-2">Secondary ID (one required)</p>
-                      <ul className="space-y-1.5">
-                        {["Driver's License (Canadian province/territory)", "Provincial/Territorial Photo ID Card", "Canadian Forces ID Card", "SIN Card (plastic, not paper version)", "Foreign Passport (with valid visa if applicable)"].map((doc) => (
-                          <li key={doc} className="flex items-center gap-2 text-xs text-gray-600">
-                            <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-                            {doc}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="flex items-start gap-2 pt-2 border-t border-gray-100">
+                    <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
                       <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       <p className="text-[11px] text-gray-500">
                         <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid government ID for these purposes.
@@ -1208,10 +1204,10 @@ export default function DynamicTaskDrawer({
                   if (fileIdx !== 0) return null;
 
                   const stepLabels = [
-                    { label: "Primary ID - Front", desc: "Passport, Citizenship Card, or PR Card" },
-                    { label: "Primary ID - Back", desc: "Back side of your primary ID" },
-                    { label: "Secondary ID - Front", desc: "Driver's License, Provincial Photo Card, or SIN Card" },
-                    { label: "Secondary ID - Back", desc: "Back side of your secondary ID" },
+                    { label: "First ID - Front", desc: "Front side of your first government-issued photo ID" },
+                    { label: "First ID - Back", desc: "Back side of your first ID" },
+                    { label: "Second ID - Front", desc: "Front side of a different government-issued photo ID" },
+                    { label: "Second ID - Back", desc: "Back side of your second ID" },
                   ];
 
                   // Check which files are uploaded
