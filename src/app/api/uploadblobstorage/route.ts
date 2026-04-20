@@ -9,6 +9,7 @@ export async function POST(req: Request) {
     const file = formData.get("file") as File | null;
     const lead_id = formData.get("lead_id") as string | null;
     const doc_type = formData.get("doc_type") as string | null;
+    const custom_type = formData.get("custom_type") as string | null;
 
     if (!file) throw new Error("No file provided");
     if (!lead_id) throw new Error("No lead_id provided");
@@ -33,6 +34,7 @@ export async function POST(req: Request) {
       .insert({
         lead_id,
         doc_type,
+        custom_type: custom_type || null,
         file_name: file.name,
         file_url: blob.url,
       });

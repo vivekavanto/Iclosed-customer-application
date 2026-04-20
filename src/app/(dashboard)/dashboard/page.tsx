@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
+import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import { useToast } from "@/components/ui/Toast";
 
 
@@ -532,6 +533,7 @@ export default function DashboardPage() {
   // ── Drawer state ──────────────────────────────────────────
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
+  const [idDrawerOpen, setIdDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   // ── Derived: active property + deal ──────────────────────
@@ -543,7 +545,11 @@ export default function DashboardPage() {
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);
-    setDynamicDrawerOpen(true);
+    if (task.title.toLowerCase().includes("upload identification")) {
+      setIdDrawerOpen(true);
+    } else {
+      setDynamicDrawerOpen(true);
+    }
   }
 
   // ── On mount: fetch all properties + deals ────────────────
@@ -679,6 +685,18 @@ export default function DashboardPage() {
         onTaskCompleted={(id) => {
           setDynamicDrawerOpen(false);
           markDone(id);
+        }}
+      />
+
+      {/* ── Upload Identification Drawer (multi-file) ── */}
+      <UploadIdentificationDrawer
+        open={idDrawerOpen}
+        onClose={() => setIdDrawerOpen(false)}
+        leadId={leadId ?? undefined}
+        taskId={activeTask?.id}
+        onSaved={async () => {
+          setIdDrawerOpen(false);
+          if (activeTask) await markDone(activeTask.id);
         }}
       />
 
