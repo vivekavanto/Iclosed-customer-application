@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, ChevronLeft, ChevronDown, CheckCircle2, CalendarCheck, Clock, Video, X, Trash2, Users } from "lucide-react";
+import { Plus, ChevronLeft, CheckCircle2, X, Trash2, Users, ChevronDown } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
