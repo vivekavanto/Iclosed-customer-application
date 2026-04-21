@@ -7,14 +7,11 @@ const ACCEPTABLE_IDS = [
   "Canadian Passport",
   "Driver's License",
   "Canadian Citizenship Card",
-  "Provincial Photo ID Card",
   "Permanent Resident Card",
-  "Canadian Forces ID Card",
   "NEXUS Card",
   "SIN Card (plastic only)",
   "Foreign Passport",
-  "Foreign National ID Card",
-  "Other Government-Issued Photo ID",
+  "Government-issued Photo ID Card",
 ];
 
 const SUPPORTED_MIME_TYPES = new Set([
