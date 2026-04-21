@@ -212,13 +212,11 @@ function AcceptableDocumentsDropdown() {
     "Canadian Passport",
     "Driver's License",
     "Canadian Citizenship Card",
-    "Provincial Photo ID Card",
     "Permanent Resident Card",
-    "Canadian Forces ID Card",
     "NEXUS Card",
     "SIN Card (plastic only)",
     "Foreign Passport",
-    "Foreign National ID Card",
+    "Government-issued Photo ID Card",
   ];
 
   return (

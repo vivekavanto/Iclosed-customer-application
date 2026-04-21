@@ -1017,13 +1017,11 @@ export default function DynamicTaskDrawer({
                         "Canadian Passport",
                         "Driver's License",
                         "Canadian Citizenship Card",
-                        "Provincial Photo ID Card",
                         "Permanent Resident Card",
-                        "Canadian Forces ID Card",
                         "NEXUS Card",
                         "SIN Card (plastic only)",
                         "Foreign Passport",
-                        "Foreign National ID Card",
+                        "Government-issued Photo ID Card",
                       ].map((doc) => (
                         <div key={doc} className="flex items-center gap-2 text-xs text-gray-600">
                           <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
