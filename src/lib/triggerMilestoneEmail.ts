@@ -1,6 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
-import { renderMilestoneTemplate } from "@/lib/email-templates/milestone";
+import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 
 /**
@@ -33,7 +33,7 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
     // Fetch the email template from the database
     const { data: template } = await supabaseAdmin
       .from("email_templates")
-      .select("name, body")
+      .select("name, subject, body")
       .eq("id", milestone.email_template_id)
       .eq("is_active", true)
       .or("is_deleted.eq.false,is_deleted.is.null")
@@ -76,20 +76,27 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
       const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(" ");
       const leadAddress = [lead.address_street, lead.address_city].filter(Boolean).join(", ");
 
-      const html = renderMilestoneTemplate(template.body, {
+      const variables = {
         "user.first_name": lead.first_name || "",
         "user.last_name": lead.last_name || "",
         "user.get_full_name": fullName,
         "lead_type": lead.lead_type || "",
         "lead_address": leadAddress,
         "milestone_title": milestone.title || "",
-      });
+      };
+
+      const html = renderMilestoneTemplate(template.body, variables);
+      const subject = resolveTemplateSubject(
+        template,
+        variables,
+        `Update: ${milestone.title}`,
+      );
 
       const { error } = await resend.emails.send({
         from: EMAIL_FROM,
         replyTo: EMAIL_REPLY_TO,
         to: lead.email,
-        subject: template.name || `Update: ${milestone.title}`,
+        subject,
         html,
       });
 

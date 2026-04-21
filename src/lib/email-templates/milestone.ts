@@ -8,16 +8,44 @@
 
 const LOGO_URL = "https://iclosed-admin-panel.vercel.app/logo.png";
 
+/**
+ * Replaces `{{ key }}` tokens (spaces optional) with their values.
+ * Returns plain text with no HTML wrapping — safe for subjects.
+ */
+export function interpolateTokens(
+  input: string,
+  variables: Record<string, string>,
+): string {
+  let out = input;
+  for (const [key, value] of Object.entries(variables)) {
+    const pattern = new RegExp(`\\{\\{\\s*${escapeRegex(key)}\\s*\\}\\}`, "g");
+    out = out.replace(pattern, value ?? "");
+  }
+  return out;
+}
+
+/**
+ * Resolves the email subject from a DB template row.
+ * Priority: template.subject → template.name → fallback.
+ * Trims and treats empty strings as missing. Interpolates placeholders.
+ * Output is plain text only.
+ */
+export function resolveTemplateSubject(
+  template: { subject?: string | null; name?: string | null } | null | undefined,
+  variables: Record<string, string>,
+  fallback: string,
+): string {
+  const subj = template?.subject?.trim();
+  const name = template?.name?.trim();
+  const raw = subj || name || fallback;
+  return interpolateTokens(raw, variables).trim();
+}
+
 export function renderMilestoneTemplate(
   templateBody: string,
   variables: Record<string, string>
 ): string {
-  let rendered = templateBody;
-
-  for (const [key, value] of Object.entries(variables)) {
-    const pattern = new RegExp(`\\{\\{\\s*${escapeRegex(key)}\\s*\\}\\}`, "g");
-    rendered = rendered.replace(pattern, value ?? "");
-  }
+  const rendered = interpolateTokens(templateBody, variables);
 
   // Strip any existing full HTML wrapper — use only the inner content
   const bodyContent = extractBodyContent(rendered);

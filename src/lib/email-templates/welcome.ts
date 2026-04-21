@@ -1,5 +1,5 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { renderMilestoneTemplate } from "./milestone";
+import { renderMilestoneTemplate, resolveTemplateSubject } from "./milestone";
 
 export async function buildWelcomeEmailHtml(params: {
   lead: any;
@@ -9,7 +9,7 @@ export async function buildWelcomeEmailHtml(params: {
   // Fetch the "Welcome Email" template from Supabase
   const { data: template, error } = await supabaseAdmin
     .from("email_templates")
-    .select("name, body")
+    .select("name, subject, body")
     .ilike("name", "Welcome Email%")
     .eq("is_active", true)
     .or("is_deleted.eq.false,is_deleted.is.null")
@@ -25,15 +25,18 @@ export async function buildWelcomeEmailHtml(params: {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://iclosed-customer-application-rosy.vercel.app";
 
-  const html = renderMilestoneTemplate(template.body, {
+  const variables = {
     "user.first_name": lead.first_name || "",
     "user.last_name": lead.last_name || "",
     "user.get_full_name": fullName || "there",
     "lead_type": lead.lead_type || "property",
     "lead_address": leadAddress || "your property",
     "first_name": lead.first_name || "there",
-    "dashboard_link": `${siteUrl}/login`
-  });
+    "dashboard_link": `${siteUrl}/login`,
+  };
 
-  return { html, subject: template.name || "Welcome to iClosed!" };
+  const html = renderMilestoneTemplate(template.body, variables);
+  const subject = resolveTemplateSubject(template, variables, "Welcome to iClosed");
+
+  return { html, subject };
 }
