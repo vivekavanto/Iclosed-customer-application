@@ -94,14 +94,31 @@ export async function POST(req: Request) {
       }
 
       // Citizenship flag — alert law clerk if client selected non-citizen / unsure
-      const citizenshipResp = responses.find(
-        (r: any) => r.field_label === "Citizenship Status",
+      console.log(
+        "[CitizenshipFlag] all response labels+values:",
+        responses.map((r: any) => ({ label: r.field_label, value: r.value })),
       );
-      if (
-        citizenshipResp?.value === "non_citizen_&_unsure" &&
-        task.deal_id
-      ) {
-        sendCitizenshipFlagEmail(task.deal_id, citizenshipResp.value).catch(
+
+      const citizenshipResp = responses.find((r: any) =>
+        (r.field_label || "").toLowerCase().includes("citizenship"),
+      );
+
+      const rawVal = String(citizenshipResp?.value ?? "").toLowerCase();
+      const isFlag =
+        rawVal.includes("non") &&
+        (rawVal.includes("unsure") || rawVal.includes("citizen"));
+
+      console.log("[CitizenshipFlag] check:", {
+        found: !!citizenshipResp,
+        label: citizenshipResp?.field_label,
+        value: citizenshipResp?.value,
+        isFlag,
+        deal_id: task.deal_id,
+      });
+
+      if (isFlag && task.deal_id) {
+        console.log("[CitizenshipFlag] triggering for deal:", task.deal_id);
+        sendCitizenshipFlagEmail(task.deal_id, String(citizenshipResp.value)).catch(
           (err) => console.error("[CitizenshipFlag] Trigger failed:", err),
         );
       }

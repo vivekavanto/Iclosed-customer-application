@@ -54,9 +54,15 @@ export async function sendCitizenshipFlagEmail(
       .limit(1)
       .maybeSingle();
 
+    console.log("[CitizenshipFlag] template lookup:", {
+      found: !!template?.body,
+      name: template?.name,
+      tmplErr: tmplErr?.message,
+    });
+
     if (tmplErr || !template?.body) {
       console.error(
-        "[CitizenshipFlag] Template not found in email_templates table",
+        "[CitizenshipFlag] Template not found. Check email_templates table for a row whose name contains 'Citizenship Flag', is_active=true, is_deleted=false.",
       );
       return false;
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { KeyRound, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { KeyRound, Eye, EyeOff, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 
@@ -13,6 +13,8 @@ export default function SetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [countdown, setCountdown] = useState(3);
 
   const [sessionLoading, setSessionLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
@@ -33,6 +35,21 @@ export default function SetPasswordPage() {
   }), [password]);
 
   const allValid = validations.minLength && validations.hasUppercase && validations.hasNumber && validations.hasSpecial;
+
+  const goToPortal = () => {
+    router.push("/login");
+    router.refresh();
+  };
+
+  useEffect(() => {
+    if (!success) return;
+    if (countdown <= 0) {
+      goToPortal();
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [success, countdown]);
 
   useEffect(() => {
     let mounted = true;
@@ -72,6 +89,15 @@ export default function SetPasswordPage() {
         if (mounted) {
           setHasSession(!!session);
           setSessionLoading(false);
+          if (session?.user) {
+            const meta = (session.user.user_metadata ?? {}) as Record<string, any>;
+            const name =
+              meta.first_name ||
+              meta.firstName ||
+              (meta.full_name ? String(meta.full_name).split(" ")[0] : "") ||
+              (session.user.email ? session.user.email.split("@")[0] : "");
+            setFirstName(name || "");
+          }
         }
       } catch (err) {
         if (mounted) setSessionLoading(false);
@@ -86,6 +112,15 @@ export default function SetPasswordPage() {
       if (mounted) {
         setHasSession(!!session);
         setSessionLoading(false);
+        if (session?.user && !firstName) {
+          const meta = (session.user.user_metadata ?? {}) as Record<string, any>;
+          const name =
+            meta.first_name ||
+            meta.firstName ||
+            (meta.full_name ? String(meta.full_name).split(" ")[0] : "") ||
+            (session.user.email ? session.user.email.split("@")[0] : "");
+          setFirstName(name || "");
+        }
       }
     });
 
@@ -138,12 +173,8 @@ export default function SetPasswordPage() {
       if (updateError) throw updateError;
 
       setSuccess(true);
-      // Sign out and redirect to login so user logs in with new password
+      // Sign out so user logs in with new password; countdown handles redirect
       await supabase.auth.signOut();
-      setTimeout(() => {
-        router.push("/login");
-        router.refresh();
-      }, 2000);
     } catch (err: any) {
       setError(err.message || "Failed to set password. Please try again.");
     } finally {
@@ -165,33 +196,66 @@ export default function SetPasswordPage() {
   }
 
   if (success) {
+    const displayName = firstName
+      ? firstName.charAt(0).toUpperCase() + firstName.slice(1)
+      : "";
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white px-6">
-        <div className="w-full max-w-[480px] rounded-2xl border border-gray-100 bg-white p-10 shadow-sm">
+      <div className="flex min-h-screen items-center justify-center bg-[#0f0f10] px-6 py-10">
+        <div className="w-full max-w-[460px] rounded-3xl bg-[#1f1f1f] px-8 py-10 shadow-2xl">
           <div className="flex flex-col items-center text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
-              <KeyRound size={26} className="text-[#c0392b]" />
+            <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#e8efd8]">
+              <Check size={40} className="text-[#2f6b14]" strokeWidth={3} />
             </div>
-            <h1 className="mb-3 text-3xl font-bold tracking-tight text-gray-900">
-              Success!
+
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#7fb04a]">
+              Account Activated
+            </p>
+            <h1 className="mb-4 text-2xl font-bold tracking-tight text-white">
+              {displayName ? `You're all set, ${displayName}!` : "You're all set!"}
             </h1>
-            <p className="text-base text-gray-500">
-              Your password has been set successfully.
+            <p className="mb-8 text-[15px] leading-relaxed text-gray-400">
+              Your password has been saved and your iClosed
+              <br />
+              account is ready to use.
             </p>
 
-            <div className="mt-12 mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-50">
-              <CheckCircle2
-                size={32}
-                className="text-green-500"
-                strokeWidth={2.5}
-              />
+            <div className="mb-8 w-full rounded-2xl bg-[#151515] px-6 py-5 text-left">
+              <ul className="space-y-3 text-[15px] text-gray-200">
+                <li className="flex items-center gap-3">
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#7fb04a]" />
+                  Password saved securely
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#7fb04a]" />
+                  Account verified
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#7fb04a]" />
+                  Portal access granted
+                </li>
+              </ul>
             </div>
-            <h3 className="mb-2 text-xl font-bold text-gray-900">
-              Password Saved!
-            </h3>
-            <p className="text-sm text-gray-500">
-              Redirecting you to login...
+
+            <button
+              type="button"
+              onClick={goToPortal}
+              className="mb-3 w-full cursor-pointer rounded-xl bg-[#c0392b] px-5 py-3.5 text-[15px] font-semibold text-white transition-all hover:bg-[#a93226]"
+            >
+              Go to my portal
+            </button>
+            <p className="mb-6 text-sm text-gray-500">
+              Redirecting automatically in{" "}
+              <span className="font-semibold text-gray-300">
+                {Math.max(countdown, 0)}s
+              </span>
             </p>
+
+            <div className="w-full border-t border-white/10 pt-5">
+              <div className="flex items-center justify-center text-lg font-semibold tracking-tight">
+                <span className="text-[#c0392b]">i</span>
+                <span className="text-white">Closed</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
