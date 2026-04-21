@@ -164,6 +164,40 @@ export default function SetPasswordPage() {
     );
   }
 
+  if (success) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-6">
+        <div className="w-full max-w-[480px] rounded-2xl border border-gray-100 bg-white p-10 shadow-sm">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-red-50">
+              <KeyRound size={26} className="text-[#c0392b]" />
+            </div>
+            <h1 className="mb-3 text-3xl font-bold tracking-tight text-gray-900">
+              Success!
+            </h1>
+            <p className="text-base text-gray-500">
+              Your password has been set successfully.
+            </p>
+
+            <div className="mt-12 mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-green-50">
+              <CheckCircle2
+                size={32}
+                className="text-green-500"
+                strokeWidth={2.5}
+              />
+            </div>
+            <h3 className="mb-2 text-xl font-bold text-gray-900">
+              Password Saved!
+            </h3>
+            <p className="text-sm text-gray-500">
+              Redirecting you to login...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-white">
       {/* ── Left branding panel ── */}
@@ -208,33 +242,14 @@ export default function SetPasswordPage() {
                 <KeyRound size={24} className="text-[#c0392b]" />
               </div>
               <h1 className="mb-1.5 text-2xl font-bold text-gray-900 tracking-tight">
-                {success ? "Success!" : "Set your new password"}
+                Set your new password
               </h1>
               <p className="text-sm text-gray-500 leading-relaxed">
-                {success
-                  ? "Your password has been set successfully."
-                  : "To keep your account secure, create a strong, unique password below."}
+                To keep your account secure, create a strong, unique password below.
               </p>
             </div>
 
-            {success ? (
-              <div className="flex flex-col items-center justify-center py-6">
-                <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mb-4">
-                  <CheckCircle2
-                    size={28}
-                    className="text-green-500"
-                    strokeWidth={2.5}
-                  />
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-1">
-                  Password Saved!
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Redirecting you to login...
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                 {/* New Password field */}
                 <div className="flex flex-col gap-1.5">
                   <label
@@ -336,7 +351,6 @@ export default function SetPasswordPage() {
                   )}
                 </button>
               </form>
-            )}
           </div>
         </div>
       </main>

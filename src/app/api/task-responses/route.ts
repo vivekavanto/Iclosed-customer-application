@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses } from "@/lib/syncSharedTask";
 import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
+import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
 
 /**
  * POST /api/task-responses
@@ -90,6 +91,19 @@ export async function POST(req: Request) {
           dealId: task.deal_id,
           taskTemplateId: task.task_template_id,
         }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+      }
+
+      // Citizenship flag — alert law clerk if client selected non-citizen / unsure
+      const citizenshipResp = responses.find(
+        (r: any) => r.field_label === "Citizenship Status",
+      );
+      if (
+        citizenshipResp?.value === "non_citizen_&_unsure" &&
+        task.deal_id
+      ) {
+        sendCitizenshipFlagEmail(task.deal_id, citizenshipResp.value).catch(
+          (err) => console.error("[CitizenshipFlag] Trigger failed:", err),
+        );
       }
 
       // Check if all tasks in the milestone are now completed

@@ -14,12 +14,12 @@ const faqItems: FAQItem[] = [
   {
     question: "Who are we?",
     answer:
-      "We are iClosed, a fully online Ontario law firm focused exclusively on real estate transactions. We handle purchases, sales, refinances, and title transfers\u2014all through secure digital platforms, including video signing.",
+      "We are iClosed, powered by Nava Wilson PC, an Ontario law firm focused exclusively on real estate transactions. We handle purchases, sales, refinances, and title transfers\u2014all through secure digital platforms, including video signing.",
   },
   {
     question: "Who is the lawyer or law firm representing me?",
     answer:
-      "Your transaction will be handled by a licensed Ontario lawyer at iClosed. Our team specializes in real estate closings and will be your point of contact throughout the entire process.",
+      "Your transaction will be handled by a licensed Ontario lawyer at Nava Wilson PC.",
   },
   {
     question: "What legal services are included in this retainer?",
