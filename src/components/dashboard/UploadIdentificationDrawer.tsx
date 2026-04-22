@@ -283,6 +283,20 @@ export default function UploadIdentificationDrawer({
   const [replacingId, setReplacingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+  const selectedRef = useRef<SelectedFile[]>([]);
+
+  // Keep selectedRef in sync so detection callbacks can read the current file name
+  // without being inside a setState updater
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
+
+  // Detection failure modal
+  const [detectionFailModal, setDetectionFailModal] = useState<{
+    open: boolean;
+    fileId: string;
+    fileName: string;
+  }>({ open: false, fileId: "", fileName: "" });
 
   // Camera flow state (guided 4-step capture)
   const webcamRef = useRef<Webcam | null>(null);
@@ -396,6 +410,7 @@ export default function UploadIdentificationDrawer({
       const data = await res.json().catch(() => ({ success: false, error: "Invalid response from server." }));
 
       if (!data.success) {
+        const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
         setSelected((prev) =>
           prev.map((s) =>
             s.id === id
@@ -403,6 +418,7 @@ export default function UploadIdentificationDrawer({
               : s,
           ),
         );
+        setDetectionFailModal({ open: true, fileId: id, fileName });
         return;
       }
 
@@ -429,6 +445,10 @@ export default function UploadIdentificationDrawer({
           s.id === id ? { ...s, detecting: false, detection, detectionError: null } : s,
         ),
       );
+      if (!detection.isIdentification) {
+        const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
+        setDetectionFailModal({ open: true, fileId: id, fileName });
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error && err.name === "AbortError"
@@ -436,11 +456,13 @@ export default function UploadIdentificationDrawer({
           : err instanceof Error
             ? err.message
             : "Detection failed.";
+      const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
       setSelected((prev) =>
         prev.map((s) =>
           s.id === id ? { ...s, detecting: false, detection: null, detectionError: message } : s,
         ),
       );
+      setDetectionFailModal({ open: true, fileId: id, fileName });
     } finally {
       clearTimeout(timeoutId);
     }
@@ -841,7 +863,11 @@ export default function UploadIdentificationDrawer({
 
   const allRequiredMet = missingRequired.length === 0;
   const hasDuplicates = duplicatePendingLabels.length > 0;
-  const canUpload = selected.length > 0 && !uploading && !hasDuplicates && allRequiredMet;
+  const hasDetectionFailures = selected.some(
+    (s) => s.detectionError !== null || (s.detection !== null && !s.detection.isIdentification),
+  );
+  const canUpload =
+    selected.length > 0 && !uploading && !hasDuplicates && allRequiredMet && !hasDetectionFailures;
 
   return (
     <>
@@ -1227,6 +1253,66 @@ export default function UploadIdentificationDrawer({
           </Button>
         </div>
       </div>
+
+      {/* Detection failure modal */}
+      {detectionFailModal.open && (
+        <>
+          <div
+            className="fixed inset-0 z-[80] bg-black/40"
+            aria-hidden="true"
+          />
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center px-5"
+            role="dialog"
+            aria-modal="true"
+            aria-label="File upload error"
+          >
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+              {/* Icon band */}
+              <div className="flex justify-center pt-8 pb-4">
+                <div className="w-14 h-14 rounded-full bg-[#FEF2F2] flex items-center justify-center">
+                  <AlertCircle size={28} className="text-[#C10007]" strokeWidth={1.75} />
+                </div>
+              </div>
+
+              {/* Text */}
+              <div className="px-6 pb-6 text-center space-y-2">
+                <h3 className="text-base font-bold text-gray-900">
+                  We weren&apos;t able to process this file
+                </h3>
+                <p className="text-sm text-gray-500 leading-relaxed">
+                  Something went wrong while verifying{" "}
+                  <span className="font-semibold text-gray-700 break-all">
+                    {detectionFailModal.fileName}
+                  </span>
+                  . Please remove the current file and attempt to upload it again. If the issue persists, consider using an alternative photo or scan, as this often resolves the problem.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="px-6 pb-6 flex flex-col gap-2.5">
+                <Button
+                  variant="primary"
+                  fullWidth
+                  onClick={() => {
+                    removeSelected(detectionFailModal.fileId);
+                    setDetectionFailModal({ open: false, fileId: "", fileName: "" });
+                  }}
+                >
+                  Remove &amp; Try Again
+                </Button>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => setDetectionFailModal({ open: false, fileId: "", fileName: "" })}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Camera flow overlay (guided 4-step) */}
       {cameraFlowOpen && (
