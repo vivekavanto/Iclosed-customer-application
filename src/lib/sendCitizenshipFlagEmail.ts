@@ -7,7 +7,7 @@ const CITIZENSHIP_LABELS: Record<string, string> = {
   permanent_resident: "Permanent resident",
   visa: "Visa",
   granted_refugee_status: "Granted refugee status in Canada",
-  "non_citizen_&_unsure": "Non-citizen & unsure",
+  "non_citizen_&_unsure": "Non-Citizen or Unsure",
 };
 
 /**

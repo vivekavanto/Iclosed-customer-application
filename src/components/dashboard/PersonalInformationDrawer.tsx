@@ -519,7 +519,7 @@ export default function PersonalInformationDrawer({
                 { label: "Permanent resident", value: "permanent_resident" },
                 { label: "Visa", value: "visa" },
                 { label: "Granted refugee status in Canada", value: "granted_refugee_status" },
-                { label: "Non-citizen & unsure", value: "non_citizen_&_unsure" },
+                { label: "Non-Citizen or Unsure", value: "non_citizen_&_unsure" },
               ]}
             />
             <FieldError msg={errors.citizenshipStatus} />
