@@ -318,11 +318,11 @@ function AttentionCard({
                         Shared Task
                       </span>
                     )} */}
-                    <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
-                      {formattedDate
-                        ? `Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`
-                        : "No due date"}
-                    </p>
+                    {formattedDate && (
+                      <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+                        {`Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`}
+                      </p>
+                    )}
                   </div>
 
                   {/* Arrow */}
