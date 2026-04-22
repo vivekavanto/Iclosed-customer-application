@@ -1152,12 +1152,6 @@ export default function UploadIdentificationDrawer({
                                 <span className="truncate">
                                   Detected: {s.detection.documentType}
                                   {s.detection.side !== "unknown" ? ` (${s.detection.side})` : ""}
-                                  {s.detection.sideRequirement === "single-sided"
-                                    ? " • single-sided ID (back not required)"
-                                    : ""}
-                                  {s.detection.confidence !== "high"
-                                    ? ` • ${s.detection.confidence} confidence`
-                                    : ""}
                                 </span>
                               </p>
                             ) : (

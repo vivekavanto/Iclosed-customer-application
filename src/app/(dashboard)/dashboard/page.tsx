@@ -13,8 +13,6 @@ import {
   AlertTriangle,
   ChevronRight,
   Loader2,
-  FileCheck,
-  Shield,
 } from "lucide-react";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
@@ -183,11 +181,10 @@ function AttentionCard({
     const unseenIds = visibleIds.filter((id) => !seenIds.has(id));
 
     if (isFirstRender) {
-      // On first render (page load), show "new" tags for unseen tasks
-      // Then immediately mark them as seen so refresh clears the tags
-      if (unseenIds.length > 0) {
-        setNewTaskIds(new Set(unseenIds));
-      }
+      // On first dashboard load, the initial task batch is NOT flagged as "new" —
+      // those are just the starter tasks. We only mark them as seen so that any
+      // task that rolls in later (after the user completes one) will be treated
+      // as genuinely new.
       const updatedSeen = new Set(seenIds);
       visibleIds.forEach((id) => updatedSeen.add(id));
       saveSeenTaskIds(updatedSeen);
@@ -208,22 +205,6 @@ function AttentionCard({
 
   const allDone = !loading && uniqueTasks.length > 0 && allPending.length === 0;
   const isEmpty = !loading && uniqueTasks.length === 0;
-
-  // Task icon map
-  const taskIconMap: Record<string, React.ReactNode> = {
-    "provide personal information": <User size={18} className="text-[#C10007]" strokeWidth={2} />,
-    "upload identification": <FileCheck size={18} className="text-[#C10007]" strokeWidth={2} />,
-    "upload home insurance policy": <Shield size={18} className="text-[#C10007]" strokeWidth={2} />,
-    "schedule an appointment": <Calendar size={18} className="text-[#C10007]" strokeWidth={2} />,
-  };
-
-  const getTaskIcon = (title: string) => {
-    const key = title.toLowerCase().trim();
-    for (const [pattern, icon] of Object.entries(taskIconMap)) {
-      if (key.includes(pattern)) return icon;
-    }
-    return <AlertTriangle size={18} className="text-[#C10007]" strokeWidth={2} />;
-  };
 
   return (
     <div
@@ -274,7 +255,7 @@ function AttentionCard({
         </div>
       ) : (
         <div className="p-3 sm:p-4 space-y-3">
-          {pending.map((task) => {
+          {pending.map((task, idx) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
                 month: "long",
@@ -290,6 +271,8 @@ function AttentionCard({
               })
               : null;
 
+            const isNew = newTaskIds.has(task.id);
+
             return (
               <div
                 key={task.id}
@@ -297,28 +280,23 @@ function AttentionCard({
                 className="rounded-xl border border-gray-200 bg-white px-4 sm:px-5 py-4 hover:border-[#C10007]/30 hover:shadow-md transition-all duration-200 cursor-pointer group"
               >
                 <div className="flex items-center gap-4">
-                  {/* Icon */}
-                  <div className="w-11 h-11 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-                    {getTaskIcon(task.title)}
+                  {/* Step number */}
+                  <div className="w-10 h-10 rounded-full bg-[#FEF2F2] border border-[#fca5a5]/60 flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-bold text-[#C10007]">{idx + 1}</span>
                   </div>
 
                   {/* Text */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
-                      {task.title}
-                    </p>
-                    {/* New badge hidden
-                    {newTaskIds.has(task.id) && (
-                      <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
-                        New
-                      </span>
-                    )} */}
-                    {/* Shared task badge hidden
-                    {task.is_shared && (
-                      <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                        Shared Task
-                      </span>
-                    )} */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
+                        {task.title}
+                      </p>
+                      {isNew && (
+                        <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
+                          New
+                        </span>
+                      )}
+                    </div>
                     {formattedDate && (
                       <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
                         {`Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`}
