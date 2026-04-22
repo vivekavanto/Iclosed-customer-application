@@ -307,22 +307,23 @@ function AttentionCard({
                     <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
                       {task.title}
                     </p>
+                    {/* New badge hidden
                     {newTaskIds.has(task.id) && (
                       <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
                         New
                       </span>
-                    )}
+                    )} */}
                     {/* Shared task badge hidden
                     {task.is_shared && (
                       <span className="inline-flex items-center mt-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
                         Shared Task
                       </span>
                     )} */}
-                    <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
-                      {formattedDate
-                        ? `Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`
-                        : "No due date"}
-                    </p>
+                    {formattedDate && (
+                      <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+                        {`Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`}
+                      </p>
+                    )}
                   </div>
 
                   {/* Arrow */}

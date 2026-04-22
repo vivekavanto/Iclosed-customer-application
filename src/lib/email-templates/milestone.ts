@@ -28,6 +28,9 @@ export function interpolateTokens(
  * Resolves the email subject from a DB template row.
  * Priority: template.subject → template.name → fallback.
  * Trims and treats empty strings as missing. Interpolates placeholders.
+ * When falling back to `name`, strips a trailing "Email" token
+ * (e.g. "Welcome Email" → "Welcome") since the name column is an
+ * internal label, not a customer-facing subject.
  * Output is plain text only.
  */
 export function resolveTemplateSubject(
@@ -37,7 +40,16 @@ export function resolveTemplateSubject(
 ): string {
   const subj = template?.subject?.trim();
   const name = template?.name?.trim();
-  const raw = subj || name || fallback;
+
+  let raw: string;
+  if (subj) {
+    raw = subj;
+  } else if (name) {
+    raw = name.replace(/\s*[-–—:]*\s*Email\s*$/i, "").trim() || name;
+  } else {
+    raw = fallback;
+  }
+
   return interpolateTokens(raw, variables).trim();
 }
 

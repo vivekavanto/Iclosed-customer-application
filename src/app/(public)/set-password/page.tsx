@@ -200,27 +200,27 @@ export default function SetPasswordPage() {
       ? firstName.charAt(0).toUpperCase() + firstName.slice(1)
       : "";
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0f0f10] px-6 py-10">
-        <div className="w-full max-w-[460px] rounded-3xl bg-[#1f1f1f] px-8 py-10 shadow-2xl">
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-6 py-10">
+        <div className="w-full max-w-[460px] rounded-3xl border border-gray-100 bg-white px-8 py-10 shadow-sm">
           <div className="flex flex-col items-center text-center">
             <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#e8efd8]">
               <Check size={40} className="text-[#2f6b14]" strokeWidth={3} />
             </div>
 
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#7fb04a]">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5a8a32]">
               Account Activated
             </p>
-            <h1 className="mb-4 text-2xl font-bold tracking-tight text-white">
+            <h1 className="mb-4 text-2xl font-bold tracking-tight text-gray-900">
               {displayName ? `You're all set, ${displayName}!` : "You're all set!"}
             </h1>
-            <p className="mb-8 text-[15px] leading-relaxed text-gray-400">
+            <p className="mb-8 text-[15px] leading-relaxed text-gray-500">
               Your password has been saved and your iClosed
               <br />
               account is ready to use.
             </p>
 
-            <div className="mb-8 w-full rounded-2xl bg-[#151515] px-6 py-5 text-left">
-              <ul className="space-y-3 text-[15px] text-gray-200">
+            <div className="mb-8 w-full rounded-2xl border border-gray-100 bg-gray-50 px-6 py-5 text-left">
+              <ul className="space-y-3 text-[15px] text-gray-700">
                 <li className="flex items-center gap-3">
                   <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#7fb04a]" />
                   Password saved securely
@@ -239,21 +239,21 @@ export default function SetPasswordPage() {
             <button
               type="button"
               onClick={goToPortal}
-              className="mb-3 w-full cursor-pointer rounded-xl bg-[#c0392b] px-5 py-3.5 text-[15px] font-semibold text-white transition-all hover:bg-[#a93226]"
+              className="mb-3 w-full cursor-pointer rounded-xl bg-[#c0392b] px-5 py-3.5 text-[15px] font-semibold text-white shadow-md shadow-[#c0392b]/20 transition-all hover:bg-[#a93226]"
             >
               Go to my portal
             </button>
             <p className="mb-6 text-sm text-gray-500">
               Redirecting automatically in{" "}
-              <span className="font-semibold text-gray-300">
+              <span className="font-semibold text-gray-700">
                 {Math.max(countdown, 0)}s
               </span>
             </p>
 
-            <div className="w-full border-t border-white/10 pt-5">
+            <div className="w-full border-t border-gray-100 pt-5">
               <div className="flex items-center justify-center text-lg font-semibold tracking-tight">
                 <span className="text-[#c0392b]">i</span>
-                <span className="text-white">Closed</span>
+                <span className="text-gray-900">Closed</span>
               </div>
             </div>
           </div>
