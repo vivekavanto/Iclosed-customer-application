@@ -609,7 +609,7 @@ export default function PersonalInformationDrawer({
           {/* Signing method */}
           <div>
             <FieldLabel
-              label="Would you like to sign the documents in person or virtually?"
+              label="Would you like to sign the documents virtually or in person?"
               htmlFor="signingMethod"
               required
             />
@@ -620,8 +620,8 @@ export default function PersonalInformationDrawer({
               placeholder="Select signing method"
               error={errors.signingMethod}
               options={[
-                { label: "In person", value: "in_person" },
                 { label: "Virtually", value: "virtually" },
+                { label: "In person", value: "in_person" },
               ]}
             />
             <FieldError msg={errors.signingMethod} />
