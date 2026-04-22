@@ -670,8 +670,9 @@ export default function UploadIdentificationDrawer({
     if (!uploadKeys.length) return;
 
     const uploads = uploadKeys.map(async (k) => {
+      const file = filesBySlot[k] as File;
       const fd = new FormData();
-      fd.append("file", filesBySlot[k] as File);
+      fd.append("file", file);
       fd.append("lead_id", leadId ?? "unknown");
       // Keep camera uploads aligned with manual uploads to satisfy DB constraints.
       fd.append("doc_type", DOC_TYPE);
@@ -679,10 +680,12 @@ export default function UploadIdentificationDrawer({
       const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
       const data = await res.json();
       if (!data.success) throw new Error(`${SLOT_LABELS[k]}: ${data.error ?? "Upload failed"}`);
-      return k;
+      const url: string | undefined = data.url ?? data.file_url;
+      if (!url) throw new Error(`${SLOT_LABELS[k]}: upload did not return a URL.`);
+      return { slot: k, file, url };
     });
 
-    await Promise.all(uploads);
+    const uploaded = await Promise.all(uploads);
 
     if (taskId) {
       const respRes = await fetch("/api/task-responses", {
@@ -690,10 +693,11 @@ export default function UploadIdentificationDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           task_id: taskId,
-          responses: uploadKeys.map((k) => ({
-            field_label: SLOT_LABELS[k],
+          responses: uploaded.map(({ slot, file, url }) => ({
+            field_label: SLOT_LABELS[slot],
             field_type: "file",
-            value: filesBySlot[k]?.name || "ID Document",
+            file_url: url,
+            file_name: file.name,
           })),
         }),
       });
@@ -767,9 +771,12 @@ export default function UploadIdentificationDrawer({
         const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
         const data = await res.json();
         if (!data.success) throw new Error(`${s.file.name}: ${data.error ?? "Upload failed"}`);
+        const url: string | undefined = data.url ?? data.file_url;
+        if (!url) throw new Error(`${s.file.name}: upload did not return a URL.`);
+        return { selected: s, url };
       });
 
-      await Promise.all(uploads);
+      const uploaded = await Promise.all(uploads);
 
       if (taskId) {
         const respRes = await fetch("/api/task-responses", {
@@ -777,10 +784,11 @@ export default function UploadIdentificationDrawer({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             task_id: taskId,
-            responses: selected.map((s) => ({
+            responses: uploaded.map(({ selected: s, url }) => ({
               field_label: labelText(s.label),
               field_type: "file",
-              value: s.file.name,
+              file_url: url,
+              file_name: s.file.name,
             })),
           }),
         });

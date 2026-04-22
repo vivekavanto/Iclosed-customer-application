@@ -65,6 +65,163 @@ const EMPTY: FormData = {
   signingMethod: "",
 };
 
+type SlotKey = keyof FormData;
+
+interface DbField {
+  id: string;
+  field_type: string;
+  label: string;
+  placeholder: string | null;
+  required: boolean;
+  order_index: number;
+  options: { label: string; value: string }[] | null | unknown;
+}
+
+interface DbResponse {
+  field_id: string | null;
+  field_label: string;
+  value: string | null;
+  file_url: string | null;
+  file_name: string | null;
+}
+
+// Keyword-based matchers so tiny label variations ("Phone Number" vs "Phone number")
+// between the DB and the UI don't break the mapping.
+const SLOT_MATCHERS: Record<SlotKey, (label: string) => boolean> = {
+  phone: (l) => l.includes("phone") && !l.includes("employer") && !l.includes("business"),
+  streetAddress: (l) => l.includes("street"),
+  city: (l) => l === "city" || l.startsWith("city"),
+  postalCode: (l) => l.includes("postal"),
+  maritalStatus: (l) => l.includes("marital"),
+  propertyUse: (l) => l.includes("primary residence") && l.includes("investment"),
+  previouslyOwned: (l) => l.includes("ever owned"),
+  citizenshipStatus: (l) => l.includes("citizenship"),
+  livedOutsideCanada: (l) => l.includes("365 days") || (l.includes("lived") && l.includes("canada")),
+  occupation: (l) => l.includes("occupation"),
+  employerPhone: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")),
+  sourceOfFunds: (l) => l.includes("source of funds"),
+  signingMethod: (l) => l.includes("sign") && (l.includes("person") || l.includes("virtually")),
+};
+
+// Fallback content used when DB has no field for a given slot.
+// Option values are aligned with the current DB seed so saved responses are consistent
+// regardless of whether the fetch succeeded or fell back.
+interface SlotFallback {
+  label: string;
+  fieldType: string;
+  placeholder?: string;
+  required: boolean;
+  options?: { label: string; value: string }[];
+}
+
+const SLOT_FALLBACKS: Record<SlotKey, SlotFallback> = {
+  phone: { label: "Phone number", fieldType: "phone", placeholder: "(416) 555-1234", required: true },
+  streetAddress: { label: "Street address", fieldType: "text", placeholder: "e.g. 10 Milner Business Court", required: true },
+  city: { label: "City", fieldType: "text", placeholder: "e.g. Toronto", required: true },
+  postalCode: { label: "Postal code", fieldType: "text", placeholder: "e.g. M1B 3C6", required: true },
+  maritalStatus: {
+    label: "Marital Status",
+    fieldType: "select",
+    placeholder: "Select marital status",
+    required: true,
+    options: [
+      { label: "Single", value: "single" },
+      { label: "Married", value: "married" },
+      { label: "Common-law", value: "common_law" },
+      { label: "Divorced", value: "divorced" },
+      { label: "Separated with formal separation agreement", value: "separated_formal" },
+      { label: "Separated with no formal separation agreement", value: "separated_no_formal" },
+    ],
+  },
+  propertyUse: {
+    label: "Is this purchase property your primary residence or an investment property?",
+    fieldType: "select",
+    placeholder: "Select property use",
+    required: true,
+    options: [
+      { label: "Primary", value: "primary" },
+      { label: "Investment property", value: "investment" },
+    ],
+  },
+  previouslyOwned: {
+    label: "Have you or your spouse ever owned a property?",
+    fieldType: "select",
+    placeholder: "Select an option",
+    required: true,
+    options: [
+      { label: "No (first time)", value: "no" },
+      { label: "Yes", value: "yes" },
+      { label: "Other", value: "other" },
+    ],
+  },
+  citizenshipStatus: {
+    label: "What is your citizenship status?",
+    fieldType: "select",
+    placeholder: "Select citizenship status",
+    required: true,
+    options: [
+      { label: "Canadian citizen", value: "canadian_citizen" },
+      { label: "Permanent resident", value: "permanent_resident" },
+      { label: "Visa", value: "visa" },
+      { label: "Granted refugee status in Canada", value: "refugee_status" },
+      { label: "Non-Citizen or Unsure", value: "non_citizen_unsure" },
+    ],
+  },
+  livedOutsideCanada: {
+    label: "In the past 365 days, have you lived outside of Canada for 183 or more days?",
+    fieldType: "select",
+    placeholder: "Select an option",
+    required: true,
+    options: [
+      { label: "No", value: "no" },
+      { label: "Yes", value: "yes" },
+    ],
+  },
+  occupation: { label: "What is your occupation?", fieldType: "text", placeholder: "e.g. Engineer", required: true },
+  employerPhone: { label: "Business/Employer Phone Number", fieldType: "phone", placeholder: "(416) 555-1234", required: false },
+  sourceOfFunds: {
+    label: "What are your source of funds for the purchase?",
+    fieldType: "textarea",
+    placeholder: "e.g. Employment income, savings, gift from family...",
+    required: true,
+  },
+  signingMethod: {
+    label: "Would you like to sign the documents virtually or in person?",
+    fieldType: "select",
+    placeholder: "Select signing method",
+    required: true,
+    options: [
+      { label: "In person", value: "in_person" },
+      { label: "Virtually", value: "virtually" },
+    ],
+  },
+};
+
+interface ResolvedSlot {
+  id: string | null;
+  label: string;
+  fieldType: string;
+  placeholder?: string;
+  required: boolean;
+  options: { label: string; value: string }[];
+}
+
+function resolveSlot(key: SlotKey, dbFields: DbField[]): ResolvedSlot {
+  const fb = SLOT_FALLBACKS[key];
+  const match = dbFields.find((f) =>
+    SLOT_MATCHERS[key](String(f.label ?? "").trim().toLowerCase()),
+  );
+  const dbOptions = Array.isArray(match?.options) ? (match!.options as { label: string; value: string }[]) : null;
+  return {
+    id: match?.id ?? null,
+    label: match?.label ?? fb.label,
+    fieldType: match?.field_type ?? fb.fieldType,
+    placeholder: match?.placeholder ?? fb.placeholder,
+    required: match?.required ?? fb.required,
+    options: dbOptions && dbOptions.length > 0 ? dbOptions : fb.options ?? [],
+  };
+}
+
 // Format phone as (416) 555-1234
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -229,6 +386,28 @@ export default function PersonalInformationDrawer({
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
+  const [dbFields, setDbFields] = useState<DbField[]>([]);
+
+  // Fetch DB-driven field definitions (labels, options, required, field_id) for this task.
+  // On failure or missing template, the drawer falls back to SLOT_FALLBACKS so UI still renders.
+  useEffect(() => {
+    if (!open || !taskId) return;
+    let cancelled = false;
+    fetch(`/api/task-form-fields?task_id=${encodeURIComponent(taskId)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return;
+        if (j?.success && Array.isArray(j.fields)) {
+          setDbFields(j.fields as DbField[]);
+        }
+      })
+      .catch(() => {
+        /* fallback lists render */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, taskId]);
 
   // Initialize form with property data when opened
   useEffect(() => {
@@ -271,6 +450,23 @@ export default function PersonalInformationDrawer({
     onClose();
   }
 
+  // Resolve every slot (label, options, field_id, required) from DB fields with safe fallbacks.
+  const slots: Record<SlotKey, ResolvedSlot> = {
+    phone: resolveSlot("phone", dbFields),
+    streetAddress: resolveSlot("streetAddress", dbFields),
+    city: resolveSlot("city", dbFields),
+    postalCode: resolveSlot("postalCode", dbFields),
+    maritalStatus: resolveSlot("maritalStatus", dbFields),
+    propertyUse: resolveSlot("propertyUse", dbFields),
+    previouslyOwned: resolveSlot("previouslyOwned", dbFields),
+    citizenshipStatus: resolveSlot("citizenshipStatus", dbFields),
+    livedOutsideCanada: resolveSlot("livedOutsideCanada", dbFields),
+    occupation: resolveSlot("occupation", dbFields),
+    employerPhone: resolveSlot("employerPhone", dbFields),
+    sourceOfFunds: resolveSlot("sourceOfFunds", dbFields),
+    signingMethod: resolveSlot("signingMethod", dbFields),
+  };
+
   async function handleSave(asDraft = false) {
     if (!asDraft) {
       const errs = validate(form);
@@ -282,7 +478,7 @@ export default function PersonalInformationDrawer({
         return;
       }
     }
-    
+
     if (!taskId) {
       console.warn("No task ID provided to save against.");
       return;
@@ -290,22 +486,29 @@ export default function PersonalInformationDrawer({
 
     if (asDraft) setSavingDraft(true);
     else setSaving(true);
-    
+
     try {
+      const mk = (key: SlotKey, value: string) => ({
+        field_id: slots[key].id,
+        field_label: slots[key].label,
+        field_type: slots[key].fieldType,
+        value,
+      });
+
       const responses = [
-        { field_label: "Phone number", field_type: "tel", value: form.phone },
-        { field_label: "Street address", field_type: "text", value: form.streetAddress },
-        { field_label: "City", field_type: "text", value: form.city },
-        { field_label: "Postal code", field_type: "text", value: form.postalCode },
-        { field_label: "Marital Status", field_type: "select", value: form.maritalStatus },
-        { field_label: "Property Use", field_type: "select", value: form.propertyUse },
-        { field_label: "Previously Owned", field_type: "select", value: form.previouslyOwned },
-        { field_label: "Citizenship Status", field_type: "select", value: form.citizenshipStatus },
-        { field_label: "Lived Outside Canada", field_type: "select", value: form.livedOutsideCanada },
-        { field_label: "Occupation", field_type: "text", value: form.occupation },
-        { field_label: "Employer Phone", field_type: "tel", value: form.employerPhone },
-        { field_label: "Source of funds", field_type: "textarea", value: form.sourceOfFunds },
-        { field_label: "Signing method", field_type: "select", value: form.signingMethod },
+        mk("phone", form.phone),
+        mk("streetAddress", form.streetAddress),
+        mk("city", form.city),
+        mk("postalCode", form.postalCode),
+        mk("maritalStatus", form.maritalStatus),
+        mk("propertyUse", form.propertyUse),
+        mk("previouslyOwned", form.previouslyOwned),
+        mk("citizenshipStatus", form.citizenshipStatus),
+        mk("livedOutsideCanada", form.livedOutsideCanada),
+        mk("occupation", form.occupation),
+        mk("employerPhone", form.employerPhone),
+        mk("sourceOfFunds", form.sourceOfFunds),
+        mk("signingMethod", form.signingMethod),
       ];
 
       const res = await fetch("/api/task-responses", {
@@ -381,13 +584,13 @@ export default function PersonalInformationDrawer({
 
           {/* Phone number */}
           <div>
-            <FieldLabel label="Phone number" htmlFor="phone" required />
+            <FieldLabel label={slots.phone.label} htmlFor="phone" required={slots.phone.required} />
             <TextInput
               id="phone"
               type="tel"
               value={form.phone}
               onChange={(v) => set("phone", formatPhone(v))}
-              placeholder="(416) 555-1234"
+              placeholder={slots.phone.placeholder ?? "(416) 555-1234"}
               error={errors.phone}
             />
             <FieldError msg={errors.phone} />
@@ -398,34 +601,34 @@ export default function PersonalInformationDrawer({
             <p className="text-sm font-bold text-gray-900 mb-3">Current address</p>
             <div className="space-y-3">
               <div>
-                <FieldLabel label="Street address" htmlFor="streetAddress" required />
+                <FieldLabel label={slots.streetAddress.label} htmlFor="streetAddress" required={slots.streetAddress.required} />
                 <TextInput
                   id="streetAddress"
                   value={form.streetAddress}
                   onChange={(v) => set("streetAddress", v)}
-                  placeholder="e.g. 10 Milner Business Court"
+                  placeholder={slots.streetAddress.placeholder ?? "e.g. 10 Milner Business Court"}
                   error={errors.streetAddress}
                 />
                 <FieldError msg={errors.streetAddress} />
               </div>
               <div>
-                <FieldLabel label="City" htmlFor="city" required />
+                <FieldLabel label={slots.city.label} htmlFor="city" required={slots.city.required} />
                 <TextInput
                   id="city"
                   value={form.city}
                   onChange={(v) => set("city", v)}
-                  placeholder="e.g. Toronto"
+                  placeholder={slots.city.placeholder ?? "e.g. Toronto"}
                   error={errors.city}
                 />
                 <FieldError msg={errors.city} />
               </div>
               <div>
-                <FieldLabel label="Postal code" htmlFor="postalCode" required />
+                <FieldLabel label={slots.postalCode.label} htmlFor="postalCode" required={slots.postalCode.required} />
                 <TextInput
                   id="postalCode"
                   value={form.postalCode}
                   onChange={(v) => set("postalCode", v)}
-                  placeholder="e.g. M1B 3C6"
+                  placeholder={slots.postalCode.placeholder ?? "e.g. M1B 3C6"}
                   error={errors.postalCode}
                 />
                 <FieldError msg={errors.postalCode} />
@@ -435,21 +638,14 @@ export default function PersonalInformationDrawer({
 
           {/* Marital Status */}
           <div>
-            <FieldLabel label="Marital Status" htmlFor="maritalStatus" required />
+            <FieldLabel label={slots.maritalStatus.label} htmlFor="maritalStatus" required={slots.maritalStatus.required} />
             <SelectInput
               id="maritalStatus"
               value={form.maritalStatus}
               onChange={(v) => set("maritalStatus", v)}
-              placeholder="Select marital status"
+              placeholder={slots.maritalStatus.placeholder ?? "Select marital status"}
               error={errors.maritalStatus}
-              options={[
-                { label: "Single", value: "single" },
-                { label: "Married", value: "married" },
-                { label: "Common-law", value: "common-law" },
-                { label: "Divorced", value: "divorced" },
-                { label: "Separated with formal separation agreement", value: "separated with formal separation agreement" },
-                { label: "Separated with no formal separation agreement", value: "separated with no formal separation agreement" },
-              ]}
+              options={slots.maritalStatus.options}
             />
             <FieldError msg={errors.maritalStatus} />
           </div>
@@ -457,22 +653,18 @@ export default function PersonalInformationDrawer({
           {/* Primary residence or investment */}
           <div>
             <FieldLabel
-              label="Is this purchase property your primary residence or an investment property?"
+              label={slots.propertyUse.label}
               htmlFor="propertyUse"
-              required
+              required={slots.propertyUse.required}
               tooltip="This affects your eligibility for certain tax rebates and programs."
             />
             <SelectInput
               id="propertyUse"
               value={form.propertyUse}
               onChange={(v) => set("propertyUse", v)}
-              placeholder="Select property use"
+              placeholder={slots.propertyUse.placeholder ?? "Select property use"}
               error={errors.propertyUse}
-              options={[
-                { label: "Primary", value: "primary" },
-                { label: "Investment property", value: "investment" },
-                
-              ]}
+              options={slots.propertyUse.options}
             />
             <FieldError msg={errors.propertyUse} />
           </div>
@@ -480,22 +672,18 @@ export default function PersonalInformationDrawer({
           {/* Previously owned */}
           <div>
             <FieldLabel
-              label="Have you or your spouse ever owned a property?"
+              label={slots.previouslyOwned.label}
               htmlFor="previouslyOwned"
-              required
+              required={slots.previouslyOwned.required}
               tooltip="First-time homebuyers may qualify for land transfer tax rebates."
             />
             <SelectInput
               id="previouslyOwned"
               value={form.previouslyOwned}
               onChange={(v) => set("previouslyOwned", v)}
-              placeholder="Select an option"
+              placeholder={slots.previouslyOwned.placeholder ?? "Select an option"}
               error={errors.previouslyOwned}
-              options={[
-                { label: "No (first time)", value: "no" },
-                { label: "Yes", value: "yes" },
-                { label: "Other", value: "other" },
-              ]}
+              options={slots.previouslyOwned.options}
             />
             <FieldError msg={errors.previouslyOwned} />
           </div>
@@ -503,24 +691,18 @@ export default function PersonalInformationDrawer({
           {/* Citizenship status */}
           <div>
             <FieldLabel
-              label="What is your citizenship status?"
+              label={slots.citizenshipStatus.label}
               htmlFor="citizenshipStatus"
-              required
+              required={slots.citizenshipStatus.required}
               tooltip="Required for government reporting and tax purposes."
             />
             <SelectInput
               id="citizenshipStatus"
               value={form.citizenshipStatus}
               onChange={(v) => set("citizenshipStatus", v)}
-              placeholder="Select citizenship status"
+              placeholder={slots.citizenshipStatus.placeholder ?? "Select citizenship status"}
               error={errors.citizenshipStatus}
-              options={[
-                { label: "Canadian citizen", value: "citizen" },
-                { label: "Permanent resident", value: "permanent_resident" },
-                { label: "Visa", value: "visa" },
-                { label: "Granted refugee status in Canada", value: "granted_refugee_status" },
-                { label: "Non-Citizen or Unsure", value: "non_citizen_&_unsure" },
-              ]}
+              options={slots.citizenshipStatus.options}
             />
             <FieldError msg={errors.citizenshipStatus} />
           </div>
@@ -528,21 +710,18 @@ export default function PersonalInformationDrawer({
           {/* Lived outside Canada */}
           <div>
             <FieldLabel
-              label="In the past 365 days, have you lived outside of Canada for 183 or more days?"
+              label={slots.livedOutsideCanada.label}
               htmlFor="livedOutsideCanada"
-              required
+              required={slots.livedOutsideCanada.required}
               tooltip="This may affect applicable taxes under the Non-Resident Speculation Tax (NRST)."
             />
             <SelectInput
               id="livedOutsideCanada"
               value={form.livedOutsideCanada}
               onChange={(v) => set("livedOutsideCanada", v)}
-              placeholder="Select an option"
+              placeholder={slots.livedOutsideCanada.placeholder ?? "Select an option"}
               error={errors.livedOutsideCanada}
-              options={[
-                { label: "No", value: "no" },
-                { label: "Yes", value: "yes" },
-              ]}
+              options={slots.livedOutsideCanada.options}
             />
             <FieldError msg={errors.livedOutsideCanada} />
           </div>
@@ -550,16 +729,16 @@ export default function PersonalInformationDrawer({
           {/* Occupation */}
           <div>
             <FieldLabel
-              label="What is your occupation?"
+              label={slots.occupation.label}
               htmlFor="occupation"
-              required
+              required={slots.occupation.required}
               tooltip="Used for identity verification purposes."
             />
             <TextInput
               id="occupation"
               value={form.occupation}
               onChange={(v) => set("occupation", v)}
-              placeholder="e.g. Engineer"
+              placeholder={slots.occupation.placeholder ?? "e.g. Engineer"}
               error={errors.occupation}
             />
             <FieldError msg={errors.occupation} />
@@ -568,8 +747,9 @@ export default function PersonalInformationDrawer({
           {/* Employer phone */}
           <div>
             <FieldLabel
-              label="Business/Employer Phone Number"
+              label={slots.employerPhone.label}
               htmlFor="employerPhone"
+              required={slots.employerPhone.required}
               tooltip="Optional — provide if you are employed."
             />
             <TextInput
@@ -577,7 +757,7 @@ export default function PersonalInformationDrawer({
               type="tel"
               value={form.employerPhone}
               onChange={(v) => set("employerPhone", formatPhone(v))}
-              placeholder="(416) 555-1234"
+              placeholder={slots.employerPhone.placeholder ?? "(416) 555-1234"}
               error={errors.employerPhone}
             />
             <FieldError msg={errors.employerPhone} />
@@ -586,16 +766,16 @@ export default function PersonalInformationDrawer({
           {/* Source of funds */}
           <div>
             <FieldLabel
-              label="What are your source of funds for the purchase?"
+              label={slots.sourceOfFunds.label}
               htmlFor="sourceOfFunds"
-              required
+              required={slots.sourceOfFunds.required}
               tooltip="Required under anti-money laundering regulations."
             />
             <textarea
               id="sourceOfFunds"
               value={form.sourceOfFunds}
               onChange={(e) => set("sourceOfFunds", e.target.value)}
-              placeholder="e.g. Employment income, savings, gift from family..."
+              placeholder={slots.sourceOfFunds.placeholder ?? "e.g. Employment income, savings, gift from family..."}
               rows={3}
               className={[
                 inputBase,
@@ -609,20 +789,17 @@ export default function PersonalInformationDrawer({
           {/* Signing method */}
           <div>
             <FieldLabel
-              label="Would you like to sign the documents virtually or in person?"
+              label={slots.signingMethod.label}
               htmlFor="signingMethod"
-              required
+              required={slots.signingMethod.required}
             />
             <SelectInput
               id="signingMethod"
               value={form.signingMethod}
               onChange={(v) => set("signingMethod", v)}
-              placeholder="Select signing method"
+              placeholder={slots.signingMethod.placeholder ?? "Select signing method"}
               error={errors.signingMethod}
-              options={[
-                { label: "Virtually", value: "virtually" },
-                { label: "In person", value: "in_person" },
-              ]}
+              options={slots.signingMethod.options}
             />
             <FieldError msg={errors.signingMethod} />
           </div>

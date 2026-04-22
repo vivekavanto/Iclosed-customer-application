@@ -3,10 +3,13 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate } from "@/lib/email-templates/milestone";
 
 const CITIZENSHIP_LABELS: Record<string, string> = {
+  canadian_citizen: "Canadian citizen",
   citizen: "Canadian citizen",
   permanent_resident: "Permanent resident",
   visa: "Visa",
+  refugee_status: "Granted refugee status in Canada",
   granted_refugee_status: "Granted refugee status in Canada",
+  non_citizen_unsure: "Non-Citizen or Unsure",
   "non_citizen_&_unsure": "Non-Citizen or Unsure",
 };
 

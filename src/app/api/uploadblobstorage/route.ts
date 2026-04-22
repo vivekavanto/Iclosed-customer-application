@@ -41,7 +41,11 @@ export async function POST(req: Request) {
 
     if (error) throw new Error(error.message);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      url: blob.url,
+      file_name: file.name,
+    });
 
   } catch (err: any) {
     console.error("Upload error:", err.message || err);

@@ -4,6 +4,31 @@ import { syncSharedTaskCompletion, syncSharedTaskResponses } from "@/lib/syncSha
 import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
 
+// Normalize a citizenship value (possibly legacy or free-text) to the canonical set
+// the admin panel expects: canadian_citizen | permanent_resident | visa | refugee_status | non_citizen_unsure.
+// Unknown values pass through unchanged so no data is silently dropped.
+function normalizeCitizenshipValue(raw: string): string | null {
+  const v = (raw || "").trim().toLowerCase();
+  if (!v) return null;
+  const canonical = [
+    "canadian_citizen",
+    "permanent_resident",
+    "visa",
+    "refugee_status",
+    "non_citizen_unsure",
+  ];
+  if (canonical.includes(v)) return v;
+  if (v === "citizen") return "canadian_citizen";
+  if (v === "granted_refugee_status") return "refugee_status";
+  if (v === "non_citizen_&_unsure") return "non_citizen_unsure";
+  if (v.includes("non") && (v.includes("citizen") || v.includes("unsure"))) return "non_citizen_unsure";
+  if (v.includes("permanent")) return "permanent_resident";
+  if (v.includes("refugee")) return "refugee_status";
+  if (v.includes("visa")) return "visa";
+  if (v.includes("canadian")) return "canadian_citizen";
+  return v;
+}
+
 /**
  * POST /api/task-responses
  *
@@ -121,6 +146,39 @@ export async function POST(req: Request) {
         sendCitizenshipFlagEmail(task.deal_id, String(citizenshipResp.value)).catch(
           (err) => console.error("[CitizenshipFlag] Trigger failed:", err),
         );
+      }
+
+      // Mirror citizenship_status onto the lead so the admin panel can flag/filter
+      // without joining task_responses. Runs for every citizenship answer, not just
+      // the non-citizen flag — the admin panel may want to display the status regardless.
+      if (citizenshipResp && task.deal_id) {
+        const normalized = normalizeCitizenshipValue(String(citizenshipResp.value ?? ""));
+        if (normalized) {
+          const { data: dealRow } = await supabaseAdmin
+            .from("deals")
+            .select("lead_id")
+            .eq("id", task.deal_id)
+            .single();
+          if (dealRow?.lead_id) {
+            const { error: leadUpdateError } = await supabaseAdmin
+              .from("leads")
+              .update({ citizenship_status: normalized })
+              .eq("id", dealRow.lead_id);
+            if (leadUpdateError) {
+              console.error(
+                "[CitizenshipMirror] Failed to mirror to leads:",
+                leadUpdateError.message,
+              );
+            } else {
+              console.log(
+                "[CitizenshipMirror] Wrote",
+                normalized,
+                "to lead",
+                dealRow.lead_id,
+              );
+            }
+          }
+        }
       }
 
       // Check if all tasks in the milestone are now completed
