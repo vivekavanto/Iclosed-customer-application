@@ -11,6 +11,19 @@ export async function POST(req: Request) {
     const doc_type = formData.get("doc_type") as string | null;
     const custom_type = formData.get("custom_type") as string | null;
 
+    const isIdentificationRaw = formData.get("is_identification");
+    const is_identification =
+      isIdentificationRaw === "true"
+        ? true
+        : isIdentificationRaw === "false"
+          ? false
+          : null;
+    const document_type = (formData.get("document_type") as string | null) || null;
+    const side = (formData.get("side") as string | null) || null;
+    const side_requirement = (formData.get("side_requirement") as string | null) || null;
+    const confidence = (formData.get("confidence") as string | null) || null;
+    const detection_reason = (formData.get("detection_reason") as string | null) || null;
+
     if (!file) throw new Error("No file provided");
     if (!lead_id) throw new Error("No lead_id provided");
     if (!doc_type) throw new Error("No doc_type provided");
@@ -37,6 +50,12 @@ export async function POST(req: Request) {
         custom_type: custom_type || null,
         file_name: file.name,
         file_url: blob.url,
+        is_identification,
+        document_type,
+        side,
+        side_requirement,
+        confidence,
+        detection_reason,
       });
 
     if (error) throw new Error(error.message);

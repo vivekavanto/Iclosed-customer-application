@@ -203,6 +203,69 @@ async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
   return new File([blob], filename, { type: "image/jpeg" });
 }
 
+type DetectionFetchResult =
+  | { ok: true; detection: DetectionResult }
+  | { ok: false; error: string };
+
+async function fetchDetection(file: File, timeoutMs = 30_000): Promise<DetectionFetchResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/identify-document", {
+      method: "POST",
+      body: fd,
+      signal: controller.signal,
+    });
+    const data = await res
+      .json()
+      .catch(() => ({ success: false, error: "Invalid response from server." }));
+    if (!data.success) {
+      return { ok: false, error: data.error ?? "Detection failed." };
+    }
+    const r = data.result as {
+      is_identification: boolean;
+      document_type: string | null;
+      side: "front" | "back" | "unknown";
+      side_requirement: "single-sided" | "front-and-back" | "unknown";
+      confidence: "high" | "medium" | "low";
+      reason: string;
+    };
+    return {
+      ok: true,
+      detection: {
+        isIdentification: r.is_identification,
+        documentType: r.document_type,
+        side: r.side,
+        sideRequirement: r.side_requirement ?? "unknown",
+        confidence: r.confidence,
+        reason: r.reason,
+      },
+    };
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error && err.name === "AbortError"
+        ? "Detection timed out."
+        : err instanceof Error
+          ? err.message
+          : "Detection failed.";
+    return { ok: false, error: message };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function appendDetectionFields(fd: FormData, det: DetectionResult | null) {
+  if (!det) return;
+  fd.append("is_identification", det.isIdentification ? "true" : "false");
+  if (det.documentType) fd.append("document_type", det.documentType);
+  fd.append("side", det.side);
+  fd.append("side_requirement", det.sideRequirement);
+  fd.append("confidence", det.confidence);
+  if (det.reason) fd.append("detection_reason", det.reason);
+}
+
 // ── Acceptable Documents Dropdown (LSO By-Law 7.1) ────────────────────────────
 
 function AcceptableDocumentsDropdown() {
@@ -397,74 +460,30 @@ export default function UploadIdentificationDrawer({
   }
 
   async function detectIdentification(id: string, file: File) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/identify-document", {
-        method: "POST",
-        body: fd,
-        signal: controller.signal,
-      });
-      const data = await res.json().catch(() => ({ success: false, error: "Invalid response from server." }));
+    const result = await fetchDetection(file);
+    const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
 
-      if (!data.success) {
-        const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
-        setSelected((prev) =>
-          prev.map((s) =>
-            s.id === id
-              ? { ...s, detecting: false, detection: null, detectionError: data.error ?? "Detection failed." }
-              : s,
-          ),
-        );
-        setDetectionFailModal({ open: true, fileId: id, fileName });
-        return;
-      }
-
-      const r = data.result as {
-        is_identification: boolean;
-        document_type: string | null;
-        side: "front" | "back" | "unknown";
-        side_requirement: "single-sided" | "front-and-back" | "unknown";
-        confidence: "high" | "medium" | "low";
-        reason: string;
-      };
-
-      const detection: DetectionResult = {
-        isIdentification: r.is_identification,
-        documentType: r.document_type,
-        side: r.side,
-        sideRequirement: r.side_requirement ?? "unknown",
-        confidence: r.confidence,
-        reason: r.reason,
-      };
-
+    if (!result.ok) {
       setSelected((prev) =>
         prev.map((s) =>
-          s.id === id ? { ...s, detecting: false, detection, detectionError: null } : s,
-        ),
-      );
-      if (!detection.isIdentification) {
-        const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
-        setDetectionFailModal({ open: true, fileId: id, fileName });
-      }
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error && err.name === "AbortError"
-          ? "Detection timed out."
-          : err instanceof Error
-            ? err.message
-            : "Detection failed.";
-      const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
-      setSelected((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, detecting: false, detection: null, detectionError: message } : s,
+          s.id === id
+            ? { ...s, detecting: false, detection: null, detectionError: result.error }
+            : s,
         ),
       );
       setDetectionFailModal({ open: true, fileId: id, fileName });
-    } finally {
-      clearTimeout(timeoutId);
+      return;
+    }
+
+    setSelected((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? { ...s, detecting: false, detection: result.detection, detectionError: null }
+          : s,
+      ),
+    );
+    if (!result.detection.isIdentification) {
+      setDetectionFailModal({ open: true, fileId: id, fileName });
     }
   }
 
@@ -689,6 +708,18 @@ export default function UploadIdentificationDrawer({
     const uploadKeys = CAMERA_STEPS.filter((k) => filesBySlot[k]);
     if (!uploadKeys.length) return;
 
+    // Run Gemini detection on each captured image so camera uploads carry the
+    // same metadata as manual uploads. Detection failures are non-blocking —
+    // the file still uploads with NULL detection columns.
+    const detectionEntries = await Promise.all(
+      uploadKeys.map(async (k) => {
+        const file = filesBySlot[k] as File;
+        const r = await fetchDetection(file);
+        return [k, r.ok ? r.detection : null] as const;
+      }),
+    );
+    const detectionBySlot = new Map<SlotKey, DetectionResult | null>(detectionEntries);
+
     const uploads = uploadKeys.map(async (k) => {
       const file = filesBySlot[k] as File;
       const fd = new FormData();
@@ -697,6 +728,7 @@ export default function UploadIdentificationDrawer({
       // Keep camera uploads aligned with manual uploads to satisfy DB constraints.
       fd.append("doc_type", DOC_TYPE);
       fd.append("custom_type", SLOT_CUSTOM_TYPES[k]);
+      appendDetectionFields(fd, detectionBySlot.get(k) ?? null);
       const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
       const data = await res.json();
       if (!data.success) throw new Error(`${SLOT_LABELS[k]}: ${data.error ?? "Upload failed"}`);
@@ -788,6 +820,7 @@ export default function UploadIdentificationDrawer({
         fd.append("lead_id", leadId);
         fd.append("doc_type", DOC_TYPE);
         fd.append("custom_type", s.label);
+        appendDetectionFields(fd, s.detection);
         const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
         const data = await res.json();
         if (!data.success) throw new Error(`${s.file.name}: ${data.error ?? "Upload failed"}`);
