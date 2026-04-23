@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Check, X } from "lucide-react";
+import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
 
 const brands = [
   "buy.ca",
@@ -175,18 +176,13 @@ function SiteHeader() {
 
         <div className="flex items-center gap-1 sm:gap-2">
           <Link
-            href="/login"
-            className="px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-[#C10007] hover:!text-white transition-colors"
-          >
-            Login
-          </Link>
-          <Link
             href="/intake"
             className="px-3 sm:px-5 py-2 text-sm font-semibold !text-white bg-[#C10007] rounded-sm hover:bg-[#a00006] transition-colors shadow-sm"
           >
             <span className="hidden sm:inline">Start your closing</span>
             <span className="sm:hidden">Get started</span>
           </Link>
+          <HomeHeaderAuth />
         </div>
       </div>
     </header>
