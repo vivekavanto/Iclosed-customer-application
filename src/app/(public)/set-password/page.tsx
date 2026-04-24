@@ -219,7 +219,7 @@ export default function SetPasswordPage() {
               account is ready to use.
             </p>
 
-            <div className="mb-8 w-full rounded-2xl border border-gray-100 bg-gray-50 px-6 py-5 text-left">
+            {/* <div className="mb-8 w-full rounded-2xl border border-gray-100 bg-gray-50 px-6 py-5 text-left">
               <ul className="space-y-3 text-[15px] text-gray-700">
                 <li className="flex items-center gap-3">
                   <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[#7fb04a]" />
@@ -234,7 +234,7 @@ export default function SetPasswordPage() {
                   Portal access granted
                 </li>
               </ul>
-            </div>
+            </div> */}
 
             <button
               type="button"
