@@ -6,8 +6,13 @@ const DEFAULT_IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const IDLE_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_IDLE_TIMEOUT_MS) || DEFAULT_IDLE_TIMEOUT_MS;
 const STORAGE_KEY = "iclosed:lastActivity";
-const CHECK_INTERVAL_MS = 60_000;
-const ACTIVITY_THROTTLE_MS = 5_000;
+// Poll at ~quarter of the timeout so short (test) timeouts fire promptly,
+// capped between 2s and 60s.
+const CHECK_INTERVAL_MS = Math.max(
+  2_000,
+  Math.min(60_000, Math.floor(IDLE_TIMEOUT_MS / 4)),
+);
+const ACTIVITY_THROTTLE_MS = Math.min(5_000, Math.floor(IDLE_TIMEOUT_MS / 6));
 const MODAL_VISIBLE_MS = 2500;
 const SESSION_EXPIRED_EVENT = "iclosed:session-expired";
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
