@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-const IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+const DEFAULT_IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+const IDLE_TIMEOUT_MS =
+  Number(process.env.NEXT_PUBLIC_IDLE_TIMEOUT_MS) || DEFAULT_IDLE_TIMEOUT_MS;
 const STORAGE_KEY = "iclosed:lastActivity";
 const CHECK_INTERVAL_MS = 60_000;
 const ACTIVITY_THROTTLE_MS = 5_000;
 const MODAL_VISIBLE_MS = 2500;
+const SESSION_EXPIRED_EVENT = "iclosed:session-expired";
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
   "mousemove",
   "mousedown",
@@ -15,6 +18,14 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
   "touchstart",
   "click",
 ];
+
+// Same-origin /api/* calls that should NOT trigger the session-expired modal
+// when they return 401 (e.g. the login form's own auth check).
+const AUTH_401_IGNORE_PATHS = ["/api/auth/login", "/api/auth/logout"];
+
+function isIgnoredAuthPath(pathname: string): boolean {
+  return AUTH_401_IGNORE_PATHS.some((p) => pathname.startsWith(p));
+}
 
 export default function IdleLogoutGuard() {
   const [showExpired, setShowExpired] = useState(false);
@@ -37,7 +48,7 @@ export default function IdleLogoutGuard() {
       } catch {}
     };
 
-    const logout = async () => {
+    const expireSession = async () => {
       if (loggingOut) return;
       loggingOut = true;
       setShowExpired(true);
@@ -55,7 +66,7 @@ export default function IdleLogoutGuard() {
     const checkIdle = () => {
       const last = readLastActivity();
       if (last > 0 && Date.now() - last > IDLE_TIMEOUT_MS) {
-        void logout();
+        void expireSession();
       }
     };
 
@@ -65,9 +76,13 @@ export default function IdleLogoutGuard() {
       writeNow();
     };
 
+    const onSessionExpiredEvent = () => {
+      void expireSession();
+    };
+
     const initial = readLastActivity();
     if (initial > 0 && Date.now() - initial > IDLE_TIMEOUT_MS) {
-      void logout();
+      void expireSession();
       return;
     }
     if (initial === 0) writeNow();
@@ -76,10 +91,43 @@ export default function IdleLogoutGuard() {
       window.addEventListener(evt, onActivity, { passive: true }),
     );
     const intervalId = window.setInterval(checkIdle, CHECK_INTERVAL_MS);
+    window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpiredEvent);
+
+    // Intercept same-origin /api/* fetches and trigger the modal on 401.
+    const originalFetch = window.fetch.bind(window);
+    const patchedFetch: typeof window.fetch = async (input, init) => {
+      const response = await originalFetch(input, init);
+      try {
+        if (response.status === 401) {
+          const url =
+            typeof input === "string"
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input instanceof Request
+                  ? input.url
+                  : "";
+          const parsed = new URL(url, window.location.origin);
+          if (
+            parsed.origin === window.location.origin &&
+            parsed.pathname.startsWith("/api/") &&
+            !isIgnoredAuthPath(parsed.pathname)
+          ) {
+            window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+          }
+        }
+      } catch {}
+      return response;
+    };
+    window.fetch = patchedFetch;
 
     return () => {
       ACTIVITY_EVENTS.forEach((evt) => window.removeEventListener(evt, onActivity));
       window.clearInterval(intervalId);
+      window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpiredEvent);
+      if (window.fetch === patchedFetch) {
+        window.fetch = originalFetch;
+      }
     };
   }, []);
 
