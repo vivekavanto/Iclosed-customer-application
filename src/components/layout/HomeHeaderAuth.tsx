@@ -19,7 +19,17 @@ export default function HomeHeaderAuth() {
   }, []);
 
   if (resolved && user) {
-    return <ProfileDropdown user={user} />;
+    return (
+      <>
+        <Link
+          href="/dashboard"
+          className="px-3 sm:px-4 py-2 text-sm font-semibold text-[#C10007] border border-[#C10007]/30 rounded-sm hover:bg-[#C10007] hover:!text-white transition-colors"
+        >
+          Dashboard
+        </Link>
+        <ProfileDropdown user={user} />
+      </>
+    );
   }
 
   return (
