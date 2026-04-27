@@ -120,8 +120,12 @@ const testimonials = [
 
 const features = [
   {
+    title: "Post-Closing Litigation Protection",
+    desc: "Worried about potential breaches after closing? Our peace-of-mind insurance includes a litigation lawyer’s consultation and document review if a breach occurs. If your case proceeds, we work on contingency, and legal fees, which are only collected upon resolution or judgment.",
+  },
+  {
     title: "Your Deal, Your Dashboard",
-    desc: "Send, receive, and organize every document digitally—no printing, no couriers, no stress.",
+    desc: "Send, receive, and organize every document digitally. No printing, no couriers, no stress.",
   },
   {
     title: "Know What's Happening, Always",
@@ -129,7 +133,7 @@ const features = [
   },
   {
     title: "Legal Help That Works Around Your Life",
-    desc: "Whether it's a quick chat, an email clarification, or a face-to-face video consult—we're here when you need us, even after hours.",
+    desc: "Whether it's a quick chat, an email clarification, or a face-to-face video consult, we're here when you need us.",
   },
   {
     title: "Straight Talk About Costs",
@@ -137,11 +141,7 @@ const features = [
   },
   {
     title: "Unlimited Access, Zero Extra Fees",
-    desc: "Talk to us as often as you like. Ask, clarify, double-check—without worrying about added charges.",
-  },
-  {
-    title: "Post-Closing Litigation Protection",
-    desc: "Worried about potential breaches after closing? We've got you covered. Our peace-of-mind insurance includes the cost of a litigation lawyer's consultation and document review if a breach occurs. If your case proceeds, we work on a contingency fee—legal fees are only collected upon resolution or judgment.",
+    desc: "Talk to us as often as you like. Without worrying about added charges.",
   },
   {
     title: "Ongoing Support for Post-Closing Issues",
@@ -149,7 +149,7 @@ const features = [
   },
   {
     title: "Empower Yourself with Knowledge",
-    desc: "Explore our library of real estate guides, legal insights, and homeowner resources—all designed to make you feel confident and informed at every step.",
+    desc: "Explore our library of real estate guides, legal insights, and homeowner resources. All designed to make you feel confident and informed at every step.",
   },
   {
     title: "We provide a simple Post-Closing Checklist to guide your next steps",
@@ -229,10 +229,7 @@ function Hero() {
           <span className="text-[#C10007]">Made Simple.</span>
         </h1>
 
-        <p className="mx-auto mt-4 sm:mt-5 max-w-sm sm:max-w-lg text-center text-sm sm:text-lg leading-relaxed text-gray-500">
-          Close on properties at your fingertips with iClosed&apos;s client—
-          and team–synced communication.
-        </p>
+        
 
         {/* CTAs */}
         <div className="mt-7 sm:mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row px-2 sm:px-0">
@@ -252,9 +249,7 @@ function Hero() {
 
         {/* Trust signal */}
         <p className="mt-4 sm:mt-5 text-center text-[11px] sm:text-sm text-gray-400">
-          Top 10 Law firm for Ontario for the past decade
-          <span className="mx-2 text-gray-300">•</span>
-          PR Article for NW Wilson
+          Top 10 Law firm in Ontario for the past decade
         </p>
 
         {/* Hero dashboard cards */}
@@ -391,23 +386,20 @@ function HowItWorks() {
           {steps.map((s, i) => (
             <div
               key={s.num}
-              className="group flex flex-col gap-5 rounded-2xl border border-gray-100 bg-gray-50 p-6 sm:p-8 transition-all duration-300 hover:border-[#C10007]/15 hover:bg-white hover:shadow-xl hover:shadow-gray-200/60 hover:-translate-y-0.5"
+              className="group flex flex-col gap-5 rounded-2xl border border-gray-100 bg-gray-50 p-6 sm:p-8 transition-all duration-300"
             >
               {/* Top row: number badge + step label */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#C10007] text-white font-extrabold text-base shadow-md shadow-[#C10007]/25 transition-transform duration-300 group-hover:scale-105 shrink-0">
-                  {i + 1}
+                  {i + 1}                  
                 </div>
-                <span className="text-2xl font-black text-gray-100 select-none leading-none">
-                  {s.num}
-                </span>
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug">
+                  {s.title}
+                </h3>
               </div>
 
               {/* Content */}
               <div>
-                <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-snug">
-                  {s.title}
-                </h3>
                 <p className="mt-2.5 text-sm sm:text-[15px] leading-relaxed text-gray-500">
                   {s.desc}
                 </p>
@@ -440,9 +432,10 @@ function Pricing() {
         {/* 3-column card grid — all cards identical, red header + white text on hover */}
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-5 sm:items-stretch">
           {plans.map((p) => (
-            <div
+            <Link
               key={p.tag}
-              className="group flex flex-col rounded-2xl overflow-hidden border border-gray-100 shadow-md shadow-gray-200/60 bg-white transition-all duration-300 hover:shadow-xl hover:shadow-[#C10007]/10 hover:border-[#C10007]/20"
+              href="/intake"
+              className="group flex flex-col rounded-2xl overflow-hidden border border-gray-100 shadow-md shadow-gray-200/60 bg-white transition-all duration-300 hover:shadow-xl hover:shadow-[#C10007]/10 hover:border-[#C10007]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C10007]/40 focus-visible:ring-offset-2"
             >
               {/* Card header — gray-50 by default, red on hover */}
               <div className="p-6 sm:p-7 bg-gray-50 border-b border-gray-100 transition-colors duration-300 group-hover:bg-[#C10007] group-hover:border-[#C10007]">
@@ -464,13 +457,12 @@ function Pricing() {
                 <p className="flex-1 text-sm sm:text-[15px] leading-relaxed text-gray-500">
                   {p.blurb}
                 </p>
-                <Link
-                  href="/intake"
-                  className="group/cta inline-flex items-center justify-center gap-2 rounded-sm px-5 py-3.5 text-sm font-semibold border border-gray-200 text-gray-600 transition-all duration-200 active:scale-[0.97] hover:bg-[#C10007] hover:border-[#C10007] hover:!text-white"
+                <div
+                  className="inline-flex items-center justify-center gap-2 rounded-sm px-5 py-3.5 text-sm font-semibold border border-gray-200 text-gray-600 transition-all duration-200 group-hover:bg-[#C10007] group-hover:border-[#C10007] group-hover:!text-white group-focus-visible:bg-[#C10007] group-focus-visible:border-[#C10007] group-focus-visible:!text-white"
                 >
                   {p.cta}
                   <svg
-                    className="w-3.5 h-3.5 transition-transform duration-200 group-hover/cta:translate-x-0.5"
+                    className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-focus-visible:translate-x-0.5"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -482,9 +474,9 @@ function Pricing() {
                       d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"
                     />
                   </svg>
-                </Link>
+                </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
 
