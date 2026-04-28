@@ -1,9 +1,23 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
+
+const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
+const MAX_SIZE = 10 * 1024 * 1024;
+
+function validateFile(f: File): string | null {
+  const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    return "Only PDF, JPG, and PNG files are allowed.";
+  }
+  if (f.size > MAX_SIZE) {
+    return "File size must not exceed 10 MB.";
+  }
+  return null;
+}
 
 interface Step4Props {
   agreementSigned: "yes" | "no" | null;
@@ -23,7 +37,30 @@ const Step4: React.FC<Step4Props> = ({
   setUploadedFile,
 }) => {
   const [isSelected, setIsSelected] = useState<"yes" | "no" | null>(agreementSigned);
+  const [isDragging, setIsDragging] = useState(false);
   const { error: toastError } = useToast();
+
+  const handlePickFile = useCallback(
+    (f: File) => {
+      const err = validateFile(f);
+      if (err) {
+        toastError(err);
+        return;
+      }
+      setUploadedFile(f);
+    },
+    [setUploadedFile, toastError]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const f = e.dataTransfer.files?.[0];
+      if (f) handlePickFile(f);
+    },
+    [handlePickFile]
+  );
 
   useEffect(() => {
     setIsSelected(agreementSigned);
@@ -161,8 +198,18 @@ const Step4: React.FC<Step4Props> = ({
 
                   {/* Upload zone */}
                   <div
-                    className="border-2 border-dashed border-gray-300 rounded-2xl p-14 flex flex-col items-center justify-center bg-white cursor-pointer hover:border-[#C10007] transition-colors"
+                    className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                      isDragging
+                        ? "border-[#C10007] bg-red-50"
+                        : "border-gray-300 bg-white hover:border-[#C10007]"
+                    }`}
                     onClick={() => document.getElementById("agreement-file")?.click()}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
                   >
                     <UploadCloud size={28} className="text-gray-400 mb-4" />
                     <p className="text-gray-600 text-lg text-center">
@@ -174,7 +221,11 @@ const Step4: React.FC<Step4Props> = ({
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png"
                       className="hidden"
-                      onChange={(e) => e.target.files && setUploadedFile(e.target.files[0])}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handlePickFile(f);
+                        e.target.value = "";
+                      }}
                     />
                   </div>
 
