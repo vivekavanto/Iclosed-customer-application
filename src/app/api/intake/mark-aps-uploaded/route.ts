@@ -5,22 +5,31 @@ import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 
 export async function POST(req: Request) {
   try {
-    const { lead_id } = await req.json();
+    const { lead_id, side } = (await req.json()) as {
+      lead_id?: string;
+      side?: "purchase" | "sale";
+    };
 
     if (!lead_id) {
       return NextResponse.json({ success: false, error: "Missing lead_id" }, { status: 400 });
     }
 
+    // Per-side flag drives Buy & Sell. Always also flip the legacy aps_uploaded
+    // boolean so existing readers (convertLead, dashboard) keep working.
+    const update: Record<string, boolean> = { aps_uploaded: true };
+    if (side === "purchase") update.aps_uploaded_purchase = true;
+    else if (side === "sale") update.aps_uploaded_sale = true;
+
     // 1. Mark primary lead as aps_uploaded
     await supabaseAdmin
       .from("leads")
-      .update({ aps_uploaded: true })
+      .update(update)
       .eq("id", lead_id);
 
     // 2. Also mark co-person leads (children of this lead)
     await supabaseAdmin
       .from("leads")
-      .update({ aps_uploaded: true })
+      .update(update)
       .eq("parent_lead_id", lead_id);
 
     // 3. If this lead was already auto-converted (deal exists),

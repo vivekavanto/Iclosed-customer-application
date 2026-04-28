@@ -28,9 +28,27 @@ export async function POST(req: Request) {
       selling_address_postal_code,
       selling_address_province,
       aps_signed,
+      aps_signed_purchase,
+      aps_signed_sale,
       co_persons,
       referral_source,
     } = body;
+
+    // Per-side APS flags drive Buy & Sell. For single-side flows the legacy
+    // aps_signed flag is mapped onto the matching side so older callers still work.
+    const apsPurchase =
+      typeof aps_signed_purchase === "boolean"
+        ? aps_signed_purchase
+        : sub_service === "buying"
+          ? !!aps_signed
+          : null;
+    const apsSale =
+      typeof aps_signed_sale === "boolean"
+        ? aps_signed_sale
+        : sub_service === "selling"
+          ? !!aps_signed
+          : null;
+    const apsSignedAggregate = !!apsPurchase || !!apsSale || !!aps_signed;
 
     // ── Lead type ─────────────────────────────────────────────
     let lead_type = null;
@@ -145,7 +163,9 @@ export async function POST(req: Request) {
         selling_address_city,
         selling_address_postal_code,
         selling_address_province,
-        aps_signed,
+        aps_signed: apsSignedAggregate,
+        aps_signed_purchase: apsPurchase,
+        aps_signed_sale: apsSale,
         co_persons: co_persons ?? [],
         referral_source: referral_source || null,
         client_id: clientId,
@@ -188,7 +208,9 @@ export async function POST(req: Request) {
               selling_address_city,
               selling_address_postal_code,
               selling_address_province,
-              aps_signed,
+              aps_signed: apsSignedAggregate,
+              aps_signed_purchase: apsPurchase,
+              aps_signed_sale: apsSale,
               co_persons: [],
               parent_lead_id: lead.id,
               client_id: clientId,

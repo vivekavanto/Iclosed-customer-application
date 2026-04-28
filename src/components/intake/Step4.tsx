@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
@@ -19,26 +19,30 @@ function validateFile(f: File): string | null {
   return null;
 }
 
-interface Step4Props {
-  agreementSigned: "yes" | "no" | null;
-  setAgreementSigned: (value: "yes" | "no") => void;
-  setStep: (step: number) => void;
-  step: number;
-  uploadedFile: File | null;
-  setUploadedFile: (file: File | null) => void;
+type YesNo = "yes" | "no" | null;
+type Side = "purchase" | "sale";
+
+interface ApsBlockProps {
+  side: Side;
+  signed: YesNo;
+  setSigned: (v: "yes" | "no") => void;
+  file: File | null;
+  setFile: (f: File | null) => void;
 }
 
-const Step4: React.FC<Step4Props> = ({
-  agreementSigned,
-  setAgreementSigned,
-  setStep,
-  step,
-  uploadedFile,
-  setUploadedFile,
-}) => {
-  const [isSelected, setIsSelected] = useState<"yes" | "no" | null>(agreementSigned);
+const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setFile }) => {
   const [isDragging, setIsDragging] = useState(false);
   const { error: toastError } = useToast();
+
+  const inputId = `aps-file-${side}`;
+  const heading =
+    side === "purchase"
+      ? "APS for Purchasing Property"
+      : "APS for Sale Property";
+  const subheading =
+    side === "purchase"
+      ? "Have you signed the Agreement of Purchase and Sale for the property you're buying?"
+      : "Have you signed the Agreement of Purchase and Sale for the property you're selling?";
 
   const handlePickFile = useCallback(
     (f: File) => {
@@ -47,9 +51,9 @@ const Step4: React.FC<Step4Props> = ({
         toastError(err);
         return;
       }
-      setUploadedFile(f);
+      setFile(f);
     },
-    [setUploadedFile, toastError]
+    [setFile, toastError]
   );
 
   const handleDrop = useCallback(
@@ -62,9 +66,130 @@ const Step4: React.FC<Step4Props> = ({
     [handlePickFile]
   );
 
-  useEffect(() => {
-    setIsSelected(agreementSigned);
-  }, [agreementSigned]);
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-xl font-semibold text-gray-900">{heading}</h3>
+        <p className="mt-2 text-gray-500 text-sm leading-relaxed">{subheading}</p>
+      </div>
+
+      <div
+        onClick={() => setSigned("yes")}
+        className={`cursor-pointer rounded-2xl border-2 p-6 transition-all duration-200 ${
+          signed === "yes"
+            ? "border-[#C10007] bg-white shadow-md"
+            : "border-gray-200 hover:border-[#C10007] hover:shadow-sm"
+        }`}
+      >
+        <h4 className="text-lg font-semibold text-gray-900">Yes</h4>
+        <p className="mt-1 text-gray-500">I've signed the agreement.</p>
+      </div>
+
+      <div
+        onClick={() => setSigned("no")}
+        className={`cursor-pointer rounded-2xl border-2 p-6 transition-all duration-200 ${
+          signed === "no"
+            ? "border-[#C10007] bg-white shadow-md"
+            : "border-gray-200 hover:border-[#C10007] hover:shadow-sm"
+        }`}
+      >
+        <h4 className="text-lg font-semibold text-gray-900">No</h4>
+        <p className="mt-1 text-gray-500">I haven't signed it yet.</p>
+      </div>
+
+      {signed === "yes" && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <p className="text-sm font-semibold text-gray-900">
+              Upload your {heading}
+            </p>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 uppercase tracking-wide">
+              Optional
+            </span>
+          </div>
+
+          <div
+            className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+              isDragging
+                ? "border-[#C10007] bg-red-50"
+                : "border-gray-300 bg-white hover:border-[#C10007]"
+            }`}
+            onClick={() => document.getElementById(inputId)?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+          >
+            <UploadCloud size={28} className="text-gray-400 mb-4" />
+            <p className="text-gray-600 text-lg text-center">
+              Click to <span className="text-[#C10007] font-medium">browse</span> or drag & drop your file
+            </p>
+            <p className="text-gray-400 text-sm mt-2">PDF, JPG, PNG — max 10 MB</p>
+            <input
+              id={inputId}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handlePickFile(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
+          {file && (
+            <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4">
+              <p className="text-green-700 text-sm font-medium truncate">
+                ✓ {file.name}
+              </p>
+              <button
+                onClick={() => setFile(null)}
+                className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface Step4Props {
+  closingOption: "buying" | "selling" | "both" | null;
+  apsPurchaseSigned: YesNo;
+  setApsPurchaseSigned: (v: "yes" | "no") => void;
+  apsSaleSigned: YesNo;
+  setApsSaleSigned: (v: "yes" | "no") => void;
+  purchaseFile: File | null;
+  setPurchaseFile: (f: File | null) => void;
+  saleFile: File | null;
+  setSaleFile: (f: File | null) => void;
+  setStep: (step: number) => void;
+  step: number;
+}
+
+const Step4: React.FC<Step4Props> = ({
+  closingOption,
+  apsPurchaseSigned,
+  setApsPurchaseSigned,
+  apsSaleSigned,
+  setApsSaleSigned,
+  purchaseFile,
+  setPurchaseFile,
+  saleFile,
+  setSaleFile,
+  setStep,
+  step,
+}) => {
+  const { error: toastError } = useToast();
+
+  const showPurchase = closingOption === "buying" || closingOption === "both";
+  const showSale = closingOption === "selling" || closingOption === "both";
 
   const leftSteps = [
     { id: 1, label: "Select Service" },
@@ -74,12 +199,23 @@ const Step4: React.FC<Step4Props> = ({
   ];
 
   const handleNext = () => {
-    if (!isSelected) {
-      toastError("Please select whether you have a signed agreement.");
+    if (showPurchase && !apsPurchaseSigned) {
+      toastError("Please select whether you've signed the APS for the purchasing property.");
       return;
     }
-    setStep(4); // Contact step
+    if (showSale && !apsSaleSigned) {
+      toastError("Please select whether you've signed the APS for the sale property.");
+      return;
+    }
+    setStep(4);
   };
+
+  const sideHeading =
+    closingOption === "both"
+      ? "Have you signed the APS?"
+      : closingOption === "selling"
+        ? "Have you signed the APS for the sale property?"
+        : "Have you signed the APS for the purchasing property?";
 
   return (
     <div className="min-h-screen bg-white w-full">
@@ -96,7 +232,7 @@ const Step4: React.FC<Step4Props> = ({
                 Step {String(step).padStart(2, "0")}
               </span>
               <h1 className="mt-3 text-2xl xl:text-3xl font-semibold text-gray-900 leading-snug">
-                Have you signed the Agreement of Purchase and Sale?
+                {sideHeading}
               </h1>
               <p className="mt-4 text-gray-500 text-sm leading-relaxed">
                 It's the legal document outlining the terms of your deal.
@@ -144,106 +280,40 @@ const Step4: React.FC<Step4Props> = ({
 
         {/* RIGHT PANEL */}
         <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
-          <div className="space-y-6 w-full max-w-2xl">
+          <div className="space-y-8 w-full max-w-2xl">
 
             {/* Header */}
             <div>
               <h2 className="text-3xl font-semibold text-gray-900">
-                Have you signed the APS?
+                {sideHeading}
               </h2>
               <p className="mt-3 text-gray-500 text-sm leading-relaxed">
-                Let us know if you've already signed the Agreement of Purchase and Sale so we can prepare your file accordingly.
+                Let us know which Agreements of Purchase and Sale you've already signed so we can prepare your file accordingly.
               </p>
             </div>
 
-            {/* Agreement selection cards */}
-            <div
-              onClick={() => setAgreementSigned("yes")}
-              className={`cursor-pointer rounded-2xl border-2 p-8 transition-all duration-200 ${
-                agreementSigned === "yes"
-                  ? "border-[#C10007] bg-white shadow-md"
-                  : "border-gray-200 hover:border-[#C10007] hover:shadow-sm"
-              }`}
-            >
-              <h3 className="text-xl font-semibold text-gray-900">Yes</h3>
-              <p className="mt-2 text-gray-500">I've signed the agreement.</p>
-            </div>
+            {showPurchase && (
+              <ApsBlock
+                side="purchase"
+                signed={apsPurchaseSigned}
+                setSigned={setApsPurchaseSigned}
+                file={purchaseFile}
+                setFile={setPurchaseFile}
+              />
+            )}
 
-            <div
-              onClick={() => setAgreementSigned("no")}
-              className={`cursor-pointer rounded-2xl border-2 p-8 transition-all duration-200 ${
-                agreementSigned === "no"
-                  ? "border-[#C10007] bg-white shadow-md"
-                  : "border-gray-200 hover:border-[#C10007] hover:shadow-sm"
-              }`}
-            >
-              <h3 className="text-xl font-semibold text-gray-900">No</h3>
-              <p className="mt-2 text-gray-500">I haven't signed it yet.</p>
-            </div>
+            {showPurchase && showSale && (
+              <div className="border-t border-gray-200" />
+            )}
 
-            {/* Upload section — shown when agreement is signed */}
-            {agreementSigned === "yes" && (
-              <>
-                <div className="border-t border-gray-200" />
-
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <p className="text-sm font-semibold text-gray-900">
-                      Upload your Agreement of Purchase and Sale
-                    </p>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 uppercase tracking-wide">
-                      Optional
-                    </span>
-                  </div>
-
-                  {/* Upload zone */}
-                  <div
-                    className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center justify-center cursor-pointer transition-colors ${
-                      isDragging
-                        ? "border-[#C10007] bg-red-50"
-                        : "border-gray-300 bg-white hover:border-[#C10007]"
-                    }`}
-                    onClick={() => document.getElementById("agreement-file")?.click()}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setIsDragging(true);
-                    }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={handleDrop}
-                  >
-                    <UploadCloud size={28} className="text-gray-400 mb-4" />
-                    <p className="text-gray-600 text-lg text-center">
-                      Click to <span className="text-[#C10007] font-medium">browse</span> or drag & drop your file
-                    </p>
-                    <p className="text-gray-400 text-sm mt-2">PDF, JPG, PNG — max 10 MB</p>
-                    <input
-                      id="agreement-file"
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handlePickFile(f);
-                        e.target.value = "";
-                      }}
-                    />
-                  </div>
-
-                  {uploadedFile && (
-                    <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4">
-                      <p className="text-green-700 text-sm font-medium truncate">
-                        ✓ {uploadedFile.name}
-                      </p>
-                      <button
-                        onClick={() => setUploadedFile(null)}
-                        className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </>
+            {showSale && (
+              <ApsBlock
+                side="sale"
+                signed={apsSaleSigned}
+                setSigned={setApsSaleSigned}
+                file={saleFile}
+                setFile={setSaleFile}
+              />
             )}
 
             {/* Desktop button row */}

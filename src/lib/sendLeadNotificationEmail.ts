@@ -12,7 +12,7 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
     const { data: lead } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, service, sub_service, price, aps_signed, referral_source, address_street, address_unit, address_city, address_province, address_postal_code, selling_address_street, selling_address_unit, selling_address_city, selling_address_province, selling_address_postal_code, co_persons, created_at"
+        "id, first_name, last_name, email, phone, lead_type, service, sub_service, price, aps_signed, aps_signed_purchase, aps_signed_sale, referral_source, address_street, address_unit, address_city, address_province, address_postal_code, selling_address_street, selling_address_unit, selling_address_city, selling_address_province, selling_address_postal_code, co_persons, created_at"
       )
       .eq("id", leadId)
       .single();
@@ -76,6 +76,13 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
         <td style="padding: 6px 0; vertical-align:top;">${value || "—"}</td>
       </tr>`;
 
+    const yesNo = (v: unknown) => (v ? "Yes" : "No");
+    const isBoth = lead.sub_service === "both";
+    const apsRows = isBoth
+      ? `${row("APS Signed (Purchase)", yesNo(lead.aps_signed_purchase))}
+  ${row("APS Signed (Sale)", yesNo(lead.aps_signed_sale))}`
+      : row("APS Signed", yesNo(lead.aps_signed));
+
     const leadDetailsTable = `
 <table style="width:100%; border-collapse: collapse; font-size: 14px;">
   ${row("Name", fullName)}
@@ -83,7 +90,7 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
   ${row("Phone", lead.phone || "—")}
   ${row("Transaction", lead.lead_type || "—")}
   ${row("Price", priceFormatted)}
-  ${row("APS Signed", lead.aps_signed ? "Yes" : "No")}
+  ${apsRows}
   ${row("Referral", lead.referral_source || "—")}
   ${purchaseAddress ? row(lead.lead_type === "Sale" ? "Property" : "Purchase Address", purchaseAddress) : ""}
   ${sellingAddress ? row("Selling Address", sellingAddress) : ""}

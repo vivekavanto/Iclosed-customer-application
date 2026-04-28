@@ -24,10 +24,26 @@ export default function ServiceSelection() {
   const [purchasePrice, setPurchasePrice] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
-  const [agreementSigned, setAgreementSigned] = useState<"yes" | "no" | null>(
-    null,
-  );
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [apsPurchaseSigned, setApsPurchaseSigned] = useState<"yes" | "no" | null>(null);
+  const [apsSaleSigned, setApsSaleSigned] = useState<"yes" | "no" | null>(null);
+  const [purchaseFile, setPurchaseFile] = useState<File | null>(null);
+  const [saleFile, setSaleFile] = useState<File | null>(null);
+
+  // Derived for back-compat with Step1/Step2/Step5Contact, which still expect a
+  // single agreementSigned signal. "yes" if any active side is signed.
+  const agreementSigned: "yes" | "no" | null = (() => {
+    const hasYes = apsPurchaseSigned === "yes" || apsSaleSigned === "yes";
+    if (hasYes) return "yes";
+    const hasNo = apsPurchaseSigned === "no" || apsSaleSigned === "no";
+    if (hasNo) return "no";
+    return null;
+  })();
+  const setAgreementSigned = (v: "yes" | "no" | null) => {
+    if (v === null) {
+      setApsPurchaseSigned(null);
+      setApsSaleSigned(null);
+    }
+  };
 
   // Pre-fill contact info for logged-in users
   const [authProfile, setAuthProfile] = useState<{
@@ -120,8 +136,10 @@ export default function ServiceSelection() {
     setSelected(null);
     setSelectedClosingOption(null);
     setPurchasePrice("");
-    setAgreementSigned(null);
-    setUploadedFile(null);
+    setApsPurchaseSigned(null);
+    setApsSaleSigned(null);
+    setPurchaseFile(null);
+    setSaleFile(null);
     setAddressData({
       street: "",
       unit: "",
@@ -176,12 +194,17 @@ export default function ServiceSelection() {
         {/* STEP 3 — Agreement & Upload */}
         {step === 3 && (
           <Step4
-            agreementSigned={agreementSigned}
-            setAgreementSigned={setAgreementSigned}
+            closingOption={selectedClosingOption as "buying" | "selling" | "both" | null}
+            apsPurchaseSigned={apsPurchaseSigned}
+            setApsPurchaseSigned={setApsPurchaseSigned}
+            apsSaleSigned={apsSaleSigned}
+            setApsSaleSigned={setApsSaleSigned}
+            purchaseFile={purchaseFile}
+            setPurchaseFile={setPurchaseFile}
+            saleFile={saleFile}
+            setSaleFile={setSaleFile}
             setStep={setStep}
             step={step}
-            uploadedFile={uploadedFile}
-            setUploadedFile={setUploadedFile}
           />
         )}
 
@@ -230,7 +253,10 @@ export default function ServiceSelection() {
                       selling_address_province: "Ontario",
                     }),
 
-                    aps_signed: agreementSigned === "yes",
+                    aps_signed_purchase:
+                      apsPurchaseSigned === null ? null : apsPurchaseSigned === "yes",
+                    aps_signed_sale:
+                      apsSaleSigned === null ? null : apsSaleSigned === "yes",
                     co_persons: contactData.coPersons ?? [],
                     referral_source: contactData.referralSource || "",
                   }),
@@ -245,12 +271,19 @@ export default function ServiceSelection() {
 
                 const leadId = intakeResult.lead_id;
 
-                // 2️⃣ If user uploaded file, upload it
-                if (uploadedFile && agreementSigned === "yes") {
+                const uploads: Array<{ file: File; side: "purchase" | "sale"; docType: string }> = [];
+                if (purchaseFile && apsPurchaseSigned === "yes") {
+                  uploads.push({ file: purchaseFile, side: "purchase", docType: "aps_purchase" });
+                }
+                if (saleFile && apsSaleSigned === "yes") {
+                  uploads.push({ file: saleFile, side: "sale", docType: "aps_sale" });
+                }
+
+                for (const u of uploads) {
                   const formData = new FormData();
-                  formData.append("file", uploadedFile);
+                  formData.append("file", u.file);
                   formData.append("lead_id", leadId);
-                  formData.append("doc_type", "aps");
+                  formData.append("doc_type", u.docType);
 
                   const uploadResponse = await fetch("/api/uploadblobstorage", {
                     method: "POST",
@@ -260,15 +293,14 @@ export default function ServiceSelection() {
                   const uploadResult = await uploadResponse.json();
 
                   if (!uploadResult.success) {
-                    console.error("Upload failed:", uploadResult.error);
-                    return;
+                    console.error(`Upload failed (${u.side}):`, uploadResult.error);
+                    continue;
                   }
 
-                  // Mark aps_uploaded on the lead so the task is auto-completed during conversion
                   await fetch("/api/intake/mark-aps-uploaded", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ lead_id: leadId }),
+                    body: JSON.stringify({ lead_id: leadId, side: u.side }),
                   });
                 }
 
