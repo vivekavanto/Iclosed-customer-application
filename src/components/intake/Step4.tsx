@@ -66,40 +66,32 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
     [handlePickFile]
   );
 
+  const optionClass = (active: boolean) =>
+    `cursor-pointer rounded-xl border-2 px-4 py-3 transition-all duration-200 text-center font-medium ${
+      active
+        ? "border-[#C10007] bg-white shadow-sm text-[#C10007]"
+        : "border-gray-200 text-gray-700 hover:border-[#C10007]"
+    }`;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div>
-        <h3 className="text-xl font-semibold text-gray-900">{heading}</h3>
-        <p className="mt-2 text-gray-500 text-sm leading-relaxed">{subheading}</p>
+        <h3 className="text-lg font-semibold text-gray-900">{heading}</h3>
+        <p className="mt-1 text-gray-500 text-sm">{subheading}</p>
       </div>
 
-      <div
-        onClick={() => setSigned("yes")}
-        className={`cursor-pointer rounded-2xl border-2 p-6 transition-all duration-200 ${
-          signed === "yes"
-            ? "border-[#C10007] bg-white shadow-md"
-            : "border-gray-200 hover:border-[#C10007] hover:shadow-sm"
-        }`}
-      >
-        <h4 className="text-lg font-semibold text-gray-900">Yes</h4>
-        <p className="mt-1 text-gray-500">I've signed the agreement.</p>
-      </div>
-
-      <div
-        onClick={() => setSigned("no")}
-        className={`cursor-pointer rounded-2xl border-2 p-6 transition-all duration-200 ${
-          signed === "no"
-            ? "border-[#C10007] bg-white shadow-md"
-            : "border-gray-200 hover:border-[#C10007] hover:shadow-sm"
-        }`}
-      >
-        <h4 className="text-lg font-semibold text-gray-900">No</h4>
-        <p className="mt-1 text-gray-500">I haven't signed it yet.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div onClick={() => setSigned("yes")} className={optionClass(signed === "yes")}>
+          Yes, I've signed it
+        </div>
+        <div onClick={() => setSigned("no")} className={optionClass(signed === "no")}>
+          No, not yet
+        </div>
       </div>
 
       {signed === "yes" && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
+        <div className="pt-1">
+          <div className="flex items-center gap-2 mb-2">
             <p className="text-sm font-semibold text-gray-900">
               Upload your {heading}
             </p>
@@ -109,7 +101,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
           </div>
 
           <div
-            className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+            className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${
               isDragging
                 ? "border-[#C10007] bg-red-50"
                 : "border-gray-300 bg-white hover:border-[#C10007]"
@@ -122,11 +114,11 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
           >
-            <UploadCloud size={28} className="text-gray-400 mb-4" />
-            <p className="text-gray-600 text-lg text-center">
+            <UploadCloud size={22} className="text-gray-400 mb-2" />
+            <p className="text-gray-600 text-sm text-center">
               Click to <span className="text-[#C10007] font-medium">browse</span> or drag & drop your file
             </p>
-            <p className="text-gray-400 text-sm mt-2">PDF, JPG, PNG — max 10 MB</p>
+            <p className="text-gray-400 text-xs mt-1">PDF, JPG, PNG — max 10 MB</p>
             <input
               id={inputId}
               type="file"
@@ -280,7 +272,7 @@ const Step4: React.FC<Step4Props> = ({
 
         {/* RIGHT PANEL */}
         <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
-          <div className="space-y-8 w-full max-w-2xl">
+          <div className="space-y-6 w-full max-w-2xl">
 
             {/* Header */}
             <div>
