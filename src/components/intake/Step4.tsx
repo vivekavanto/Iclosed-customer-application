@@ -39,10 +39,10 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
     side === "purchase"
       ? "APS for Purchasing Property"
       : "APS for Sale Property";
-  const subheading =
+  const helper =
     side === "purchase"
-      ? "Have you signed the Agreement of Purchase and Sale for the property you're buying?"
-      : "Have you signed the Agreement of Purchase and Sale for the property you're selling?";
+      ? "For the property you're buying"
+      : "For the property you're selling";
 
   const handlePickFile = useCallback(
     (f: File) => {
@@ -66,45 +66,62 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
     [handlePickFile]
   );
 
-  const optionClass = (active: boolean) =>
-    `cursor-pointer rounded-xl border-2 px-4 py-3 transition-all duration-200 text-center font-medium ${
+  const segClass = (active: boolean) =>
+    `flex-1 px-4 py-2 text-sm font-medium rounded-md transition-all ${
       active
-        ? "border-[#C10007] bg-white shadow-sm text-[#C10007]"
-        : "border-gray-200 text-gray-700 hover:border-[#C10007]"
+        ? "bg-white text-[#C10007] shadow-sm"
+        : "text-gray-600 hover:text-gray-900"
     }`;
 
   return (
-    <div className="space-y-3">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900">{heading}</h3>
-        <p className="mt-1 text-gray-500 text-sm">{subheading}</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div onClick={() => setSigned("yes")} className={optionClass(signed === "yes")}>
-          Yes, I've signed it
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">{heading}</h3>
+          <p className="mt-0.5 text-gray-500 text-xs">{helper}</p>
         </div>
-        <div onClick={() => setSigned("no")} className={optionClass(signed === "no")}>
-          No, not yet
+        <div
+          role="radiogroup"
+          aria-label={heading}
+          className="inline-flex items-center bg-gray-100 rounded-lg p-1 w-44 flex-shrink-0"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={signed === "yes"}
+            onClick={() => setSigned("yes")}
+            className={segClass(signed === "yes")}
+          >
+            Yes
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={signed === "no"}
+            onClick={() => setSigned("no")}
+            className={segClass(signed === "no")}
+          >
+            No
+          </button>
         </div>
       </div>
 
       {signed === "yes" && (
-        <div className="pt-1">
+        <div>
           <div className="flex items-center gap-2 mb-2">
-            <p className="text-sm font-semibold text-gray-900">
-              Upload your {heading}
+            <p className="text-xs font-medium text-gray-700 uppercase tracking-wide">
+              Upload signed agreement
             </p>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 uppercase tracking-wide">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 uppercase tracking-wide">
               Optional
             </span>
           </div>
 
           <div
-            className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+            className={`border border-dashed rounded-lg p-5 flex flex-col items-center justify-center cursor-pointer transition-colors ${
               isDragging
-                ? "border-[#C10007] bg-red-50"
-                : "border-gray-300 bg-white hover:border-[#C10007]"
+                ? "border-[#C10007] bg-red-50/50"
+                : "border-gray-300 bg-gray-50/50 hover:border-[#C10007] hover:bg-white"
             }`}
             onClick={() => document.getElementById(inputId)?.click()}
             onDragOver={(e) => {
@@ -114,11 +131,11 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
           >
-            <UploadCloud size={22} className="text-gray-400 mb-2" />
+            <UploadCloud size={20} className="text-gray-400 mb-1.5" />
             <p className="text-gray-600 text-sm text-center">
-              Click to <span className="text-[#C10007] font-medium">browse</span> or drag & drop your file
+              <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
             </p>
-            <p className="text-gray-400 text-xs mt-1">PDF, JPG, PNG — max 10 MB</p>
+            <p className="text-gray-400 text-xs mt-0.5">PDF, JPG, PNG — max 10 MB</p>
             <input
               id={inputId}
               type="file"
@@ -133,8 +150,8 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
           </div>
 
           {file && (
-            <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4">
-              <p className="text-green-700 text-sm font-medium truncate">
+            <div className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2 mt-3">
+              <p className="text-green-700 text-xs font-medium truncate">
                 ✓ {file.name}
               </p>
               <button
@@ -284,29 +301,30 @@ const Step4: React.FC<Step4Props> = ({
               </p>
             </div>
 
-            {showPurchase && (
-              <ApsBlock
-                side="purchase"
-                signed={apsPurchaseSigned}
-                setSigned={setApsPurchaseSigned}
-                file={purchaseFile}
-                setFile={setPurchaseFile}
-              />
-            )}
-
-            {showPurchase && showSale && (
-              <div className="border-t border-gray-200" />
-            )}
-
-            {showSale && (
-              <ApsBlock
-                side="sale"
-                signed={apsSaleSigned}
-                setSigned={setApsSaleSigned}
-                file={saleFile}
-                setFile={setSaleFile}
-              />
-            )}
+            <div className="space-y-6 divide-y divide-gray-100">
+              {showPurchase && (
+                <div className={showPurchase && showSale ? "" : ""}>
+                  <ApsBlock
+                    side="purchase"
+                    signed={apsPurchaseSigned}
+                    setSigned={setApsPurchaseSigned}
+                    file={purchaseFile}
+                    setFile={setPurchaseFile}
+                  />
+                </div>
+              )}
+              {showSale && (
+                <div className={showPurchase && showSale ? "pt-6" : ""}>
+                  <ApsBlock
+                    side="sale"
+                    signed={apsSaleSigned}
+                    setSigned={setApsSaleSigned}
+                    file={saleFile}
+                    setFile={setSaleFile}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Desktop button row */}
             <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
