@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { advanceMilestone } from "@/lib/syncSharedTask";
+import { findClientByName, followMergedClient } from "@/lib/clientNames";
 
 export interface ConvertLeadResult {
   success: boolean;
@@ -51,43 +52,68 @@ export async function convertSingleLead(params: {
   } else if (!needsSeparateClient && parentClientId) {
     clientId = parentClientId;
   } else {
-    // Search for existing client by email
+    // Resolve to the primary client (following merges) before falling back to insert.
+    const resolveToPrimary = async (id: string): Promise<string> => {
+      const { data: row } = await supabaseAdmin
+        .from("clients")
+        .select("id, merged_into_client_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (row?.merged_into_client_id) {
+        const primary = await followMergedClient(row.merged_into_client_id);
+        return primary?.id ?? id;
+      }
+      return id;
+    };
+
+    // a) Search for existing client by email (prefer authed)
     const { data: authedClients } = await supabaseAdmin
       .from("clients")
       .select("id")
       .ilike("email", lead.email)
       .not("auth_user_id", "is", null)
+      .is("merged_into_client_id", null)
       .order("created_at", { ascending: false })
       .limit(1);
 
     if (authedClients && authedClients.length > 0) {
-      clientId = authedClients[0].id;
+      clientId = await resolveToPrimary(authedClients[0].id);
     } else {
       const { data: existingClients } = await supabaseAdmin
         .from("clients")
         .select("id")
         .ilike("email", lead.email)
+        .is("merged_into_client_id", null)
         .order("created_at", { ascending: false })
         .limit(1);
 
       if (existingClients && existingClients.length > 0) {
-        clientId = existingClients[0].id;
+        clientId = await resolveToPrimary(existingClients[0].id);
       } else {
-        const { data: newClient, error: clientError } = await supabaseAdmin
-          .from("clients")
-          .insert({
-            email: lead.email,
-            first_name: lead.first_name,
-            last_name: lead.last_name,
-            phone: lead.phone ?? null,
-          })
-          .select("id")
-          .single();
+        // b) Fall back to name (primary or alias) so a renamed person is matched
+        // to their existing clients row instead of getting a duplicate.
+        const byName = await findClientByName(lead.first_name ?? "", lead.last_name ?? "");
+        if (byName) {
+          clientId = byName.merged_into_client_id
+            ? (await followMergedClient(byName.merged_into_client_id))?.id ?? byName.id
+            : byName.id;
+        } else {
+          const { data: newClient, error: clientError } = await supabaseAdmin
+            .from("clients")
+            .insert({
+              email: lead.email,
+              first_name: lead.first_name,
+              last_name: lead.last_name,
+              phone: lead.phone ?? null,
+            })
+            .select("id")
+            .single();
 
-        if (clientError || !newClient) {
-          return { success: false, deal_id: "", file_number: "", client_id: "", invite_sent: false, error: `Client creation failed: ${clientError?.message}` };
+          if (clientError || !newClient) {
+            return { success: false, deal_id: "", file_number: "", client_id: "", invite_sent: false, error: `Client creation failed: ${clientError?.message}` };
+          }
+          clientId = newClient.id;
         }
-        clientId = newClient.id;
       }
     }
   }

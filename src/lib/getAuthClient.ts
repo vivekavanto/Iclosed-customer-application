@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import supabaseAdmin from "./supabaseAdmin";
+import { findClientByName, followMergedClient } from "./clientNames";
+
+const SELECT_COLS =
+  "id, email, first_name, last_name, phone, auth_user_id, merged_into_client_id";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -63,19 +67,21 @@ export async function getAuthClient() {
   const user = await getAuthUser();
   if (!user) return null;
 
-  let resolvedClient: {
+  type ResolvedClient = {
     id: string;
     email: string;
     first_name: string;
     last_name: string;
     phone: string | null;
     auth_user_id: string | null;
-  } | null = null;
+    merged_into_client_id?: string | null;
+  };
+  let resolvedClient: ResolvedClient | null = null;
 
   // ── Step 1: match by auth_user_id ────────────────────────────────────────
   const { data: clientsByAuthId } = await supabaseAdmin
     .from("clients")
-    .select("id, email, first_name, last_name, phone, auth_user_id")
+    .select(SELECT_COLS)
     .eq("auth_user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -108,8 +114,9 @@ export async function getAuthClient() {
   if (!resolvedClient && user.email) {
     const { data: clientsByEmail } = await supabaseAdmin
       .from("clients")
-      .select("id, email, first_name, last_name, phone, auth_user_id")
+      .select(SELECT_COLS)
       .ilike("email", user.email.trim())
+      .is("merged_into_client_id", null)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -122,6 +129,46 @@ export async function getAuthClient() {
           .from("clients")
           .update({ auth_user_id: user.id })
           .eq("id", resolvedClient.id);
+      }
+    }
+  }
+
+  // ── Step 2b: match by display name (primary or alias) ────────────────────
+  // If the user changed their email so they don't match Step 2, fall back to
+  // the name they signed up with (matched against current name + aliases).
+  if (!resolvedClient) {
+    const displayName = (
+      user.user_metadata?.display_name ||
+      user.user_metadata?.full_name ||
+      ""
+    ).trim();
+    const metaFirst = (user.user_metadata?.first_name as string | undefined) ?? "";
+    const metaLast = (user.user_metadata?.last_name as string | undefined) ?? "";
+    let first = metaFirst;
+    let last = metaLast;
+    if (!first && !last && displayName) {
+      const parts = displayName.split(" ");
+      first = parts[0] ?? "";
+      last = parts.slice(1).join(" ");
+    }
+    if (first || last) {
+      const byName = await findClientByName(first, last);
+      if (byName) {
+        const { data: full } = await supabaseAdmin
+          .from("clients")
+          .select(SELECT_COLS)
+          .eq("id", byName.id)
+          .maybeSingle();
+        if (full) {
+          resolvedClient = full as ResolvedClient;
+          // Back-fill auth_user_id so future requests hit Step 1 directly
+          if (!resolvedClient.auth_user_id || resolvedClient.auth_user_id !== user.id) {
+            await supabaseAdmin
+              .from("clients")
+              .update({ auth_user_id: user.id })
+              .eq("id", resolvedClient.id);
+          }
+        }
       }
     }
   }
@@ -141,7 +188,7 @@ export async function getAuthClient() {
 
       const { data: linkedClient } = await supabaseAdmin
         .from("clients")
-        .select("id, email, first_name, last_name, phone, auth_user_id")
+        .select(SELECT_COLS)
         .eq("id", existingClientId)
         .single();
 
@@ -190,7 +237,7 @@ export async function getAuthClient() {
         last_name,
         auth_user_id: user.id,
       })
-      .select("id, email, first_name, last_name, phone, auth_user_id")
+      .select(SELECT_COLS)
       .single();
 
     if (createErr) {
@@ -201,7 +248,20 @@ export async function getAuthClient() {
       return null;
     }
 
-    resolvedClient = newClient;
+    resolvedClient = newClient as ResolvedClient;
+  }
+
+  // ── Follow merged_into_client_id so a merged secondary always returns the primary
+  if (resolvedClient?.merged_into_client_id) {
+    const primary = await followMergedClient(resolvedClient.merged_into_client_id);
+    if (primary) {
+      const { data: full } = await supabaseAdmin
+        .from("clients")
+        .select(SELECT_COLS)
+        .eq("id", primary.id)
+        .maybeSingle();
+      if (full) resolvedClient = full as ResolvedClient;
+    }
   }
 
   // ── Self-heal: ensure ALL leads with this email point to the resolved client

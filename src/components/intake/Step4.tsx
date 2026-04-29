@@ -3,7 +3,22 @@
 import React, { useState, useCallback } from "react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { ChevronLeft, ChevronRight, UploadCloud } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  UploadCloud,
+  Home,
+  Tag,
+  FileText,
+  X,
+  CheckCircle2,
+} from "lucide-react";
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
 const MAX_SIZE = 10 * 1024 * 1024;
@@ -67,7 +82,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
   );
 
   const segClass = (active: boolean) =>
-    `flex-1 px-4 py-2 text-sm font-medium rounded-md transition-all ${
+    `flex-1 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
       active
         ? "bg-white text-[#C10007] shadow-sm"
         : "text-gray-600 hover:text-gray-900"
@@ -135,7 +150,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
             <p className="text-gray-600 text-sm text-center">
               <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
             </p>
-            <p className="text-gray-400 text-xs mt-0.5">PDF, JPG, PNG — max 10 MB</p>
+            <p className="text-gray-400 text-xs mt-0.5">PDF, JPG, PNG â€” max 10 MB</p>
             <input
               id={inputId}
               type="file"

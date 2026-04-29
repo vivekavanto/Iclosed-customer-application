@@ -3,6 +3,7 @@ import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { convertSingleLead, syncSharedTasksAcrossDeals } from "@/lib/convertLead";
+import { findClientByName, followMergedClient } from "@/lib/clientNames";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -79,31 +80,51 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── Duplicate check: same email + same address ────────────
+    // ── Duplicate check: same email OR same name (incl. aliases) + same address ────
     const normEmail = (email ?? "").trim().toLowerCase();
+    const normFirst = (first_name ?? "").trim().toLowerCase();
+    const normLast = (last_name ?? "").trim().toLowerCase();
     const normStreet = (address_street ?? "").trim().toLowerCase();
     const normCity = (address_city ?? "").trim().toLowerCase();
     const normPostal = (address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
 
-    if (normEmail && normStreet && normCity) {
-      const { data: existingLeads, error: dupCheckErr } = await supabaseAdmin
-        .from("leads")
-        .select("id, email, address_street, address_city, address_postal_code")
-        .ilike("email", normEmail);
+    const matchesAddress = (l: { address_street: string | null; address_city: string | null; address_postal_code: string | null }) => {
+      const lStreet = (l.address_street ?? "").trim().toLowerCase();
+      const lCity = (l.address_city ?? "").trim().toLowerCase();
+      const lPostal = (l.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
+      return lStreet === normStreet && lCity === normCity && lPostal === normPostal;
+    };
 
-      if (!dupCheckErr && existingLeads && existingLeads.length > 0) {
-        const duplicate = existingLeads.find((l) => {
-          const lStreet = (l.address_street ?? "").trim().toLowerCase();
-          const lCity = (l.address_city ?? "").trim().toLowerCase();
-          const lPostal = (l.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
-          return lStreet === normStreet && lCity === normCity && lPostal === normPostal;
-        });
+    if (normStreet && normCity) {
+      // a) email-based duplicate (existing behaviour)
+      if (normEmail) {
+        const { data: existingLeads } = await supabaseAdmin
+          .from("leads")
+          .select("id, email, address_street, address_city, address_postal_code")
+          .ilike("email", normEmail);
 
-        if (duplicate) {
+        if (existingLeads && existingLeads.some(matchesAddress)) {
           return NextResponse.json(
             { success: false, error: "You already have a submission for this address. Please contact us if you need to make changes." },
             { status: 409 }
           );
+        }
+      }
+
+      // b) name-or-alias-based duplicate: same person under a former name + same address
+      if (normFirst || normLast) {
+        const aliasMatch = await findClientByName(first_name ?? "", last_name ?? "");
+        if (aliasMatch) {
+          const { data: clientLeads } = await supabaseAdmin
+            .from("leads")
+            .select("id, address_street, address_city, address_postal_code")
+            .eq("client_id", aliasMatch.id);
+          if (clientLeads && clientLeads.some(matchesAddress)) {
+            return NextResponse.json(
+              { success: false, error: "We already have a submission for this address under your name. Please contact us if you need to make changes." },
+              { status: 409 }
+            );
+          }
         }
       }
     }
@@ -118,11 +139,17 @@ export async function POST(req: Request) {
       if (!clientId && email) {
         const { data: clientsByEmail } = await supabaseAdmin
           .from("clients")
-          .select("id")
+          .select("id, merged_into_client_id")
           .ilike("email", email.toLowerCase().trim())
           .order("created_at", { ascending: false })
           .limit(1);
-        clientId = clientsByEmail?.[0]?.id ?? null;
+        const hit = clientsByEmail?.[0];
+        if (hit?.merged_into_client_id) {
+          const primary = await followMergedClient(hit.merged_into_client_id);
+          clientId = primary?.id ?? null;
+        } else {
+          clientId = hit?.id ?? null;
+        }
       }
 
       if (!clientId) {
@@ -135,6 +162,17 @@ export async function POST(req: Request) {
             .order("created_at", { ascending: false })
             .limit(1);
           clientId = clientsByAuth?.[0]?.id ?? null;
+        }
+      }
+
+      // Fall back to name (primary or alias) so a returning person under a
+      // former name is matched to the same clients.id.
+      if (!clientId && (first_name || last_name)) {
+        const byName = await findClientByName(first_name ?? "", last_name ?? "");
+        if (byName) {
+          clientId = byName.merged_into_client_id
+            ? (await followMergedClient(byName.merged_into_client_id))?.id ?? byName.id
+            : byName.id;
         }
       }
     } catch (e) {
