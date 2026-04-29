@@ -126,14 +126,19 @@ export default function Step5Contact({
         phone: initialData?.phone ?? "",
     });
 
-    // Sync pre-fill when auth data loads asynchronously
+    const isLoggedIn = !!initialData?.email;
+    const initialDataAppliedRef = React.useRef(false);
+
+    // Sync pre-fill when auth data loads asynchronously — but only ONCE so
+    // we never overwrite values the user has already typed.
     React.useEffect(() => {
-        if (initialData) {
+        if (initialData && !initialDataAppliedRef.current) {
             setFormData({
                 fullName: initialData.fullName,
                 email: initialData.email,
                 phone: initialData.phone,
             });
+            initialDataAppliedRef.current = true;
         }
     }, [initialData?.fullName, initialData?.email, initialData?.phone]);
 
@@ -260,12 +265,31 @@ export default function Step5Contact({
                 <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
                     <div className="space-y-8 w-full max-w-2xl">
 
+                        {/* Logged-in notice — primary contact is locked to the signed-in account */}
+                        {isLoggedIn && (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+                                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10" />
+                                        <line x1="12" y1="8" x2="12" y2="12" />
+                                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                                    </svg>
+                                </div>
+                                <div className="text-[13px] leading-relaxed text-amber-900">
+                                    You are submitting as{" "}
+                                    <strong>{formData.fullName || initialData?.fullName || "your account"}</strong>.
+                                    To submit for someone else, please log out first and start a new intake.
+                                </div>
+                            </div>
+                        )}
+
                         {/* Contact Form */}
                         <Input
                             label="Full Name"
                             required
                             placeholder="John Doe"
                             value={formData.fullName}
+                            disabled={isLoggedIn}
                             onChange={(e) => {
                                 const val = e.target.value;
                                 const capitalized = val.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -274,6 +298,7 @@ export default function Step5Contact({
                             onBlur={() =>
                                 setTouched((prev) => ({ ...prev, fullName: true }))
                             }
+                            className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
                         />
                         {touched.fullName && errors.fullName && (
                             <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>
@@ -284,12 +309,14 @@ export default function Step5Contact({
                             required
                             placeholder="john@doe.com"
                             value={formData.email}
+                            disabled={isLoggedIn}
                             onChange={(e) =>
                                 setFormData({ ...formData, email: e.target.value })
                             }
                             onBlur={() =>
                                 setTouched((prev) => ({ ...prev, email: true }))
                             }
+                            className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
                         />
                         {touched.email && errors.email && (
                             <p className="text-red-600 text-sm mt-1">{errors.email}</p>
@@ -300,12 +327,14 @@ export default function Step5Contact({
                             required
                             placeholder="(416) 555-1234"
                             value={formData.phone}
+                            disabled={isLoggedIn}
                             onChange={(e) =>
                                 setFormData({ ...formData, phone: formatPhone(e.target.value) })
                             }
                             onBlur={() =>
                                 setTouched((prev) => ({ ...prev, phone: true }))
                             }
+                            className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
                         />
                         {touched.phone && errors.phone && (
                             <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
