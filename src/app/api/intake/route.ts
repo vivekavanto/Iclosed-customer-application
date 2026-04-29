@@ -3,7 +3,7 @@ import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { convertSingleLead, syncSharedTasksAcrossDeals } from "@/lib/convertLead";
-import { findClientByName, followMergedClient } from "@/lib/clientNames";
+import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -131,9 +131,11 @@ export async function POST(req: Request) {
 
     // ── 1. Resolve client ID ──────────────────────────────────
     let clientId: string | null = null;
+    let isLoggedIn = false;
 
     try {
       const authClient = await getAuthClient();
+      isLoggedIn = !!authClient;
       clientId = authClient?.id ?? null;
 
       if (!clientId && email) {
@@ -155,6 +157,7 @@ export async function POST(req: Request) {
       if (!clientId) {
         const authUser = await getAuthUser();
         if (authUser?.id) {
+          isLoggedIn = true;
           const { data: clientsByAuth } = await supabaseAdmin
             .from("clients")
             .select("id")
@@ -177,6 +180,57 @@ export async function POST(req: Request) {
       }
     } catch (e) {
       console.warn("Client fetch failed:", e);
+    }
+
+    // ── 1b. Name-identity validation ──────────────────────────
+    // Logged-in users: name MUST match their account's current name or aliases.
+    // Mismatch is hard-blocked — they should rename via /profile first if their
+    // name has changed.
+    // Anonymous users: name mismatch falls back to creating a separate clients
+    // row so two real people sharing an email don't get merged.
+    if (clientId && (first_name || last_name)) {
+      const { data: resolvedClient } = await supabaseAdmin
+        .from("clients")
+        .select("id, first_name, last_name, name_aliases")
+        .eq("id", clientId)
+        .maybeSingle();
+
+      if (
+        resolvedClient &&
+        !nameMatchesClient(resolvedClient, first_name ?? "", last_name ?? "")
+      ) {
+        if (isLoggedIn) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "The name you entered does not match your account. Please use your registered name or update your profile.",
+            },
+            { status: 400 }
+          );
+        }
+
+        // Anonymous: split into a fresh clients row.
+        const { data: newClient, error: newClientErr } = await supabaseAdmin
+          .from("clients")
+          .insert({
+            email: email ?? null,
+            first_name: first_name ?? "",
+            last_name: last_name ?? "",
+            phone: phone ?? null,
+          })
+          .select("id")
+          .single();
+        if (!newClientErr && newClient) {
+          console.log(
+            `[Intake] Email ${email} matched client ${clientId} (${resolvedClient.first_name} ${resolvedClient.last_name}) but submitted name was "${first_name} ${last_name}" — created separate client ${newClient.id}`
+          );
+          clientId = newClient.id;
+        } else {
+          console.warn("[Intake] Failed to split client on name mismatch:", newClientErr?.message);
+          clientId = null;
+        }
+      }
     }
 
     // ── 2. Insert Lead ────────────────────────────────────────

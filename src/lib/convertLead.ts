@@ -1,7 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { advanceMilestone } from "@/lib/syncSharedTask";
-import { findClientByName, followMergedClient } from "@/lib/clientNames";
+import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 
 export interface ConvertLeadResult {
   success: boolean;
@@ -66,7 +66,25 @@ export async function convertSingleLead(params: {
       return id;
     };
 
-    // a) Search for existing client by email (prefer authed)
+    // Verify the email-matched client actually shares the lead's name (current
+    // or alias). Different people sometimes share an email; without this check
+    // we'd silently merge them under one clients.id.
+    const reuseIfNameMatches = async (candidateId: string): Promise<string | null> => {
+      const primaryId = await resolveToPrimary(candidateId);
+      const { data: candidate } = await supabaseAdmin
+        .from("clients")
+        .select("id, first_name, last_name, name_aliases")
+        .eq("id", primaryId)
+        .maybeSingle();
+      if (!candidate) return null;
+      // If the lead has no name to compare, accept the email match.
+      if (!lead.first_name && !lead.last_name) return primaryId;
+      return nameMatchesClient(candidate, lead.first_name ?? "", lead.last_name ?? "")
+        ? primaryId
+        : null;
+    };
+
+    // a) Search for existing client by email (prefer authed) — must also match name
     const { data: authedClients } = await supabaseAdmin
       .from("clients")
       .select("id")
@@ -76,9 +94,12 @@ export async function convertSingleLead(params: {
       .order("created_at", { ascending: false })
       .limit(1);
 
+    let resolved: string | null = null;
     if (authedClients && authedClients.length > 0) {
-      clientId = await resolveToPrimary(authedClients[0].id);
-    } else {
+      resolved = await reuseIfNameMatches(authedClients[0].id);
+    }
+
+    if (!resolved) {
       const { data: existingClients } = await supabaseAdmin
         .from("clients")
         .select("id")
@@ -86,35 +107,40 @@ export async function convertSingleLead(params: {
         .is("merged_into_client_id", null)
         .order("created_at", { ascending: false })
         .limit(1);
-
       if (existingClients && existingClients.length > 0) {
-        clientId = await resolveToPrimary(existingClients[0].id);
-      } else {
-        // b) Fall back to name (primary or alias) so a renamed person is matched
-        // to their existing clients row instead of getting a duplicate.
-        const byName = await findClientByName(lead.first_name ?? "", lead.last_name ?? "");
-        if (byName) {
-          clientId = byName.merged_into_client_id
-            ? (await followMergedClient(byName.merged_into_client_id))?.id ?? byName.id
-            : byName.id;
-        } else {
-          const { data: newClient, error: clientError } = await supabaseAdmin
-            .from("clients")
-            .insert({
-              email: lead.email,
-              first_name: lead.first_name,
-              last_name: lead.last_name,
-              phone: lead.phone ?? null,
-            })
-            .select("id")
-            .single();
-
-          if (clientError || !newClient) {
-            return { success: false, deal_id: "", file_number: "", client_id: "", invite_sent: false, error: `Client creation failed: ${clientError?.message}` };
-          }
-          clientId = newClient.id;
-        }
+        resolved = await reuseIfNameMatches(existingClients[0].id);
       }
+    }
+
+    if (!resolved) {
+      // b) Fall back to name (primary or alias) so a renamed person is matched
+      // to their existing clients row instead of getting a duplicate.
+      const byName = await findClientByName(lead.first_name ?? "", lead.last_name ?? "");
+      if (byName) {
+        resolved = byName.merged_into_client_id
+          ? (await followMergedClient(byName.merged_into_client_id))?.id ?? byName.id
+          : byName.id;
+      }
+    }
+
+    if (resolved) {
+      clientId = resolved;
+    } else {
+      const { data: newClient, error: clientError } = await supabaseAdmin
+        .from("clients")
+        .insert({
+          email: lead.email,
+          first_name: lead.first_name,
+          last_name: lead.last_name,
+          phone: lead.phone ?? null,
+        })
+        .select("id")
+        .single();
+
+      if (clientError || !newClient) {
+        return { success: false, deal_id: "", file_number: "", client_id: "", invite_sent: false, error: `Client creation failed: ${clientError?.message}` };
+      }
+      clientId = newClient.id;
     }
   }
 
