@@ -3,12 +3,12 @@ import { Check, X } from "lucide-react";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
 
 const brands = [
-  "buy.ca",
-  "exp REALTY",
-  "COLDWELL BANKER",
   "RE/MAX",
+  "HomeLife",
   "ROYAL LEPAGE",
   "CENTURY 21",
+  "exp REALTY",
+  "COLDWELL BANKER",
 ];
 
 const steps = [
@@ -119,10 +119,7 @@ const testimonials = [
 ];
 
 const features = [
-  {
-    title: "Post-Closing Litigation Protection",
-    desc: "Worried about potential breaches after closing? Our peace-of-mind insurance includes a litigation lawyer’s consultation and document review if a breach occurs. If your case proceeds, we work on contingency, and legal fees, which are only collected upon resolution or judgment.",
-  },
+  
   {
     title: "Your Deal, Your Dashboard",
     desc: "Send, receive, and organize every document digitally. No printing, no couriers, no stress.",
@@ -155,6 +152,12 @@ const features = [
     title: "We provide a simple Post-Closing Checklist to guide your next steps",
     desc: "Stay organized with a simple list of everything to take care of after your closing is complete.",
   },
+  
+  {
+    title: "I Can't Close™ Litigation Protection",
+    desc: "Worried about potential breaches after closing? Our peace-of-mind insurance includes a litigation lawyer’s consultation and document review if a breach occurs. If your case proceeds, we work on contingency, and legal fees, which are only collected upon resolution or judgment.",
+    premium: true,
+  }
 ];
 
 // ─── Header ───────────────────────────────────────────────────────────────────
@@ -589,10 +592,18 @@ function WhyChoose() {
           {features.map((f) => (
             <div
               key={f.title}
-              className="grid grid-cols-[1fr_60px_60px] sm:grid-cols-[1fr_90px_90px] items-center gap-3 sm:gap-4 rounded-xl bg-white px-4 sm:px-5 py-4 sm:py-5 shadow-sm ring-1 ring-gray-100 transition-shadow hover:shadow-md"
+              className={`grid grid-cols-[1fr_60px_60px] sm:grid-cols-[1fr_90px_90px] items-center gap-3 sm:gap-4 rounded-xl px-4 sm:px-5 py-4 sm:py-5 shadow-sm ring-1 transition-shadow hover:shadow-md ${
+                f.premium
+                  ? "bg-[#C10007]/[0.03] ring-[#C10007]/20"
+                  : "bg-white ring-gray-100"
+              }`}
             >
               <div className="pr-2 sm:pr-4">
-                <h3 className="text-sm sm:text-base font-semibold text-gray-900">
+                <h3
+                  className={`text-sm sm:text-base text-gray-900 ${
+                    f.premium ? "font-bold" : "font-semibold"
+                  }`}
+                >
                   {f.title}
                 </h3>
                 <p className="mt-1 text-xs sm:text-sm leading-relaxed text-gray-500">
