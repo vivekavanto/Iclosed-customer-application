@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown, LogOut, User } from "lucide-react";
 
 export interface ProfileUser {
   first_name?: string;
@@ -55,6 +56,18 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
             </p>
           </div>
           <div className="py-1">
+            <Link
+              href="/profile"
+              onClick={() => setOpen(false)}
+              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text-body)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-primary)] transition-colors cursor-pointer text-left group"
+            >
+              <User
+                size={15}
+                className="text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] transition-colors"
+                strokeWidth={2}
+              />
+              Profile
+            </Link>
             <button
               className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--color-text-body)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-primary)] transition-colors cursor-pointer text-left group"
               onClick={handleLogout}
