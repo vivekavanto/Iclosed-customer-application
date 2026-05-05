@@ -87,6 +87,7 @@ export async function GET(req: Request) {
     // ─────────────────────────────────────────
     // Auto-insert missing default milestones
     // from stage_templates for each deal
+    // (Purchase & Sale deals get one set per side)
     // ─────────────────────────────────────────
     for (const dId of dealIds) {
       // Get deal type
@@ -97,53 +98,77 @@ export async function GET(req: Request) {
         .single();
 
       const dealType = dealData?.type ?? "Purchase";
-      const stageType = getStageTemplateType(dealType);
+      const sides: Array<{ side: "purchase" | "sale" | null; stageType: string }> =
+        dealType === "Purchase & Sale"
+          ? [
+              { side: "purchase", stageType: "Purchase" },
+              { side: "sale", stageType: "Sale" },
+            ]
+          : [{ side: null, stageType: getStageTemplateType(dealType) }];
 
-      // Fetch stage templates for this deal type
-      const { data: stageTemplates } = await supabaseAdmin
-        .from("stage_templates")
-        .select("id, name, order_index, email_template_id, description")
-        .eq("lead_type", stageType)
-        .order("order_index", { ascending: true });
-
-      if (!stageTemplates || stageTemplates.length === 0) continue;
-
-      // Fetch existing milestones for this deal
+      // Fetch existing milestones once per deal (with side) for fast lookup
       const { data: existingMilestones } = await supabaseAdmin
         .from("milestones")
-        .select("title")
+        .select("title, side")
         .eq("deal_id", dId);
 
-      const existingTitles = new Set(
-        (existingMilestones ?? []).map((m: any) => m.title?.trim().toLowerCase())
+      const existingKeys = new Set(
+        (existingMilestones ?? []).map(
+          (m: any) => `${m.side ?? "_"}:${m.title?.trim().toLowerCase()}`
+        )
       );
 
-      // Find templates that are NOT already in milestones (match by title)
-      const missingMilestones = stageTemplates
-        .filter((st: any) => {
-          const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "").toLowerCase();
-          return !existingTitles.has(cleanName);
-        })
-        .map((st: any) => {
-          const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? st.name;
-          return {
-            deal_id: dId,
-            title: cleanName,
-            status: st.order_index === 1 ? "In Progress" : st.order_index === 2 ? "Waiting" : "Pending",
-            order_index: st.order_index,
-            email_template_id: st.email_template_id ?? null,
-            stage_template_id: st.id,
-            description: st.description ?? null,
-          };
-        });
+      for (const { side, stageType } of sides) {
+        const { data: stageTemplates } = await supabaseAdmin
+          .from("stage_templates")
+          .select("id, name, order_index, email_template_id, description, auto_complete")
+          .eq("lead_type", stageType)
+          .order("order_index", { ascending: true });
 
-      if (missingMilestones.length > 0) {
-        const { error: insertError } = await supabaseAdmin
-          .from("milestones")
-          .insert(missingMilestones);
+        if (!stageTemplates || stageTemplates.length === 0) continue;
 
-        if (insertError) {
-          console.error(`[milestones] Auto-insert failed for deal ${dId}:`, insertError.message);
+        // Mirror convertLead.ts status logic: auto_complete templates land in
+        // "Completed", first remaining active stage gets "In Progress",
+        // everything else "Pending".
+        let firstActiveAssigned = false;
+
+        const missingMilestones = stageTemplates
+          .filter((st: any) => {
+            const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "").toLowerCase();
+            return !existingKeys.has(`${side ?? "_"}:${cleanName}`);
+          })
+          .map((st: any) => {
+            const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? st.name;
+            let status: string;
+            if (st.auto_complete) {
+              status = "Completed";
+            } else if (!firstActiveAssigned) {
+              status = "In Progress";
+              firstActiveAssigned = true;
+            } else {
+              status = "Pending";
+            }
+            return {
+              deal_id: dId,
+              title: cleanName,
+              status,
+              order_index: st.order_index,
+              email_template_id: st.email_template_id ?? null,
+              stage_template_id: st.id,
+              description: st.description ?? null,
+              completed_at: status === "Completed" ? new Date().toISOString() : null,
+              side,
+            };
+          });
+
+        if (missingMilestones.length > 0) {
+          const { error: insertError } = await supabaseAdmin
+            .from("milestones")
+            .insert(missingMilestones);
+
+          if (insertError) {
+            console.error(`[milestones] Auto-insert failed for deal ${dId} side ${side}:`, insertError.message);
+          }
         }
       }
     }
@@ -156,7 +181,7 @@ export async function GET(req: Request) {
         supabaseAdmin
           .from("milestones")
           .select(
-            "id, title, status, milestone_date, order_index, completed_at, deal_id, description"
+            "id, title, status, milestone_date, order_index, completed_at, deal_id, description, side"
           )
           .in("deal_id", dealIds)
           .order("order_index", { ascending: true }),
@@ -191,6 +216,7 @@ export async function GET(req: Request) {
         completed_at: m.completed_at,
         deal_id: m.deal_id,
         description: m.description ?? null,
+        side: m.side ?? null,
         total_tasks: mTasks.length,
         completed_tasks: mTasks.filter((t: any) => t.completed).length,
       };

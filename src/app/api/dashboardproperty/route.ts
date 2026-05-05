@@ -22,7 +22,7 @@ export async function GET() {
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, parent_lead_id"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -60,7 +60,7 @@ export async function GET() {
     const { data: deals, error: dealError } = await supabaseAdmin
       .from("deals")
       .select(
-        "id, file_number, type, status, closing_date, property_address, price, lead_id"
+        "id, file_number, type, status, closing_date, property_address, price, selling_price, selling_property_address, lead_id"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -98,6 +98,11 @@ export async function GET() {
         address_province: lead.address_province || null,
         address_postal_code: lead.address_postal_code || null,
         address_unit: lead.address_unit || null,
+        selling_address_street: deal?.selling_property_address || lead.selling_address_street || null,
+        selling_address_city: lead.selling_address_city || null,
+        selling_address_province: lead.selling_address_province || null,
+        selling_address_postal_code: lead.selling_address_postal_code || null,
+        selling_address_unit: lead.selling_address_unit || null,
         first_name: client.first_name || lead.first_name,
         last_name: client.last_name || lead.last_name,
         phone: client.phone || lead.phone || null,

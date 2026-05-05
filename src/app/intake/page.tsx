@@ -22,6 +22,7 @@ export default function ServiceSelection() {
     string | null
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
+  const [sellingPrice, setSellingPrice] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
   const [apsPurchaseSigned, setApsPurchaseSigned] = useState<"yes" | "no" | null>(null);
@@ -136,6 +137,7 @@ export default function ServiceSelection() {
     setSelected(null);
     setSelectedClosingOption(null);
     setPurchasePrice("");
+    setSellingPrice("");
     setApsPurchaseSigned(null);
     setApsSaleSigned(null);
     setPurchaseFile(null);
@@ -180,6 +182,8 @@ export default function ServiceSelection() {
           <Step2
             purchasePrice={purchasePrice}
             setPurchasePrice={setPurchasePrice}
+            sellingPrice={sellingPrice}
+            setSellingPrice={setSellingPrice}
             formData={addressData}
             setFormData={setAddressData}
             sellingFormData={sellingAddressData}
@@ -237,6 +241,7 @@ export default function ServiceSelection() {
                     service: selected,
                     sub_service: selectedClosingOption,
                     price: purchasePrice,
+                    selling_price: selectedClosingOption === "both" ? sellingPrice : null,
 
                     address_street: addressData.street,
                     address_unit: addressData.unit,

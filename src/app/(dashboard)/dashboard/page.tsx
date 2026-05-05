@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   ChevronRight,
   Loader2,
+  Home,
+  FileText,
 } from "lucide-react";
 import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
@@ -31,6 +33,7 @@ interface Task {
   document_name: string | null;
   document_url: string | null;
   milestone_id: string | null;
+  side?: "purchase" | "sale" | null;
   milestones?: {
     id: string;
     title: string;
@@ -47,6 +50,7 @@ interface Milestone {
   order_index: number;
   completed_at: string | null;
   description: unknown | null;
+  side?: "purchase" | "sale" | null;
   total_tasks: number;
   completed_tasks: number;
 }
@@ -59,6 +63,11 @@ interface PropertyData {
   address_province: string | null;
   address_postal_code: string | null;
   address_unit: string | null;
+  selling_address_street: string | null;
+  selling_address_city: string | null;
+  selling_address_province: string | null;
+  selling_address_postal_code: string | null;
+  selling_address_unit: string | null;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
@@ -74,6 +83,8 @@ interface DealData {
   closing_date: string | null;
   property_address: string | null;
   price: number | null;
+  selling_price: number | null;
+  selling_property_address: string | null;
 }
 
 /* ─────────────────────────────────────────────
@@ -538,6 +549,9 @@ export default function DashboardPage() {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [milestonesLoading, setMilestonesLoading] = useState(false);
 
+  // ── Purchase/Sale tab state (only used when active deal is "Purchase & Sale") ──
+  const [selectedSide, setSelectedSide] = useState<"purchase" | "sale">("purchase");
+
   // ── Drawer state ──────────────────────────────────────────
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
@@ -584,6 +598,11 @@ export default function DashboardPage() {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Reset selected side when switching properties ─────────
+  useEffect(() => {
+    setSelectedSide("purchase");
+  }, [activeLeadId]);
 
   // ── When active lead/deal changes: reload tasks + milestones ──
   useEffect(() => {
@@ -659,6 +678,34 @@ export default function DashboardPage() {
   ]
     .filter(Boolean)
     .join(", ");
+
+  const sellingFullAddress = [
+    activeProperty?.selling_address_street,
+    activeProperty?.selling_address_city,
+    activeProperty?.selling_address_province,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const isBothDeal = activeDeal?.type === "Purchase & Sale";
+  const showSale = isBothDeal && selectedSide === "sale";
+
+  const heroAddress = showSale ? sellingFullAddress : fullAddress;
+  const heroLabel = isBothDeal
+    ? showSale
+      ? "Sale · Property Address"
+      : "Purchase · Property Address"
+    : activeDeal?.type
+      ? `${activeDeal.type} · Property Address`
+      : "Property Address";
+
+  const visibleMilestones = isBothDeal
+    ? milestones.filter((m) => (m.side ?? null) === selectedSide)
+    : milestones;
+
+  const visibleTasks = isBothDeal
+    ? tasks.filter((t) => (t.side ?? null) === selectedSide)
+    : tasks;
 
   const closingFormatted = activeDeal?.closing_date
     ? new Date(activeDeal.closing_date).toLocaleDateString("en-CA", {
@@ -743,22 +790,20 @@ export default function DashboardPage() {
 
       {/* ── 2. Property Hero Card ── */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-        {/* Header */}
-        <div className="bg-gray-100 px-6 py-5 flex items-start gap-4">
+        {/* Header (lead type + address on the left, Purchase/Sale toggle on the right) */}
+        <div className="bg-gray-100 px-6 py-5 flex flex-wrap items-center gap-4">
           <div className="w-10 h-10 rounded-full bg-[#C10007] flex items-center justify-center flex-shrink-0">
             <MapPin size={18} className="text-white" strokeWidth={2} />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-[14px] font-bold uppercase text-[#C10007] mb-1">
-              {activeDeal?.type
-                ? `${activeDeal.type} · Property Address`
-                : "Property Address"}
+              {heroLabel}
             </p>
             {propertyLoading ? (
               <p className="text-sm text-gray-400">Loading address...</p>
             ) : activeProperty ? (
               <h1 className="text-lg sm:text-2xl font-bold text-gray-900 leading-tight">
-                {fullAddress || "Address not provided"}
+                {heroAddress || "Address not provided"}
               </h1>
             ) : (
               <p className="text-sm text-gray-400">
@@ -766,6 +811,38 @@ export default function DashboardPage() {
               </p>
             )}
           </div>
+
+          {/* Purchase / Sale side switcher (only for Purchase & Sale deals) */}
+          {isBothDeal && (
+            <div
+              role="tablist"
+              aria-label="Transaction side"
+              className="inline-flex gap-1 bg-white p-1 rounded-xl border-2 border-gray-200 shadow-sm flex-shrink-0 ml-auto"
+            >
+              {(["purchase", "sale"] as const).map((s) => {
+                const isActive = selectedSide === s;
+                const Icon = s === "purchase" ? Home : FileText;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setSelectedSide(s)}
+                    className={[
+                      "cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap",
+                      isActive
+                        ? "bg-[#C10007] text-white shadow-md ring-2 ring-[#C10007]/20"
+                        : "bg-transparent text-gray-700 hover:bg-gray-100",
+                    ].join(" ")}
+                  >
+                    <Icon size={15} strokeWidth={2.5} />
+                    {s === "purchase" ? "Purchase Side" : "Sale Side"}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Info chips row */}
@@ -806,8 +883,8 @@ export default function DashboardPage() {
         {/* ── Left: Needs Your Attention (3/4) ── */}
         <div className="lg:col-span-7">
           <AttentionCard
-            key={activeLeadId ?? "no-active-lead"}
-            tasks={tasks}
+            key={`${activeLeadId ?? "no-active-lead"}:${selectedSide}`}
+            tasks={visibleTasks}
             loading={tasksLoading}
             onTaskClick={handleTaskClick}
           />
@@ -815,7 +892,7 @@ export default function DashboardPage() {
 
         {/* ── Right: Status Overview + Need Assistance stacked (1/4) ── */}
         <div className="lg:col-span-5 flex flex-col gap-5">
-          <StatusTimeline milestones={milestones} loading={milestonesLoading} />
+          <StatusTimeline milestones={visibleMilestones} loading={milestonesLoading} />
 
           {/* ── Need Assistance ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">

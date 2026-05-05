@@ -41,7 +41,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (deal) {
-      await completeApsTaskForDeal(deal.id);
+      await completeApsTaskForDeal(deal.id, side ?? null);
     }
 
     // 4. Also check co-person deals (they may have been auto-converted too)
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
           .maybeSingle();
 
         if (cpDeal) {
-          await completeApsTaskForDeal(cpDeal.id);
+          await completeApsTaskForDeal(cpDeal.id, side ?? null);
         }
       }
     }
@@ -73,16 +73,25 @@ export async function POST(req: Request) {
 
 /**
  * Find the APS task on a deal, mark it completed, advance the milestone,
- * and sync to all linked co-purchaser deals.
+ * and sync to all linked co-purchaser deals. For Purchase & Sale deals each
+ * side has its own APS task tagged with side='purchase' or side='sale', so
+ * the caller must pass the side it just uploaded so we don't accidentally
+ * complete the wrong side's task.
  */
-async function completeApsTaskForDeal(dealId: string) {
-  const { data: apsTask } = await supabaseAdmin
+async function completeApsTaskForDeal(
+  dealId: string,
+  side: "purchase" | "sale" | null,
+) {
+  const baseTaskQuery = supabaseAdmin
     .from("tasks")
     .select("id, milestone_id, task_template_id, is_shared")
     .eq("deal_id", dealId)
     .ilike("title", "%agreement of purchase and sale%")
     .eq("completed", false)
-    .maybeSingle();
+    .limit(1);
+  const { data: apsTask } = side === null
+    ? await baseTaskQuery.is("side", null).maybeSingle()
+    : await baseTaskQuery.eq("side", side).maybeSingle();
 
   if (!apsTask) return;
 
@@ -96,16 +105,21 @@ async function completeApsTaskForDeal(dealId: string) {
   }
 
   // Sync to linked co-purchaser deals (regardless of is_shared flag,
-  // since APS is a deal-level task that should apply to all linked purchasers)
+  // since APS is a deal-level task that should apply to all linked purchasers).
+  // Co-purchasers of a Purchase & Sale lead have the same per-side APS tasks,
+  // so filter by the same side here.
   const linkedDealIds = await getLinkedDealIds(dealId);
   for (const linkedDealId of linkedDealIds) {
-    const { data: linkedApsTask } = await supabaseAdmin
+    const linkedQuery = supabaseAdmin
       .from("tasks")
       .select("id, milestone_id")
       .eq("deal_id", linkedDealId)
       .ilike("title", "%agreement of purchase and sale%")
       .eq("completed", false)
-      .maybeSingle();
+      .limit(1);
+    const { data: linkedApsTask } = side === null
+      ? await linkedQuery.is("side", null).maybeSingle()
+      : await linkedQuery.eq("side", side).maybeSingle();
 
     if (linkedApsTask) {
       await supabaseAdmin

@@ -163,23 +163,26 @@ export async function advanceMilestone(dealId: string, milestoneId: string) {
       console.error("[MilestoneEmail] Co-purchaser trigger failed:", err)
     );
 
-    // Find and advance next milestone
+    // Find and advance next milestone — must stay on the same side for
+    // Purchase & Sale deals so the two timelines progress independently.
     const { data: currentMs } = await supabaseAdmin
       .from("milestones")
-      .select("order_index")
+      .select("order_index, side")
       .eq("id", milestoneId)
       .single();
 
     if (currentMs) {
-      const { data: nextMs } = await supabaseAdmin
+      const nextQuery = supabaseAdmin
         .from("milestones")
         .select("id")
         .eq("deal_id", dealId)
         .gt("order_index", currentMs.order_index)
         .neq("status", "Completed")
         .order("order_index", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+      const { data: nextMs } = currentMs.side === null
+        ? await nextQuery.is("side", null).maybeSingle()
+        : await nextQuery.eq("side", currentMs.side).maybeSingle();
 
       if (nextMs) {
         await supabaseAdmin

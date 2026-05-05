@@ -18,6 +18,7 @@ export async function POST(req: Request) {
       service,
       sub_service,
       price,
+      selling_price,
       address_street,
       address_unit,
       address_city,
@@ -62,6 +63,10 @@ export async function POST(req: Request) {
     if (service === "condo") lead_type = "Condo";
 
     const cleanPrice = price ? String(price).replace(/[^0-9.]/g, "") : null;
+    const cleanSellingPrice =
+      sub_service === "both" && selling_price
+        ? String(selling_price).replace(/[^0-9.]/g, "")
+        : null;
 
     // ── Purchase & Sale: buying and selling address can't be the same ──
     if (sub_service === "both" && address_street && selling_address_street) {
@@ -245,6 +250,7 @@ export async function POST(req: Request) {
         sub_service: service === "closing" ? sub_service : null,
         lead_type,
         price: cleanPrice,
+        selling_price: cleanSellingPrice,
         address_street,
         address_unit,
         address_city,
@@ -290,6 +296,7 @@ export async function POST(req: Request) {
               sub_service: service === "closing" ? sub_service : null,
               lead_type,
               price: cleanPrice,
+              selling_price: cleanSellingPrice,
               address_street,
               address_unit,
               address_city,

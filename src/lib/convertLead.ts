@@ -172,9 +172,11 @@ export async function convertSingleLead(params: {
     generatedFileNumber = `${prefix}${String(nextNum).padStart(4, "0")}`;
   }
 
-  // ── 3. Clean price ──────────────────────────────────────────────────
+  // ── 3. Clean prices ─────────────────────────────────────────────────
   const rawPrice = lead.price ? String(lead.price).replace(/[^0-9.]/g, "") : null;
   const cleanPrice = rawPrice ? parseFloat(rawPrice) : null;
+  const rawSellingPrice = lead.selling_price ? String(lead.selling_price).replace(/[^0-9.]/g, "") : null;
+  const cleanSellingPrice = rawSellingPrice ? parseFloat(rawSellingPrice) : null;
 
   // ── 4. Create deal ──────────────────────────────────────────────────
   const { data: deal, error: dealError } = await supabaseAdmin
@@ -188,6 +190,8 @@ export async function convertSingleLead(params: {
       property_address: lead.address_street ?? "Address TBD",
       closing_date: closingDate ?? null,
       price: cleanPrice ?? 0,
+      selling_price: cleanSellingPrice,
+      selling_property_address: lead.selling_address_street ?? null,
     })
     .select("id")
     .single();
@@ -196,114 +200,145 @@ export async function convertSingleLead(params: {
     return { success: false, deal_id: "", file_number: generatedFileNumber, client_id: clientId, invite_sent: false, error: `Deal creation failed: ${dealError?.message}` };
   }
 
-  // ── 5. Create milestones ────────────────────────────────────────────
+  // ── 5. Create milestones + tasks (per side for Purchase & Sale) ────
+  // For Purchase & Sale deals each side generates its own milestones and tasks
+  // tagged with `side`. Single-side deals run the loop once with side = null.
   const leadType = lead.lead_type ?? "Purchase";
-  const milestoneMap: Record<string, string> = {};
+  const isBoth = leadType === "Purchase & Sale";
+  const sides: Array<{ side: "purchase" | "sale" | null; templateType: string }> = isBoth
+    ? [
+        { side: "purchase", templateType: "Purchase" },
+        { side: "sale", templateType: "Sale" },
+      ]
+    : [{ side: null, templateType: leadType }];
 
-  const { data: stages } = await supabaseAdmin
-    .from("stage_templates")
-    .select("id, name, order_index, email_template_id, description, auto_complete")
-    .eq("lead_type", leadType)
-    .order("order_index", { ascending: true });
+  // Group-lead lookup for APS — only run once even when iterating two sides.
+  let groupLeadFlags: { aps_uploaded_purchase: boolean | null; aps_uploaded_sale: boolean | null; aps_uploaded: boolean | null } | null = null;
+  const loadGroupLeadFlags = async () => {
+    if (groupLeadFlags) return groupLeadFlags;
+    const groupLeadId = lead.parent_lead_id || lead.id;
+    const { data: groupLeads } = await supabaseAdmin
+      .from("leads")
+      .select("aps_uploaded, aps_uploaded_purchase, aps_uploaded_sale")
+      .or(`id.eq.${groupLeadId},parent_lead_id.eq.${groupLeadId}`)
+      .neq("id", lead.id);
+    groupLeadFlags = {
+      aps_uploaded_purchase: (groupLeads ?? []).some((l) => l.aps_uploaded_purchase) || null,
+      aps_uploaded_sale: (groupLeads ?? []).some((l) => l.aps_uploaded_sale) || null,
+      aps_uploaded: (groupLeads ?? []).some((l) => l.aps_uploaded) || null,
+    };
+    return groupLeadFlags;
+  };
 
-  if (stages && stages.length > 0) {
-    // Track which order_index slots have an auto-completed milestone so the
-    // next non-completed milestone becomes "In Progress".
-    let firstActiveAssigned = false;
+  for (const { side, templateType } of sides) {
+    const milestoneMap: Record<string, string> = {};
 
-    for (const stage of stages) {
-      const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
+    const { data: stages } = await supabaseAdmin
+      .from("stage_templates")
+      .select("id, name, order_index, email_template_id, description, auto_complete")
+      .eq("lead_type", templateType)
+      .order("order_index", { ascending: true });
 
-      let status: string;
-      if (stage.auto_complete) {
-        status = "Completed";
-      } else if (!firstActiveAssigned) {
-        status = "In Progress";
-        firstActiveAssigned = true;
-      } else {
-        status = stage.order_index === 2 && !firstActiveAssigned ? "Waiting" : "Pending";
+    if (stages && stages.length > 0) {
+      let firstActiveAssigned = false;
+
+      for (const stage of stages) {
+        const cleanName = stage.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "") ?? stage.name;
+
+        let status: string;
+        if (stage.auto_complete) {
+          status = "Completed";
+        } else if (!firstActiveAssigned) {
+          status = "In Progress";
+          firstActiveAssigned = true;
+        } else {
+          status = stage.order_index === 2 && !firstActiveAssigned ? "Waiting" : "Pending";
+        }
+
+        const { data: ms } = await supabaseAdmin
+          .from("milestones")
+          .insert({
+            deal_id: deal.id,
+            title: cleanName,
+            status,
+            order_index: stage.order_index,
+            email_template_id: stage.email_template_id ?? null,
+            stage_template_id: stage.id,
+            description: stage.description ?? null,
+            side,
+          })
+          .select("id")
+          .single();
+        if (ms) milestoneMap[stage.id] = ms.id;
       }
-
-      const { data: ms } = await supabaseAdmin
-        .from("milestones")
-        .insert({
-          deal_id: deal.id,
-          title: cleanName,
-          status,
-          order_index: stage.order_index,
-          email_template_id: stage.email_template_id ?? null,
-          stage_template_id: stage.id,
-          description: stage.description ?? null,
-        })
-        .select("id")
-        .single();
-      if (ms) milestoneMap[stage.id] = ms.id;
     }
-  }
 
-  // ── 6. Create tasks ─────────────────────────────────────────────────
-  const { data: taskTemplates } = await supabaseAdmin
-    .from("task_templates")
-    .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
-    .eq("lead_type", leadType)
-    .eq("is_deleted", false)
-    .order("order_index", { ascending: true });
+    // ── Tasks for this side ──
+    const { data: taskTemplates } = await supabaseAdmin
+      .from("task_templates")
+      .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
+      .eq("lead_type", templateType)
+      .eq("is_deleted", false)
+      .order("order_index", { ascending: true });
 
-  if (taskTemplates && taskTemplates.length > 0) {
-    const milestoneIds = Object.values(milestoneMap);
-    const firstMilestoneId = milestoneIds[0] ?? null;
+    if (taskTemplates && taskTemplates.length > 0) {
+      const taskRows = taskTemplates
+        .filter((t) => {
+          const role = (t.role_type ?? "").toLowerCase();
+          return role === "client" || role === "both" || role === "";
+        })
+        .map((t) => ({
+          deal_id: deal.id,
+          milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? null) : null,
+          task_template_id: t.id,
+          title: t.name?.trim() ?? t.name,
+          status: "Pending",
+          completed: false,
+          role_type: t.role_type ?? "client",
+          is_shared: t.is_shared ?? false,
+          side,
+        }));
 
-    const taskRows = taskTemplates
-      .filter((t) => {
-        const role = (t.role_type ?? "").toLowerCase();
-        return role === "client" || role === "both" || role === "";
-      })
-      .map((t) => ({
-        deal_id: deal.id,
-        milestone_id: t.stage_template_id ? (milestoneMap[t.stage_template_id] ?? null) : null,
-        task_template_id: t.id,
-        title: t.name?.trim() ?? t.name,
-        status: "Pending",
-        completed: false,
-        role_type: t.role_type ?? "client",
-        is_shared: t.is_shared ?? false,
-      }));
+      if (taskRows.length > 0) {
+        await supabaseAdmin.from("tasks").insert(taskRows);
 
-    if (taskRows.length > 0) {
-      await supabaseAdmin.from("tasks").insert(taskRows);
+        // Auto-complete the APS task on this side if the matching file was uploaded
+        // during intake. For "Purchase & Sale" each side checks its own flag; for
+        // single-side flows we fall back to the legacy aps_uploaded boolean.
+        let apsUploaded: boolean;
+        if (isBoth) {
+          apsUploaded = !!(side === "purchase" ? lead.aps_uploaded_purchase : lead.aps_uploaded_sale);
+          if (!apsUploaded) {
+            const flags = await loadGroupLeadFlags();
+            apsUploaded = !!(side === "purchase" ? flags.aps_uploaded_purchase : flags.aps_uploaded_sale);
+          }
+        } else {
+          apsUploaded = !!lead.aps_uploaded;
+          if (!apsUploaded) {
+            const flags = await loadGroupLeadFlags();
+            apsUploaded = !!flags.aps_uploaded;
+          }
+        }
 
-      // Auto-complete "Upload APS Document" task if file was uploaded during intake
-      // Check this lead OR any linked lead in the same group (APS is deal-level)
-      let apsWasUploaded = !!lead.aps_uploaded;
-
-      if (!apsWasUploaded) {
-        const groupLeadId = lead.parent_lead_id || lead.id;
-        const { data: groupLeads } = await supabaseAdmin
-          .from("leads")
-          .select("aps_uploaded")
-          .or(`id.eq.${groupLeadId},parent_lead_id.eq.${groupLeadId}`)
-          .neq("id", lead.id);
-
-        apsWasUploaded = (groupLeads ?? []).some((l) => l.aps_uploaded);
-      }
-
-      if (apsWasUploaded) {
-        const { data: apsTask } = await supabaseAdmin
-          .from("tasks")
-          .select("id, milestone_id")
-          .eq("deal_id", deal.id)
-          .ilike("title", "%agreement of purchase and sale%")
-          .maybeSingle();
-
-        if (apsTask) {
-          await supabaseAdmin
+        if (apsUploaded) {
+          const apsQuery = supabaseAdmin
             .from("tasks")
-            .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
-            .eq("id", apsTask.id);
+            .select("id, milestone_id")
+            .eq("deal_id", deal.id)
+            .ilike("title", "%agreement of purchase and sale%");
+          const { data: apsTask } = side === null
+            ? await apsQuery.is("side", null).maybeSingle()
+            : await apsQuery.eq("side", side).maybeSingle();
 
-          // Advance the linked milestone (completes it if all its tasks are done)
-          if (apsTask.milestone_id) {
-            await advanceMilestone(deal.id, apsTask.milestone_id);
+          if (apsTask) {
+            await supabaseAdmin
+              .from("tasks")
+              .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
+              .eq("id", apsTask.id);
+
+            if (apsTask.milestone_id) {
+              await advanceMilestone(deal.id, apsTask.milestone_id);
+            }
           }
         }
       }

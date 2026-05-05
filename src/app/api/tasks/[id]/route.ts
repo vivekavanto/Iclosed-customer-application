@@ -102,22 +102,26 @@ export async function PATCH(
         );
 
         // 4️⃣ Find next milestone → mark it In Progress
+        // Stay on the same side for Purchase & Sale deals so each timeline
+        // progresses independently.
         const { data: currentMilestone } = await supabaseAdmin
           .from("milestones")
-          .select("order_index")
+          .select("order_index, side")
           .eq("id", task.milestone_id)
           .single();
 
         if (currentMilestone) {
-          const { data: nextMilestone } = await supabaseAdmin
+          const nextQ = supabaseAdmin
             .from("milestones")
             .select("id")
             .eq("deal_id", task.deal_id)
             .gt("order_index", currentMilestone.order_index)
             .neq("status", "Completed")
             .order("order_index", { ascending: true })
-            .limit(1)
-            .maybeSingle();
+            .limit(1);
+          const { data: nextMilestone } = currentMilestone.side === null
+            ? await nextQ.is("side", null).maybeSingle()
+            : await nextQ.eq("side", currentMilestone.side).maybeSingle();
 
           if (nextMilestone) {
             await supabaseAdmin
@@ -126,7 +130,7 @@ export async function PATCH(
               .eq("id", nextMilestone.id);
 
             // 5️⃣ Find the milestone after the next one → mark it "Waiting"
-            const { data: waitingMilestone } = await supabaseAdmin
+            const waitQ = supabaseAdmin
               .from("milestones")
               .select("id")
               .eq("deal_id", task.deal_id)
@@ -135,8 +139,10 @@ export async function PATCH(
               .neq("status", "In Progress")
               .gt("order_index", currentMilestone.order_index)
               .order("order_index", { ascending: true })
-              .limit(1)
-              .maybeSingle();
+              .limit(1);
+            const { data: waitingMilestone } = currentMilestone.side === null
+              ? await waitQ.is("side", null).maybeSingle()
+              : await waitQ.eq("side", currentMilestone.side).maybeSingle();
 
             if (waitingMilestone) {
               await supabaseAdmin

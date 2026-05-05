@@ -209,23 +209,26 @@ export async function POST(req: Request) {
             console.error("[MilestoneEmail] Trigger failed:", err)
           );
 
-          // Advance next milestone to In Progress
+          // Advance next milestone to In Progress — stay on the same side for
+          // Purchase & Sale deals.
           const { data: currentMs } = await supabaseAdmin
             .from("milestones")
-            .select("order_index")
+            .select("order_index, side")
             .eq("id", task.milestone_id)
             .single();
 
           if (currentMs) {
-            const { data: nextMs } = await supabaseAdmin
+            const nextQ = supabaseAdmin
               .from("milestones")
               .select("id")
               .eq("deal_id", task.deal_id)
               .gt("order_index", currentMs.order_index)
               .neq("status", "Completed")
               .order("order_index", { ascending: true })
-              .limit(1)
-              .maybeSingle();
+              .limit(1);
+            const { data: nextMs } = currentMs.side === null
+              ? await nextQ.is("side", null).maybeSingle()
+              : await nextQ.eq("side", currentMs.side).maybeSingle();
 
             if (nextMs) {
               await supabaseAdmin

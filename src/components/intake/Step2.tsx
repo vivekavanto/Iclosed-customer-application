@@ -17,6 +17,8 @@ interface AddressData {
 interface Step2Props {
     purchasePrice: string;
     setPurchasePrice: (value: string) => void;
+    sellingPrice: string;
+    setSellingPrice: (value: string) => void;
     formData: AddressData;
     setFormData: (data: AddressData) => void;
     sellingFormData: AddressData;
@@ -175,6 +177,8 @@ function AddressForm({
 const Step2: React.FC<Step2Props> = ({
     purchasePrice,
     setPurchasePrice,
+    sellingPrice,
+    setSellingPrice,
     formData,
     setFormData,
     sellingFormData,
@@ -189,35 +193,37 @@ const Step2: React.FC<Step2Props> = ({
     const priceLabel = isSelling ? "Sale Price" : "Purchase Price";
     const { error: toastError } = useToast();
 
-    // Price validation
+    const MIN_PRICE = 10000;
+    const MAX_PRICE = 10000000;
+
+    function validatePrice(value: string): { valid: boolean; error: string } {
+        const numeric = parseFloat(value.replace(/[^0-9.]/g, ""));
+        if (value.trim() === "") return { valid: false, error: "" };
+        if (isNaN(numeric)) return { valid: false, error: "Please enter a valid amount." };
+        if (numeric < MIN_PRICE) return { valid: false, error: "Property price must be at least $10,000." };
+        if (numeric > MAX_PRICE) return { valid: false, error: "Property price cannot exceed $10,000,000." };
+        return { valid: true, error: "" };
+    }
+
+    // Purchase / single-side price validation
     const [priceValid, setPriceValid] = useState(false);
     const [priceError, setPriceError] = useState("");
 
     useEffect(() => {
-        const numericValue = parseFloat(
-            purchasePrice.replace(/[^0-9.]/g, "")
-        );
-
-        const MIN_PRICE = 10000;
-        const MAX_PRICE = 10000000;
-
-        if (purchasePrice.trim() === "") {
-            setPriceError("");
-            setPriceValid(false);
-        } else if (isNaN(numericValue)) {
-            setPriceError("Please enter a valid amount.");
-            setPriceValid(false);
-        } else if (numericValue < MIN_PRICE) {
-            setPriceError("Property price must be at least $10,000.");
-            setPriceValid(false);
-        } else if (numericValue > MAX_PRICE) {
-            setPriceError("Property price cannot exceed $10,000,000.");
-            setPriceValid(false);
-        } else {
-            setPriceError("");
-            setPriceValid(true);
-        }
+        const r = validatePrice(purchasePrice);
+        setPriceValid(r.valid);
+        setPriceError(r.error);
     }, [purchasePrice]);
+
+    // Sale price validation (only used when isBoth)
+    const [sellingPriceValid, setSellingPriceValid] = useState(false);
+    const [sellingPriceError, setSellingPriceError] = useState("");
+
+    useEffect(() => {
+        const r = validatePrice(sellingPrice);
+        setSellingPriceValid(r.valid);
+        setSellingPriceError(r.error);
+    }, [sellingPrice]);
 
     // Address validation
     const [buyTouched, setBuyTouched] = useState<Partial<Record<keyof AddressData, boolean>>>({});
@@ -240,7 +246,9 @@ const Step2: React.FC<Step2Props> = ({
         ? Object.keys(buyErrors).length === 0 && Object.keys(sellErrors).length === 0 && !sameAddressError
         : Object.keys(buyErrors).length === 0;
 
-    const isValid = priceValid && addressValid;
+    const pricesValid = isBoth ? priceValid && sellingPriceValid : priceValid;
+
+    const isValid = pricesValid && addressValid;
 
     const leftSteps = [
         { id: 1, label: "Select Service" },
@@ -265,6 +273,11 @@ const Step2: React.FC<Step2Props> = ({
         }
         if (!priceValid) {
             toastError(priceError || "Please enter a valid price.");
+            setSubmitAttempted(true);
+            return;
+        }
+        if (isBoth && !sellingPriceValid) {
+            toastError(sellingPriceError || "Please enter a valid sale price.");
             setSubmitAttempted(true);
             return;
         }
@@ -344,11 +357,13 @@ const Step2: React.FC<Step2Props> = ({
                         {/* Price Section */}
                         <div>
                             <h2 className="text-3xl font-semibold mb-6">
-                                Enter the {priceLabel.toLowerCase()} for the property.
+                                {isBoth
+                                    ? "Enter the purchase price and the sale price."
+                                    : `Enter the ${priceLabel.toLowerCase()} for the property.`}
                             </h2>
 
                             <Input
-                                label={priceLabel}
+                                label={isBoth ? "Purchase Price" : priceLabel}
                                 required
                                 type="text"
                                 value={purchasePrice}
@@ -362,6 +377,26 @@ const Step2: React.FC<Step2Props> = ({
 
                             {priceError && (
                                 <p className="text-sm text-red-600">{priceError}</p>
+                            )}
+
+                            {isBoth && (
+                                <div className="mt-5">
+                                    <Input
+                                        label="Sale Price"
+                                        required
+                                        type="text"
+                                        value={sellingPrice}
+                                        onChange={(e) => {
+                                            const formattedValue = formatCurrency(e.target.value);
+                                            setSellingPrice(formattedValue);
+                                        }}
+                                        placeholder="$1,250,000"
+                                        className="mb-2"
+                                    />
+                                    {sellingPriceError && (
+                                        <p className="text-sm text-red-600">{sellingPriceError}</p>
+                                    )}
+                                </div>
                             )}
                         </div>
 

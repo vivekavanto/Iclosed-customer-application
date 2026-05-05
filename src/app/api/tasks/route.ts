@@ -88,6 +88,7 @@ export async function GET(req: Request) {
     // ─────────────────────────────────────────
     // Auto-insert missing default tasks from
     // task_templates for each deal
+    // (Purchase & Sale deals get one set per side)
     // ─────────────────────────────────────────
     for (const dId of dealIds) {
       // Get deal type to filter correct templates
@@ -98,78 +99,87 @@ export async function GET(req: Request) {
         .single();
 
       const dealType = dealData?.type ?? "Purchase";
-      const templateType = getTaskTemplateType(dealType);
+      const sides: Array<{ side: "purchase" | "sale" | null; templateType: string }> =
+        dealType === "Purchase & Sale"
+          ? [
+              { side: "purchase", templateType: "Purchase" },
+              { side: "sale", templateType: "Sale" },
+            ]
+          : [{ side: null, templateType: getTaskTemplateType(dealType) }];
 
-      // Fetch only default task templates for this deal's lead type
-      const { data: taskTemplates } = await supabaseAdmin
-        .from("task_templates")
-        .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
-        .eq("lead_type", templateType)
-        .eq("is_default", true)
-        .eq("is_deleted", false)
-        .order("order_index", { ascending: true });
-
-      if (!taskTemplates || taskTemplates.length === 0) continue;
-
-      // Fetch existing tasks for this deal — match by task_template_id
+      // Fetch existing tasks once per deal (with side) for fast lookup
       const { data: existingTasks } = await supabaseAdmin
         .from("tasks")
-        .select("task_template_id, title")
+        .select("task_template_id, title, side")
         .eq("deal_id", dId);
 
-      const existingTemplateIds = new Set(
-        (existingTasks ?? []).map((t: any) => t.task_template_id).filter(Boolean)
+      const existingTemplateKeys = new Set(
+        (existingTasks ?? [])
+          .filter((t: any) => t.task_template_id)
+          .map((t: any) => `${t.side ?? "_"}:${t.task_template_id}`)
       );
-      const existingTitles = new Set(
-        (existingTasks ?? []).map((t: any) => t.title?.trim().toLowerCase())
+      const existingTitleKeys = new Set(
+        (existingTasks ?? []).map(
+          (t: any) => `${t.side ?? "_"}:${t.title?.trim().toLowerCase()}`
+        )
       );
 
-      // Get all milestones for this deal (with stage_template_id for matching)
+      // Fetch all milestones for this deal once (with side + stage_template_id)
       const { data: dealMilestones } = await supabaseAdmin
         .from("milestones")
-        .select("id, stage_template_id")
+        .select("id, stage_template_id, side")
         .eq("deal_id", dId)
         .order("order_index", { ascending: true });
 
-      // Build map: stage_template_id → milestone_id
-      const stageToMilestone: Record<string, string> = {};
-      let firstMilestoneId: string | null = null;
-      for (const ms of dealMilestones ?? []) {
-        if (!firstMilestoneId) firstMilestoneId = ms.id;
-        if (ms.stage_template_id) stageToMilestone[ms.stage_template_id] = ms.id;
-      }
+      for (const { side, templateType } of sides) {
+        const { data: taskTemplates } = await supabaseAdmin
+          .from("task_templates")
+          .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
+          .eq("lead_type", templateType)
+          .eq("is_default", true)
+          .eq("is_deleted", false)
+          .order("order_index", { ascending: true });
 
-      // Find templates not yet inserted — match by task_template_id first, fallback to title
-      const missingTasks = taskTemplates
-        .filter((tt: any) => {
-          // Skip if already inserted by template ID
-          if (existingTemplateIds.has(tt.id)) return false;
-          // Fallback: skip if a task with same title already exists
-          if (existingTitles.has(tt.name?.trim().toLowerCase())) return false;
-          // Only client-facing tasks
-          const role = (tt.role_type ?? "").toLowerCase();
-          return role === "client" || role === "both" || role === "";
-        })
-        .map((tt: any) => ({
-          deal_id: dId,
-          milestone_id: tt.stage_template_id
-            ? (stageToMilestone[tt.stage_template_id] ?? null)
-            : null,
-          task_template_id: tt.id,
-          title: tt.name?.trim() ?? tt.name,
-          status: "Pending",
-          completed: false,
-          role_type: tt.role_type ?? "client",
-          is_shared: tt.is_shared ?? false,
-        }));
+        if (!taskTemplates || taskTemplates.length === 0) continue;
 
-      if (missingTasks.length > 0) {
-        const { error: insertError } = await supabaseAdmin
-          .from("tasks")
-          .insert(missingTasks);
+        // Build stage_template_id → milestone_id map scoped to this side
+        const stageToMilestone: Record<string, string> = {};
+        for (const ms of dealMilestones ?? []) {
+          if ((ms.side ?? null) !== side) continue;
+          if (ms.stage_template_id) stageToMilestone[ms.stage_template_id] = ms.id;
+        }
 
-        if (insertError) {
-          console.error(`[tasks] Auto-insert failed for deal ${dId}:`, insertError.message);
+        const missingTasks = taskTemplates
+          .filter((tt: any) => {
+            const tplKey = `${side ?? "_"}:${tt.id}`;
+            if (existingTemplateKeys.has(tplKey)) return false;
+            const titleKey = `${side ?? "_"}:${tt.name?.trim().toLowerCase()}`;
+            if (existingTitleKeys.has(titleKey)) return false;
+            const role = (tt.role_type ?? "").toLowerCase();
+            return role === "client" || role === "both" || role === "";
+          })
+          .map((tt: any) => ({
+            deal_id: dId,
+            milestone_id: tt.stage_template_id
+              ? (stageToMilestone[tt.stage_template_id] ?? null)
+              : null,
+            task_template_id: tt.id,
+            title: tt.name?.trim() ?? tt.name,
+            status: "Pending",
+            completed: false,
+            role_type: tt.role_type ?? "client",
+            is_shared: tt.is_shared ?? false,
+            side,
+          }));
+
+        if (missingTasks.length > 0) {
+          const { error: insertError } = await supabaseAdmin
+            .from("tasks")
+            .insert(missingTasks);
+
+          if (insertError) {
+            console.error(`[tasks] Auto-insert failed for deal ${dId} side ${side}:`, insertError.message);
+          }
         }
       }
     }
