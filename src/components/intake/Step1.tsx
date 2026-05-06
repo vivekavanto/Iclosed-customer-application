@@ -74,7 +74,7 @@ export function Step1({
       icon: Home,
       title: "I am buying a property",
       description:
-        "You're buying a property? We'll handle the legal steps to complete your purchase securely.",
+        "Buying a property? We'll handle the legal steps to complete your purchase securely.",
       price: "$1229",
     },
     {
@@ -310,7 +310,7 @@ export function Step1({
                         </span>
                         <h4 className="text-sm sm:text-base font-bold text-gray-900 mb-1">Administration fees</h4>
                         <p className="text-xs sm:text-sm text-gray-500 leading-relaxed mb-3">
-                          The overhead costs of delivering your legal service. At iClosed, we don't nickel-and-dime you for these — they're already built into our flat fee.
+                        At iClosed, these are included in our flat fee — no add-ons, markups, or surprise charges.
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {administrationFees.map((fee) => (

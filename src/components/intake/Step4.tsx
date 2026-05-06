@@ -150,7 +150,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
             <p className="text-gray-600 text-sm text-center">
               <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
             </p>
-            <p className="text-gray-400 text-xs mt-0.5">PDF, JPG, PNG â€” max 10 MB</p>
+            <p className="text-gray-400 text-xs mt-0.5">PDF, JPG, PNG — max 10 MB</p>
             <input
               id={inputId}
               type="file"
@@ -312,7 +312,7 @@ const Step4: React.FC<Step4Props> = ({
                 {sideHeading}
               </h2>
               <p className="mt-3 text-gray-500 text-sm leading-relaxed">
-                Let us know which Agreements of Purchase and Sale you've already signed so we can prepare your file accordingly.
+                Let us know which Agreements of Purchase and Sale (APS) you've already signed so we can prepare your file accordingly.
               </p>
             </div>
 

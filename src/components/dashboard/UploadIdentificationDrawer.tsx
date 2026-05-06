@@ -54,13 +54,28 @@ const CAMERA_STEPS: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront"
 
 type LabelKey = "primary_front" | "primary_back" | "secondary_front" | "secondary_back" | "other";
 
+interface DocumentEntry {
+  documentType: string;
+  side: "front" | "back" | "front-and-back" | "unknown";
+  sideRequirement: "single-sided" | "front-and-back" | "unknown";
+  isComplete: boolean;
+  confidence: "high" | "medium" | "low";
+}
+
 interface DetectionResult {
   isIdentification: boolean;
   documentType: string | null;
-  side: "front" | "back" | "unknown";
+  side: "front" | "back" | "front-and-back" | "unknown";
   sideRequirement: "single-sided" | "front-and-back" | "unknown";
   confidence: "high" | "medium" | "low";
   reason: string;
+  // Multi-document support
+  multipleDocuments?: DocumentEntry[];
+  summary?: {
+    totalDocuments: number;
+    completeDocuments: number;
+    documentTypesFound: string[];
+  };
 }
 
 interface SelectedFile {
@@ -94,27 +109,12 @@ const LABEL_OPTIONS: { value: LabelKey; text: string }[] = [
   { value: "other", text: "Other" },
 ];
 
-const REQUIRED_LABELS: LabelKey[] = [
-  "primary_front",
-  "primary_back",
-  "secondary_front",
-  "secondary_back",
-];
-
 const DEFAULT_ORDER: LabelKey[] = [
   "primary_front",
   "primary_back",
   "secondary_front",
   "secondary_back",
 ];
-
-function siblingSideLabel(label: LabelKey): LabelKey | null {
-  if (label === "primary_front") return "primary_back";
-  if (label === "primary_back") return "primary_front";
-  if (label === "secondary_front") return "secondary_back";
-  if (label === "secondary_back") return "secondary_front";
-  return null;
-}
 
 function labelText(label: LabelKey) {
   return LABEL_OPTIONS.find((o) => o.value === label)?.text ?? "Other";
@@ -227,11 +227,38 @@ async function fetchDetection(file: File, timeoutMs = 30_000): Promise<Detection
     const r = data.result as {
       is_identification: boolean;
       document_type: string | null;
-      side: "front" | "back" | "unknown";
+      side: "front" | "back" | "front-and-back" | "unknown";
       side_requirement: "single-sided" | "front-and-back" | "unknown";
       confidence: "high" | "medium" | "low";
       reason: string;
+      multiple_documents?: Array<{
+        document_type: string;
+        side: "front" | "back" | "front-and-back" | "unknown";
+        side_requirement: "single-sided" | "front-and-back" | "unknown";
+        is_complete: boolean;
+        confidence: "high" | "medium" | "low";
+      }>;
+      summary?: {
+        total_documents: number;
+        complete_documents: number;
+        document_types_found: string[];
+      };
     };
+
+    const multipleDocuments = r.multiple_documents?.map((d) => ({
+      documentType: d.document_type,
+      side: d.side,
+      sideRequirement: d.side_requirement,
+      isComplete: d.is_complete,
+      confidence: d.confidence,
+    }));
+
+    const summary = r.summary ? {
+      totalDocuments: r.summary.total_documents,
+      completeDocuments: r.summary.complete_documents,
+      documentTypesFound: r.summary.document_types_found,
+    } : undefined;
+
     return {
       ok: true,
       detection: {
@@ -241,6 +268,8 @@ async function fetchDetection(file: File, timeoutMs = 30_000): Promise<Detection
         sideRequirement: r.side_requirement ?? "unknown",
         confidence: r.confidence,
         reason: r.reason,
+        multipleDocuments,
+        summary,
       },
     };
   } catch (err: unknown) {
@@ -266,11 +295,9 @@ function appendDetectionFields(fd: FormData, det: DetectionResult | null) {
   if (det.reason) fd.append("detection_reason", det.reason);
 }
 
-// ── Acceptable Documents Dropdown (LSO By-Law 7.1) ────────────────────────────
+// ── Acceptable Documents Section (LSO By-Law 7.1) ────────────────────────────
 
-function AcceptableDocumentsDropdown() {
-  const [isOpen, setIsOpen] = useState(false);
-
+function AcceptableDocumentsSection() {
   const acceptableDocs = [
     "Canadian Passport",
     "Driver's License",
@@ -283,44 +310,70 @@ function AcceptableDocumentsDropdown() {
   ];
 
   return (
+    <div className="rounded-xl border border-[#C10007]/20 bg-[#FEF2F2] overflow-hidden">
+      <div className="px-4 py-3.5 border-b border-[#C10007]/10">
+        <span className="text-sm font-bold text-gray-900">
+          Acceptable Identification Documents
+        </span>
+      </div>
+      <div className="px-4 py-4 bg-white space-y-4">
+        <p className="text-xs text-gray-600 leading-relaxed">
+          As per Law Society of Ontario By-Law 7.1, please provide{" "}
+          <span className="font-bold text-[#C10007]">two different government-issued photo IDs</span>{" "}
+          from the list below for identity verification.
+        </p>
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          {acceptableDocs.map((doc) => (
+            <div key={doc} className="flex items-center gap-2 text-xs text-gray-700">
+              <CheckCircle2 size={13} className="text-green-500 flex-shrink-0" />
+              <span>{doc}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
+          <AlertCircle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-500">
+            <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid
+            government ID for these purposes.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Why Identification Required Dropdown ───────────────────────────────────────
+
+function WhyIdentificationRequiredDropdown() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
     <div className="rounded-xl border border-gray-200 overflow-hidden">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3.5 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
       >
-        <span className="text-sm font-semibold text-gray-900">
-          Acceptable Identification Documents
+        <span className="text-sm font-medium text-gray-700">
+          Why is Identification Required?
         </span>
         <ChevronDown
           size={18}
-          className={`text-gray-500 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          className={`text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
         />
       </button>
       {isOpen && (
-        <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
-          <p className="text-[11px] text-gray-500 leading-relaxed">
-            As per Law Society of Ontario By-Law 7.1, please provide{" "}
-            <span className="font-semibold text-gray-700">two different government-issued photo IDs</span>{" "}
-            from the list below for identity verification.
+        <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2 text-xs text-gray-600 leading-relaxed">
+          <p>
+            Government-issued identification is required to verify your identity and comply with
+            legal requirements for property transactions.
           </p>
-
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-            {acceptableDocs.map((doc) => (
-              <div key={doc} className="flex items-center gap-2 text-xs text-gray-600">
-                <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
-                <span>{doc}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
-            <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-gray-500">
-              <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid
-              government ID for these purposes.
-            </p>
-          </div>
+          <p>
+            This helps prevent fraud and ensures all parties are properly identified before
+            proceeding with the closing.
+          </p>
         </div>
       )}
     </div>
@@ -535,10 +588,6 @@ export default function UploadIdentificationDrawer({
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((s) => s.id !== id);
     });
-  }
-
-  function setSelectedLabel(id: string, label: LabelKey) {
-    setSelected((prev) => prev.map((s) => (s.id === id ? { ...s, label } : s)));
   }
 
   async function removeExisting(id: string) {
@@ -797,16 +846,12 @@ export default function UploadIdentificationDrawer({
       setGlobalError("Missing lead. Please refresh and try again.");
       return;
     }
-    if (hasDuplicates) {
-      setGlobalError(
-        `Duplicate labels detected (${duplicatePendingLabels.map(labelText).join(", ")}). Fix them before uploading.`,
-      );
+    if (hasDetectionFailures) {
+      setGlobalError("Please remove files that could not be identified as valid government IDs.");
       return;
     }
-    if (!allRequiredMet) {
-      setGlobalError(
-        `Missing required document${missingRequired.length > 1 ? "s" : ""}: ${missingRequired.map(labelText).join(", ")}.`,
-      );
+    if (completeDocCount < 2) {
+      setGlobalError("Please upload at least 2 complete government IDs (front and back for each, or single-sided IDs).");
       return;
     }
 
@@ -819,7 +864,11 @@ export default function UploadIdentificationDrawer({
         fd.append("file", s.file);
         fd.append("lead_id", leadId);
         fd.append("doc_type", DOC_TYPE);
-        fd.append("custom_type", s.label);
+        // Use detected document type and side as custom_type
+        const customType = s.detection?.documentType 
+          ? `${s.detection.documentType}${s.detection.side !== "unknown" ? `_${s.detection.side}` : ""}`
+          : "identification";
+        fd.append("custom_type", customType);
         appendDetectionFields(fd, s.detection);
         const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
         const data = await res.json();
@@ -838,7 +887,9 @@ export default function UploadIdentificationDrawer({
           body: JSON.stringify({
             task_id: taskId,
             responses: uploaded.map(({ selected: s, url }) => ({
-              field_label: labelText(s.label),
+              field_label: s.detection?.documentType 
+                ? `${s.detection.documentType}${s.detection.side !== "unknown" ? ` (${s.detection.side})` : ""}`
+                : "Identification Document",
               field_type: "file",
               file_url: url,
               file_name: s.file.name,
@@ -871,36 +922,87 @@ export default function UploadIdentificationDrawer({
 
   const totalCount = selected.length + existing.length;
 
-  // Coverage: which required labels are covered (across existing + pending)
-  const coveredLabels = new Set<string>();
-  for (const d of existing) if (d.custom_type) coveredLabels.add(d.custom_type);
+  // Group detected documents by type to determine if both sides are present
+  // Now supports multiple documents detected in a single file
+  const detectedDocs: { type: string; side: string; sideRequirement: string; isComplete: boolean; fileId: string }[] = [];
   for (const s of selected) {
-    coveredLabels.add(s.label);
-    // Edge case: some IDs (for example passports) are valid as single-sided uploads.
-    // When Gemini classifies a doc as single-sided, treat the paired side as covered too.
-    if (s.detection?.isIdentification && s.detection.sideRequirement === "single-sided") {
-      const paired = siblingSideLabel(s.label);
-      if (paired) coveredLabels.add(paired);
+    if (s.detection?.isIdentification) {
+      // If multiple documents were detected in this file, add each one
+      if (s.detection.multipleDocuments && s.detection.multipleDocuments.length > 0) {
+        for (const doc of s.detection.multipleDocuments) {
+          detectedDocs.push({
+            type: doc.documentType,
+            side: doc.side,
+            sideRequirement: doc.sideRequirement,
+            isComplete: doc.isComplete,
+            fileId: s.id,
+          });
+        }
+      } else if (s.detection.documentType) {
+        // Single document detection (backward compatibility)
+        const isComplete = 
+          s.detection.sideRequirement === "single-sided" || 
+          s.detection.side === "front-and-back";
+        detectedDocs.push({
+          type: s.detection.documentType,
+          side: s.detection.side,
+          sideRequirement: s.detection.sideRequirement,
+          isComplete,
+          fileId: s.id,
+        });
+      }
     }
   }
-  const missingRequired = REQUIRED_LABELS.filter((r) => !coveredLabels.has(r));
 
-  // Duplicate detection among pending (same label twice, except "other")
-  const pendingLabelCounts = selected.reduce<Record<string, number>>((acc, s) => {
-    acc[s.label] = (acc[s.label] ?? 0) + 1;
+  // Group by document type
+  const docTypeGroups = detectedDocs.reduce<Record<string, typeof detectedDocs>>((acc, doc) => {
+    const key = doc.type;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(doc);
     return acc;
   }, {});
-  const duplicatePendingLabels = Object.entries(pendingLabelCounts)
-    .filter(([k, v]) => v > 1 && k !== "other")
-    .map(([k]) => k as LabelKey);
 
-  const allRequiredMet = missingRequired.length === 0;
-  const hasDuplicates = duplicatePendingLabels.length > 0;
+  // Analyze each document type for side coverage
+  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; isSingleSided: boolean; complete: boolean }[] = [];
+  for (const [type, docs] of Object.entries(docTypeGroups)) {
+    const hasFront = docs.some(d => d.side === "front");
+    const hasBack = docs.some(d => d.side === "back");
+    const hasBothSides = docs.some(d => d.side === "front-and-back");
+    const isSingleSided = docs.some(d => d.sideRequirement === "single-sided");
+    // Use isComplete from detection if available, otherwise calculate
+    const hasCompleteDoc = docs.some(d => d.isComplete);
+    const complete = hasCompleteDoc || isSingleSided || hasBothSides || (hasFront && hasBack);
+    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, isSingleSided, complete });
+  }
+
+  // Count complete documents (both sides or single-sided)
+  const completeDocCount = docAnalysis.filter(d => d.complete).length;
+  const incompleteDocCount = docAnalysis.filter(d => !d.complete).length;
+
+  // Set of document types that are complete across all files (for cross-file awareness)
+  const completeDocTypes = new Set(
+    docAnalysis.filter(d => d.complete).map(d => d.type)
+  );
+
+  // Check if we have valid identified documents
+  const validIdentifiedCount = selected.filter(
+    s => s.detection?.isIdentification && s.detection.documentType
+  ).length;
+
   const hasDetectionFailures = selected.some(
     (s) => s.detectionError !== null || (s.detection !== null && !s.detection.isIdentification),
   );
+
+  // Need at least 2 complete documents to upload
+  const needsMoreDocs = completeDocCount < 2;
+  const hasPendingDetection = selected.some(s => s.detecting);
+  
   const canUpload =
-    selected.length > 0 && !uploading && !hasDuplicates && allRequiredMet && !hasDetectionFailures;
+    selected.length > 0 && 
+    !uploading && 
+    !hasDetectionFailures && 
+    completeDocCount >= 2 &&
+    !hasPendingDetection;
 
   return (
     <>
@@ -946,28 +1048,11 @@ export default function UploadIdentificationDrawer({
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-          {/* Why is Identification Required */}
-          <div className="rounded-xl border-l-4 border-[#C10007] bg-[#FEF2F2] px-4 py-4">
-            <div className="flex items-start gap-2.5 mb-2">
-              <div className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-[#C10007] flex items-center justify-center">
-                <AlertCircle size={12} className="text-white" strokeWidth={2.5} />
-              </div>
-              <p className="text-sm font-bold text-gray-900">Why is Identification Required?</p>
-            </div>
-            <div className="ml-7 space-y-1.5 text-xs text-gray-600 leading-relaxed">
-              <p>
-                Government-issued identification is required to verify your identity and comply with
-                legal requirements for property transactions.
-              </p>
-              <p>
-                This helps prevent fraud and ensures all parties are properly identified before
-                proceeding with the closing.
-              </p>
-            </div>
-          </div>
+          {/* Acceptable Documents Section - Always visible */}
+          <AcceptableDocumentsSection />
 
-          {/* Acceptable Documents Dropdown */}
-          <AcceptableDocumentsDropdown />
+          {/* Why is Identification Required - Collapsible */}
+          <WhyIdentificationRequiredDropdown />
 
           {/* Take Photos with Camera Option */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -1123,118 +1208,164 @@ export default function UploadIdentificationDrawer({
           {selected.length > 0 && (
             <div>
               <h3 className="text-sm font-bold text-gray-900 mb-2">
-                Ready to Upload ({selected.length})
+                Uploaded Files ({selected.length})
               </h3>
               <ul className="space-y-2">
-                {selected.map((s) => {
-                  const isDuplicate = duplicatePendingLabels.includes(s.label);
-                  return (
-                    <li
-                      key={s.id}
-                      className={[
-                        "rounded-lg border bg-white overflow-hidden",
-                        isDuplicate ? "border-amber-300 bg-amber-50" : "border-gray-200",
-                      ].join(" ")}
-                    >
-                      {/* Label header chip */}
-                      <div
-                        className={[
-                          "px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide border-b",
-                          s.label === "other"
-                            ? "bg-gray-100 text-gray-600 border-gray-200"
-                            : isDuplicate
-                              ? "bg-amber-100 text-amber-800 border-amber-200"
-                              : "bg-[#FEF2F2] text-[#C10007] border-[#C10007]/20",
-                        ].join(" ")}
-                      >
-                        {labelText(s.label)}
+                {selected.map((s) => (
+                  <li
+                    key={s.id}
+                    className="rounded-lg border border-gray-200 bg-white overflow-hidden"
+                  >
+                    <div className="flex items-center gap-3 px-3 py-3">
+                      <div className="w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                        {s.previewUrl ? (
+                          <NextImage
+                            src={s.previewUrl}
+                            alt={s.file.name}
+                            width={48}
+                            height={48}
+                            unoptimized
+                            className="object-cover w-full h-full"
+                          />
+                        ) : (
+                          <FileText size={18} className="text-gray-400" />
+                        )}
                       </div>
-
-                      <div className="flex items-center gap-3 px-3 py-2">
-                        <div className="w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
-                          {s.previewUrl ? (
-                            <NextImage
-                              src={s.previewUrl}
-                              alt={s.file.name}
-                              width={48}
-                              height={48}
-                              unoptimized
-                              className="object-cover w-full h-full"
-                            />
-                          ) : (
-                            <FileText size={18} className="text-gray-400" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-semibold text-gray-800 truncate">{s.file.name}</p>
-                          <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
-                          {s.detecting ? (
-                            <p className="mt-1 mb-1 inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                              <Loader2 size={11} className="animate-spin" />
-                              Identifying document...
-                            </p>
-                          ) : s.detectionError ? (
-                            <p className="mt-1 mb-1 inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                              <AlertCircle size={11} />
-                              Could not identify document
-                            </p>
-                          ) : s.detection ? (
-                            s.detection.isIdentification && s.detection.documentType ? (
-                              <p className="mt-1 mb-1 inline-flex items-center gap-1 text-[11px] font-semibold text-green-700">
-                                <ShieldCheck size={12} className="flex-shrink-0" />
-                                <span className="truncate">
-                                  Detected: {s.detection.documentType}
-                                  {s.detection.side !== "unknown" ? ` (${s.detection.side})` : ""}
-                                </span>
-                              </p>
-                            ) : (
-                              <p className="mt-1 mb-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{s.file.name}</p>
+                        <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
+                        {s.detecting ? (
+                          <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                            <Loader2 size={11} className="animate-spin" />
+                            Identifying document...
+                          </p>
+                        ) : s.detectionError ? (
+                          <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-amber-600">
+                            <AlertCircle size={11} />
+                            Could not identify — please try again
+                          </p>
+                        ) : s.detection ? (
+                          s.detection.isIdentification ? (
+                            s.detection.multipleDocuments && s.detection.multipleDocuments.length > 1 ? (
+                              <div className="mt-1 space-y-0.5">
+                                <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-green-700">
+                                  <ShieldCheck size={12} className="flex-shrink-0" />
+                                  <span>{s.detection.multipleDocuments.filter(d => d.isComplete || completeDocTypes.has(d.documentType)).length}/{s.detection.summary?.totalDocuments} IDs complete</span>
+                                </p>
+                                <div className="pl-4 space-y-0.5">
+                                  {s.detection.multipleDocuments.map((doc, idx) => {
+                                    const isCompleteOverall = doc.isComplete || completeDocTypes.has(doc.documentType);
+                                    return (
+                                      <p key={idx} className={`text-[10px] ${isCompleteOverall ? "text-green-600" : "text-amber-600"}`}>
+                                        • {doc.documentType} ({doc.side === "front-and-back" ? "front and back" : doc.side})
+                                        {doc.isComplete ? " ✓" : isCompleteOverall ? " — other side in another file ✓" : " — incomplete"}
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : s.detection.documentType ? (() => {
+                              const sideLabel = s.detection.side === "front-and-back" ? "front and back" : s.detection.side;
+                              const isCompleteInFile = s.detection.side === "front-and-back" || s.detection.sideRequirement === "single-sided";
+                              const isCompleteOverall = isCompleteInFile || completeDocTypes.has(s.detection.documentType);
+                              return (
+                                <p className={`mt-1 inline-flex items-center gap-1 text-[11px] font-semibold ${isCompleteOverall ? "text-green-700" : "text-amber-700"}`}>
+                                  {isCompleteOverall ? <ShieldCheck size={12} className="flex-shrink-0" /> : <ShieldAlert size={12} className="flex-shrink-0" />}
+                                  <span className="truncate">
+                                    {s.detection.documentType}
+                                    {s.detection.side !== "unknown" ? ` (${sideLabel})` : ""}
+                                    {!isCompleteInFile && isCompleteOverall ? " — other side in another file ✓" : ""}
+                                    {!isCompleteOverall && s.detection.sideRequirement === "front-and-back" ? " — needs other side" : ""}
+                                  </span>
+                                </p>
+                              );
+                            })() : (
+                              <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
                                 <ShieldAlert size={12} className="flex-shrink-0" />
                                 <span className="truncate">
                                   Not a recognized government ID
-                                  {s.detection.reason ? ` — ${s.detection.reason}` : ""}
                                 </span>
                               </p>
                             )
-                          ) : null}
-                          <select
-                            value={s.label}
-                            onChange={(e) => setSelectedLabel(s.id, e.target.value as LabelKey)}
-                            className={[
-                              "w-full text-[11px] font-semibold rounded-md border px-2 py-1 cursor-pointer",
-                              isDuplicate
-                                ? "border-amber-400 bg-amber-50 text-amber-800"
-                                : "border-gray-200 bg-white text-gray-700",
-                            ].join(" ")}
-                          >
-                            {LABEL_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.text}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <button
-                          onClick={() => removeSelected(s.id)}
-                          className="cursor-pointer flex-shrink-0 p-1.5 rounded-md text-gray-500 hover:text-[#C10007] hover:bg-red-50"
-                          aria-label="Remove"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                          ) : (
+                            <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+                              <ShieldAlert size={12} className="flex-shrink-0" />
+                              <span className="truncate">
+                                Not a recognized government ID
+                              </span>
+                            </p>
+                          )
+                        ) : null}
                       </div>
-                    </li>
-                  );
-                })}
+                      <button
+                        onClick={() => removeSelected(s.id)}
+                        className="cursor-pointer flex-shrink-0 p-1.5 rounded-md text-gray-500 hover:text-[#C10007] hover:bg-red-50"
+                        aria-label="Remove"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
               </ul>
-              {hasDuplicates && (
-                <p className="mt-2 text-[11px] text-amber-700 flex items-center gap-1">
-                  <AlertCircle size={11} strokeWidth={2} />
-                  Duplicate labels detected ({duplicatePendingLabels.map(labelText).join(", ")}). Change them before uploading.
-                </p>
+
+              {/* Document Status Summary */}
+              {!hasPendingDetection && docAnalysis.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {docAnalysis.map((doc, idx) => (
+                    <div
+                      key={idx}
+                      className={[
+                        "flex items-center gap-2 px-3 py-2 rounded-lg text-xs",
+                        doc.complete
+                          ? "bg-green-50 border border-green-200"
+                          : "bg-amber-50 border border-amber-200",
+                      ].join(" ")}
+                    >
+                      {doc.complete ? (
+                        <>
+                          <CheckCircle2 size={14} className="text-green-600 flex-shrink-0" />
+                          <span className="font-semibold text-green-800">{doc.type}</span>
+                          <span className="text-green-600">
+                            — {doc.isSingleSided ? "Complete (single-sided ID)" : doc.hasBothSides ? "Front and back detected in one image" : "Both sides detected"}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle size={14} className="text-amber-600 flex-shrink-0" />
+                          <span className="font-semibold text-amber-800">{doc.type}</span>
+                          <span className="text-amber-600">
+                            — Missing {!doc.hasFront && !doc.hasBack ? "front & back" : !doc.hasFront ? "front side" : "back side"}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
+
+              {/* Warning: Need 2 documents */}
+              {!hasPendingDetection && completeDocCount < 2 && (
+                <div className="mt-3 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                  <AlertCircle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800">
+                    <span className="font-semibold">
+                      {completeDocCount === 0 
+                        ? "Please upload 2 different government IDs" 
+                        : `Please upload 1 more government ID (${completeDocCount}/2 complete)`}
+                    </span>
+                    {incompleteDocCount > 0 && (
+                      <span className="block mt-0.5 text-amber-600">
+                        Add the missing side{incompleteDocCount > 1 ? "s" : ""} for incomplete documents above.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#C10007] hover:underline cursor-pointer"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[#C10007] hover:underline cursor-pointer"
               >
                 <Plus size={12} />
                 Add more files
@@ -1272,11 +1403,13 @@ export default function UploadIdentificationDrawer({
           >
             {selected.length === 0
               ? "Upload Documents"
-              : !allRequiredMet
-                ? `Missing ${missingRequired.length} Required Label${missingRequired.length > 1 ? "s" : ""}`
-                : hasDuplicates
-                  ? "Fix Duplicate Labels"
-                  : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
+              : hasPendingDetection
+                ? "Analyzing..."
+                : hasDetectionFailures
+                  ? "Remove Invalid Files"
+                  : completeDocCount < 2
+                    ? `Need ${2 - completeDocCount} More ID${2 - completeDocCount > 1 ? "s" : ""}`
+                    : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
           </Button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   MapPin,
   Calendar,
   User,
+  Check,
   CheckCircle2,
   Building2,
   Clock,
@@ -458,11 +459,11 @@ function StatusTimeline({
                   <div className="z-10 flex-shrink-0">
                     {isCompleted ? (
                       <div className="w-[28px] h-[28px] rounded-full bg-gray-400 flex items-center justify-center">
-                        <CheckCircle2 size={14} className="text-white" strokeWidth={2.5} />
+                        <Check size={18} className="text-white" strokeWidth={3} />
                       </div>
                     ) : isInProgress ? (
-                      <div className="w-[28px] h-[28px] rounded-full bg-gray-300 flex items-center justify-center">
-                        <div className="w-2.5 h-2.5 rounded-full bg-white" />
+                      <div className="w-[28px] h-[28px] rounded-full border-2 border-gray-800 bg-white flex items-center justify-center">
+                        <div className="w-2.5 h-2.5 rounded-full bg-gray-800" />
                       </div>
                     ) : (
                       <div className="w-[28px] h-[28px] rounded-full bg-gray-200" />
@@ -472,7 +473,7 @@ function StatusTimeline({
                   {/* Label + meta */}
                   <div className="flex-1 min-w-0">
                     <p
-                      className={`text-sm font-semibold leading-snug ${isCompleted ? "text-gray-400" : "text-gray-700"}`}
+                      className={`text-sm leading-snug ${isCompleted ? "text-gray-400 font-semibold" : isInProgress ? "text-gray-900 font-bold" : "text-gray-500 font-medium"}`}
                     >
                       {milestone.title}
                     </p>

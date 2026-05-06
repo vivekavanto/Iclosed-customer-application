@@ -1581,10 +1581,14 @@ export default function DynamicTaskDrawer({
                   fullWidth
                   loading={saving}
                   disabled={savingDraft}
-                  onClick={isPersonalInfoTask ? () => {
+                  onClick={() => {
                     if (!validate()) return;
-                    setShowConfirmModal(true);
-                  } : () => handleSubmit()}
+                    if (isPersonalInfoTask) {
+                      setShowConfirmModal(true);
+                    } else {
+                      handleSubmit();
+                    }
+                  }}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
                   Submit Information
