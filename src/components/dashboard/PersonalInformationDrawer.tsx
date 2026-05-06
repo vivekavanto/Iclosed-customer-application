@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X, Info } from "lucide-react";
 import Button from "@/components/ui/Button";
+import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 
 interface PersonalInformationDrawerProps {
   open: boolean;
@@ -100,7 +101,7 @@ const SLOT_MATCHERS: Record<SlotKey, (label: string) => boolean> = {
   occupation: (l) => l.includes("occupation"),
   employerPhone: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")),
   sourceOfFunds: (l) => l.includes("source of funds"),
-  signingMethod: (l) => l.includes("sign") && (l.includes("person") || l.includes("virtually")),
+  signingMethod: (l) => l.includes("sign") && l.includes("virtually") ||(l.includes("person") ),
 };
 
 // Fallback content used when DB has no field for a given slot.
@@ -191,8 +192,8 @@ const SLOT_FALLBACKS: Record<SlotKey, SlotFallback> = {
     placeholder: "Select signing method",
     required: true,
     options: [
-      { label: "In person", value: "in_person" },
       { label: "Virtually", value: "virtually" },
+      { label: "In person", value: "in_person" },
     ],
   },
 };
@@ -602,12 +603,15 @@ export default function PersonalInformationDrawer({
             <div className="space-y-3">
               <div>
                 <FieldLabel label={slots.streetAddress.label} htmlFor="streetAddress" required={slots.streetAddress.required} />
-                <TextInput
-                  id="streetAddress"
+                <AddressAutocomplete
                   value={form.streetAddress}
                   onChange={(v) => set("streetAddress", v)}
-                  placeholder={slots.streetAddress.placeholder ?? "e.g. 10 Milner Business Court"}
-                  error={errors.streetAddress}
+                  onSelect={(data) => {
+                    set("streetAddress", data.street);
+                    set("city", data.city);
+                    set("postalCode", data.postalCode);
+                  }}
+                  hasError={!!errors.streetAddress}
                 />
                 <FieldError msg={errors.streetAddress} />
               </div>

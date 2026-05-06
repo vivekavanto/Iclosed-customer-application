@@ -27,35 +27,57 @@ const SUPPORTED_MIME_TYPES = new Set([
 function buildPrompt() {
   return `You are a strict document classifier helping verify a Canadian real-estate client's identification.
 
-Look at the uploaded document image/PDF and decide:
+Look at the uploaded document image/PDF carefully. The image may contain MULTIPLE different ID documents (e.g., a PDF with both a driver's license and passport scanned together).
 
-1. Is this a real government-issued identification document? (Reject blank pages, screenshots of websites, contracts, photos of people, random documents, etc.)
-2. If yes, classify it as one of these document types (use the EXACT label):
+For EACH distinct identification document you find in the image/PDF:
+
+1. Is it a real government-issued identification document? (Reject blank pages, screenshots of websites, contracts, photos of people, random documents, etc.)
+2. Classify it as one of these document types (use the EXACT label):
 ${ACCEPTABLE_IDS.map((d) => `   - ${d}`).join("\n")}
-3. If you can tell, indicate which side is shown: "front", "back", or "unknown".
-4. Decide required side rule for this ID as:
-   - "single-sided" (one side is sufficient to validate this ID type),
-   - "front-and-back" (both sides should be collected),
-   - "unknown" (cannot determine).
-5. Provide a confidence level: "high", "medium", or "low".
+3. Determine which side(s) of that specific ID are visible:
+   - "front" if only the front side is shown
+   - "back" if only the back side is shown
+   - "front-and-back" if BOTH front AND back sides of that same ID are visible (e.g., both sides of a driver's license scanned together)
+   - "unknown" if you cannot determine
+4. Decide required side rule for that ID type:
+   - "single-sided" (one side is sufficient, e.g., passport info page)
+   - "front-and-back" (both sides needed, e.g., driver's license)
+   - "unknown" (cannot determine)
 
-Edge-case policy to apply:
-- Passports are usually single-sided for upload requirements (booklet info page). Treat as "single-sided" unless there is clear evidence both sides are required.
-- If the document is a card and important identification data typically appears on both sides, return "front-and-back".
-- If uncertain, use "unknown" and explain in reason.
+Edge-case policy:
+- Passports are "single-sided" (info page only needed).
+- Cards (Driver's License, PR Card, etc.) are "front-and-back" required.
+- IMPORTANT: Users often scan/photograph BOTH sides of an ID onto one page. Look for TWO distinct views of the same card. If you see both sides of one ID together, that single document entry should have side="front-and-back".
+- IMPORTANT: Users may scan MULTIPLE DIFFERENT IDs into one file (e.g., driver's license + passport in same PDF). Create a separate entry in the documents array for EACH distinct ID type found.
+- If a PDF has multiple pages, examine all pages for IDs.
 
 Respond with ONLY a valid JSON object (no markdown, no code fences, no commentary) matching this exact shape:
 
 {
-  "is_identification": boolean,
-  "document_type": string | null,
-  "side": "front" | "back" | "unknown",
-  "side_requirement": "single-sided" | "front-and-back" | "unknown",
-  "confidence": "high" | "medium" | "low",
+  "contains_identification": boolean,
+  "documents": [
+    {
+      "document_type": string,
+      "side": "front" | "back" | "front-and-back" | "unknown",
+      "side_requirement": "single-sided" | "front-and-back" | "unknown",
+      "is_complete": boolean,
+      "confidence": "high" | "medium" | "low"
+    }
+  ],
+  "summary": {
+    "total_documents": number,
+    "complete_documents": number,
+    "document_types_found": string[]
+  },
   "reason": string
 }
 
-If "is_identification" is false, set "document_type" to null and explain briefly in "reason" what the document appears to be.`;
+Rules for "is_complete":
+- true if side_requirement is "single-sided" OR if side is "front-and-back"
+- true if side_requirement is "front-and-back" AND side is "front-and-back"
+- false if side_requirement is "front-and-back" but only "front" or "back" is shown
+
+If "contains_identification" is false, return an empty documents array and explain in "reason" what the document appears to be.`;
 }
 
 interface GeminiResponse {
@@ -67,13 +89,59 @@ interface GeminiResponse {
   error?: { message?: string };
 }
 
+type Side = "front" | "back" | "front-and-back" | "unknown";
+type SideRequirement = "single-sided" | "front-and-back" | "unknown";
+type Confidence = "high" | "medium" | "low";
+
+interface DocumentEntry {
+  document_type: string;
+  side: Side;
+  side_requirement: SideRequirement;
+  is_complete: boolean;
+  confidence: Confidence;
+}
+
+interface MultiDocumentResult {
+  contains_identification: boolean;
+  documents: DocumentEntry[];
+  summary: {
+    total_documents: number;
+    complete_documents: number;
+    document_types_found: string[];
+  };
+  reason: string;
+}
+
+// Legacy single-document result for backward compatibility with frontend
 interface IdentificationResult {
   is_identification: boolean;
   document_type: string | null;
-  side: "front" | "back" | "unknown";
-  side_requirement: "single-sided" | "front-and-back" | "unknown";
-  confidence: "high" | "medium" | "low";
+  side: Side;
+  side_requirement: SideRequirement;
+  confidence: Confidence;
   reason: string;
+  // New fields for multi-document support
+  multiple_documents?: DocumentEntry[];
+  summary?: {
+    total_documents: number;
+    complete_documents: number;
+    document_types_found: string[];
+  };
+}
+
+function parseSide(side: unknown): Side {
+  if (side === "front" || side === "back" || side === "front-and-back") return side;
+  return "unknown";
+}
+
+function parseSideRequirement(req: unknown): SideRequirement {
+  if (req === "single-sided" || req === "front-and-back") return req;
+  return "unknown";
+}
+
+function parseConfidence(conf: unknown): Confidence {
+  if (conf === "high" || conf === "medium" || conf === "low") return conf;
+  return "low";
 }
 
 function parseGeminiJson(text: string): IdentificationResult {
@@ -84,24 +152,57 @@ function parseGeminiJson(text: string): IdentificationResult {
     .replace(/\s*```$/i, "")
     .trim();
 
-  const parsed = JSON.parse(cleaned) as Partial<IdentificationResult>;
+  const parsed = JSON.parse(cleaned) as Partial<MultiDocumentResult>;
 
+  // Handle new multi-document format
+  if (typeof parsed.contains_identification === "boolean" && Array.isArray(parsed.documents)) {
+    const documents: DocumentEntry[] = parsed.documents
+      .filter((d) => 
+        typeof d?.document_type === "string" && d.document_type.trim().length > 0
+      )
+      .map((d) => d as { document_type: string; side?: unknown; side_requirement?: unknown; is_complete?: unknown; confidence?: unknown })
+      .map((d) => ({
+        document_type: d.document_type.trim(),
+        side: parseSide(d.side),
+        side_requirement: parseSideRequirement(d.side_requirement),
+        is_complete: Boolean(d.is_complete),
+        confidence: parseConfidence(d.confidence),
+      }));
+
+    const summary = {
+      total_documents: documents.length,
+      complete_documents: documents.filter(d => d.is_complete).length,
+      document_types_found: [...new Set(documents.map(d => d.document_type))],
+    };
+
+    // For backward compatibility, use the first document as the primary result
+    const primary = documents[0];
+    
+    return {
+      is_identification: parsed.contains_identification && documents.length > 0,
+      document_type: primary?.document_type ?? null,
+      side: primary?.side ?? "unknown",
+      side_requirement: primary?.side_requirement ?? "unknown",
+      confidence: primary?.confidence ?? "low",
+      reason: typeof parsed.reason === "string" ? parsed.reason : "",
+      // Include full multi-document data
+      multiple_documents: documents.length > 0 ? documents : undefined,
+      summary: documents.length > 0 ? summary : undefined,
+    };
+  }
+
+  // Fallback: handle legacy single-document format (shouldn't happen with new prompt)
+  const legacyParsed = parsed as unknown as Partial<IdentificationResult>;
   return {
-    is_identification: Boolean(parsed.is_identification),
+    is_identification: Boolean(legacyParsed.is_identification),
     document_type:
-      typeof parsed.document_type === "string" && parsed.document_type.trim().length > 0
-        ? parsed.document_type.trim()
+      typeof legacyParsed.document_type === "string" && legacyParsed.document_type.trim().length > 0
+        ? legacyParsed.document_type.trim()
         : null,
-    side: parsed.side === "front" || parsed.side === "back" ? parsed.side : "unknown",
-    side_requirement:
-      parsed.side_requirement === "single-sided" || parsed.side_requirement === "front-and-back"
-        ? parsed.side_requirement
-        : "unknown",
-    confidence:
-      parsed.confidence === "high" || parsed.confidence === "medium" || parsed.confidence === "low"
-        ? parsed.confidence
-        : "low",
-    reason: typeof parsed.reason === "string" ? parsed.reason : "",
+    side: parseSide(legacyParsed.side),
+    side_requirement: parseSideRequirement(legacyParsed.side_requirement),
+    confidence: parseConfidence(legacyParsed.confidence),
+    reason: typeof legacyParsed.reason === "string" ? legacyParsed.reason : "",
   };
 }
 
@@ -216,9 +317,15 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log(
-      `[identify-document] Detected: type="${result.document_type}" side="${result.side}" confidence="${result.confidence}"`,
-    );
+    if (result.multiple_documents && result.multiple_documents.length > 1) {
+      console.log(
+        `[identify-document] Detected ${result.multiple_documents.length} documents: ${result.summary?.document_types_found.join(", ")} (${result.summary?.complete_documents}/${result.summary?.total_documents} complete)`,
+      );
+    } else {
+      console.log(
+        `[identify-document] Detected: type="${result.document_type}" side="${result.side}" confidence="${result.confidence}"`,
+      );
+    }
     return NextResponse.json({ success: true, result });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Server error";

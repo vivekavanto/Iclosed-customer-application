@@ -17,6 +17,13 @@ interface AddressAutocompleteProps {
   hasError?: boolean;
 }
 
+const ONTARIO_BOUNDS = {
+  south: 41.68,
+  west: -95.16,
+  north: 56.86,
+  east: -74.34,
+};
+
 /* ── Load Google Maps script once globally ── */
 let googleScriptPromise: Promise<void> | null = null;
 
@@ -102,6 +109,7 @@ export default function AddressAutocomplete({
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const [scriptError, setScriptError] = useState(false);
+  const [provinceError, setProvinceError] = useState<string | null>(null);
 
   // Stable refs for callbacks (avoids re-initializing autocomplete)
   const onChangeRef = useRef(onChange);
@@ -123,12 +131,24 @@ export default function AddressAutocomplete({
     const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
       componentRestrictions: { country: "ca" },
       types: ["address"],
-      fields: ["address_components", "formatted_address"],
+      fields: ["address_components", "formatted_address", "geometry"],
+      bounds: ONTARIO_BOUNDS,
+      strictBounds: true,
     });
 
     autocomplete.addListener("place_changed", () => {
       const place = autocomplete.getPlace();
       if (!place.address_components) return;
+      const province = place.address_components.find((c) =>
+        c.types.includes("administrative_area_level_1")
+      );
+      const isOntario = province?.short_name === "ON";
+      if (!isOntario) {
+        setProvinceError("Please select an address in Ontario.");
+        onChangeRef.current("");
+        return;
+      }
+      setProvinceError(null);
 
       const extracted = extractAddress(place);
       onChangeRef.current(extracted.street);
@@ -141,9 +161,10 @@ export default function AddressAutocomplete({
   // Keep the input value in sync (Google overwrites the DOM input)
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (provinceError) setProvinceError(null);
       onChange(e.target.value);
     },
-    [onChange]
+    [onChange, provinceError]
   );
 
   return (
@@ -179,6 +200,9 @@ export default function AddressAutocomplete({
         <p className="text-xs text-amber-600 mt-1">
           Address suggestions unavailable. Please type your address manually.
         </p>
+      )}
+      {provinceError && (
+        <p className="text-xs text-red-600 mt-1">{provinceError}</p>
       )}
     </div>
   );
