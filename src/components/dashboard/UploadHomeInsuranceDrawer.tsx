@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Upload, FileText, Trash2, AlertCircle, CheckCircle2 } from "lucide-react";
 import Button from "@/components/ui/Button";
+import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
 interface UploadHomeInsuranceDrawerProps {
   open: boolean;
@@ -60,6 +61,7 @@ export default function UploadHomeInsuranceDrawer({
   taskId,
   onSaved,
 }: UploadHomeInsuranceDrawerProps) {
+  const isLargeScreen = useIsLargeScreen();
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -159,19 +161,31 @@ export default function UploadHomeInsuranceDrawer({
       {/* Backdrop */}
       <div
         className={[
-          "fixed inset-0 z-40 bg-black/30 transition-opacity duration-300",
+          "fixed inset-0 z-40 transition-opacity duration-300",
+          isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         ].join(" ")}
         onClick={handleClose}
         aria-hidden="true"
       />
 
-      {/* Drawer */}
+      {/* Modal (large screens) / Drawer (mobile) */}
       <div
         className={[
-          "fixed top-0 right-0 z-50 h-full w-full max-w-[500px] bg-white shadow-2xl",
-          "flex flex-col transition-transform duration-300 ease-in-out",
-          open ? "translate-x-0" : "translate-x-full",
+          "fixed z-50 bg-white shadow-2xl flex flex-col",
+          isLargeScreen
+            ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+            : "top-0 right-0 h-full w-full max-w-[500px]",
+          isLargeScreen
+            ? open
+              ? "opacity-100 scale-100"
+              : "opacity-0 scale-95 pointer-events-none"
+            : open
+              ? "translate-x-0"
+              : "translate-x-full",
+          isLargeScreen
+            ? "transition-all duration-200 ease-out"
+            : "transition-transform duration-300 ease-in-out",
         ].join(" ")}
         role="dialog"
         aria-modal="true"

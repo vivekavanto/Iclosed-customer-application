@@ -21,6 +21,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
+import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
 interface UploadIdentificationDrawerProps {
   open: boolean;
@@ -389,6 +390,7 @@ export default function UploadIdentificationDrawer({
   taskId,
   onSaved,
 }: UploadIdentificationDrawerProps) {
+  const isLargeScreen = useIsLargeScreen();
   // Manual upload state
   const [selected, setSelected] = useState<SelectedFile[]>([]);
   const [existing, setExisting] = useState<ExistingDoc[]>([]);
@@ -413,6 +415,9 @@ export default function UploadIdentificationDrawer({
     fileId: string;
     fileName: string;
   }>({ open: false, fileId: "", fileName: "" });
+
+  // Confirmation modal before submission
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Camera flow state (guided 4-step capture)
   const webcamRef = useRef<Webcam | null>(null);
@@ -446,6 +451,7 @@ export default function UploadIdentificationDrawer({
     setSharpnessOk(false);
     setValidatingImage(false);
     setCameraSubmitting(false);
+    setShowConfirmModal(false);
   }, [selected]);
 
   const handleClose = useCallback(() => {
@@ -838,6 +844,15 @@ export default function UploadIdentificationDrawer({
     }
   }
 
+  // Show confirmation modal before camera flow submission
+  function handleFinishCameraFlowClick() {
+    if (!cameraFlowReadyToSubmit) {
+      setCameraError("Please capture front and back for both IDs before finishing.");
+      return;
+    }
+    setShowConfirmModal(true);
+  }
+
   // ── Manual upload submit ────────────────────────────────────────────────────
 
   async function handleUpload() {
@@ -916,6 +931,25 @@ export default function UploadIdentificationDrawer({
     } finally {
       setUploading(false);
     }
+  }
+
+  // Validate before showing confirmation modal
+  function handleUploadClick() {
+    if (selected.length === 0) return;
+    if (!leadId) {
+      setGlobalError("Missing lead. Please refresh and try again.");
+      return;
+    }
+    if (hasDetectionFailures) {
+      setGlobalError("Please remove files that could not be identified as valid government IDs.");
+      return;
+    }
+    if (completeDocCount < 2) {
+      setGlobalError("Please upload at least 2 complete government IDs (front and back for each, or single-sided IDs).");
+      return;
+    }
+    // Show confirmation modal
+    setShowConfirmModal(true);
   }
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -1009,19 +1043,31 @@ export default function UploadIdentificationDrawer({
       {/* Backdrop */}
       <div
         className={[
-          "fixed inset-0 z-40 bg-black/30 transition-opacity duration-300",
+          "fixed inset-0 z-40 transition-opacity duration-300",
+          isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
         ].join(" ")}
         onClick={handleClose}
         aria-hidden="true"
       />
 
-      {/* Drawer */}
+      {/* Modal (large screens) / Drawer (mobile) */}
       <div
         className={[
-          "fixed top-0 right-0 z-50 h-full w-full max-w-[540px] bg-white shadow-2xl",
-          "flex flex-col transition-transform duration-300 ease-in-out",
-          open ? "translate-x-0" : "translate-x-full",
+          "fixed z-50 bg-white shadow-2xl flex flex-col",
+          isLargeScreen
+            ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+            : "top-0 right-0 h-full w-full max-w-[540px]",
+          isLargeScreen
+            ? open
+              ? "opacity-100 scale-100"
+              : "opacity-0 scale-95 pointer-events-none"
+            : open
+              ? "translate-x-0"
+              : "translate-x-full",
+          isLargeScreen
+            ? "transition-all duration-200 ease-out"
+            : "transition-transform duration-300 ease-in-out",
         ].join(" ")}
         role="dialog"
         aria-modal="true"
@@ -1398,7 +1444,7 @@ export default function UploadIdentificationDrawer({
             fullWidth
             disabled={!canUpload}
             loading={uploading}
-            onClick={handleUpload}
+            onClick={handleUploadClick}
             className="sm:flex-1"
           >
             {selected.length === 0
@@ -1467,6 +1513,69 @@ export default function UploadIdentificationDrawer({
                   onClick={() => setDetectionFailModal({ open: false, fileId: "", fileName: "" })}
                 >
                   Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Confirmation modal before submission */}
+      {showConfirmModal && (
+        <>
+          <div
+            className="fixed inset-0 z-[100] bg-black/40"
+            onClick={() => !uploading && !cameraSubmitting && setShowConfirmModal(false)}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center px-5"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm submission"
+          >
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+              {/* Warning banner */}
+              <div className="bg-amber-50 border-b border-amber-100 px-5 py-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <AlertCircle size={20} className="text-amber-600" strokeWidth={2} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-amber-800">
+                      ID cannot be changed after submission.
+                    </p>
+                    <p className="text-sm text-amber-700 mt-1 leading-relaxed">
+                      Please ensure it is accurate before submitting — otherwise you&apos;ll have to contact a law clerk to change the info.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="px-5 py-4 flex flex-col gap-2.5">
+                <Button
+                  variant="primary"
+                  fullWidth
+                  loading={uploading || cameraSubmitting}
+                  onClick={() => {
+                    setShowConfirmModal(false);
+                    if (cameraFlowOpen) {
+                      handleFinishCameraFlow();
+                    } else {
+                      handleUpload();
+                    }
+                  }}
+                >
+                  Confirm Submission
+                </Button>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  disabled={uploading || cameraSubmitting}
+                  onClick={() => setShowConfirmModal(false)}
+                >
+                  Cancel
                 </Button>
               </div>
             </div>
@@ -1671,10 +1780,10 @@ export default function UploadIdentificationDrawer({
                       fullWidth
                       loading={cameraSubmitting}
                       disabled={!cameraFlowReadyToSubmit || cameraSubmitting}
-                      onClick={handleFinishCameraFlow}
+                      onClick={handleFinishCameraFlowClick}
                       className="sm:flex-1"
                     >
-                      Finish & Submit to Backend
+                      Finish & Submit
                     </Button>
                   </>
                 )}
