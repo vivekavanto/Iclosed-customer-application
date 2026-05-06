@@ -157,9 +157,10 @@ function parseGeminiJson(text: string): IdentificationResult {
   // Handle new multi-document format
   if (typeof parsed.contains_identification === "boolean" && Array.isArray(parsed.documents)) {
     const documents: DocumentEntry[] = parsed.documents
-      .filter((d): d is Partial<DocumentEntry> & { document_type: string } => 
+      .filter((d) => 
         typeof d?.document_type === "string" && d.document_type.trim().length > 0
       )
+      .map((d) => d as { document_type: string; side?: unknown; side_requirement?: unknown; is_complete?: unknown; confidence?: unknown })
       .map((d) => ({
         document_type: d.document_type.trim(),
         side: parseSide(d.side),
