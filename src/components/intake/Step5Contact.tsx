@@ -23,6 +23,24 @@ interface CoPerson {
     phone: string;
 }
 
+interface CoPersonCard {
+    id: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    errors: { fullName?: string; email?: string; phone?: string };
+    touched: { fullName?: boolean; email?: boolean; phone?: boolean };
+}
+
+const makeEmptyCard = (): CoPersonCard => ({
+    id: crypto.randomUUID(),
+    fullName: "",
+    email: "",
+    phone: "",
+    errors: {},
+    touched: {},
+});
+
 interface Step5ContactProps {
     setStep: (step: number) => void;
     agreementSigned: "yes" | "no" | null;
@@ -32,7 +50,7 @@ interface Step5ContactProps {
     onComplete: (data: ContactData) => Promise<void> | void;
     /** Pre-fill contact fields when user is already logged in */
     initialData?: { fullName: string; email: string; phone: string };
-    /** Determines co-person label: purchase→Co-Purchaser, sale→Co-Seller, both→Co-Purchaser */
+    /** Determines which co-person sections render: buying→Co-Purchaser, selling→Co-Seller, both→both sections */
     selectedClosingOption?: string | null;
 }
 
@@ -46,24 +64,16 @@ export default function Step5Contact({
     initialData,
     selectedClosingOption,
 }: Step5ContactProps) {
-    const coLabelShort = selectedClosingOption === "selling" ? "Co-Seller" : "Co-Purchaser";
+    const isBoth = selectedClosingOption === "both";
+    const isSelling = selectedClosingOption === "selling";
+    const showPurchaserStack = isBoth || !isSelling;
+    const showSellerStack = isBoth || isSelling;
     const { error: toastError } = useToast();
 
     // ── Co-person state ──
     const [submitting, setSubmitting] = React.useState(false);
-    // Each card in the stack has its own form data, errors, and touched state
-    interface CoPersonCard {
-        id: string;
-        fullName: string;
-        email: string;
-        phone: string;
-        errors: { fullName?: string; email?: string; phone?: string };
-        touched: { fullName?: boolean; email?: boolean; phone?: boolean };
-    }
-    // Start with one empty card by default
-    const [coPersonCards, setCoPersonCards] = React.useState<CoPersonCard[]>([
-        { id: crypto.randomUUID(), fullName: "", email: "", phone: "", errors: {}, touched: {} }
-    ]);
+    const [coPurchaserCards, setCoPurchaserCards] = React.useState<CoPersonCard[]>(() => [makeEmptyCard()]);
+    const [coSellerCards, setCoSellerCards] = React.useState<CoPersonCard[]>(() => [makeEmptyCard()]);
 
     const formatCoPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -89,8 +99,11 @@ export default function Step5Contact({
         return !card.fullName.trim() && !card.email.trim() && !card.phone.trim();
     };
 
-    const updateCoCard = (id: string, field: 'fullName' | 'email' | 'phone', value: string) => {
-        setCoPersonCards(prev => prev.map(card => {
+    const getSetter = (which: "purchaser" | "seller") =>
+        which === "purchaser" ? setCoPurchaserCards : setCoSellerCards;
+
+    const updateCoCard = (which: "purchaser" | "seller", id: string, field: 'fullName' | 'email' | 'phone', value: string) => {
+        getSetter(which)(prev => prev.map(card => {
             if (card.id !== id) return card;
             const updated = { ...card, [field]: value };
             if (card.touched[field]) {
@@ -100,8 +113,8 @@ export default function Step5Contact({
         }));
     };
 
-    const touchCoCardField = (id: string, field: 'fullName' | 'email' | 'phone') => {
-        setCoPersonCards(prev => prev.map(card => {
+    const touchCoCardField = (which: "purchaser" | "seller", id: string, field: 'fullName' | 'email' | 'phone') => {
+        getSetter(which)(prev => prev.map(card => {
             if (card.id !== id) return card;
             const updated = { ...card, touched: { ...card.touched, [field]: true } };
             updated.errors = validateCoCard(updated);
@@ -109,23 +122,16 @@ export default function Step5Contact({
         }));
     };
 
-    const handleAddCoPersonCard = () => {
-        setCoPersonCards(prev => [...prev, {
-            id: crypto.randomUUID(),
-            fullName: "",
-            email: "",
-            phone: "",
-            errors: {},
-            touched: {}
-        }]);
+    const handleAddCoPersonCard = (which: "purchaser" | "seller") => {
+        getSetter(which)(prev => [...prev, makeEmptyCard()]);
     };
 
-    const handleRemoveCoPersonCard = (id: string) => {
-        setCoPersonCards(prev => {
+    const handleRemoveCoPersonCard = (which: "purchaser" | "seller", id: string) => {
+        getSetter(which)(prev => {
             const filtered = prev.filter(p => p.id !== id);
             // Always keep at least one card
             if (filtered.length === 0) {
-                return [{ id: crypto.randomUUID(), fullName: "", email: "", phone: "", errors: {}, touched: {} }];
+                return [makeEmptyCard()];
             }
             return filtered;
         });
@@ -220,6 +226,7 @@ export default function Step5Contact({
         setErrors(newErrors);
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
+
     const handleComplete = async () => {
         if (!isCompleteEnabled) {
             setTouched({ fullName: true, email: true, phone: true });
@@ -228,40 +235,44 @@ export default function Step5Contact({
             return;
         }
 
-        // Validate partially filled co-person cards
+        // Validate partially filled co-person cards across both stacks
         let hasCoErrors = false;
-        const updatedCards = coPersonCards.map(card => {
-            // Skip completely empty cards - they're optional
+        const validateStack = (cards: CoPersonCard[]) => cards.map(card => {
+            // Skip completely empty cards — they're optional
             if (isCardEmpty(card)) return card;
-            
-            // Validate non-empty cards
             const cardErrors = validateCoCard(card);
             if (Object.keys(cardErrors).length > 0) {
                 hasCoErrors = true;
                 return {
                     ...card,
                     errors: cardErrors,
-                    touched: { fullName: true, email: true, phone: true }
+                    touched: { fullName: true, email: true, phone: true },
                 };
             }
             return card;
         });
 
+        const updatedPurchaserCards = validateStack(coPurchaserCards);
+        const updatedSellerCards = validateStack(coSellerCards);
+
         if (hasCoErrors) {
-            setCoPersonCards(updatedCards);
-            toastError("Please complete all co-purchaser information or remove empty cards.");
+            if (showPurchaserStack) setCoPurchaserCards(updatedPurchaserCards);
+            if (showSellerStack) setCoSellerCards(updatedSellerCards);
+            toastError("Please complete all co-person information or remove empty cards.");
             return;
         }
 
-        // Collect valid co-persons (non-empty cards with valid data)
-        const coPersons: CoPerson[] = coPersonCards
-            .filter(card => !isCardEmpty(card))
-            .map(card => ({
-                id: card.id,
-                fullName: card.fullName,
-                email: card.email,
-                phone: card.phone
-            }));
+        // Collect valid co-persons from active stacks only
+        const cardToCoPerson = (card: CoPersonCard): CoPerson => ({
+            id: card.id,
+            fullName: card.fullName,
+            email: card.email,
+            phone: card.phone,
+        });
+        const coPersons: CoPerson[] = [
+            ...(showPurchaserStack ? coPurchaserCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson) : []),
+            ...(showSellerStack ? coSellerCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson) : []),
+        ];
 
         const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;
         setSubmitting(true);
@@ -271,6 +282,102 @@ export default function Step5Contact({
             setSubmitting(false);
         }
     };
+
+    const renderCoSection = (which: "purchaser" | "seller") => {
+        const cards = which === "purchaser" ? coPurchaserCards : coSellerCards;
+        const labelShort = which === "purchaser" ? "Co-Purchaser" : "Co-Seller";
+        return (
+            <div className="space-y-4">
+                {isBoth && (
+                    <h3 className="text-sm font-semibold text-gray-900">
+                        {labelShort}{cards.length > 1 ? "s" : ""}
+                    </h3>
+                )}
+                {cards.map((card) => (
+                    <div key={card.id} className="rounded-xl border border-gray-200 p-5 sm:p-6 space-y-4 bg-gray-50 relative">
+                        {/* Remove button — only show if there's more than one card */}
+                        {cards.length > 1 && (
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveCoPersonCard(which, card.id)}
+                                className="cursor-pointer absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
+                                aria-label={`Remove ${labelShort.toLowerCase()}`}
+                            >
+                                <Trash2 size={13} strokeWidth={2} />
+                            </button>
+                        )}
+
+                        {/* Full Name */}
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Full Name <span className="text-[#C10007]">*</span>
+                            </label>
+                            <input
+                                type="text"
+                                placeholder="John Doe"
+                                value={card.fullName}
+                                onChange={(e) => {
+                                    const val = e.target.value.replace(/\b\w/g, (c) => c.toUpperCase());
+                                    updateCoCard(which, card.id, 'fullName', val);
+                                }}
+                                onBlur={() => touchCoCardField(which, card.id, 'fullName')}
+                                className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.fullName && card.errors.fullName ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                            />
+                            {card.touched.fullName && card.errors.fullName && <p className="mt-1 text-xs text-[#C10007]">{card.errors.fullName}</p>}
+                        </div>
+
+                        {/* Email */}
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Email Address <span className="text-[#C10007]">*</span>
+                            </label>
+                            <input
+                                type="email"
+                                placeholder="john@doe.com"
+                                value={card.email}
+                                onChange={(e) => updateCoCard(which, card.id, 'email', e.target.value)}
+                                onBlur={() => touchCoCardField(which, card.id, 'email')}
+                                className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.email && card.errors.email ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                            />
+                            {card.touched.email && card.errors.email && <p className="mt-1 text-xs text-[#C10007]">{card.errors.email}</p>}
+                        </div>
+
+                        {/* Phone */}
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                Phone Number <span className="text-[#C10007]">*</span>
+                            </label>
+                            <div className={`flex items-center border rounded-lg overflow-hidden transition-colors bg-white ${card.touched.phone && card.errors.phone ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus-within:border-[#C10007] focus-within:ring-2 focus-within:ring-[#C10007]/10"}`}>
+                                <span className="flex items-center gap-1.5 px-3 py-3 text-sm text-gray-500 border-r border-gray-200 bg-gray-50 flex-shrink-0">
+                                    +1
+                                </span>
+                                <input
+                                    type="tel"
+                                    placeholder="(555)-123-4567"
+                                    value={card.phone}
+                                    onChange={(e) => updateCoCard(which, card.id, 'phone', formatCoPhone(e.target.value))}
+                                    onBlur={() => touchCoCardField(which, card.id, 'phone')}
+                                    className="flex-1 px-3 py-3 text-sm outline-none bg-white"
+                                />
+                            </div>
+                            {card.touched.phone && card.errors.phone && <p className="mt-1 text-xs text-[#C10007]">{card.errors.phone}</p>}
+                        </div>
+                    </div>
+                ))}
+
+                {/* Add button */}
+                <Button
+                    variant="ghost"
+                    className="w-full border border-dashed border-red-200 text-gray-900 hover:text-[#C10007] hover:bg-transparent"
+                    onClick={() => handleAddCoPersonCard(which)}
+                >
+                    <Plus size={18} />
+                    Add {labelShort}
+                </Button>
+            </div>
+        );
+    };
+
     return (
         <div className="min-h-screen bg-white w-full">
             <div className="max-w-7xl mx-auto flex flex-col lg:flex-row">
@@ -443,90 +550,17 @@ export default function Step5Contact({
                             )}
                         </div>
 
-                        {/* Co-Person Cards Stack */}
-                        <div className="space-y-4">
-                            {coPersonCards.map((card) => (
-                                <div key={card.id} className="rounded-xl border border-gray-200 p-5 sm:p-6 space-y-4 bg-gray-50 relative">
-                                    {/* Remove button - only show if there's more than one card */}
-                                    {coPersonCards.length > 1 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveCoPersonCard(card.id)}
-                                            className="cursor-pointer absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                                            aria-label="Remove co-purchaser"
-                                        >
-                                            <Trash2 size={13} strokeWidth={2} />
-                                        </button>
-                                    )}
-
-                                    {/* Full Name */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-                                            Full Name <span className="text-[#C10007]">*</span>
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder="John Doe"
-                                            value={card.fullName}
-                                            onChange={(e) => {
-                                                const val = e.target.value.replace(/\b\w/g, (c) => c.toUpperCase());
-                                                updateCoCard(card.id, 'fullName', val);
-                                            }}
-                                            onBlur={() => touchCoCardField(card.id, 'fullName')}
-                                            className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.fullName && card.errors.fullName ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
-                                        />
-                                        {card.touched.fullName && card.errors.fullName && <p className="mt-1 text-xs text-[#C10007]">{card.errors.fullName}</p>}
-                                    </div>
-
-                                    {/* Email */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-                                            Email Address <span className="text-[#C10007]">*</span>
-                                        </label>
-                                        <input
-                                            type="email"
-                                            placeholder="john@doe.com"
-                                            value={card.email}
-                                            onChange={(e) => updateCoCard(card.id, 'email', e.target.value)}
-                                            onBlur={() => touchCoCardField(card.id, 'email')}
-                                            className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.email && card.errors.email ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
-                                        />
-                                        {card.touched.email && card.errors.email && <p className="mt-1 text-xs text-[#C10007]">{card.errors.email}</p>}
-                                    </div>
-
-                                    {/* Phone */}
-                                    <div>
-                                        <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-                                            Phone Number <span className="text-[#C10007]">*</span>
-                                        </label>
-                                        <div className={`flex items-center border rounded-lg overflow-hidden transition-colors bg-white ${card.touched.phone && card.errors.phone ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus-within:border-[#C10007] focus-within:ring-2 focus-within:ring-[#C10007]/10"}`}>
-                                            <span className="flex items-center gap-1.5 px-3 py-3 text-sm text-gray-500 border-r border-gray-200 bg-gray-50 flex-shrink-0">
-                                                +1
-                                            </span>
-                                            <input
-                                                type="tel"
-                                                placeholder="(555)-123-4567"
-                                                value={card.phone}
-                                                onChange={(e) => updateCoCard(card.id, 'phone', formatCoPhone(e.target.value))}
-                                                onBlur={() => touchCoCardField(card.id, 'phone')}
-                                                className="flex-1 px-3 py-3 text-sm outline-none bg-white"
-                                            />
-                                        </div>
-                                        {card.touched.phone && card.errors.phone && <p className="mt-1 text-xs text-[#C10007]">{card.errors.phone}</p>}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {/* Add Co-Person button */}
-                            <Button
-                                variant="ghost"
-                                className="w-full border border-dashed border-red-200 text-gray-900 hover:text-[#C10007] hover:bg-transparent"
-                                onClick={handleAddCoPersonCard}
-                            >
-                                <Plus size={18} />
-                                Add {coLabelShort}
-                            </Button>
-                        </div>
+                        {/* Co-person sections — for Purchase & Sale render BOTH co-purchaser and co-seller stacks, otherwise just the matching one */}
+                        {isBoth ? (
+                            <div className="space-y-6">
+                                {renderCoSection("purchaser")}
+                                {renderCoSection("seller")}
+                            </div>
+                        ) : isSelling ? (
+                            renderCoSection("seller")
+                        ) : (
+                            renderCoSection("purchaser")
+                        )}
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
