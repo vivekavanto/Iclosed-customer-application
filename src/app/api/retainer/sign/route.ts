@@ -6,10 +6,23 @@ import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 
+type Side = "purchase" | "sale" | null;
+
+interface Slot {
+  leadId: string;
+  side: Side;
+}
+
+const PURCHASE_AND_SALE = "Purchase & Sale";
+
 /**
  * POST /api/retainer/sign
  *
- * Saves a retainer signature for the authenticated user's lead.
+ * Saves a retainer signature for the authenticated user's next-unsigned slot.
+ * For "Purchase & Sale" leads each lead expands into two slots (purchase +
+ * sale) and the next unsigned side is determined server-side — clients
+ * cannot pick which side they're signing.
+ *
  * Body: { full_name: string, signature: string, signed_date?: string }
  */
 export async function POST(req: Request) {
@@ -33,7 +46,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find the user's lead(s) via deals
     const { data: deals } = await supabaseAdmin
       .from("deals")
       .select("lead_id")
@@ -49,16 +61,41 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find the first unsigned deal
+    const { data: leads } = await supabaseAdmin
+      .from("leads")
+      .select(
+        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code"
+      )
+      .in("id", leadIds);
+
+    const leadById = new Map((leads || []).map((l) => [l.id, l]));
+
+    const slots: Slot[] = [];
+    for (const id of leadIds) {
+      const lead = leadById.get(id);
+      if (lead?.lead_type === PURCHASE_AND_SALE) {
+        slots.push({ leadId: id, side: "purchase" });
+        slots.push({ leadId: id, side: "sale" });
+      } else {
+        slots.push({ leadId: id, side: null });
+      }
+    }
+
     const { data: signatures } = await supabaseAdmin
       .from("retainer_signatures")
-      .select("lead_id")
+      .select("lead_id, side")
       .in("lead_id", leadIds);
 
-    const signedLeadIds = new Set((signatures || []).map((s) => s.lead_id));
-    const unsignedLeadId = leadIds.find((id) => !signedLeadIds.has(id));
+    const signedKey = (leadId: string, side: Side) => `${leadId}::${side ?? ""}`;
+    const signedSet = new Set(
+      (signatures || []).map((s) => signedKey(s.lead_id, (s.side ?? null) as Side))
+    );
 
-    if (!unsignedLeadId) {
+    const nextSlot = slots.find(
+      (s) => !signedSet.has(signedKey(s.leadId, s.side))
+    );
+
+    if (!nextSlot) {
       return NextResponse.json({
         success: true,
         message: "All retainers already signed",
@@ -66,43 +103,26 @@ export async function POST(req: Request) {
       });
     }
 
-    const leadId = unsignedLeadId;
-
-    // Fetch the lead to validate name match and get details for PDF/email
-    const { data: lead } = await supabaseAdmin
-      .from("leads")
-      .select("first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code")
-      .eq("id", leadId)
-      .single();
+    const { leadId, side } = nextSlot;
+    const lead = leadById.get(leadId);
 
     if (lead) {
-      const intakeName = `${lead.first_name ?? ""} ${lead.last_name ?? ""}`.trim().toLowerCase();
+      const intakeName = `${lead.first_name ?? ""} ${lead.last_name ?? ""}`
+        .trim()
+        .toLowerCase();
       const signatureValue = signature.trim().toLowerCase();
 
       if (intakeName && signatureValue !== intakeName) {
         return NextResponse.json(
-          { success: false, error: "Signature must match the name you provided in the intake form" },
+          {
+            success: false,
+            error: "Signature must match the name you provided in the intake form",
+          },
           { status: 400 }
         );
       }
     }
 
-    // Check if already signed for this lead
-    const { data: existing } = await supabaseAdmin
-      .from("retainer_signatures")
-      .select("id")
-      .eq("lead_id", leadId)
-      .maybeSingle();
-
-    if (existing) {
-      return NextResponse.json({
-        success: true,
-        message: "Retainer already signed",
-        already_signed: true,
-      });
-    }
-
-    // Insert the signature
     const { error } = await supabaseAdmin
       .from("retainer_signatures")
       .insert({
@@ -110,6 +130,7 @@ export async function POST(req: Request) {
         full_name,
         signature,
         signed_date: signedDate,
+        side,
       });
 
     if (error) {
@@ -122,7 +143,20 @@ export async function POST(req: Request) {
 
     // ── Generate PDF, upload, and email (non-blocking) ──
     const propertyAddress = lead
-      ? [lead.address_street, lead.address_city, lead.address_province, lead.address_postal_code]
+      ? (side === "sale"
+          ? [
+              lead.selling_address_street,
+              lead.selling_address_city,
+              lead.selling_address_province,
+              lead.selling_address_postal_code,
+            ]
+          : [
+              lead.address_street,
+              lead.address_city,
+              lead.address_province,
+              lead.address_postal_code,
+            ]
+        )
           .filter(Boolean)
           .join(", ")
       : "";
@@ -145,11 +179,13 @@ export async function POST(req: Request) {
           propertyAddress,
           leadType: lead?.lead_type ?? "",
           uniqueId,
+          side,
         });
 
-        // 2. Upload to Vercel Blob
+        // 2. Upload to Vercel Blob (tag path with side for clarity)
+        const sideSegment = side ?? "main";
         const blob = await put(
-          `corporate-docs/${leadId}/${Date.now()}-retainer-agreement.pdf`,
+          `corporate-docs/${leadId}/${sideSegment}/${Date.now()}-retainer-agreement.pdf`,
           Buffer.from(pdfBytes),
           { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN! }
         );
@@ -158,7 +194,12 @@ export async function POST(req: Request) {
         await supabaseAdmin.from("lead_corporate_docs").insert({
           lead_id: leadId,
           doc_type: "retainer_agreement",
-          file_name: "retainer-agreement.pdf",
+          file_name:
+            side === "sale"
+              ? "retainer-agreement-sale.pdf"
+              : side === "purchase"
+                ? "retainer-agreement-purchase.pdf"
+                : "retainer-agreement.pdf",
           file_url: blob.url,
         });
 
@@ -168,6 +209,7 @@ export async function POST(req: Request) {
             firstName: lead.first_name ?? "",
             propertyAddress,
             leadType: lead.lead_type ?? "",
+            side,
           });
 
           await resend.emails.send({
@@ -178,7 +220,12 @@ export async function POST(req: Request) {
             html,
             attachments: [
               {
-                filename: "retainer-agreement.pdf",
+                filename:
+                  side === "sale"
+                    ? "retainer-agreement-sale.pdf"
+                    : side === "purchase"
+                      ? "retainer-agreement-purchase.pdf"
+                      : "retainer-agreement.pdf",
                 content: Buffer.from(pdfBytes),
               },
             ],
@@ -187,14 +234,19 @@ export async function POST(req: Request) {
           console.log("[Retainer Sign] PDF emailed to:", lead.email);
         }
 
-        console.log("[Retainer Sign] PDF saved for lead:", leadId);
+        console.log(
+          "[Retainer Sign] PDF saved for lead:",
+          leadId,
+          "side:",
+          side ?? "main"
+        );
       } catch (pdfErr) {
         console.error("[Retainer Sign] PDF/email error:", pdfErr);
       }
     })();
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
     console.error("[Retainer Sign] Server error:", err);
     return NextResponse.json(
       { success: false, error: "Server error" },

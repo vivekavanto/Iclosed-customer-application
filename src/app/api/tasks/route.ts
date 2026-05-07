@@ -98,14 +98,55 @@ export async function GET(req: Request) {
         .eq("id", dId)
         .single();
 
-      const dealType = dealData?.type ?? "Purchase";
+      const dealType = (dealData?.type ?? "Purchase").trim();
+      const isBoth = dealType.toLowerCase() === "purchase & sale";
       const sides: Array<{ side: "purchase" | "sale" | null; templateType: string }> =
-        dealType === "Purchase & Sale"
+        isBoth
           ? [
               { side: "purchase", templateType: "Purchase" },
               { side: "sale", templateType: "Sale" },
             ]
           : [{ side: null, templateType: getTaskTemplateType(dealType) }];
+
+      // ── Self-heal: backfill side on legacy or partially-tagged P&S rows ──
+      // Mirrors the same fix in /api/milestones — for P&S deals, derive the
+      // side of any null-side row from its task_template's lead_type. Without
+      // this, the dashboard side filter strips them and the dedup logic below
+      // would insert duplicates.
+      if (isBoth) {
+        const { data: nullSideRows } = await supabaseAdmin
+          .from("tasks")
+          .select("id, task_template_id")
+          .eq("deal_id", dId)
+          .is("side", null)
+          .not("task_template_id", "is", null);
+
+        if (nullSideRows && nullSideRows.length > 0) {
+          const tplIds = [...new Set(nullSideRows.map((r: any) => r.task_template_id))];
+          const { data: tplRows } = await supabaseAdmin
+            .from("task_templates")
+            .select("id, lead_type")
+            .in("id", tplIds);
+
+          const tplLeadType: Record<string, string> = Object.fromEntries(
+            (tplRows ?? []).map((t: any) => [t.id, (t.lead_type ?? "").trim()])
+          );
+
+          const purchaseIds = nullSideRows
+            .filter((r: any) => tplLeadType[r.task_template_id] === "Purchase")
+            .map((r: any) => r.id);
+          const saleIds = nullSideRows
+            .filter((r: any) => tplLeadType[r.task_template_id] === "Sale")
+            .map((r: any) => r.id);
+
+          if (purchaseIds.length > 0) {
+            await supabaseAdmin.from("tasks").update({ side: "purchase" }).in("id", purchaseIds);
+          }
+          if (saleIds.length > 0) {
+            await supabaseAdmin.from("tasks").update({ side: "sale" }).in("id", saleIds);
+          }
+        }
+      }
 
       // Fetch existing tasks once per deal (with side) for fast lookup
       const { data: existingTasks } = await supabaseAdmin

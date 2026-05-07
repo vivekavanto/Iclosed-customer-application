@@ -97,14 +97,55 @@ export async function GET(req: Request) {
         .eq("id", dId)
         .single();
 
-      const dealType = dealData?.type ?? "Purchase";
+      const dealType = (dealData?.type ?? "Purchase").trim();
+      const isBoth = dealType.toLowerCase() === "purchase & sale";
       const sides: Array<{ side: "purchase" | "sale" | null; stageType: string }> =
-        dealType === "Purchase & Sale"
+        isBoth
           ? [
               { side: "purchase", stageType: "Purchase" },
               { side: "sale", stageType: "Sale" },
             ]
           : [{ side: null, stageType: getStageTemplateType(dealType) }];
+
+      // ── Self-heal: backfill side on legacy or partially-tagged P&S rows ──
+      // Some legacy P&S deals (created before the side flow shipped) and any
+      // edge-case rows where convertLead skipped the side assignment land in
+      // the DB with side = null. Without this fix, the dashboard side filter
+      // strips them and the dedup logic below would insert duplicates.
+      if (isBoth) {
+        const { data: nullSideRows } = await supabaseAdmin
+          .from("milestones")
+          .select("id, stage_template_id")
+          .eq("deal_id", dId)
+          .is("side", null)
+          .not("stage_template_id", "is", null);
+
+        if (nullSideRows && nullSideRows.length > 0) {
+          const stageIds = [...new Set(nullSideRows.map((r: any) => r.stage_template_id))];
+          const { data: stageRows } = await supabaseAdmin
+            .from("stage_templates")
+            .select("id, lead_type")
+            .in("id", stageIds);
+
+          const stageLeadType: Record<string, string> = Object.fromEntries(
+            (stageRows ?? []).map((s: any) => [s.id, (s.lead_type ?? "").trim()])
+          );
+
+          const purchaseIds = nullSideRows
+            .filter((r: any) => stageLeadType[r.stage_template_id] === "Purchase")
+            .map((r: any) => r.id);
+          const saleIds = nullSideRows
+            .filter((r: any) => stageLeadType[r.stage_template_id] === "Sale")
+            .map((r: any) => r.id);
+
+          if (purchaseIds.length > 0) {
+            await supabaseAdmin.from("milestones").update({ side: "purchase" }).in("id", purchaseIds);
+          }
+          if (saleIds.length > 0) {
+            await supabaseAdmin.from("milestones").update({ side: "sale" }).in("id", saleIds);
+          }
+        }
+      }
 
       // Fetch existing milestones once per deal (with side) for fast lookup
       const { data: existingMilestones } = await supabaseAdmin

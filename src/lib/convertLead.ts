@@ -203,8 +203,8 @@ export async function convertSingleLead(params: {
   // ── 5. Create milestones + tasks (per side for Purchase & Sale) ────
   // For Purchase & Sale deals each side generates its own milestones and tasks
   // tagged with `side`. Single-side deals run the loop once with side = null.
-  const leadType = lead.lead_type ?? "Purchase";
-  const isBoth = leadType === "Purchase & Sale";
+  const leadType = (lead.lead_type ?? "Purchase").trim();
+  const isBoth = leadType.toLowerCase() === "purchase & sale";
   const sides: Array<{ side: "purchase" | "sale" | null; templateType: string }> = isBoth
     ? [
         { side: "purchase", templateType: "Purchase" },

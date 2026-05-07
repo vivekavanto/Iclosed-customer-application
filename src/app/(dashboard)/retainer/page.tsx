@@ -114,6 +114,7 @@ export default function RetainerPage() {
   const [signature, setSignature] = useState("");
   const [propertyAddress, setPropertyAddress] = useState("");
   const [leadType, setLeadType] = useState("");
+  const [side, setSide] = useState<"purchase" | "sale" | null>(null);
   const [retainerCurrent, setRetainerCurrent] = useState(1);
   const [retainerTotal, setRetainerTotal] = useState(1);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -137,6 +138,9 @@ export default function RetainerPage() {
         if (data.lead_type) {
           setLeadType(data.lead_type);
         }
+        setSide(
+          data.side === "purchase" || data.side === "sale" ? data.side : null
+        );
         setRetainerCurrent(data.retainer_current ?? 1);
         setRetainerTotal(data.retainer_total ?? 1);
       } catch {
@@ -216,6 +220,11 @@ export default function RetainerPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             Retainer Agreement
           </h1>
+          {side && (
+            <p className="text-sm font-semibold text-[#C10007] mt-2">
+              {side === "purchase" ? "Purchase Property" : "Sale Property"}
+            </p>
+          )}
           <p className="text-sm text-gray-500 mt-2">
             {propertyAddress || "Address not available"}
           </p>

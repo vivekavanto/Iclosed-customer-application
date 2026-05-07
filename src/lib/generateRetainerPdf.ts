@@ -9,6 +9,7 @@ interface RetainerPdfParams {
   propertyAddress: string;
   leadType: string;
   uniqueId: string;
+  side?: "purchase" | "sale" | null;
 }
 
 const FAQ_ITEMS = [
@@ -101,7 +102,7 @@ function wrapText(
 export async function generateRetainerPdf(
   params: RetainerPdfParams
 ): Promise<Uint8Array> {
-  const { fullName, signature, signedDate, propertyAddress, leadType, uniqueId } = params;
+  const { fullName, signature, signedDate, propertyAddress, leadType, uniqueId, side } = params;
 
   const doc = await PDFDocument.create();
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -142,6 +143,13 @@ export async function generateRetainerPdf(
 
   page.drawText("Retainer Agreement", { x: margin, y, font: bold, size: 18, color: rgb(0.1, 0.1, 0.1) });
   y -= 28;
+
+  // Side label (only for Purchase & Sale leads — distinguishes the two PDFs)
+  if (side === "purchase" || side === "sale") {
+    const sideLabel = side === "purchase" ? "Purchase Property" : "Sale Property";
+    page.drawText(`Property Role: ${sideLabel}`, { x: margin, y, font: bold, size: 10, color: brandColor });
+    y -= 18;
+  }
 
   // Property & type
   page.drawText(propertyAddress || "Address not available", { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
