@@ -72,8 +72,8 @@ export default function Step5Contact({
 
     // ── Co-person state ──
     const [submitting, setSubmitting] = React.useState(false);
-    const [coPurchaserCards, setCoPurchaserCards] = React.useState<CoPersonCard[]>(() => [makeEmptyCard()]);
-    const [coSellerCards, setCoSellerCards] = React.useState<CoPersonCard[]>(() => [makeEmptyCard()]);
+    const [coPurchaserCards, setCoPurchaserCards] = React.useState<CoPersonCard[]>(() => []);
+    const [coSellerCards, setCoSellerCards] = React.useState<CoPersonCard[]>(() => []);
 
     const formatCoPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -127,14 +127,7 @@ export default function Step5Contact({
     };
 
     const handleRemoveCoPersonCard = (which: "purchaser" | "seller", id: string) => {
-        getSetter(which)(prev => {
-            const filtered = prev.filter(p => p.id !== id);
-            // Always keep at least one card
-            if (filtered.length === 0) {
-                return [makeEmptyCard()];
-            }
-            return filtered;
-        });
+        getSetter(which)(prev => prev.filter(p => p.id !== id));
     };
 
     const leftSteps = [
@@ -288,24 +281,21 @@ export default function Step5Contact({
         const labelShort = which === "purchaser" ? "Co-Purchaser" : "Co-Seller";
         return (
             <div className="space-y-4">
-                {isBoth && (
+                {cards.length > 0 && (
                     <h3 className="text-sm font-semibold text-gray-900">
                         {labelShort}{cards.length > 1 ? "s" : ""}
                     </h3>
                 )}
                 {cards.map((card) => (
                     <div key={card.id} className="rounded-xl border border-gray-200 p-5 sm:p-6 space-y-4 bg-gray-50 relative">
-                        {/* Remove button — only show if there's more than one card */}
-                        {cards.length > 1 && (
-                            <button
-                                type="button"
-                                onClick={() => handleRemoveCoPersonCard(which, card.id)}
-                                className="cursor-pointer absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                                aria-label={`Remove ${labelShort.toLowerCase()}`}
-                            >
-                                <Trash2 size={13} strokeWidth={2} />
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => handleRemoveCoPersonCard(which, card.id)}
+                            className="cursor-pointer absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
+                            aria-label={`Remove ${labelShort.toLowerCase()}`}
+                        >
+                            <Trash2 size={13} strokeWidth={2} />
+                        </button>
 
                         {/* Full Name */}
                         <div>

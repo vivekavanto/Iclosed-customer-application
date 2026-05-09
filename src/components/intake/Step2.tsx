@@ -193,6 +193,10 @@ const Step2: React.FC<Step2Props> = ({
     const priceLabel = isSelling ? "Sale Price" : "Purchase Price";
     const { error: toastError } = useToast();
 
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, []);
+
     const MIN_PRICE = 10000;
     const MAX_PRICE = 10000000;
 
