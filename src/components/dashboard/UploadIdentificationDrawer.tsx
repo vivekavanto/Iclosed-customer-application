@@ -1660,12 +1660,9 @@ export default function UploadIdentificationDrawer({
                         <p className="text-[11px] text-gray-500 mt-1">
                           Ensure text is readable and all corners of the ID are visible.
                         </p>
-                        {sharpnessScore !== null && (
-                          <p
-                            className={`text-[11px] mt-2 ${sharpnessOk ? "text-green-600" : "text-amber-600"}`}
-                          >
-                            {sharpnessOk ? "Clarity check passed" : "Clarity check failed"} (score:{" "}
-                            {Math.round(sharpnessScore)})
+                        {sharpnessScore !== null && sharpnessOk && (
+                          <p className="text-[11px] mt-2 text-green-600">
+                            Image looks good!
                           </p>
                         )}
                       </div>
