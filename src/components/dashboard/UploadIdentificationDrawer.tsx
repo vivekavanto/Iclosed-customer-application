@@ -1673,12 +1673,12 @@ export default function UploadIdentificationDrawer({
                   )
                 ) : (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
                       {CAMERA_STEPS.map((key) => (
-                        <div key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                          <p className="text-xs font-semibold text-gray-700 mb-2">{SLOT_LABELS[key]}</p>
+                        <div key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-2 sm:p-2.5">
+                          <p className="text-[10px] sm:text-xs font-semibold text-gray-700 mb-1.5 truncate">{SLOT_LABELS[key]}</p>
                           {cameraCapturedPreview[key] ? (
-                            <div className="relative aspect-square overflow-hidden rounded-lg border border-gray-200">
+                            <div className="relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200">
                               <NextImage
                                 src={cameraCapturedPreview[key] as string}
                                 alt={`${SLOT_LABELS[key]} preview`}
@@ -1688,13 +1688,13 @@ export default function UploadIdentificationDrawer({
                               />
                             </div>
                           ) : (
-                            <div className="aspect-square rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-xs text-gray-400">
+                            <div className="aspect-[3/4] rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-[10px] sm:text-xs text-gray-400 text-center px-1">
                               Not captured
                             </div>
                           )}
                           <button
                             onClick={() => openCameraStep(key)}
-                            className="mt-2 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
+                            className="mt-1.5 cursor-pointer text-[10px] sm:text-xs font-semibold text-[#C10007] hover:underline"
                           >
                             Retake
                           </button>
