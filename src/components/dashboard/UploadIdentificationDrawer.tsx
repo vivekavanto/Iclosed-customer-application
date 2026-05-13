@@ -232,7 +232,7 @@ type DetectionFetchResult =
   | { ok: true; detection: DetectionResult }
   | { ok: false; error: string };
 
-async function fetchDetection(file: File, timeoutMs = 30_000): Promise<DetectionFetchResult> {
+async function fetchDetection(file: File, timeoutMs = 50_000): Promise<DetectionFetchResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -308,7 +308,7 @@ async function fetchDetection(file: File, timeoutMs = 30_000): Promise<Detection
   } catch (err: unknown) {
     const message =
       err instanceof Error && err.name === "AbortError"
-        ? "Detection timed out."
+        ? "Document verification is taking longer than expected. Please try again with a clearer image or smaller file size."
         : err instanceof Error
           ? err.message
           : "Detection failed.";
@@ -351,7 +351,7 @@ function AcceptableDocumentsSection() {
       </div>
       <div className="px-4 py-4 bg-white space-y-4">
         <p className="text-xs text-gray-600 leading-relaxed">
-          As per Law Society of Ontario By-Law 7.1, please provide{" "}
+          Please provide{" "}
           <span className="font-bold text-[#C10007]">two different government-issued photo IDs</span>{" "}
           from the list below for identity verification.
         </p>
@@ -434,6 +434,7 @@ export default function UploadIdentificationDrawer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const selectedRef = useRef<SelectedFile[]>([]);
+  const verificationStatusRef = useRef<HTMLDivElement>(null);
 
   // Keep selectedRef in sync so detection callbacks can read the current file name
   // without being inside a setState updater
@@ -447,7 +448,9 @@ export default function UploadIdentificationDrawer({
     fileId: string;
     fileName: string;
     reason: string;
-    kind: "rejected" | "error";
+    kind: "rejected" | "error" | "expired";
+    documentType?: string;
+    expiryDate?: string;
   }>({ open: false, fileId: "", fileName: "", reason: "", kind: "rejected" });
 
   // Manual classification modal (when AI can't classify correctly)
@@ -590,6 +593,12 @@ export default function UploadIdentificationDrawer({
           : s,
       ),
     );
+    
+    // Scroll to verification status section after detection completes
+    setTimeout(() => {
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
+    
     if (!result.detection.isIdentification) {
       setDetectionFailModal({
         open: true,
@@ -599,6 +608,17 @@ export default function UploadIdentificationDrawer({
           result.detection.reason?.trim() ||
           "This file doesn't appear to be an acceptable government-issued photo ID under LSO By-Law 7.1.",
         kind: "rejected",
+      });
+    } else if (result.detection.expiryStatus === "expired") {
+      // Show modal for expired IDs
+      setDetectionFailModal({
+        open: true,
+        fileId: id,
+        fileName,
+        reason: `This ${result.detection.documentType || "ID"} expired on ${result.detection.expiryDate || "an unknown date"}. Please upload a valid, non-expired ID.`,
+        kind: "expired",
+        documentType: result.detection.documentType ?? undefined,
+        expiryDate: result.detection.expiryDate ?? undefined,
       });
     }
   }
@@ -1215,24 +1235,24 @@ export default function UploadIdentificationDrawer({
           <WhyIdentificationRequiredDropdown />
 
           {/* Take Photos with Camera Option */}
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <div className="flex flex-col items-center text-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[#FEF2F2] flex items-center justify-center">
-                <Camera size={22} className="text-[#C10007]" strokeWidth={1.5} />
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+                <Camera size={18} className="text-[#C10007]" strokeWidth={1.75} />
               </div>
-              <div>
-                <p className="text-sm font-bold text-gray-900">Take Photos with Your Camera</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Capture front and back of both IDs step by step — no need to save files first.
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Have a camera?</p>
+                <p className="text-xs text-gray-500">
+                  Capture each ID with your camera — no need to save the photo first.
                 </p>
               </div>
-              <Button variant="primary" onClick={openCameraFlow} disabled={uploading} className="mt-1">
-                <span className="inline-flex items-center gap-1.5">
-                  <Camera size={14} />
-                  Use Camera
-                </span>
-              </Button>
             </div>
+            <Button variant="secondary" size="sm" onClick={openCameraFlow} disabled={uploading} className="flex-shrink-0">
+              <span className="inline-flex items-center gap-1.5">
+                <Camera size={14} />
+                Use Camera
+              </span>
+            </Button>
           </div>
 
           {/* Manual Upload zone */}
@@ -1466,12 +1486,15 @@ export default function UploadIdentificationDrawer({
 
           {/* Unified Verification Status Section */}
           {selected.length > 0 && !hasPendingDetection && (
-            <div className={[
-              "rounded-xl border overflow-hidden",
-              completeDocCount >= 2 
-                ? "border-green-200 bg-green-50" 
-                : "border-amber-200 bg-amber-50",
-            ].join(" ")}>
+            <div
+              ref={verificationStatusRef}
+              className={[
+                "rounded-xl border overflow-hidden",
+                completeDocCount >= 2
+                  ? "border-green-200 bg-green-50"
+                  : "border-amber-200 bg-amber-50",
+              ].join(" ")}
+            >
               {/* Status Header */}
               <div className={[
                 "px-4 py-3 flex items-center gap-3",
@@ -1618,22 +1641,24 @@ export default function UploadIdentificationDrawer({
           <Button
             variant="primary"
             fullWidth
-            disabled={!canUpload}
+            disabled={selected.length === 0 || hasPendingDetection}
             loading={uploading}
-            onClick={handleUploadClick}
+            onClick={() => {
+              if (canUpload) {
+                handleUploadClick();
+              } else {
+                verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            }}
             className="sm:flex-1"
           >
             {selected.length === 0
               ? "Upload Documents"
               : hasPendingDetection
                 ? "Analyzing..."
-                : hasDetectionFailures
-                  ? "Remove Invalid Files"
-                  : hasExpiredDocs
-                    ? "Replace Expired ID"
-                    : completeDocCount < 2
-                      ? `Need ${2 - completeDocCount} More ID${2 - completeDocCount > 1 ? "s" : ""}`
-                      : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
+                : hasDetectionFailures || hasExpiredDocs || completeDocCount < 2
+                  ? "See What's Missing"
+                  : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
           </Button>
         </div>
       </div>
@@ -1655,24 +1680,42 @@ export default function UploadIdentificationDrawer({
               {/* Icon band */}
               <div className="flex justify-center pt-8 pb-4">
                 <div className="w-14 h-14 rounded-full bg-[#FEF2F2] flex items-center justify-center">
-                  <AlertCircle size={28} className="text-[#C10007]" strokeWidth={1.75} />
+                  {detectionFailModal.kind === "expired" ? (
+                    <Clock size={28} className="text-[#C10007]" strokeWidth={1.75} />
+                  ) : (
+                    <AlertCircle size={28} className="text-[#C10007]" strokeWidth={1.75} />
+                  )}
                 </div>
               </div>
 
               {/* Text */}
               <div className="px-6 pb-5 text-center space-y-2">
                 <h3 className="text-base font-bold text-gray-900">
-                  {detectionFailModal.kind === "rejected"
-                    ? "This document was rejected"
-                    : "We weren't able to process this file"}
+                  {detectionFailModal.kind === "expired"
+                    ? "This ID has expired"
+                    : detectionFailModal.kind === "rejected"
+                      ? "This document was rejected"
+                      : "We weren't able to process this file"}
                 </h3>
                 <p className="text-sm text-gray-500 leading-relaxed">
-                  {detectionFailModal.kind === "rejected" ? (
+                  {detectionFailModal.kind === "expired" ? (
+                    <>
+                      Your{" "}
+                      <span className="font-semibold text-gray-700">
+                        {detectionFailModal.documentType || "ID"}
+                      </span>{" "}
+                      expired on{" "}
+                      <span className="font-semibold text-gray-700">
+                        {detectionFailModal.expiryDate || "an unknown date"}
+                      </span>
+                      . Expired IDs cannot be used for identity verification.
+                    </>
+                  ) : detectionFailModal.kind === "rejected" ? (
                     <>
                       <span className="font-semibold text-gray-700 break-all">
                         {detectionFailModal.fileName}
                       </span>{" "}
-                      is not an acceptable government-issued ID for identity verification under LSO By-Law 7.1.
+                      could not be verified as an acceptable government-issued ID.
                     </>
                   ) : (
                     <>
@@ -1686,8 +1729,8 @@ export default function UploadIdentificationDrawer({
                 </p>
               </div>
 
-              {/* Reason callout */}
-              {detectionFailModal.reason && (
+              {/* Reason callout - shows AI reasoning for rejections or error details */}
+              {detectionFailModal.reason && detectionFailModal.kind !== "expired" && (
                 <div className="mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
                   <div className="flex items-start gap-2">
                     <AlertCircle
@@ -1697,7 +1740,7 @@ export default function UploadIdentificationDrawer({
                     />
                     <div className="text-left">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                        {detectionFailModal.kind === "rejected" ? "Reason" : "Error"}
+                        {detectionFailModal.kind === "rejected" ? "Why it was rejected" : "Error details"}
                       </p>
                       <p className="text-xs text-amber-800 leading-relaxed mt-0.5 break-words">
                         {detectionFailModal.reason}
@@ -1710,51 +1753,86 @@ export default function UploadIdentificationDrawer({
               {/* Tip for rejected documents */}
               {detectionFailModal.kind === "rejected" && (
                 <p className="px-6 pb-5 text-[11px] text-gray-500 leading-relaxed text-center">
-                  Acceptable IDs include a Canadian or foreign passport, driver&apos;s
-                  license, PR card, citizenship card, NEXUS card, plastic SIN card,
-                  or a provincial photo ID card. Health cards are not accepted.
+                  If we incorrectly identified this document, you can manually select the correct document type below.
                 </p>
               )}
 
               {/* Actions */}
               <div className="px-6 pb-6 flex flex-col gap-2.5">
-                <Button
-                  variant="primary"
-                  fullWidth
-                  onClick={() => openManualClassify(detectionFailModal.fileId, detectionFailModal.fileName)}
-                >
-                  Reclassify Manually
-                </Button>
-                <Button
-                  variant="secondary"
-                  fullWidth
-                  onClick={() => {
-                    removeSelected(detectionFailModal.fileId);
-                    setDetectionFailModal({
-                      open: false,
-                      fileId: "",
-                      fileName: "",
-                      reason: "",
-                      kind: "rejected",
-                    });
-                  }}
-                >
-                  Remove &amp; Try Again
-                </Button>
-                <button
-                  className="text-xs text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
-                  onClick={() =>
-                    setDetectionFailModal({
-                      open: false,
-                      fileId: "",
-                      fileName: "",
-                      reason: "",
-                      kind: "rejected",
-                    })
-                  }
-                >
-                  Dismiss
-                </button>
+                {detectionFailModal.kind === "expired" ? (
+                  <>
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={() => {
+                        removeSelected(detectionFailModal.fileId);
+                        setDetectionFailModal({
+                          open: false,
+                          fileId: "",
+                          fileName: "",
+                          reason: "",
+                          kind: "rejected",
+                        });
+                      }}
+                    >
+                      Remove &amp; Upload Valid ID
+                    </Button>
+                    <button
+                      className="text-xs text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
+                      onClick={() =>
+                        setDetectionFailModal({
+                          open: false,
+                          fileId: "",
+                          fileName: "",
+                          reason: "",
+                          kind: "rejected",
+                        })
+                      }
+                    >
+                      Dismiss
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={() => openManualClassify(detectionFailModal.fileId, detectionFailModal.fileName)}
+                    >
+                      Choose Document Type
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => {
+                        removeSelected(detectionFailModal.fileId);
+                        setDetectionFailModal({
+                          open: false,
+                          fileId: "",
+                          fileName: "",
+                          reason: "",
+                          kind: "rejected",
+                        });
+                      }}
+                    >
+                      Remove &amp; Try Again
+                    </Button>
+                    <button
+                      className="text-xs text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
+                      onClick={() =>
+                        setDetectionFailModal({
+                          open: false,
+                          fileId: "",
+                          fileName: "",
+                          reason: "",
+                          kind: "rejected",
+                        })
+                      }
+                    >
+                      Dismiss
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

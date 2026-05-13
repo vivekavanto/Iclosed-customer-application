@@ -421,7 +421,7 @@ export async function POST(req: Request) {
 
     // Hard timeout so the request can never hang indefinitely.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25_000);
+    const timeoutId = setTimeout(() => controller.abort(), 45_000);
 
     let res: Response;
     try {
@@ -435,7 +435,7 @@ export async function POST(req: Request) {
       clearTimeout(timeoutId);
       const message =
         err instanceof Error && err.name === "AbortError"
-          ? "Gemini request timed out after 25s."
+          ? "Document verification is taking longer than expected. Please try again with a clearer image or smaller file size."
           : err instanceof Error
             ? err.message
             : "Gemini request failed.";
