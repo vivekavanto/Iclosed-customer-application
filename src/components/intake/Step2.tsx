@@ -62,8 +62,8 @@ function validateAddress(formData: AddressData) {
     return errors;
 }
 
-/* ── Reusable address form block ── */
-function AddressForm({
+/* ── Reusable property details form block ── */
+function PropertyDetailsForm({
     label,
     icon: Icon,
     formData,
@@ -72,6 +72,11 @@ function AddressForm({
     setTouched,
     submitAttempted,
     prefix,
+    priceLabel,
+    priceValue,
+    onPriceChange,
+    priceError,
+    formatCurrency,
 }: {
     label: string;
     icon: React.ElementType;
@@ -81,6 +86,11 @@ function AddressForm({
     setTouched: React.Dispatch<React.SetStateAction<Partial<Record<keyof AddressData, boolean>>>>;
     submitAttempted: boolean;
     prefix: string;
+    priceLabel: string;
+    priceValue: string;
+    onPriceChange: (value: string) => void;
+    priceError: string;
+    formatCurrency: (value: string) => string;
 }) {
     const errors = validateAddress(formData);
     const touch = (field: keyof AddressData) =>
@@ -89,86 +99,108 @@ function AddressForm({
         touched[field] || submitAttempted ? errors[field] : undefined;
 
     return (
-        <div className="space-y-4">
-            {/* Section heading */}
-            <div className="flex items-center gap-2.5 pb-2 border-b border-gray-100">
-                <div className="w-8 h-8 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-                    <Icon size={15} className="text-[#C10007]" strokeWidth={2} />
+        <div className="rounded-xl border border-gray-200 overflow-hidden">
+            {/* Card header with light red background */}
+            <div className="bg-[#FEF2F2] px-5 py-4 flex items-center gap-3 border-b border-gray-200">
+                <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <Icon size={18} className="text-[#C10007]" strokeWidth={2} />
                 </div>
-                <p className="text-sm font-semibold text-gray-900">{label}</p>
+                <p className="text-base font-semibold text-gray-900">{label}</p>
             </div>
 
-            {/* Street */}
-            <div className="flex flex-col gap-1.5 w-full">
-                <label className="text-sm font-medium text-[var(--color-text-heading)]">
-                    Street Address <span className="text-red-600 ml-1">*</span>
-                </label>
-                <AddressAutocomplete
-                    value={formData.street}
-                    onChange={(val) => setFormData({ ...formData, street: val })}
-                    onSelect={({ street, city, postalCode }) =>
-                        setFormData({
-                            ...formData,
-                            street,
-                            city: city || formData.city,
-                            postalCode: postalCode || formData.postalCode,
-                        })
-                    }
-                    onBlur={() => touch("street")}
-                    hasError={!!showError("street")}
+            {/* Card body */}
+            <div className="px-5 py-5 space-y-4 bg-white">
+                {/* Price field */}
+                <Input
+                    label={priceLabel}
+                    required
+                    type="text"
+                    value={priceValue}
+                    onChange={(e) => {
+                        const formattedValue = formatCurrency(e.target.value);
+                        onPriceChange(formattedValue);
+                    }}
+                    placeholder="$1,250,000"
                 />
-                {showError("street") && (
-                    <p className="text-xs text-red-600 mt-0.5">{showError("street")}</p>
+                {priceError && (
+                    <p className="text-sm text-red-600 -mt-2">{priceError}</p>
                 )}
-            </div>
 
-            {/* Unit */}
-            <Input
-                label="Unit / Apartment / Suite"
-                id={`${prefix}-unit`}
-                placeholder="e.g. 4B"
-                value={formData.unit}
-                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                onBlur={() => touch("unit")}
-                error={showError("unit")}
-            />
+                {/* Divider between price and address */}
+                <div className="border-t border-dashed border-gray-200 pt-4" />
 
-            {/* City */}
-            <Input
-                label="City"
-                id={`${prefix}-city`}
-                placeholder="Toronto"
-                required
-                value={formData.city}
-                onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                onBlur={() => touch("city")}
-                error={showError("city")}
-            />
+                {/* Street */}
+                <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-sm font-medium text-[var(--color-text-heading)]">
+                        Street Address <span className="text-red-600 ml-1">*</span>
+                    </label>
+                    <AddressAutocomplete
+                        value={formData.street}
+                        onChange={(val) => setFormData({ ...formData, street: val })}
+                        onSelect={({ street, city, postalCode }) =>
+                            setFormData({
+                                ...formData,
+                                street,
+                                city: city || formData.city,
+                                postalCode: postalCode || formData.postalCode,
+                            })
+                        }
+                        onBlur={() => touch("street")}
+                        hasError={!!showError("street")}
+                    />
+                    {showError("street") && (
+                        <p className="text-xs text-red-600 mt-0.5">{showError("street")}</p>
+                    )}
+                </div>
 
-            {/* Postal Code */}
-            <Input
-                label="Postal Code"
-                id={`${prefix}-postal`}
-                placeholder="M5V 3A8"
-                required
-                value={formData.postalCode}
-                onChange={(e) =>
-                    setFormData({ ...formData, postalCode: e.target.value.toUpperCase() })
-                }
-                onBlur={() => touch("postalCode")}
-                error={showError("postalCode")}
-            />
+                {/* Unit */}
+                <Input
+                    label="Unit / Apartment / Suite"
+                    id={`${prefix}-unit`}
+                    placeholder="e.g. 4B"
+                    value={formData.unit}
+                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    onBlur={() => touch("unit")}
+                    error={showError("unit")}
+                />
 
-            {/* Province (locked) */}
-            <div className="flex flex-col gap-1.5 w-full">
-                <label className="text-sm font-medium text-gray-900">Province</label>
-                <select
-                    className="w-full px-4 py-2.5 rounded-sm border text-sm bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
-                    defaultValue="Ontario"
-                    disabled
-                >
-                    <option>Ontario</option>
-                </select>
+                {/* City */}
+                <Input
+                    label="City"
+                    id={`${prefix}-city`}
+                    placeholder="Toronto"
+                    required
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    onBlur={() => touch("city")}
+                    error={showError("city")}
+                />
+
+                {/* Postal Code */}
+                <Input
+                    label="Postal Code"
+                    id={`${prefix}-postal`}
+                    placeholder="M5V 3A8"
+                    required
+                    value={formData.postalCode}
+                    onChange={(e) =>
+                        setFormData({ ...formData, postalCode: e.target.value.toUpperCase() })
+                    }
+                    onBlur={() => touch("postalCode")}
+                    error={showError("postalCode")}
+                />
+
+                {/* Province (locked) */}
+                <div className="flex flex-col gap-1.5 w-full">
+                    <label className="text-sm font-medium text-gray-900">Province</label>
+                    <select
+                        className="w-full px-4 py-2.5 rounded-sm border text-sm bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
+                        defaultValue="Ontario"
+                        disabled
+                    >
+                        <option>Ontario</option>
+                    </select>
+                </div>
             </div>
         </div>
     );
@@ -358,60 +390,25 @@ const Step2: React.FC<Step2Props> = ({
                 <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
                     <div className="space-y-8 w-full max-w-2xl">
 
-                        {/* Price Section */}
+                        {/* Header */}
                         <div>
-                            <h2 className="text-3xl font-semibold mb-6">
+                            <h2 className="text-3xl font-semibold mb-2">
                                 {isBoth
                                     ? "Enter the purchase price and the sale price."
                                     : `Enter the ${priceLabel.toLowerCase()} for the property.`}
                             </h2>
-
-                            <Input
-                                label={isBoth ? "Purchase Price" : priceLabel}
-                                required
-                                type="text"
-                                value={purchasePrice}
-                                onChange={(e) => {
-                                    const formattedValue = formatCurrency(e.target.value);
-                                    setPurchasePrice(formattedValue);
-                                }}
-                                placeholder="$1,250,000"
-                                className="mb-2"
-                            />
-
-                            {priceError && (
-                                <p className="text-sm text-red-600">{priceError}</p>
-                            )}
-
-                            {isBoth && (
-                                <div className="mt-5">
-                                    <Input
-                                        label="Sale Price"
-                                        required
-                                        type="text"
-                                        value={sellingPrice}
-                                        onChange={(e) => {
-                                            const formattedValue = formatCurrency(e.target.value);
-                                            setSellingPrice(formattedValue);
-                                        }}
-                                        placeholder="$1,250,000"
-                                        className="mb-2"
-                                    />
-                                    {sellingPriceError && (
-                                        <p className="text-sm text-red-600">{sellingPriceError}</p>
-                                    )}
-                                </div>
-                            )}
+                            <p className="text-gray-500 text-sm">
+                                {isBoth
+                                    ? "Provide details for both properties below."
+                                    : "Provide the property details below."}
+                            </p>
                         </div>
 
-                        {/* Divider */}
-                        <div className="border-t border-gray-200" />
-
-                        {/* Address Section */}
+                        {/* Property Details Cards */}
                         {isBoth ? (
                             <>
-                                <AddressForm
-                                    label="Purchasing Property Address"
+                                <PropertyDetailsForm
+                                    label="Purchase Property Details"
                                     icon={Home}
                                     formData={formData}
                                     setFormData={setFormData}
@@ -419,12 +416,15 @@ const Step2: React.FC<Step2Props> = ({
                                     setTouched={setBuyTouched}
                                     submitAttempted={submitAttempted}
                                     prefix="buy"
+                                    priceLabel="Purchase Price"
+                                    priceValue={purchasePrice}
+                                    onPriceChange={setPurchasePrice}
+                                    priceError={priceError}
+                                    formatCurrency={formatCurrency}
                                 />
 
-                                <div className="border-t border-dashed border-gray-200" />
-
-                                <AddressForm
-                                    label="Selling Property Address"
+                                <PropertyDetailsForm
+                                    label="Sale Property Details"
                                     icon={FileText}
                                     formData={sellingFormData}
                                     setFormData={setSellingFormData}
@@ -432,12 +432,16 @@ const Step2: React.FC<Step2Props> = ({
                                     setTouched={setSellTouched}
                                     submitAttempted={submitAttempted}
                                     prefix="sell"
+                                    priceLabel="Sale Price"
+                                    priceValue={sellingPrice}
+                                    onPriceChange={setSellingPrice}
+                                    priceError={sellingPriceError}
+                                    formatCurrency={formatCurrency}
                                 />
-
                             </>
                         ) : (
-                            <AddressForm
-                                label={isSelling ? "Selling Property Address" : "Purchasing Property Address"}
+                            <PropertyDetailsForm
+                                label={isSelling ? "Sale Property Details" : "Purchase Property Details"}
                                 icon={isSelling ? FileText : Home}
                                 formData={formData}
                                 setFormData={setFormData}
@@ -445,6 +449,11 @@ const Step2: React.FC<Step2Props> = ({
                                 setTouched={setBuyTouched}
                                 submitAttempted={submitAttempted}
                                 prefix="main"
+                                priceLabel={priceLabel}
+                                priceValue={purchasePrice}
+                                onPriceChange={setPurchasePrice}
+                                priceError={priceError}
+                                formatCurrency={formatCurrency}
                             />
                         )}
 

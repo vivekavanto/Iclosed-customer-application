@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, ChevronLeft, CheckCircle2, Trash2 } from "lucide-react";
+import { Plus, ChevronLeft, CheckCircle2, Trash2, User, Users } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -279,91 +279,121 @@ export default function Step5Contact({
     const renderCoSection = (which: "purchaser" | "seller") => {
         const cards = which === "purchaser" ? coPurchaserCards : coSellerCards;
         const labelShort = which === "purchaser" ? "Co-Purchaser" : "Co-Seller";
-        return (
-            <div className="space-y-4">
-                {cards.length > 0 && (
-                    <h3 className="text-sm font-semibold text-gray-900">
-                        {labelShort}{cards.length > 1 ? "s" : ""}
-                    </h3>
-                )}
-                {cards.map((card) => (
-                    <div key={card.id} className="rounded-xl border border-gray-200 p-5 sm:p-6 space-y-4 bg-gray-50 relative">
-                        <button
-                            type="button"
-                            onClick={() => handleRemoveCoPersonCard(which, card.id)}
-                            className="cursor-pointer absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                            aria-label={`Remove ${labelShort.toLowerCase()}`}
-                        >
-                            <Trash2 size={13} strokeWidth={2} />
-                        </button>
+        const sectionTitle = which === "purchaser" ? "Co-Purchaser Information" : "Co-Seller Information";
+        const hasCards = cards.length > 0;
 
-                        {/* Full Name */}
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-                                Full Name <span className="text-[#C10007]">*</span>
-                            </label>
-                            <input
-                                type="text"
-                                placeholder="John Doe"
-                                value={card.fullName}
-                                onChange={(e) => {
-                                    const val = e.target.value.replace(/\b\w/g, (c) => c.toUpperCase());
-                                    updateCoCard(which, card.id, 'fullName', val);
-                                }}
-                                onBlur={() => touchCoCardField(which, card.id, 'fullName')}
-                                className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.fullName && card.errors.fullName ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
-                            />
-                            {card.touched.fullName && card.errors.fullName && <p className="mt-1 text-xs text-[#C10007]">{card.errors.fullName}</p>}
-                        </div>
-
-                        {/* Email */}
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-                                Email Address <span className="text-[#C10007]">*</span>
-                            </label>
-                            <input
-                                type="email"
-                                placeholder="john@doe.com"
-                                value={card.email}
-                                onChange={(e) => updateCoCard(which, card.id, 'email', e.target.value)}
-                                onBlur={() => touchCoCardField(which, card.id, 'email')}
-                                className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.email && card.errors.email ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
-                            />
-                            {card.touched.email && card.errors.email && <p className="mt-1 text-xs text-[#C10007]">{card.errors.email}</p>}
-                        </div>
-
-                        {/* Phone */}
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-800 mb-1.5">
-                                Phone Number <span className="text-[#C10007]">*</span>
-                            </label>
-                            <div className={`flex items-center border rounded-lg overflow-hidden transition-colors bg-white ${card.touched.phone && card.errors.phone ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus-within:border-[#C10007] focus-within:ring-2 focus-within:ring-[#C10007]/10"}`}>
-                                <span className="flex items-center gap-1.5 px-3 py-3 text-sm text-gray-500 border-r border-gray-200 bg-gray-50 flex-shrink-0">
-                                    +1
-                                </span>
-                                <input
-                                    type="tel"
-                                    placeholder="(555)-123-4567"
-                                    value={card.phone}
-                                    onChange={(e) => updateCoCard(which, card.id, 'phone', formatCoPhone(e.target.value))}
-                                    onBlur={() => touchCoCardField(which, card.id, 'phone')}
-                                    className="flex-1 px-3 py-3 text-sm outline-none bg-white"
-                                />
-                            </div>
-                            {card.touched.phone && card.errors.phone && <p className="mt-1 text-xs text-[#C10007]">{card.errors.phone}</p>}
-                        </div>
-                    </div>
-                ))}
-
-                {/* Add button */}
+        // When no cards exist, show only a simple add button without the bordered card
+        if (!hasCards) {
+            return (
                 <Button
                     variant="ghost"
-                    className="w-full border border-dashed border-red-200 text-gray-900 hover:text-[#C10007] hover:bg-transparent"
+                    className="w-full border border-dashed border-gray-300 text-gray-600 hover:text-[#C10007] hover:border-red-200 hover:bg-transparent py-4"
                     onClick={() => handleAddCoPersonCard(which)}
                 >
                     <Plus size={18} />
                     Add {labelShort}
                 </Button>
+            );
+        }
+
+        // When cards exist, show the full bordered card UI
+        return (
+            <div className="rounded-xl border border-gray-200 overflow-hidden">
+                {/* Card header with light red background */}
+                <div className="bg-[#FEF2F2] px-5 py-4 flex items-center gap-3 border-b border-gray-200">
+                    <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <Users size={18} className="text-[#C10007]" strokeWidth={2} />
+                    </div>
+                    <p className="text-base font-semibold text-gray-900">{sectionTitle}</p>
+                </div>
+
+                {/* Card body */}
+                <div className="px-5 py-5 space-y-4 bg-white">
+                    {cards.map((card, index) => (
+                        <div key={card.id} className="rounded-lg border border-gray-200 p-4 sm:p-5 space-y-4 bg-gray-50 relative">
+                            {/* Card number badge and remove button */}
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                    {labelShort} {index + 1}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleRemoveCoPersonCard(which, card.id)}
+                                    className="cursor-pointer w-7 h-7 flex items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
+                                    aria-label={`Remove ${labelShort.toLowerCase()}`}
+                                >
+                                    <Trash2 size={12} strokeWidth={2} />
+                                </button>
+                            </div>
+
+                            {/* Full Name */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Full Name <span className="text-[#C10007]">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="John Doe"
+                                    value={card.fullName}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/\b\w/g, (c) => c.toUpperCase());
+                                        updateCoCard(which, card.id, 'fullName', val);
+                                    }}
+                                    onBlur={() => touchCoCardField(which, card.id, 'fullName')}
+                                    className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.fullName && card.errors.fullName ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                                />
+                                {card.touched.fullName && card.errors.fullName && <p className="mt-1 text-xs text-[#C10007]">{card.errors.fullName}</p>}
+                            </div>
+
+                            {/* Email */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Email Address <span className="text-[#C10007]">*</span>
+                                </label>
+                                <input
+                                    type="email"
+                                    placeholder="john@doe.com"
+                                    value={card.email}
+                                    onChange={(e) => updateCoCard(which, card.id, 'email', e.target.value)}
+                                    onBlur={() => touchCoCardField(which, card.id, 'email')}
+                                    className={`w-full px-4 py-3 text-sm rounded-lg border outline-none transition-colors bg-white ${card.touched.email && card.errors.email ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                                />
+                                {card.touched.email && card.errors.email && <p className="mt-1 text-xs text-[#C10007]">{card.errors.email}</p>}
+                            </div>
+
+                            {/* Phone */}
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-800 mb-1.5">
+                                    Phone Number <span className="text-[#C10007]">*</span>
+                                </label>
+                                <div className={`flex items-center border rounded-lg overflow-hidden transition-colors bg-white ${card.touched.phone && card.errors.phone ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus-within:border-[#C10007] focus-within:ring-2 focus-within:ring-[#C10007]/10"}`}>
+                                    <span className="flex items-center gap-1.5 px-3 py-3 text-sm text-gray-500 border-r border-gray-200 bg-gray-50 flex-shrink-0">
+                                        +1
+                                    </span>
+                                    <input
+                                        type="tel"
+                                        placeholder="(555)-123-4567"
+                                        value={card.phone}
+                                        onChange={(e) => updateCoCard(which, card.id, 'phone', formatCoPhone(e.target.value))}
+                                        onBlur={() => touchCoCardField(which, card.id, 'phone')}
+                                        className="flex-1 px-3 py-3 text-sm outline-none bg-white"
+                                    />
+                                </div>
+                                {card.touched.phone && card.errors.phone && <p className="mt-1 text-xs text-[#C10007]">{card.errors.phone}</p>}
+                            </div>
+                        </div>
+                    ))}
+
+                    {/* Add button */}
+                    <Button
+                        variant="ghost"
+                        className="w-full border border-dashed border-red-200 text-gray-900 hover:text-[#C10007] hover:bg-transparent"
+                        onClick={() => handleAddCoPersonCard(which)}
+                    >
+                        <Plus size={18} />
+                        Add {labelShort}
+                    </Button>
+                </div>
             </div>
         );
     };
@@ -435,114 +465,136 @@ export default function Step5Contact({
                 <div className="flex-1 p-6 sm:p-10 lg:p-16 pb-28 lg:pb-16 overflow-y-auto">
                     <div className="space-y-8 w-full max-w-2xl">
 
-                        {/* Logged-in notice — primary contact is locked to the signed-in account */}
-                        {isLoggedIn && (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-                                <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <circle cx="12" cy="12" r="10" />
-                                        <line x1="12" y1="8" x2="12" y2="12" />
-                                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                                    </svg>
+                        {/* Page heading */}
+                        <div>
+                            <h2 className="text-3xl font-semibold mb-2">Contact Info</h2>
+                            <p className="text-gray-500 text-sm">
+                                Provide your contact details and any additional parties involved.
+                            </p>
+                        </div>
+
+                        {/* Your Information Card */}
+                        <div className="rounded-xl border border-gray-200 overflow-hidden">
+                            {/* Card header with light red background */}
+                            <div className="bg-[#FEF2F2] px-5 py-4 flex items-center gap-3 border-b border-gray-200">
+                                <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                                    <User size={18} className="text-[#C10007]" strokeWidth={2} />
                                 </div>
-                                <div className="text-[13px] leading-relaxed text-amber-900">
-                                    You are submitting as{" "}
-                                    <strong>{formData.fullName || initialData?.fullName || "your account"}</strong>.
-                                    To submit for someone else, please log out first and start a new intake.
+                                <p className="text-base font-semibold text-gray-900">Your Information</p>
+                            </div>
+
+                            {/* Card body */}
+                            <div className="px-5 py-5 space-y-4 bg-white">
+                                {/* Logged-in notice — primary contact is locked to the signed-in account */}
+                                {isLoggedIn && (
+                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
+                                        <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="10" />
+                                                <line x1="12" y1="8" x2="12" y2="12" />
+                                                <line x1="12" y1="16" x2="12.01" y2="16" />
+                                            </svg>
+                                        </div>
+                                        <div className="text-[13px] leading-relaxed text-amber-900">
+                                            You are submitting as{" "}
+                                            <strong>{formData.fullName || initialData?.fullName || "your account"}</strong>.
+                                            To submit for someone else, please log out first and start a new intake.
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Contact Form */}
+                                <Input
+                                    label="Full Name"
+                                    required
+                                    placeholder="John Doe"
+                                    value={formData.fullName}
+                                    disabled={isLoggedIn}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const capitalized = val.replace(/\b\w/g, (c) => c.toUpperCase());
+                                        setFormData({ ...formData, fullName: capitalized });
+                                    }}
+                                    onBlur={() =>
+                                        setTouched((prev) => ({ ...prev, fullName: true }))
+                                    }
+                                    className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
+                                />
+                                {touched.fullName && errors.fullName && (
+                                    <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>
+                                )}
+
+                                <Input
+                                    label="Email Address"
+                                    required
+                                    placeholder="john@doe.com"
+                                    value={formData.email}
+                                    disabled={isLoggedIn}
+                                    onChange={(e) =>
+                                        setFormData({ ...formData, email: e.target.value })
+                                    }
+                                    onBlur={() =>
+                                        setTouched((prev) => ({ ...prev, email: true }))
+                                    }
+                                    className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
+                                />
+                                {touched.email && errors.email && (
+                                    <p className="text-red-600 text-sm mt-1">{errors.email}</p>
+                                )}
+
+                                <Input
+                                    label="Phone Number"
+                                    required
+                                    placeholder="(416) 555-1234"
+                                    value={formData.phone}
+                                    disabled={isLoggedIn}
+                                    onChange={(e) =>
+                                        setFormData({ ...formData, phone: formatPhone(e.target.value) })
+                                    }
+                                    onBlur={() =>
+                                        setTouched((prev) => ({ ...prev, phone: true }))
+                                    }
+                                    className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
+                                />
+                                {touched.phone && errors.phone && (
+                                    <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
+                                )}
+
+                                {/* How did you hear about us? (optional) */}
+                                <div className="flex flex-col gap-1.5 w-full">
+                                    <label className="text-sm font-medium text-gray-900">
+                                        How did you hear about us?{" "}
+                                        <span className="text-gray-400 font-normal">(optional)</span>
+                                    </label>
+                                    <select
+                                        value={referralSource}
+                                        onChange={(e) => {
+                                            setReferralSource(e.target.value);
+                                            if (e.target.value !== "Other") setReferralOther("");
+                                        }}
+                                        className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
+                                    >
+                                        <option value="">Select an option</option>
+                                        {REFERRAL_OPTIONS.map((opt) => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                    {referralSource === "Other" && (
+                                        <input
+                                            type="text"
+                                            placeholder="Please specify..."
+                                            value={referralOther}
+                                            onChange={(e) => setReferralOther(e.target.value)}
+                                            className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                        />
+                                    )}
                                 </div>
                             </div>
-                        )}
-
-                        {/* Contact Form */}
-                        <Input
-                            label="Full Name"
-                            required
-                            placeholder="John Doe"
-                            value={formData.fullName}
-                            disabled={isLoggedIn}
-                            onChange={(e) => {
-                                const val = e.target.value;
-                                const capitalized = val.replace(/\b\w/g, (c) => c.toUpperCase());
-                                setFormData({ ...formData, fullName: capitalized });
-                            }}
-                            onBlur={() =>
-                                setTouched((prev) => ({ ...prev, fullName: true }))
-                            }
-                            className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
-                        />
-                        {touched.fullName && errors.fullName && (
-                            <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>
-                        )}
-
-                        <Input
-                            label="Email Address"
-                            required
-                            placeholder="john@doe.com"
-                            value={formData.email}
-                            disabled={isLoggedIn}
-                            onChange={(e) =>
-                                setFormData({ ...formData, email: e.target.value })
-                            }
-                            onBlur={() =>
-                                setTouched((prev) => ({ ...prev, email: true }))
-                            }
-                            className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
-                        />
-                        {touched.email && errors.email && (
-                            <p className="text-red-600 text-sm mt-1">{errors.email}</p>
-                        )}
-
-                        <Input
-                            label="Phone Number"
-                            required
-                            placeholder="(416) 555-1234"
-                            value={formData.phone}
-                            disabled={isLoggedIn}
-                            onChange={(e) =>
-                                setFormData({ ...formData, phone: formatPhone(e.target.value) })
-                            }
-                            onBlur={() =>
-                                setTouched((prev) => ({ ...prev, phone: true }))
-                            }
-                            className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
-                        />
-                        {touched.phone && errors.phone && (
-                            <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
-                        )}
-
-                        {/* How did you hear about us? (optional) */}
-                        <div className="flex flex-col gap-1.5 w-full">
-                            <label className="text-sm font-medium text-gray-900">
-                                How did you hear about us?{" "}
-                                <span className="text-gray-400 font-normal">(optional)</span>
-                            </label>
-                            <select
-                                value={referralSource}
-                                onChange={(e) => {
-                                    setReferralSource(e.target.value);
-                                    if (e.target.value !== "Other") setReferralOther("");
-                                }}
-                                className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
-                            >
-                                <option value="">Select an option</option>
-                                {REFERRAL_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                            </select>
-                            {referralSource === "Other" && (
-                                <input
-                                    type="text"
-                                    placeholder="Please specify..."
-                                    value={referralOther}
-                                    onChange={(e) => setReferralOther(e.target.value)}
-                                    className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
-                                />
-                            )}
                         </div>
 
                         {/* Co-person sections — for Purchase & Sale render BOTH co-purchaser and co-seller stacks, otherwise just the matching one */}
                         {isBoth ? (
-                            <div className="space-y-6">
+                            <div className="space-y-5">
                                 {renderCoSection("purchaser")}
                                 {renderCoSection("seller")}
                             </div>

@@ -151,9 +151,10 @@ const SLOT_FALLBACKS: Record<SlotKey, SlotFallback> = {
     placeholder: "Select an option",
     required: true,
     options: [
-      { label: "No (first time)", value: "no" },
       { label: "Yes", value: "yes" },
-      { label: "Other", value: "other" },
+      { label: "No (first time)", value: "no" }
+      
+      
     ],
   },
   citizenshipStatus: {

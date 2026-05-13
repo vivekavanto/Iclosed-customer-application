@@ -19,6 +19,7 @@ import {
   Loader2,
   ShieldCheck,
   ShieldAlert,
+  Clock,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
@@ -55,12 +56,16 @@ const CAMERA_STEPS: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront"
 
 type LabelKey = "primary_front" | "primary_back" | "secondary_front" | "secondary_back" | "other";
 
+type ExpiryStatus = "valid" | "expired" | "expiring_soon" | "unknown";
+
 interface DocumentEntry {
   documentType: string;
   side: "front" | "back" | "front-and-back" | "unknown";
   sideRequirement: "single-sided" | "front-and-back" | "unknown";
   isComplete: boolean;
   confidence: "high" | "medium" | "low";
+  expiryDate: string | null;
+  expiryStatus: ExpiryStatus;
 }
 
 interface DetectionResult {
@@ -70,6 +75,8 @@ interface DetectionResult {
   sideRequirement: "single-sided" | "front-and-back" | "unknown";
   confidence: "high" | "medium" | "low";
   reason: string;
+  expiryDate: string | null;
+  expiryStatus: ExpiryStatus;
   // Multi-document support
   multipleDocuments?: DocumentEntry[];
   summary?: {
@@ -101,6 +108,23 @@ interface ExistingDoc {
 const DOC_TYPE = "identification";
 const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".heic"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
+// Acceptable ID types that users can manually select when AI classification fails
+const ACCEPTABLE_ID_TYPES = [
+  "Canadian Passport",
+  "Driver's License",
+  "Canadian Citizenship Card",
+  "Permanent Resident Card",
+  "NEXUS Card",
+  "SIN Card (plastic only)",
+  "Foreign Passport",
+  "Government-issued Photo ID Card",
+];
+
+// IDs that only need a single side (info page)
+const SINGLE_SIDED_IDS = ["Canadian Passport", "Foreign Passport"];
+
+type ManualSide = "front" | "back" | "front-and-back";
 
 const LABEL_OPTIONS: { value: LabelKey; text: string }[] = [
   { value: "primary_front", text: "Primary ID - Front" },
@@ -232,12 +256,16 @@ async function fetchDetection(file: File, timeoutMs = 30_000): Promise<Detection
       side_requirement: "single-sided" | "front-and-back" | "unknown";
       confidence: "high" | "medium" | "low";
       reason: string;
+      expiry_date: string | null;
+      expiry_status: ExpiryStatus;
       multiple_documents?: Array<{
         document_type: string;
         side: "front" | "back" | "front-and-back" | "unknown";
         side_requirement: "single-sided" | "front-and-back" | "unknown";
         is_complete: boolean;
         confidence: "high" | "medium" | "low";
+        expiry_date: string | null;
+        expiry_status: ExpiryStatus;
       }>;
       summary?: {
         total_documents: number;
@@ -252,6 +280,8 @@ async function fetchDetection(file: File, timeoutMs = 30_000): Promise<Detection
       sideRequirement: d.side_requirement,
       isComplete: d.is_complete,
       confidence: d.confidence,
+      expiryDate: d.expiry_date ?? null,
+      expiryStatus: d.expiry_status ?? "unknown",
     }));
 
     const summary = r.summary ? {
@@ -269,6 +299,8 @@ async function fetchDetection(file: File, timeoutMs = 30_000): Promise<Detection
         sideRequirement: r.side_requirement ?? "unknown",
         confidence: r.confidence,
         reason: r.reason,
+        expiryDate: r.expiry_date ?? null,
+        expiryStatus: r.expiry_status ?? "unknown",
         multipleDocuments,
         summary,
       },
@@ -414,7 +446,18 @@ export default function UploadIdentificationDrawer({
     open: boolean;
     fileId: string;
     fileName: string;
-  }>({ open: false, fileId: "", fileName: "" });
+    reason: string;
+    kind: "rejected" | "error";
+  }>({ open: false, fileId: "", fileName: "", reason: "", kind: "rejected" });
+
+  // Manual classification modal (when AI can't classify correctly)
+  const [manualClassifyModal, setManualClassifyModal] = useState<{
+    open: boolean;
+    fileId: string;
+    fileName: string;
+    selectedType: string;
+    selectedSide: ManualSide;
+  }>({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
 
   // Confirmation modal before submission
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -530,7 +573,13 @@ export default function UploadIdentificationDrawer({
             : s,
         ),
       );
-      setDetectionFailModal({ open: true, fileId: id, fileName });
+      setDetectionFailModal({
+        open: true,
+        fileId: id,
+        fileName,
+        reason: result.error,
+        kind: "error",
+      });
       return;
     }
 
@@ -542,7 +591,15 @@ export default function UploadIdentificationDrawer({
       ),
     );
     if (!result.detection.isIdentification) {
-      setDetectionFailModal({ open: true, fileId: id, fileName });
+      setDetectionFailModal({
+        open: true,
+        fileId: id,
+        fileName,
+        reason:
+          result.detection.reason?.trim() ||
+          "This file doesn't appear to be an acceptable government-issued photo ID under LSO By-Law 7.1.",
+        kind: "rejected",
+      });
     }
   }
 
@@ -594,6 +651,51 @@ export default function UploadIdentificationDrawer({
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((s) => s.id !== id);
     });
+  }
+
+  function openManualClassify(fileId: string, fileName: string) {
+    setDetectionFailModal({ open: false, fileId: "", fileName: "", reason: "", kind: "rejected" });
+    
+    // Pre-fill with existing detection if available
+    const existingFile = selected.find((s) => s.id === fileId);
+    const existingDetection = existingFile?.detection;
+    
+    setManualClassifyModal({
+      open: true,
+      fileId,
+      fileName,
+      selectedType: existingDetection?.isIdentification && existingDetection.documentType ? existingDetection.documentType : "",
+      selectedSide: existingDetection?.side && existingDetection.side !== "unknown" ? existingDetection.side : "front",
+    });
+  }
+
+  function applyManualClassification() {
+    const { fileId, selectedType, selectedSide } = manualClassifyModal;
+    if (!selectedType) return;
+
+    const isSingleSided = SINGLE_SIDED_IDS.includes(selectedType);
+    const sideRequirement = isSingleSided ? "single-sided" : "front-and-back";
+
+    const manualDetection: DetectionResult = {
+      isIdentification: true,
+      documentType: selectedType,
+      side: selectedSide,
+      sideRequirement,
+      confidence: "high",
+      reason: "Manually classified by user",
+      expiryDate: null,
+      expiryStatus: "unknown",
+    };
+
+    setSelected((prev) =>
+      prev.map((s) =>
+        s.id === fileId
+          ? { ...s, detection: manualDetection, detectionError: null, detecting: false }
+          : s
+      )
+    );
+
+    setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
   }
 
   async function removeExisting(id: string) {
@@ -1027,14 +1129,26 @@ export default function UploadIdentificationDrawer({
     (s) => s.detectionError !== null || (s.detection !== null && !s.detection.isIdentification),
   );
 
+  // Check for expired or expiring-soon IDs
+  const expiredDocs = selected.filter(
+    s => s.detection?.isIdentification && s.detection.expiryStatus === "expired"
+  );
+  const expiringSoonDocs = selected.filter(
+    s => s.detection?.isIdentification && s.detection.expiryStatus === "expiring_soon"
+  );
+  const hasExpiredDocs = expiredDocs.length > 0;
+  const hasExpiringSoonDocs = expiringSoonDocs.length > 0;
+
   // Need at least 2 complete documents to upload
   const needsMoreDocs = completeDocCount < 2;
   const hasPendingDetection = selected.some(s => s.detecting);
   
+  // Block upload if any ID is expired
   const canUpload =
     selected.length > 0 && 
     !uploading && 
     !hasDetectionFailures && 
+    !hasExpiredDocs &&
     completeDocCount >= 2 &&
     !hasPendingDetection;
 
@@ -1259,6 +1373,7 @@ export default function UploadIdentificationDrawer({
               <ul className="space-y-2">
                 {selected.map((s) => {
                   const hasError = s.detectionError || (s.detection && !s.detection.isIdentification);
+                  const isDetected = s.detection?.isIdentification && s.detection.documentType;
                   return (
                     <li
                       key={s.id}
@@ -1284,12 +1399,45 @@ export default function UploadIdentificationDrawer({
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-gray-800 truncate">{s.file.name}</p>
-                          <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
+                          {isDetected ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-[11px] text-green-600 font-medium truncate">
+                                  {s.detection!.documentType}
+                                  {s.detection!.side !== "unknown" && ` (${s.detection!.side})`}
+                                </p>
+                                <button
+                                  onClick={() => openManualClassify(s.id, s.file.name)}
+                                  className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex-shrink-0"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                              {s.detection!.expiryStatus === "expired" && (
+                                <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
+                                  <Clock size={10} />
+                                  <span>Expired{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
+                                </div>
+                              )}
+                              {s.detection!.expiryStatus === "expiring_soon" && (
+                                <div className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
+                                  <Clock size={10} />
+                                  <span>Expiring soon{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
+                          )}
                         </div>
                         {s.detecting ? (
                           <Loader2 size={14} className="animate-spin text-gray-400 flex-shrink-0" />
                         ) : hasError ? (
                           <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
+                        ) : s.detection?.expiryStatus === "expired" ? (
+                          <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                        ) : s.detection?.expiryStatus === "expiring_soon" ? (
+                          <Clock size={14} className="text-amber-500 flex-shrink-0" />
                         ) : s.detection?.isIdentification ? (
                           <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
                         ) : null}
@@ -1417,6 +1565,36 @@ export default function UploadIdentificationDrawer({
             </div>
           )}
 
+          {/* Expired ID warning */}
+          {selected.length > 0 && !hasPendingDetection && hasExpiredDocs && (
+            <div className="flex items-start gap-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-red-600" />
+              <div>
+                <span className="font-semibold">Expired ID detected.</span>{" "}
+                <span>
+                  {expiredDocs.length === 1
+                    ? `Your ${expiredDocs[0].detection?.documentType} has expired. Please upload a valid, non-expired ID.`
+                    : `${expiredDocs.length} of your IDs have expired. Please upload valid, non-expired IDs.`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Expiring soon warning */}
+          {selected.length > 0 && !hasPendingDetection && !hasExpiredDocs && hasExpiringSoonDocs && (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <span className="font-semibold">ID expiring soon.</span>{" "}
+                <span>
+                  {expiringSoonDocs.length === 1
+                    ? `Your ${expiringSoonDocs[0].detection?.documentType} will expire within 30 days. Consider using a different ID if your closing is after that date.`
+                    : `${expiringSoonDocs.length} of your IDs will expire within 30 days. Consider using different IDs if your closing is after those dates.`}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Global error */}
           {globalError && (
             <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
@@ -1451,9 +1629,11 @@ export default function UploadIdentificationDrawer({
                 ? "Analyzing..."
                 : hasDetectionFailures
                   ? "Remove Invalid Files"
-                  : completeDocCount < 2
-                    ? `Need ${2 - completeDocCount} More ID${2 - completeDocCount > 1 ? "s" : ""}`
-                    : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
+                  : hasExpiredDocs
+                    ? "Replace Expired ID"
+                    : completeDocCount < 2
+                      ? `Need ${2 - completeDocCount} More ID${2 - completeDocCount > 1 ? "s" : ""}`
+                      : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
           </Button>
         </div>
       </div>
@@ -1480,17 +1660,201 @@ export default function UploadIdentificationDrawer({
               </div>
 
               {/* Text */}
-              <div className="px-6 pb-6 text-center space-y-2">
+              <div className="px-6 pb-5 text-center space-y-2">
                 <h3 className="text-base font-bold text-gray-900">
-                  We weren&apos;t able to process this file
+                  {detectionFailModal.kind === "rejected"
+                    ? "This document was rejected"
+                    : "We weren't able to process this file"}
                 </h3>
                 <p className="text-sm text-gray-500 leading-relaxed">
-                  Something went wrong while verifying{" "}
-                  <span className="font-semibold text-gray-700 break-all">
-                    {detectionFailModal.fileName}
-                  </span>
-                  . Please remove the current file and attempt to upload it again. If the issue persists, consider using an alternative photo or scan, as this often resolves the problem.
+                  {detectionFailModal.kind === "rejected" ? (
+                    <>
+                      <span className="font-semibold text-gray-700 break-all">
+                        {detectionFailModal.fileName}
+                      </span>{" "}
+                      is not an acceptable government-issued ID for identity verification under LSO By-Law 7.1.
+                    </>
+                  ) : (
+                    <>
+                      Something went wrong while verifying{" "}
+                      <span className="font-semibold text-gray-700 break-all">
+                        {detectionFailModal.fileName}
+                      </span>
+                      . Please remove the current file and try again with a clearer photo or scan.
+                    </>
+                  )}
                 </p>
+              </div>
+
+              {/* Reason callout */}
+              {detectionFailModal.reason && (
+                <div className="mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle
+                      size={14}
+                      strokeWidth={2}
+                      className="flex-shrink-0 mt-0.5 text-amber-600"
+                    />
+                    <div className="text-left">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                        {detectionFailModal.kind === "rejected" ? "Reason" : "Error"}
+                      </p>
+                      <p className="text-xs text-amber-800 leading-relaxed mt-0.5 break-words">
+                        {detectionFailModal.reason}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tip for rejected documents */}
+              {detectionFailModal.kind === "rejected" && (
+                <p className="px-6 pb-5 text-[11px] text-gray-500 leading-relaxed text-center">
+                  Acceptable IDs include a Canadian or foreign passport, driver&apos;s
+                  license, PR card, citizenship card, NEXUS card, plastic SIN card,
+                  or a provincial photo ID card. Health cards are not accepted.
+                </p>
+              )}
+
+              {/* Actions */}
+              <div className="px-6 pb-6 flex flex-col gap-2.5">
+                <Button
+                  variant="primary"
+                  fullWidth
+                  onClick={() => openManualClassify(detectionFailModal.fileId, detectionFailModal.fileName)}
+                >
+                  Reclassify Manually
+                </Button>
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => {
+                    removeSelected(detectionFailModal.fileId);
+                    setDetectionFailModal({
+                      open: false,
+                      fileId: "",
+                      fileName: "",
+                      reason: "",
+                      kind: "rejected",
+                    });
+                  }}
+                >
+                  Remove &amp; Try Again
+                </Button>
+                <button
+                  className="text-xs text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
+                  onClick={() =>
+                    setDetectionFailModal({
+                      open: false,
+                      fileId: "",
+                      fileName: "",
+                      reason: "",
+                      kind: "rejected",
+                    })
+                  }
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Manual classification modal */}
+      {manualClassifyModal.open && (
+        <>
+          <div
+            className="fixed inset-0 z-[80] bg-black/40"
+            aria-hidden="true"
+          />
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center px-5"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Manually classify document"
+          >
+            <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+                    <FileText size={20} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Classify Document</h3>
+                    <p className="text-xs text-gray-500 truncate max-w-[200px]">
+                      {manualClassifyModal.fileName}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Select the document type and which side is shown in this image.
+                </p>
+              </div>
+
+              {/* Form */}
+              <div className="px-6 pb-4 space-y-4">
+                {/* Document Type */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                    Document Type <span className="text-[#C10007]">*</span>
+                  </label>
+                  <select
+                    value={manualClassifyModal.selectedType}
+                    onChange={(e) =>
+                      setManualClassifyModal((prev) => ({
+                        ...prev,
+                        selectedType: e.target.value,
+                        selectedSide: SINGLE_SIDED_IDS.includes(e.target.value) ? "front" : prev.selectedSide,
+                      }))
+                    }
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C10007]/20 focus:border-[#C10007] cursor-pointer"
+                  >
+                    <option value="">Select document type...</option>
+                    {ACCEPTABLE_ID_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Side Selection - only show for front-and-back required docs */}
+                {manualClassifyModal.selectedType && !SINGLE_SIDED_IDS.includes(manualClassifyModal.selectedType) && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                      Side Shown <span className="text-[#C10007]">*</span>
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(["front", "back", "front-and-back"] as ManualSide[]).map((side) => (
+                        <button
+                          key={side}
+                          type="button"
+                          onClick={() =>
+                            setManualClassifyModal((prev) => ({ ...prev, selectedSide: side }))
+                          }
+                          className={[
+                            "px-3 py-2 text-xs font-medium rounded-lg border transition-colors cursor-pointer",
+                            manualClassifyModal.selectedSide === side
+                              ? "border-[#C10007] bg-[#FEF2F2] text-[#C10007]"
+                              : "border-gray-200 bg-white text-gray-700 hover:border-gray-300",
+                          ].join(" ")}
+                        >
+                          {side === "front-and-back" ? "Both Sides" : side.charAt(0).toUpperCase() + side.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Info for single-sided docs */}
+                {manualClassifyModal.selectedType && SINGLE_SIDED_IDS.includes(manualClassifyModal.selectedType) && (
+                  <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+                    <ShieldCheck size={14} className="flex-shrink-0 mt-0.5" />
+                    <span>Passports only require the photo/info page — no back side needed.</span>
+                  </div>
+                )}
               </div>
 
               {/* Actions */}
@@ -1498,19 +1862,19 @@ export default function UploadIdentificationDrawer({
                 <Button
                   variant="primary"
                   fullWidth
-                  onClick={() => {
-                    removeSelected(detectionFailModal.fileId);
-                    setDetectionFailModal({ open: false, fileId: "", fileName: "" });
-                  }}
+                  disabled={!manualClassifyModal.selectedType}
+                  onClick={applyManualClassification}
                 >
-                  Remove &amp; Try Again
+                  Update
                 </Button>
                 <Button
                   variant="secondary"
                   fullWidth
-                  onClick={() => setDetectionFailModal({ open: false, fileId: "", fileName: "" })}
+                  onClick={() =>
+                    setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" })
+                  }
                 >
-                  Dismiss
+                  Cancel
                 </Button>
               </div>
             </div>
