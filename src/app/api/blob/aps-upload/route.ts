@@ -1,0 +1,38 @@
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { NextResponse } from "next/server";
+
+const MAX_SIZE = 10 * 1024 * 1024;
+const ALLOWED_CONTENT_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+];
+
+export async function POST(req: Request) {
+  try {
+    const body = (await req.json()) as HandleUploadBody;
+
+    const jsonResponse = await handleUpload({
+      body,
+      request: req,
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        return {
+          allowedContentTypes: ALLOWED_CONTENT_TYPES,
+          maximumSizeInBytes: MAX_SIZE,
+          tokenPayload: clientPayload ?? null,
+        };
+      },
+      onUploadCompleted: async ({ blob }) => {
+        console.log("APS upload complete:", blob.url);
+      },
+    });
+
+    return NextResponse.json(jsonResponse);
+  } catch (err: any) {
+    console.error("APS upload token error:", err.message || err);
+    return NextResponse.json(
+      { error: err.message || "Server error" },
+      { status: 400 }
+    );
+  }
+}

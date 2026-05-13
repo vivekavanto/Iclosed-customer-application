@@ -14,6 +14,7 @@ import Step4 from "@/components/intake/Step4";
 import Step5Contact from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
+import { upload } from "@vercel/blob/client";
 import { useToast } from "@/components/ui/Toast";
 
 export default function ServiceSelection() {
@@ -285,28 +286,48 @@ export default function ServiceSelection() {
                 }
 
                 for (const u of uploads) {
-                  const formData = new FormData();
-                  formData.append("file", u.file);
-                  formData.append("lead_id", leadId);
-                  formData.append("doc_type", u.docType);
+                  try {
+                    const blob = await upload(
+                      `corporate-docs/${leadId}/${Date.now()}-${u.file.name}`,
+                      u.file,
+                      {
+                        access: "public",
+                        handleUploadUrl: "/api/blob/aps-upload",
+                        clientPayload: JSON.stringify({
+                          lead_id: leadId,
+                          doc_type: u.docType,
+                        }),
+                      }
+                    );
 
-                  const uploadResponse = await fetch("/api/uploadblobstorage", {
-                    method: "POST",
-                    body: formData,
-                  });
+                    const metadataResponse = await fetch(
+                      "/api/intake/save-aps-metadata",
+                      {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          lead_id: leadId,
+                          doc_type: u.docType,
+                          file_name: u.file.name,
+                          file_url: blob.url,
+                        }),
+                      }
+                    );
 
-                  const uploadResult = await uploadResponse.json();
+                    const metadataResult = await metadataResponse.json();
+                    if (!metadataResult.success) {
+                      console.error(`Metadata save failed (${u.side}):`, metadataResult.error);
+                      continue;
+                    }
 
-                  if (!uploadResult.success) {
-                    console.error(`Upload failed (${u.side}):`, uploadResult.error);
-                    continue;
+                    await fetch("/api/intake/mark-aps-uploaded", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ lead_id: leadId, side: u.side }),
+                    });
+                  } catch (err) {
+                    console.error(`Upload failed (${u.side}):`, err);
                   }
-
-                  await fetch("/api/intake/mark-aps-uploaded", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ lead_id: leadId, side: u.side }),
-                  });
                 }
 
                 // 3️⃣ Success

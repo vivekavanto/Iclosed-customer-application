@@ -691,6 +691,38 @@ export default function DashboardPage() {
   const isBothDeal = activeDeal?.type === "Purchase & Sale";
   const showSale = isBothDeal && selectedSide === "sale";
 
+  // Tab entries — "Purchase & Sale" deals expand into 2 separate tabs (one per side)
+  const tabEntries = properties.flatMap((p) => {
+    const deal = p.deal_id ? deals.find((d) => d.id === p.deal_id) ?? null : null;
+    if (deal?.type === "Purchase & Sale") {
+      return [
+        {
+          key: `${p.lead_id}:purchase`,
+          lead_id: p.lead_id,
+          side: "purchase" as "purchase" | "sale" | null,
+          label: p.address_street,
+          icon: Home,
+        },
+        {
+          key: `${p.lead_id}:sale`,
+          lead_id: p.lead_id,
+          side: "sale" as "purchase" | "sale" | null,
+          label: p.selling_address_street,
+          icon: FileText,
+        },
+      ];
+    }
+    return [
+      {
+        key: `${p.lead_id}:single`,
+        lead_id: p.lead_id,
+        side: null as "purchase" | "sale" | null,
+        label: p.address_street,
+        icon: Building2,
+      },
+    ];
+  });
+
   const heroAddress = showSale ? sellingFullAddress : fullAddress;
   const heroLabel = isBothDeal
     ? showSale
@@ -756,22 +788,34 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── 1. Property Selector Tabs (one per lead) ── */}
+      {/* ── 1. Property Selector Tabs (one per lead; Purchase & Sale deals split into 2 tabs) ── */}
       <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide">
         {propertyLoading ? (
           <div className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400">
             <Loader2 size={14} className="animate-spin" /> Loading properties...
           </div>
-        ) : properties.length === 0 ? (
+        ) : tabEntries.length === 0 ? (
           <div className="px-4 py-2 text-sm text-gray-400">No properties yet</div>
         ) : (
-          properties.map((p, i) => {
-            const isActive = p.lead_id === activeLeadId;
+          tabEntries.map((entry, i) => {
+            const isActive =
+              entry.lead_id === activeLeadId &&
+              (entry.side === null || entry.side === selectedSide);
+            const Icon = entry.icon;
+            const prefix =
+              entry.side === "purchase"
+                ? "Purchase · "
+                : entry.side === "sale"
+                  ? "Sale · "
+                  : "";
             return (
               <button
-                key={p.lead_id}
+                key={entry.key}
                 type="button"
-                onClick={() => setActiveLeadId(p.lead_id)}
+                onClick={() => {
+                  setActiveLeadId(entry.lead_id);
+                  if (entry.side) setSelectedSide(entry.side);
+                }}
                 className={[
                   "cursor-pointer flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all duration-200",
                   isActive
@@ -779,9 +823,9 @@ export default function DashboardPage() {
                     : "bg-white border border-gray-200 text-gray-600 hover:border-[#C10007] hover:text-[#C10007]",
                 ].join(" ")}
               >
-                <Building2 size={15} strokeWidth={2} />
+                <Icon size={15} strokeWidth={2} />
                 <span className="whitespace-nowrap">
-                  {p.address_street || `Property ${i + 1}`}
+                  {prefix}{entry.label || `Property ${i + 1}`}
                 </span>
               </button>
             );
@@ -791,7 +835,6 @@ export default function DashboardPage() {
 
       {/* ── 2. Property Hero Card ── */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-        {/* Header (lead type + address on the left, Purchase/Sale toggle on the right) */}
         <div className="bg-gray-100 px-6 py-5 flex flex-wrap items-center gap-4">
           <div className="w-10 h-10 rounded-full bg-[#C10007] flex items-center justify-center flex-shrink-0">
             <MapPin size={18} className="text-white" strokeWidth={2} />
@@ -813,37 +856,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Purchase / Sale side switcher (only for Purchase & Sale deals) */}
-          {isBothDeal && (
-            <div
-              role="tablist"
-              aria-label="Transaction side"
-              className="inline-flex gap-1 bg-white p-1 rounded-xl border-2 border-gray-200 shadow-sm flex-shrink-0 ml-auto"
-            >
-              {(["purchase", "sale"] as const).map((s) => {
-                const isActive = selectedSide === s;
-                const Icon = s === "purchase" ? Home : FileText;
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setSelectedSide(s)}
-                    className={[
-                      "cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap",
-                      isActive
-                        ? "bg-[#C10007] text-white shadow-md ring-2 ring-[#C10007]/20"
-                        : "bg-transparent text-gray-700 hover:bg-gray-100",
-                    ].join(" ")}
-                  >
-                    <Icon size={15} strokeWidth={2.5} />
-                    {s === "purchase" ? "Purchase Side" : "Sale Side"}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
 
         {/* Info chips row */}
