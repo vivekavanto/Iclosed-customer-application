@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import {
@@ -462,6 +463,12 @@ export default function UploadIdentificationDrawer({
     selectedSide: ManualSide;
   }>({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
 
+  // Reclassify dropdown state
+  const [reclassifyDropdownOpen, setReclassifyDropdownOpen] = useState<string | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; right: number } | null>(null);
+  const reclassifyDropdownRef = useRef<HTMLDivElement>(null);
+  const reclassifyButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
   // Confirmation modal before submission
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -533,6 +540,19 @@ export default function UploadIdentificationDrawer({
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
   }, [open, handleClose]);
+
+  // Close reclassify when the drawer/page scrolls (reposition), but never when scrolling inside the menu itself
+  useEffect(() => {
+    if (!reclassifyDropdownOpen) return;
+    const handleScroll = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && reclassifyDropdownRef.current?.contains(t)) return;
+      setReclassifyDropdownOpen(null);
+      setDropdownPosition(null);
+    };
+    window.addEventListener("scroll", handleScroll, true);
+    return () => window.removeEventListener("scroll", handleScroll, true);
+  }, [reclassifyDropdownOpen]);
 
   // Lock body scroll
   useEffect(() => {
@@ -716,6 +736,65 @@ export default function UploadIdentificationDrawer({
     );
 
     setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
+  }
+
+  function toggleReclassifyDropdown(fileId: string) {
+    if (reclassifyDropdownOpen === fileId) {
+      setReclassifyDropdownOpen(null);
+      setDropdownPosition(null);
+      return;
+    }
+    
+    const button = reclassifyButtonRefs.current.get(fileId);
+    if (button) {
+      const rect = button.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setReclassifyDropdownOpen(fileId);
+  }
+
+  function handleQuickReclassify(fileId: string, fileName: string, newType: string) {
+    const isSingleSided = SINGLE_SIDED_IDS.includes(newType);
+    const sideRequirement = isSingleSided ? "single-sided" : "front-and-back";
+    
+    // For single-sided docs, just apply immediately
+    // For front-and-back docs, open the modal to select which side
+    if (isSingleSided) {
+      const manualDetection: DetectionResult = {
+        isIdentification: true,
+        documentType: newType,
+        side: "front",
+        sideRequirement,
+        confidence: "high",
+        reason: "Manually classified by user",
+        expiryDate: null,
+        expiryStatus: "unknown",
+      };
+
+      setSelected((prev) =>
+        prev.map((s) =>
+          s.id === fileId
+            ? { ...s, detection: manualDetection, detectionError: null, detecting: false }
+            : s
+        )
+      );
+      setReclassifyDropdownOpen(null);
+      setDropdownPosition(null);
+    } else {
+      // Open modal for side selection
+      setReclassifyDropdownOpen(null);
+      setDropdownPosition(null);
+      setManualClassifyModal({
+        open: true,
+        fileId,
+        fileName,
+        selectedType: newType,
+        selectedSide: "front",
+      });
+    }
   }
 
   async function removeExisting(id: string) {
@@ -1398,41 +1477,52 @@ export default function UploadIdentificationDrawer({
                     <li
                       key={s.id}
                       className={[
-                        "rounded-lg border bg-white overflow-hidden",
+                        "rounded-lg border bg-white",
                         hasError ? "border-amber-200" : "border-gray-200",
                       ].join(" ")}
                     >
                       <div className="flex items-center gap-3 px-3 py-2.5">
-                        <div className="w-10 h-10 flex-shrink-0 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
-                          {s.previewUrl ? (
-                            <NextImage
-                              src={s.previewUrl}
-                              alt={s.file.name}
-                              width={40}
-                              height={40}
-                              unoptimized
-                              className="object-cover w-full h-full"
-                            />
-                          ) : (
-                            <FileText size={16} className="text-gray-400" />
-                          )}
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {s.detecting ? (
+                            <Loader2 size={14} className="animate-spin text-gray-400 flex-shrink-0" />
+                          ) : hasError ? (
+                            <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
+                          ) : s.detection?.expiryStatus === "expired" ? (
+                            <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                          ) : s.detection?.expiryStatus === "expiring_soon" ? (
+                            <Clock size={14} className="text-amber-500 flex-shrink-0" />
+                          ) : s.detection?.isIdentification ? (
+                            <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
+                          ) : null}
+                          <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                            {s.previewUrl ? (
+                              <NextImage
+                                src={s.previewUrl}
+                                alt={s.file.name}
+                                width={40}
+                                height={40}
+                                unoptimized
+                                className="object-cover w-full h-full"
+                              />
+                            ) : (
+                              <FileText size={16} className="text-gray-400" />
+                            )}
+                          </div>
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-xs font-medium text-gray-800 truncate">{s.file.name}</p>
                           {isDetected ? (
                             <div className="flex flex-col gap-0.5 mt-0.5">
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-[11px] text-green-600 font-medium truncate">
-                                  {s.detection!.documentType}
-                                  {s.detection!.side !== "unknown" && ` (${s.detection!.side})`}
-                                </p>
-                                <button
-                                  onClick={() => openManualClassify(s.id, s.file.name)}
-                                  className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer flex-shrink-0"
-                                >
-                                  Edit
-                                </button>
-                              </div>
+                              <p className="text-[11px] text-green-600 font-medium truncate">
+                                {s.detection!.documentType}
+                                {s.detection!.sideRequirement === "single-sided"
+                                  ? " · info page only"
+                                  : s.detection!.side === "front-and-back"
+                                    ? " · both sides in one image"
+                                    : s.detection!.side !== "unknown"
+                                      ? ` (${s.detection!.side})`
+                                      : ""}
+                              </p>
                               {s.detection!.expiryStatus === "expired" && (
                                 <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
                                   <Clock size={10} />
@@ -1450,17 +1540,19 @@ export default function UploadIdentificationDrawer({
                             <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
                           )}
                         </div>
-                        {s.detecting ? (
-                          <Loader2 size={14} className="animate-spin text-gray-400 flex-shrink-0" />
-                        ) : hasError ? (
-                          <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
-                        ) : s.detection?.expiryStatus === "expired" ? (
-                          <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
-                        ) : s.detection?.expiryStatus === "expiring_soon" ? (
-                          <Clock size={14} className="text-amber-500 flex-shrink-0" />
-                        ) : s.detection?.isIdentification ? (
-                          <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                        ) : null}
+                        {/* Reclassify dropdown button */}
+                        <button
+                          ref={(el) => {
+                            if (el) reclassifyButtonRefs.current.set(s.id, el);
+                            else reclassifyButtonRefs.current.delete(s.id);
+                          }}
+                          onClick={() => toggleReclassifyDropdown(s.id)}
+                          className="cursor-pointer flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-600 bg-gray-50 border border-gray-200 hover:border-gray-300 hover:bg-gray-100 transition-colors"
+                          aria-label="Reclassify document"
+                        >
+                          Reclassify
+                          <ChevronDown size={12} className={`transition-transform ${reclassifyDropdownOpen === s.id ? "rotate-180" : ""}`} />
+                        </button>
                         <button
                           onClick={() => removeSelected(s.id)}
                           className="cursor-pointer flex-shrink-0 p-1.5 rounded-md text-gray-400 hover:text-[#C10007] hover:bg-red-50"
@@ -1662,6 +1754,50 @@ export default function UploadIdentificationDrawer({
           </Button>
         </div>
       </div>
+
+      {/* Reclassify dropdown portal */}
+      {reclassifyDropdownOpen && dropdownPosition && typeof document !== "undefined" && createPortal(
+        <>
+          {/* Use mousedown (not click) so scrollbar drag/release does not synthesize a click that closes the menu */}
+          <div
+            className="fixed inset-0 z-[70]"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setReclassifyDropdownOpen(null);
+                setDropdownPosition(null);
+              }
+            }}
+          />
+          <div
+            ref={reclassifyDropdownRef}
+            className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[75] max-h-64 overflow-y-auto"
+            style={{
+              top: dropdownPosition.top,
+              right: dropdownPosition.right,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {ACCEPTABLE_ID_TYPES.map((type) => {
+              const currentFile = selected.find(s => s.id === reclassifyDropdownOpen);
+              const isSelected = currentFile?.detection?.documentType === type;
+              return (
+                <button
+                  key={type}
+                  onClick={() => handleQuickReclassify(reclassifyDropdownOpen, currentFile?.file.name ?? "", type)}
+                  className={[
+                    "w-full text-left px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer transition-colors",
+                    isSelected ? "text-green-700 bg-green-50 font-medium" : "text-gray-700"
+                  ].join(" ")}
+                >
+                  {type}
+                  {isSelected && <span className="ml-1.5 text-green-600">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Detection failure modal */}
       {detectionFailModal.open && (
