@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import {
@@ -463,12 +462,6 @@ export default function UploadIdentificationDrawer({
     selectedSide: ManualSide;
   }>({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
 
-  // Reclassify dropdown state
-  const [reclassifyDropdownOpen, setReclassifyDropdownOpen] = useState<string | null>(null);
-  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; right: number } | null>(null);
-  const reclassifyDropdownRef = useRef<HTMLDivElement>(null);
-  const reclassifyButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-
   // Confirmation modal before submission
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -484,6 +477,7 @@ export default function UploadIdentificationDrawer({
   const [sharpnessOk, setSharpnessOk] = useState(false);
   const [validatingImage, setValidatingImage] = useState(false);
   const [cameraSubmitting, setCameraSubmitting] = useState(false);
+  const [retakingSlot, setRetakingSlot] = useState<SlotKey | null>(null);
 
   const resetAll = useCallback(() => {
     selected.forEach((s) => {
@@ -504,6 +498,7 @@ export default function UploadIdentificationDrawer({
     setSharpnessOk(false);
     setValidatingImage(false);
     setCameraSubmitting(false);
+    setRetakingSlot(null);
     setShowConfirmModal(false);
   }, [selected]);
 
@@ -540,19 +535,6 @@ export default function UploadIdentificationDrawer({
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
   }, [open, handleClose]);
-
-  // Close reclassify when the drawer/page scrolls (reposition), but never when scrolling inside the menu itself
-  useEffect(() => {
-    if (!reclassifyDropdownOpen) return;
-    const handleScroll = (e: Event) => {
-      const t = e.target as Node | null;
-      if (t && reclassifyDropdownRef.current?.contains(t)) return;
-      setReclassifyDropdownOpen(null);
-      setDropdownPosition(null);
-    };
-    window.addEventListener("scroll", handleScroll, true);
-    return () => window.removeEventListener("scroll", handleScroll, true);
-  }, [reclassifyDropdownOpen]);
 
   // Lock body scroll
   useEffect(() => {
@@ -738,65 +720,6 @@ export default function UploadIdentificationDrawer({
     setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
   }
 
-  function toggleReclassifyDropdown(fileId: string) {
-    if (reclassifyDropdownOpen === fileId) {
-      setReclassifyDropdownOpen(null);
-      setDropdownPosition(null);
-      return;
-    }
-    
-    const button = reclassifyButtonRefs.current.get(fileId);
-    if (button) {
-      const rect = button.getBoundingClientRect();
-      setDropdownPosition({
-        top: rect.bottom + 4,
-        right: window.innerWidth - rect.right,
-      });
-    }
-    setReclassifyDropdownOpen(fileId);
-  }
-
-  function handleQuickReclassify(fileId: string, fileName: string, newType: string) {
-    const isSingleSided = SINGLE_SIDED_IDS.includes(newType);
-    const sideRequirement = isSingleSided ? "single-sided" : "front-and-back";
-    
-    // For single-sided docs, just apply immediately
-    // For front-and-back docs, open the modal to select which side
-    if (isSingleSided) {
-      const manualDetection: DetectionResult = {
-        isIdentification: true,
-        documentType: newType,
-        side: "front",
-        sideRequirement,
-        confidence: "high",
-        reason: "Manually classified by user",
-        expiryDate: null,
-        expiryStatus: "unknown",
-      };
-
-      setSelected((prev) =>
-        prev.map((s) =>
-          s.id === fileId
-            ? { ...s, detection: manualDetection, detectionError: null, detecting: false }
-            : s
-        )
-      );
-      setReclassifyDropdownOpen(null);
-      setDropdownPosition(null);
-    } else {
-      // Open modal for side selection
-      setReclassifyDropdownOpen(null);
-      setDropdownPosition(null);
-      setManualClassifyModal({
-        open: true,
-        fileId,
-        fileName,
-        selectedType: newType,
-        selectedSide: "front",
-      });
-    }
-  }
-
   async function removeExisting(id: string) {
     const prev = existing;
     setExisting((cur) => cur.filter((d) => d.id !== id));
@@ -890,6 +813,7 @@ export default function UploadIdentificationDrawer({
     setSharpnessOk(false);
     setValidatingImage(false);
     setCameraSubmitting(false);
+    setRetakingSlot(null);
   }
 
   async function handleCaptureImage() {
@@ -931,6 +855,18 @@ export default function UploadIdentificationDrawer({
     setCameraCapturedFiles((prev) => ({ ...prev, [currentCameraSlot]: file }));
     setCameraCapturedPreview((prev) => ({ ...prev, [currentCameraSlot]: currentCapture }));
 
+    // If retaking a single slot, return to review screen
+    if (retakingSlot) {
+      setCameraStepIndex(CAMERA_STEPS.length);
+      setCurrentCapture(null);
+      setCameraError(null);
+      setSharpnessScore(null);
+      setSharpnessOk(false);
+      setValidatingImage(false);
+      setRetakingSlot(null);
+      return;
+    }
+
     if (cameraStepIndex < CAMERA_STEPS.length - 1) {
       setCameraStepIndex((prev) => prev + 1);
       setCurrentCapture(null);
@@ -958,61 +894,19 @@ export default function UploadIdentificationDrawer({
     setSharpnessScore(null);
     setSharpnessOk(false);
     setValidatingImage(false);
+    setRetakingSlot(null);
   }
 
-  async function uploadCameraFilesBySlot(filesBySlot: Partial<Record<SlotKey, File>>) {
-    const uploadKeys = CAMERA_STEPS.filter((k) => filesBySlot[k]);
-    if (!uploadKeys.length) return;
-
-    // Run Gemini detection on each captured image so camera uploads carry the
-    // same metadata as manual uploads. Detection failures are non-blocking —
-    // the file still uploads with NULL detection columns.
-    const detectionEntries = await Promise.all(
-      uploadKeys.map(async (k) => {
-        const file = filesBySlot[k] as File;
-        const r = await fetchDetection(file);
-        return [k, r.ok ? r.detection : null] as const;
-      }),
-    );
-    const detectionBySlot = new Map<SlotKey, DetectionResult | null>(detectionEntries);
-
-    const uploads = uploadKeys.map(async (k) => {
-      const file = filesBySlot[k] as File;
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("lead_id", leadId ?? "unknown");
-      // Keep camera uploads aligned with manual uploads to satisfy DB constraints.
-      fd.append("doc_type", DOC_TYPE);
-      fd.append("custom_type", SLOT_CUSTOM_TYPES[k]);
-      appendDetectionFields(fd, detectionBySlot.get(k) ?? null);
-      const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!data.success) throw new Error(`${SLOT_LABELS[k]}: ${data.error ?? "Upload failed"}`);
-      const url: string | undefined = data.url ?? data.file_url;
-      if (!url) throw new Error(`${SLOT_LABELS[k]}: upload did not return a URL.`);
-      return { slot: k, file, url };
-    });
-
-    const uploaded = await Promise.all(uploads);
-
-    if (taskId) {
-      const respRes = await fetch("/api/task-responses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          task_id: taskId,
-          responses: uploaded.map(({ slot, file, url }) => ({
-            field_label: SLOT_LABELS[slot],
-            field_type: "file",
-            file_url: url,
-            file_name: file.name,
-          })),
-        }),
-      });
-
-      if (!respRes.ok) throw new Error("Files uploaded, but failed to record task completion.");
-      if (onSaved) onSaved();
-    }
+  function retakeSingleSlot(stepKey: SlotKey) {
+    const nextIndex = CAMERA_STEPS.indexOf(stepKey);
+    if (nextIndex < 0) return;
+    setCameraStepIndex(nextIndex);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+    setRetakingSlot(stepKey);
   }
 
   async function handleFinishCameraFlow() {
@@ -1021,37 +915,50 @@ export default function UploadIdentificationDrawer({
       return;
     }
 
-    setCameraSubmitting(true);
-    setGlobalError(null);
+    // Convert camera captures to SelectedFile entries and add to selected state
+    const newFiles: SelectedFile[] = [];
+    const queuedForDetection: { id: string; file: File }[] = [];
 
-    try {
-      await uploadCameraFilesBySlot(cameraCapturedFiles);
+    for (const slotKey of CAMERA_STEPS) {
+      const file = cameraCapturedFiles[slotKey];
+      const preview = cameraCapturedPreview[slotKey];
+      if (!file) continue;
 
-      if (leadId) {
-        try {
-          const r = await fetch(
-            `/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}`,
-          );
-          const d = await r.json();
-          if (d.success) setExisting(d.docs ?? []);
-        } catch {}
-      }
-
-      closeCameraFlow();
-    } catch (err: unknown) {
-      setCameraError(err instanceof Error ? err.message : "Unable to submit camera captures.");
-    } finally {
-      setCameraSubmitting(false);
+      const id = makeId();
+      const newEntry: SelectedFile = {
+        id,
+        file,
+        previewUrl: preview ?? null,
+        error: null,
+        label: SLOT_CUSTOM_TYPES[slotKey],
+        detecting: true,
+        detection: null,
+        detectionError: null,
+      };
+      newFiles.push(newEntry);
+      queuedForDetection.push({ id, file });
     }
+
+    if (newFiles.length > 0) {
+      setSelected((prev) => [...prev, ...newFiles]);
+    }
+
+    // Close camera flow and return to main upload view
+    closeCameraFlow();
+
+    // Run AI detection on each captured image
+    queuedForDetection.forEach(({ id, file }) => {
+      void detectIdentification(id, file);
+    });
   }
 
-  // Show confirmation modal before camera flow submission
+  // Add camera captures to selected files for review
   function handleFinishCameraFlowClick() {
     if (!cameraFlowReadyToSubmit) {
       setCameraError("Please capture front and back for both IDs before finishing.");
       return;
     }
-    setShowConfirmModal(true);
+    handleFinishCameraFlow();
   }
 
   // ── Manual upload submit ────────────────────────────────────────────────────
@@ -1540,18 +1447,13 @@ export default function UploadIdentificationDrawer({
                             <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
                           )}
                         </div>
-                        {/* Reclassify dropdown button */}
+                        {/* Reclassify button - opens modal */}
                         <button
-                          ref={(el) => {
-                            if (el) reclassifyButtonRefs.current.set(s.id, el);
-                            else reclassifyButtonRefs.current.delete(s.id);
-                          }}
-                          onClick={() => toggleReclassifyDropdown(s.id)}
+                          onClick={() => openManualClassify(s.id, s.file.name)}
                           className="cursor-pointer flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-600 bg-gray-50 border border-gray-200 hover:border-gray-300 hover:bg-gray-100 transition-colors"
                           aria-label="Reclassify document"
                         >
                           Reclassify
-                          <ChevronDown size={12} className={`transition-transform ${reclassifyDropdownOpen === s.id ? "rotate-180" : ""}`} />
                         </button>
                         <button
                           onClick={() => removeSelected(s.id)}
@@ -1748,56 +1650,16 @@ export default function UploadIdentificationDrawer({
               ? "Upload Documents"
               : hasPendingDetection
                 ? "Analyzing..."
-                : hasDetectionFailures || hasExpiredDocs || completeDocCount < 2
-                  ? "See What's Missing"
-                  : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
+                : hasDetectionFailures || hasExpiredDocs
+                  ? "Remove Invalid IDs"
+                  : completeDocCount === 0
+                    ? "Upload 2 Valid IDs"
+                    : completeDocCount === 1
+                      ? "Upload 1 More ID"
+                      : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
           </Button>
         </div>
       </div>
-
-      {/* Reclassify dropdown portal */}
-      {reclassifyDropdownOpen && dropdownPosition && typeof document !== "undefined" && createPortal(
-        <>
-          {/* Use mousedown (not click) so scrollbar drag/release does not synthesize a click that closes the menu */}
-          <div
-            className="fixed inset-0 z-[70]"
-            onMouseDown={(e) => {
-              if (e.target === e.currentTarget) {
-                setReclassifyDropdownOpen(null);
-                setDropdownPosition(null);
-              }
-            }}
-          />
-          <div
-            ref={reclassifyDropdownRef}
-            className="fixed w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[75] max-h-64 overflow-y-auto"
-            style={{
-              top: dropdownPosition.top,
-              right: dropdownPosition.right,
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {ACCEPTABLE_ID_TYPES.map((type) => {
-              const currentFile = selected.find(s => s.id === reclassifyDropdownOpen);
-              const isSelected = currentFile?.detection?.documentType === type;
-              return (
-                <button
-                  key={type}
-                  onClick={() => handleQuickReclassify(reclassifyDropdownOpen, currentFile?.file.name ?? "", type)}
-                  className={[
-                    "w-full text-left px-3 py-2 text-xs hover:bg-gray-50 cursor-pointer transition-colors",
-                    isSelected ? "text-green-700 bg-green-50 font-medium" : "text-gray-700"
-                  ].join(" ")}
-                >
-                  {type}
-                  {isSelected && <span className="ml-1.5 text-green-600">✓</span>}
-                </button>
-              );
-            })}
-          </div>
-        </>,
-        document.body
-      )}
 
       {/* Detection failure modal */}
       {detectionFailModal.open && (
@@ -2133,14 +1995,10 @@ export default function UploadIdentificationDrawer({
                 <Button
                   variant="primary"
                   fullWidth
-                  loading={uploading || cameraSubmitting}
+                  loading={uploading}
                   onClick={() => {
                     setShowConfirmModal(false);
-                    if (cameraFlowOpen) {
-                      handleFinishCameraFlow();
-                    } else {
-                      handleUpload();
-                    }
+                    handleUpload();
                   }}
                 >
                   Confirm Submission
@@ -2148,7 +2006,7 @@ export default function UploadIdentificationDrawer({
                 <Button
                   variant="secondary"
                   fullWidth
-                  disabled={uploading || cameraSubmitting}
+                  disabled={uploading}
                   onClick={() => setShowConfirmModal(false)}
                 >
                   Cancel
@@ -2268,7 +2126,7 @@ export default function UploadIdentificationDrawer({
                             </div>
                           )}
                           <button
-                            onClick={() => openCameraStep(key)}
+                            onClick={() => retakeSingleSlot(key)}
                             className="mt-1.5 cursor-pointer text-[10px] sm:text-xs font-semibold text-[#C10007] hover:underline"
                           >
                             Retake
@@ -2351,12 +2209,11 @@ export default function UploadIdentificationDrawer({
                     <Button
                       variant="primary"
                       fullWidth
-                      loading={cameraSubmitting}
-                      disabled={!cameraFlowReadyToSubmit || cameraSubmitting}
+                      disabled={!cameraFlowReadyToSubmit}
                       onClick={handleFinishCameraFlowClick}
                       className="sm:flex-1"
                     >
-                      Finish & Submit
+                      Add to Review
                     </Button>
                   </>
                 )}
