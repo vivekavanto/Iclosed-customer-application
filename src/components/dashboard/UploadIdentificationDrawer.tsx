@@ -1516,7 +1516,7 @@ export default function UploadIdentificationDrawer({
                               <p className="text-[11px] text-green-600 font-medium truncate">
                                 {s.detection!.documentType}
                                 {s.detection!.sideRequirement === "single-sided"
-                                  ? " · info page only"
+                                  ? ""
                                   : s.detection!.side === "front-and-back"
                                     ? " · both sides in one image"
                                     : s.detection!.side !== "unknown"
