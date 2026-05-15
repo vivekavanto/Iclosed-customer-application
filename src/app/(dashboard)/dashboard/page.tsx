@@ -314,7 +314,6 @@ function AttentionCard({
                       </p>
                     )}
                   </div>
-
                   {/* Arrow */}
                   <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FEF2F2] transition-colors">
                     <ChevronRight size={16} className="text-gray-400 group-hover:text-[#C10007]" strokeWidth={2} />
