@@ -296,7 +296,6 @@ function AttentionCard({
                   <div className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center flex-shrink-0">
                     <span className="text-xs font-medium text-gray-400 tabular-nums">{idx + 1}</span>
                   </div>
-
                   {/* Text */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
