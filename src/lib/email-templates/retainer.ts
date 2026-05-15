@@ -1,15 +1,17 @@
-const LOGO_URL = "https://iclosed-admin-panel.vercel.app/logo.png";
+import supabaseAdmin from "@/lib/supabaseAdmin";
+import { renderMilestoneTemplate, resolveTemplateSubject } from "./milestone";
 
-export function buildRetainerEmailHtml(params: {
+export async function buildRetainerEmailHtml(params: {
   firstName: string;
   propertyAddress: string;
   leadType: string;
   side?: "purchase" | "sale" | null;
-}): { html: string; subject: string } {
+}): Promise<{ html: string; subject: string }> {
   const { firstName, propertyAddress, leadType, side } = params;
 
   const sideLabel =
     side === "purchase" ? "Purchase Property" : side === "sale" ? "Sale Property" : "";
+  const sideSuffix = sideLabel ? ` (${sideLabel})` : "";
 
   const propertyRoleRow = sideLabel
     ? `<tr>
@@ -18,36 +20,37 @@ export function buildRetainerEmailHtml(params: {
     </tr>`
     : "";
 
-  const html = `<div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-  <p>Hi ${firstName || "there"},</p>
+  const { data: template, error } = await supabaseAdmin
+    .from("email_templates")
+    .select("name, subject, body")
+    .ilike("name", "Retainer Agreement Signed%")
+    .eq("is_active", true)
+    .or("is_deleted.eq.false,is_deleted.is.null")
+    .limit(1)
+    .maybeSingle();
 
-  <p>Thank you for signing your retainer agreement with iClosed.</p>
+  if (error || !template?.body) {
+    throw new Error(
+      "'Retainer Agreement Signed' template not found in Supabase 'email_templates' table.",
+    );
+  }
 
-  <p>Please find a copy of your signed retainer agreement attached to this email for your records.</p>
+  const variables: Record<string, string> = {
+    "first_name": firstName || "there",
+    "user.first_name": firstName || "there",
+    "property_address": propertyAddress || "N/A",
+    "lead_type": leadType || "N/A",
+    "side_label": sideLabel,
+    "side_suffix": sideSuffix,
+    "property_role_row": propertyRoleRow,
+  };
 
-  <table style="margin: 16px 0; border-collapse: collapse;">
-    <tr>
-      <td style="padding: 4px 12px 4px 0; font-weight: bold; color: #555;">Property:</td>
-      <td style="padding: 4px 0;">${propertyAddress || "N/A"}</td>
-    </tr>
-    <tr>
-      <td style="padding: 4px 12px 4px 0; font-weight: bold; color: #555;">Transaction:</td>
-      <td style="padding: 4px 0;">${leadType || "N/A"}</td>
-    </tr>
-    ${propertyRoleRow}
-  </table>
-
-  <p>If you have any questions, feel free to reach out through your client portal or reply to this email.</p>
-
-  <p>Best regards,<br>The iClosed Team</p>
-
-  <br>
-  <img src="${LOGO_URL}" alt="iClosed by Nava Wilson" style="width:70px;height:auto;" />
-</div>`;
-
-  const subject = sideLabel
-    ? `Your Signed Retainer Agreement (${sideLabel}) — iClosed`
-    : "Your Signed Retainer Agreement — iClosed";
+  const html = renderMilestoneTemplate(template.body, variables);
+  const subject = resolveTemplateSubject(
+    template,
+    variables,
+    `Your Signed Retainer Agreement${sideSuffix} — iClosed`,
+  );
 
   return { html, subject };
 }

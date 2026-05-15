@@ -6,8 +6,6 @@
  * Handles both `{{ var }}` (with spaces) and `{{var}}` (without).
  */
 
-const LOGO_URL = "https://iclosed-admin-panel.vercel.app/logo.png";
-
 /**
  * Replaces `{{ key }}` tokens (spaces optional) with their values.
  * Returns plain text with no HTML wrapping — safe for subjects.
@@ -59,11 +57,9 @@ export function renderMilestoneTemplate(
 ): string {
   const rendered = interpolateTokens(templateBody, variables);
 
-  // Strip any existing full HTML wrapper — use only the inner content
   const bodyContent = extractBodyContent(rendered);
 
-  return `<div>${bodyContent}<br>
-<img src="${LOGO_URL}" alt="iClosed by Nava Wilson" style="width:70px;height:auto;" /></div>`;
+  return `<div>${bodyContent}</div>`;
 }
 
 /**

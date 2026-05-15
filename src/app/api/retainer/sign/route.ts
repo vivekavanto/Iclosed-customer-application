@@ -205,7 +205,7 @@ export async function POST(req: Request) {
 
         // 4. Email PDF to client
         if (lead?.email) {
-          const { html, subject } = buildRetainerEmailHtml({
+          const { html, subject } = await buildRetainerEmailHtml({
             firstName: lead.first_name ?? "",
             propertyAddress,
             leadType: lead.lead_type ?? "",

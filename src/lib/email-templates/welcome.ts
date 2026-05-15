@@ -6,18 +6,17 @@ export async function buildWelcomeEmailHtml(params: {
 }): Promise<{ html: string; subject: string }> {
   const { lead } = params;
 
-  // Fetch the "Welcome Email" template from Supabase
   const { data: template, error } = await supabaseAdmin
     .from("email_templates")
     .select("name, subject, body")
-    .ilike("name", "Welcome Email%")
+    .ilike("name", "Intake form completed%")
     .eq("is_active", true)
     .or("is_deleted.eq.false,is_deleted.is.null")
     .limit(1)
     .maybeSingle();
 
   if (error || !template?.body) {
-    throw new Error("Welcome Email template not found in Supabase 'email_templates' table.");
+    throw new Error("'Intake form completed' template not found in Supabase 'email_templates' table.");
   }
 
   const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(" ");
@@ -36,7 +35,7 @@ export async function buildWelcomeEmailHtml(params: {
   };
 
   const html = renderMilestoneTemplate(template.body, variables);
-  const subject = resolveTemplateSubject(template, variables, "Welcome to iClosed");
+  const subject = resolveTemplateSubject(template, variables, "Thank you for your inquiry");
 
   return { html, subject };
 }
