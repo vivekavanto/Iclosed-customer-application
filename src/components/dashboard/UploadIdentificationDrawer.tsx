@@ -95,6 +95,9 @@ interface SelectedFile {
   detecting: boolean;
   detection: DetectionResult | null;
   detectionError: string | null;
+  isDuplicate: boolean;
+  duplicateReason: string | null;
+  fromCamera: boolean;
 }
 
 interface ExistingDoc {
@@ -566,7 +569,71 @@ export default function UploadIdentificationDrawer({
     return "other";
   }
 
-  async function detectIdentification(id: string, file: File) {
+  // Recompute duplicate flags for all files based on file-level and document-level matches
+  function recomputeDuplicates(files: SelectedFile[]): SelectedFile[] {
+    return files.map((file, index) => {
+      let isDuplicate = false;
+      let duplicateReason: string | null = null;
+      
+      // Check file-level duplicates (same file name and size) against earlier files
+      for (let i = 0; i < index; i++) {
+        const other = files[i];
+        if (other.file.name === file.file.name && other.file.size === file.file.size) {
+          isDuplicate = true;
+          duplicateReason = "This file has already been uploaded. Are you sure you want to upload it again?";
+          break;
+        }
+      }
+      
+      // Check document-level duplicates (same document type + side) against earlier files
+      if (!isDuplicate && file.detection?.isIdentification && file.detection.documentType) {
+        const fileType = file.detection.documentType;
+        const fileSide = file.detection.side;
+        
+        for (let i = 0; i < index; i++) {
+          const other = files[i];
+          if (other.detection?.isIdentification && other.detection.documentType) {
+            const otherType = other.detection.documentType;
+            const otherSide = other.detection.side;
+            
+            // Same document type and same side = duplicate
+            if (otherType === fileType && otherSide === fileSide) {
+              isDuplicate = true;
+              duplicateReason = `This ${fileType}${fileSide !== "unknown" && file.detection.sideRequirement !== "single-sided" ? ` (${fileSide})` : ""} has already been uploaded. Are you sure you want to upload it again?`;
+              break;
+            }
+            // Same document type with front-and-back in either = duplicate
+            if (otherType === fileType && (otherSide === "front-and-back" || fileSide === "front-and-back")) {
+              isDuplicate = true;
+              duplicateReason = `This ${fileType} has already been uploaded. Are you sure you want to upload it again?`;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Also check against existing (previously uploaded) documents
+      if (!isDuplicate && file.detection?.isIdentification && file.detection.documentType) {
+        const fileType = file.detection.documentType;
+        const fileTypeLower = fileType.toLowerCase();
+        
+        for (const doc of existing) {
+          if (doc.custom_type) {
+            const existingType = doc.custom_type.toLowerCase();
+            if (existingType.includes(fileTypeLower) || fileTypeLower.includes(existingType.split("_")[0])) {
+              isDuplicate = true;
+              duplicateReason = `A ${fileType} was previously uploaded. Are you sure you want to upload another?`;
+              break;
+            }
+          }
+        }
+      }
+      
+      return { ...file, isDuplicate, duplicateReason };
+    });
+  }
+
+  async function detectIdentification(id: string, file: File, fromCamera = false) {
     const result = await fetchDetection(file);
     const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
 
@@ -578,57 +645,68 @@ export default function UploadIdentificationDrawer({
             : s,
         ),
       );
-      setDetectionFailModal({
-        open: true,
-        fileId: id,
-        fileName,
-        reason: result.error,
-        kind: "error",
-      });
+      // Only show modal for manual uploads, not camera captures (to avoid multiple pop-ups)
+      if (!fromCamera) {
+        setDetectionFailModal({
+          open: true,
+          fileId: id,
+          fileName,
+          reason: result.error,
+          kind: "error",
+        });
+      }
       return;
     }
 
-    setSelected((prev) =>
-      prev.map((s) =>
+    // Update this file's detection result first
+    setSelected((prev) => {
+      const updated = prev.map((s) =>
         s.id === id
           ? { ...s, detecting: false, detection: result.detection, detectionError: null }
-          : s,
-      ),
-    );
+          : s
+      );
+      
+      // Now recompute duplicates for ALL files based on the new state
+      return recomputeDuplicates(updated);
+    });
     
     // Scroll to verification status section after detection completes
     setTimeout(() => {
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 100);
     
-    if (!result.detection.isIdentification) {
-      setDetectionFailModal({
-        open: true,
-        fileId: id,
-        fileName,
-        reason:
-          result.detection.reason?.trim() ||
-          "This file doesn't appear to be an acceptable government-issued photo ID under LSO By-Law 7.1.",
-        kind: "rejected",
-      });
-    } else if (result.detection.expiryStatus === "expired") {
-      // Show modal for expired IDs
-      setDetectionFailModal({
-        open: true,
-        fileId: id,
-        fileName,
-        reason: `This ${result.detection.documentType || "ID"} expired on ${result.detection.expiryDate || "an unknown date"}. Please upload a valid, non-expired ID.`,
-        kind: "expired",
-        documentType: result.detection.documentType ?? undefined,
-        expiryDate: result.detection.expiryDate ?? undefined,
-      });
+    // Only show modals for manual uploads, not camera captures (to avoid multiple pop-ups)
+    // Camera-captured files show errors inline instead
+    if (!fromCamera) {
+      if (!result.detection.isIdentification) {
+        setDetectionFailModal({
+          open: true,
+          fileId: id,
+          fileName,
+          reason:
+            result.detection.reason?.trim() ||
+            "This file doesn't appear to be an acceptable government-issued photo ID under LSO By-Law 7.1.",
+          kind: "rejected",
+        });
+      } else if (result.detection.expiryStatus === "expired") {
+        // Show modal for expired IDs
+        setDetectionFailModal({
+          open: true,
+          fileId: id,
+          fileName,
+          reason: `This ${result.detection.documentType || "ID"} expired on ${result.detection.expiryDate || "an unknown date"}. Please upload a valid, non-expired ID.`,
+          kind: "expired",
+          documentType: result.detection.documentType ?? undefined,
+          expiryDate: result.detection.expiryDate ?? undefined,
+        });
+      }
     }
   }
 
   function addFiles(files: FileList | File[]) {
     const incoming = Array.from(files);
     const errors: string[] = [];
-    const queuedForDetection: { id: string; file: File }[] = [];
+    const queuedForDetection: { id: string; file: File; fromCamera: boolean }[] = [];
     const additions: SelectedFile[] = [];
     const working = [...selected];
 
@@ -638,6 +716,7 @@ export default function UploadIdentificationDrawer({
         errors.push(`${f.name}: ${err}`);
         continue;
       }
+      
       const id = makeId();
       const nextItem: SelectedFile = {
         id,
@@ -648,22 +727,26 @@ export default function UploadIdentificationDrawer({
         detecting: true,
         detection: null,
         detectionError: null,
+        isDuplicate: false,
+        duplicateReason: null,
+        fromCamera: false,
       };
       additions.push(nextItem);
       working.push(nextItem);
-      queuedForDetection.push({ id, file: f });
+      queuedForDetection.push({ id, file: f, fromCamera: false });
     }
 
     if (additions.length > 0) {
-      setSelected((prev) => [...prev, ...additions]);
+      // Add files and immediately compute duplicates for file-level matches
+      setSelected((prev) => recomputeDuplicates([...prev, ...additions]));
     }
 
     if (errors.length) setGlobalError(errors.join(" • "));
     else setGlobalError(null);
 
     // Kick off Gemini detection for each newly added file (fire-and-forget).
-    queuedForDetection.forEach(({ id, file }) => {
-      void detectIdentification(id, file);
+    queuedForDetection.forEach(({ id, file, fromCamera }) => {
+      void detectIdentification(id, file, fromCamera);
     });
   }
 
@@ -709,13 +792,14 @@ export default function UploadIdentificationDrawer({
       expiryStatus: "unknown",
     };
 
-    setSelected((prev) =>
-      prev.map((s) =>
+    setSelected((prev) => {
+      const updated = prev.map((s) =>
         s.id === fileId
           ? { ...s, detection: manualDetection, detectionError: null, detecting: false }
           : s
-      )
-    );
+      );
+      return recomputeDuplicates(updated);
+    });
 
     setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" });
   }
@@ -917,7 +1001,7 @@ export default function UploadIdentificationDrawer({
 
     // Convert camera captures to SelectedFile entries and add to selected state
     const newFiles: SelectedFile[] = [];
-    const queuedForDetection: { id: string; file: File }[] = [];
+    const queuedForDetection: { id: string; file: File; fromCamera: boolean }[] = [];
 
     for (const slotKey of CAMERA_STEPS) {
       const file = cameraCapturedFiles[slotKey];
@@ -934,21 +1018,25 @@ export default function UploadIdentificationDrawer({
         detecting: true,
         detection: null,
         detectionError: null,
+        isDuplicate: false,
+        duplicateReason: null,
+        fromCamera: true,
       };
       newFiles.push(newEntry);
-      queuedForDetection.push({ id, file });
+      queuedForDetection.push({ id, file, fromCamera: true });
     }
 
     if (newFiles.length > 0) {
-      setSelected((prev) => [...prev, ...newFiles]);
+      // Add files and compute duplicates for file-level matches
+      setSelected((prev) => recomputeDuplicates([...prev, ...newFiles]));
     }
 
     // Close camera flow and return to main upload view
     closeCameraFlow();
 
     // Run AI detection on each captured image
-    queuedForDetection.forEach(({ id, file }) => {
-      void detectIdentification(id, file);
+    queuedForDetection.forEach(({ id, file, fromCamera }) => {
+      void detectIdentification(id, file, fromCamera);
     });
   }
 
@@ -1380,27 +1468,34 @@ export default function UploadIdentificationDrawer({
                 {selected.map((s) => {
                   const hasError = s.detectionError || (s.detection && !s.detection.isIdentification);
                   const isDetected = s.detection?.isIdentification && s.detection.documentType;
+                  const showDuplicate = s.isDuplicate && isDetected;
                   return (
                     <li
                       key={s.id}
                       className={[
                         "rounded-lg border bg-white",
-                        hasError ? "border-amber-200" : "border-gray-200",
+                        hasError ? "border-amber-200" : showDuplicate ? "border-amber-300" : "border-gray-200",
                       ].join(" ")}
                     >
                       <div className="flex items-center gap-3 px-3 py-2.5">
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           {s.detecting ? (
                             <Loader2 size={14} className="animate-spin text-gray-400 flex-shrink-0" />
-                          ) : hasError ? (
+                          ) : s.detectionError ? (
+                            <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                          ) : s.detection && !s.detection.isIdentification ? (
                             <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
                           ) : s.detection?.expiryStatus === "expired" ? (
                             <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
+                          ) : showDuplicate ? (
+                            <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
                           ) : s.detection?.expiryStatus === "expiring_soon" ? (
                             <Clock size={14} className="text-amber-500 flex-shrink-0" />
                           ) : s.detection?.isIdentification ? (
                             <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                          ) : null}
+                          ) : (
+                            <AlertCircle size={14} className="text-gray-400 flex-shrink-0" />
+                          )}
                           <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
                             {s.previewUrl ? (
                               <NextImage
@@ -1420,7 +1515,7 @@ export default function UploadIdentificationDrawer({
                           <p className="text-xs font-medium text-gray-800 truncate">{s.file.name}</p>
                           {isDetected ? (
                             <div className="flex flex-col gap-0.5 mt-0.5">
-                              <p className="text-[11px] text-green-600 font-medium truncate">
+                              <p className={`text-[11px] font-medium truncate ${showDuplicate ? "text-amber-600" : "text-green-600"}`}>
                                 {s.detection!.documentType}
                                 {s.detection!.sideRequirement === "single-sided"
                                   ? ""
@@ -1430,6 +1525,12 @@ export default function UploadIdentificationDrawer({
                                       ? ` (${s.detection!.side})`
                                       : ""}
                               </p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-amber-600 font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate detected</span>
+                                </div>
+                              )}
                               {s.detection!.expiryStatus === "expired" && (
                                 <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
                                   <Clock size={10} />
@@ -1442,6 +1543,18 @@ export default function UploadIdentificationDrawer({
                                   <span>Expiring soon{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
                                 </div>
                               )}
+                            </div>
+                          ) : s.detectionError ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] font-medium text-red-600">Unable to process</p>
+                              <p className="text-[10px] text-red-500 line-clamp-2">{s.detectionError}</p>
+                            </div>
+                          ) : s.detection && !s.detection.isIdentification ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] font-medium text-amber-600">Invalid ID</p>
+                              <p className="text-[10px] text-amber-500 line-clamp-2">
+                                {s.detection.reason || "Not a valid government-issued ID"}
+                              </p>
                             </div>
                           ) : (
                             <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
@@ -1483,16 +1596,16 @@ export default function UploadIdentificationDrawer({
             <div
               ref={verificationStatusRef}
               className={[
-                "rounded-xl border overflow-hidden",
+                "rounded-xl border overflow-hidden bg-white",
                 completeDocCount >= 2
-                  ? "border-green-200 bg-green-50"
-                  : "border-amber-200 bg-amber-50",
+                  ? "border-green-200"
+                  : "border-amber-200",
               ].join(" ")}
             >
               {/* Status Header */}
               <div className={[
                 "px-4 py-3 flex items-center gap-3",
-                completeDocCount >= 2 ? "bg-green-100/50" : "bg-amber-100/50",
+                completeDocCount >= 2 ? "bg-green-50" : "bg-amber-50",
               ].join(" ")}>
                 {completeDocCount >= 2 ? (
                   <>
@@ -1528,7 +1641,7 @@ export default function UploadIdentificationDrawer({
 
               {/* Document Details */}
               {docAnalysis.length > 0 && (
-                <div className="px-4 py-3 bg-white/60 space-y-2">
+                <div className="px-4 py-3 bg-white space-y-2">
                   {docAnalysis.map((doc, idx) => (
                     <div key={idx} className="flex items-start gap-2.5 text-xs">
                       {doc.complete ? (
@@ -1558,7 +1671,7 @@ export default function UploadIdentificationDrawer({
 
               {/* Action hint for incomplete state */}
               {completeDocCount < 2 && (
-                <div className="px-4 py-2.5 bg-white/40 border-t border-amber-100">
+                <div className="px-4 py-2.5 bg-white border-t border-gray-100">
                   <p className="text-xs text-amber-700">
                     {incompleteDocCount > 0 && completeDocCount < 2
                       ? "Upload the missing side, or add a different government ID."
@@ -1572,12 +1685,25 @@ export default function UploadIdentificationDrawer({
             </div>
           )}
 
+          {/* Duplicate warning callout */}
+          {selected.length > 0 && !hasPendingDetection && selected.some(s => s.isDuplicate) && (
+            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-amber-600" />
+              <div>
+                <span className="font-semibold">Duplicate ID detected.</span>{" "}
+                <span>
+                  One or more IDs appear to have already been uploaded. Are you sure you want to include them? You can remove duplicates if they were uploaded by mistake.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Detection errors callout */}
           {selected.length > 0 && !hasPendingDetection && hasDetectionFailures && (
             <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
               <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-amber-600" />
               <span>
-                Some files couldn't be identified as valid government IDs. Remove them and try again with clearer images.
+              Some files couldn’t be identified as valid government IDs. Remove them and try again.
               </span>
             </div>
           )}
@@ -1678,159 +1804,47 @@ export default function UploadIdentificationDrawer({
               {/* Icon band */}
               <div className="flex justify-center pt-8 pb-4">
                 <div className="w-14 h-14 rounded-full bg-[#FEF2F2] flex items-center justify-center">
-                  {detectionFailModal.kind === "expired" ? (
-                    <Clock size={28} className="text-[#C10007]" strokeWidth={1.75} />
-                  ) : (
-                    <AlertCircle size={28} className="text-[#C10007]" strokeWidth={1.75} />
-                  )}
+                  <AlertCircle size={28} className="text-[#C10007]" strokeWidth={1.75} />
                 </div>
               </div>
 
               {/* Text */}
-              <div className="px-6 pb-5 text-center space-y-2">
+              <div className="px-6 pb-6 text-center space-y-3">
                 <h3 className="text-base font-bold text-gray-900">
                   {detectionFailModal.kind === "expired"
                     ? "This ID has expired"
                     : detectionFailModal.kind === "rejected"
-                      ? "This document was rejected"
+                      ? "Invalid ID"
                       : "We weren't able to process this file"}
                 </h3>
-                <p className="text-sm text-gray-500 leading-relaxed">
-                  {detectionFailModal.kind === "expired" ? (
-                    <>
-                      Your{" "}
-                      <span className="font-semibold text-gray-700">
-                        {detectionFailModal.documentType || "ID"}
-                      </span>{" "}
-                      expired on{" "}
-                      <span className="font-semibold text-gray-700">
-                        {detectionFailModal.expiryDate || "an unknown date"}
-                      </span>
-                      . Expired IDs cannot be used for identity verification.
-                    </>
-                  ) : detectionFailModal.kind === "rejected" ? (
-                    <>
-                      <span className="font-semibold text-gray-700 break-all">
-                        {detectionFailModal.fileName}
-                      </span>{" "}
-                      could not be verified as an acceptable government-issued ID.
-                    </>
-                  ) : (
-                    <>
-                      Something went wrong while verifying{" "}
-                      <span className="font-semibold text-gray-700 break-all">
-                        {detectionFailModal.fileName}
-                      </span>
-                      . Please remove the current file and try again with a clearer photo or scan.
-                    </>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  {detectionFailModal.reason || (
+                    detectionFailModal.kind === "expired"
+                      ? `Your ${detectionFailModal.documentType || "ID"} expired on ${detectionFailModal.expiryDate || "an unknown date"}. Expired IDs cannot be used for identity verification. Please upload a valid, non-expired ID.`
+                      : detectionFailModal.kind === "rejected"
+                        ? "This document could not be verified as an acceptable government-issued ID. Please upload a valid government-issued photo ID, such as a passport or driver's licence."
+                        : "Please try again with a clearer image or smaller file size."
                   )}
                 </p>
               </div>
 
-              {/* Reason callout - shows AI reasoning for rejections or error details */}
-              {detectionFailModal.reason && detectionFailModal.kind !== "expired" && (
-                <div className="mx-6 mb-5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle
-                      size={14}
-                      strokeWidth={2}
-                      className="flex-shrink-0 mt-0.5 text-amber-600"
-                    />
-                    <div className="text-left">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                        {detectionFailModal.kind === "rejected" ? "Why it was rejected" : "Error details"}
-                      </p>
-                      <p className="text-xs text-amber-800 leading-relaxed mt-0.5 break-words">
-                        {detectionFailModal.reason}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tip for rejected documents */}
-              {detectionFailModal.kind === "rejected" && (
-                <p className="px-6 pb-5 text-[11px] text-gray-500 leading-relaxed text-center">
-                  If we incorrectly identified this document, you can manually select the correct document type below.
-                </p>
-              )}
-
-              {/* Actions */}
-              <div className="px-6 pb-6 flex flex-col gap-2.5">
-                {detectionFailModal.kind === "expired" ? (
-                  <>
-                    <Button
-                      variant="primary"
-                      fullWidth
-                      onClick={() => {
-                        removeSelected(detectionFailModal.fileId);
-                        setDetectionFailModal({
-                          open: false,
-                          fileId: "",
-                          fileName: "",
-                          reason: "",
-                          kind: "rejected",
-                        });
-                      }}
-                    >
-                      Remove &amp; Upload Valid ID
-                    </Button>
-                    <button
-                      className="text-xs text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
-                      onClick={() =>
-                        setDetectionFailModal({
-                          open: false,
-                          fileId: "",
-                          fileName: "",
-                          reason: "",
-                          kind: "rejected",
-                        })
-                      }
-                    >
-                      Dismiss
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="primary"
-                      fullWidth
-                      onClick={() => openManualClassify(detectionFailModal.fileId, detectionFailModal.fileName)}
-                    >
-                      Choose Document Type
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      fullWidth
-                      onClick={() => {
-                        removeSelected(detectionFailModal.fileId);
-                        setDetectionFailModal({
-                          open: false,
-                          fileId: "",
-                          fileName: "",
-                          reason: "",
-                          kind: "rejected",
-                        });
-                      }}
-                    >
-                      Remove &amp; Try Again
-                    </Button>
-                    <button
-                      className="text-xs text-gray-500 hover:text-gray-700 py-1 cursor-pointer"
-                      onClick={() =>
-                        setDetectionFailModal({
-                          open: false,
-                          fileId: "",
-                          fileName: "",
-                          reason: "",
-                          kind: "rejected",
-                        })
-                      }
-                    >
-                      Dismiss
-                    </button>
-                  </>
-                )}
+              {/* Action */}
+              <div className="px-6 pb-6">
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() =>
+                    setDetectionFailModal({
+                      open: false,
+                      fileId: "",
+                      fileName: "",
+                      reason: "",
+                      kind: "rejected",
+                    })
+                  }
+                >
+                  OK
+                </Button>
               </div>
             </div>
           </div>
@@ -1852,8 +1866,17 @@ export default function UploadIdentificationDrawer({
           >
             <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
               {/* Header */}
-              <div className="px-6 pt-6 pb-4">
-                <div className="flex items-center gap-3 mb-3">
+              <div className="px-6 pt-6 pb-4 relative">
+                <button
+                  onClick={() =>
+                    setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" })
+                  }
+                  className="absolute top-4 right-4 cursor-pointer rounded-md p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <div className="flex items-center gap-3 mb-3 pr-8">
                   <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
                     <FileText size={20} className="text-blue-600" />
                   </div>
@@ -1934,7 +1957,7 @@ export default function UploadIdentificationDrawer({
               </div>
 
               {/* Actions */}
-              <div className="px-6 pb-6 flex flex-col gap-2.5">
+              <div className="px-6 pb-6">
                 <Button
                   variant="primary"
                   fullWidth
@@ -1942,15 +1965,6 @@ export default function UploadIdentificationDrawer({
                   onClick={applyManualClassification}
                 >
                   Update
-                </Button>
-                <Button
-                  variant="secondary"
-                  fullWidth
-                  onClick={() =>
-                    setManualClassifyModal({ open: false, fileId: "", fileName: "", selectedType: "", selectedSide: "front" })
-                  }
-                >
-                  Cancel
                 </Button>
               </div>
             </div>

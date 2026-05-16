@@ -559,36 +559,6 @@ export default function Step5Contact({
                                 {touched.phone && errors.phone && (
                                     <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
                                 )}
-
-                                {/* How did you hear about us? (optional) */}
-                                <div className="flex flex-col gap-1.5 w-full">
-                                    <label className="text-sm font-medium text-gray-900">
-                                        How did you hear about us?{" "}
-                                        <span className="text-gray-400 font-normal">(optional)</span>
-                                    </label>
-                                    <select
-                                        value={referralSource}
-                                        onChange={(e) => {
-                                            setReferralSource(e.target.value);
-                                            if (e.target.value !== "Other") setReferralOther("");
-                                        }}
-                                        className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
-                                    >
-                                        <option value="">Select an option</option>
-                                        {REFERRAL_OPTIONS.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                    </select>
-                                    {referralSource === "Other" && (
-                                        <input
-                                            type="text"
-                                            placeholder="Please specify..."
-                                            value={referralOther}
-                                            onChange={(e) => setReferralOther(e.target.value)}
-                                            className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
-                                        />
-                                    )}
-                                </div>
                             </div>
                         </div>
 
@@ -603,6 +573,36 @@ export default function Step5Contact({
                         ) : (
                             renderCoSection("purchaser")
                         )}
+
+                        {/* How did you hear about us? (optional) */}
+                        <div className="flex flex-col gap-1.5 w-full">
+                            <label className="text-sm font-medium text-gray-900">
+                                How did you hear about us?{" "}
+                                <span className="text-gray-400 font-normal">(optional)</span>
+                            </label>
+                            <select
+                                value={referralSource}
+                                onChange={(e) => {
+                                    setReferralSource(e.target.value);
+                                    if (e.target.value !== "Other") setReferralOther("");
+                                }}
+                                className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
+                            >
+                                <option value="">Select an option</option>
+                                {REFERRAL_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                            </select>
+                            {referralSource === "Other" && (
+                                <input
+                                    type="text"
+                                    placeholder="Please specify..."
+                                    value={referralOther}
+                                    onChange={(e) => setReferralOther(e.target.value)}
+                                    className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                />
+                            )}
+                        </div>
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
