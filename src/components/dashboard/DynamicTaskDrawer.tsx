@@ -1023,7 +1023,7 @@ export default function DynamicTaskDrawer({
                 {acceptableDocsOpen && (
                   <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
                     <p className="text-[11px] text-gray-500 leading-relaxed">
-                      As per Law Society of Ontario By-Law 7.1, please provide <span className="font-semibold text-gray-700">two different government-issued photo IDs</span> from the list below for identity verification.
+                      Please provide <span className="font-semibold text-gray-700">two different government-issued photo IDs</span> from the list below for identity verification.
                     </p>
                     
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">

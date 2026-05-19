@@ -114,8 +114,9 @@ For EACH distinct identification document you find in the image/PDF, do the foll
    - Note: SIN cards and some older IDs may not have expiry dates — return null in those cases
 
 Edge-case policy:
-- Passports (Canadian or Foreign) are "single-sided" (info / photo page only needed).
+- Passports (Canadian or Foreign) are "single-sided" (info / photo page only needed). If you see the BACK of a passport (the plain page with no photo), still classify it as a "Canadian Passport" or "Foreign Passport" with side="back" and side_requirement="single-sided". The back is not required but should still be recognized as part of a valid passport if submitted.
 - Cards (Driver's License, PR Card, Citizenship Card, NEXUS, plastic SIN, generic Government-issued Photo ID Card) are "front-and-back" required.
+- DRIVER'S LICENSE BACK SIDE DETECTION: The back of a driver's license is VALID identification and must be recognized. Driver's license backs typically contain: a 2D barcode (PDF417), magnetic stripe, additional text/numbers, and sometimes a signature. If you see any of these elements along with a card format, classify it as "Driver's License" with side="back". Do NOT reject driver's license backs as invalid.
 - "Government-issued Photo ID Card" is a LAST-RESORT label only for legitimate provincial/territorial photo ID cards issued in lieu of a driver's license (e.g. Ontario Photo Card, BC Identification Card). Do NOT use this label to smuggle in health cards, work IDs, or any rejected document above.
 - Users often scan/photograph BOTH sides of an ID onto one page. Look for TWO distinct views of the same card. If you see both sides of one ID together, that single document entry should have side="front-and-back".
 - Users may scan MULTIPLE DIFFERENT IDs into one file (e.g., driver's license + passport in same PDF). Create a separate entry in the documents array for EACH distinct ACCEPTABLE ID type found. Ignore any rejected documents that appear alongside them.

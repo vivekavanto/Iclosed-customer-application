@@ -50,7 +50,8 @@ const SLOT_CUSTOM_TYPES: Record<SlotKey, LabelKey> = {
   secondaryBack: "secondary_back",
 };
 
-const CAMERA_STEPS: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront", "secondaryBack"];
+const ALL_CAMERA_STEPS: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront", "secondaryBack"];
+const SECONDARY_CAMERA_STEPS: SlotKey[] = ["secondaryFront", "secondaryBack"];
 
 // ── Manual upload model (list of selected files with labels) ─────────────────
 
@@ -445,16 +446,87 @@ export default function UploadIdentificationDrawer({
     selectedRef.current = selected;
   }, [selected]);
 
-  // Detection failure modal
-  const [detectionFailModal, setDetectionFailModal] = useState<{
+  // Error modal state - simplified unified error popup
+  type ErrorKind = "invalid_id" | "expired" | "unable_to_process" | "invalid_file_type" | "file_too_large" | "resolution_issue";
+  
+  const [errorModal, setErrorModal] = useState<{
     open: boolean;
     fileId: string;
     fileName: string;
-    reason: string;
-    kind: "rejected" | "error" | "expired";
+    kind: ErrorKind;
     documentType?: string;
     expiryDate?: string;
-  }>({ open: false, fileId: "", fileName: "", reason: "", kind: "rejected" });
+    customReason?: string;
+  }>({ open: false, fileId: "", fileName: "", kind: "invalid_id" });
+
+  type ErrorModalPayload = {
+    fileId: string;
+    fileName: string;
+    kind: ErrorKind;
+    documentType?: string;
+    expiryDate?: string;
+    customReason?: string;
+  };
+
+  const errorModalQueueRef = useRef<ErrorModalPayload[]>([]);
+  const errorModalOpenRef = useRef(false);
+
+  function openErrorModal(payload: ErrorModalPayload) {
+    if (errorModalOpenRef.current) {
+      errorModalQueueRef.current.push(payload);
+      return;
+    }
+    errorModalOpenRef.current = true;
+    setErrorModal({ ...payload, open: true });
+  }
+
+  function closeErrorModal() {
+    errorModalOpenRef.current = false;
+    setErrorModal({
+      open: false,
+      fileId: "",
+      fileName: "",
+      kind: "invalid_id",
+    });
+    const next = errorModalQueueRef.current.shift();
+    if (next) {
+      errorModalOpenRef.current = true;
+      setErrorModal({ ...next, open: true });
+    }
+  }
+  
+  const getErrorModalTitle = (kind: ErrorKind): string => {
+    switch (kind) {
+      case "expired":
+        return "This ID has expired";
+      case "invalid_id":
+      case "invalid_file_type":
+        return "Invalid ID";
+      case "unable_to_process":
+      case "file_too_large":
+      case "resolution_issue":
+      default:
+        return "We weren't able to process this file";
+    }
+  };
+  
+  const getErrorModalMessage = (kind: ErrorKind, documentType?: string, expiryDate?: string, customReason?: string): string => {
+    switch (kind) {
+      case "expired":
+        return `Your ${documentType || "ID"} expired on ${expiryDate || "an unknown date"}. Expired IDs cannot be used for identity verification.`;
+      case "invalid_id":
+        return customReason || "Health cards cannot be used for identity verification. Please upload a valid government-issued photo ID, such as a passport or driver's licence.";
+      case "invalid_file_type":
+        return "This file type is not supported. Please upload a PDF, JPG, PNG, or HEIC file.";
+      case "file_too_large":
+        return "This file is too large. Please upload a file smaller than 10 MB.";
+      case "resolution_issue":
+        return "ID details not readable. Please upload a clearer image or scan.";
+      case "unable_to_process":
+      default:
+        return customReason || "We couldn't process this file. Please try again with a clearer image or smaller file size.";
+    }
+  };
 
   // Manual classification modal (when AI can't classify correctly)
   const [manualClassifyModal, setManualClassifyModal] = useState<{
@@ -468,10 +540,11 @@ export default function UploadIdentificationDrawer({
   // Confirmation modal before submission
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Camera flow state (guided 4-step capture)
+  // Camera flow state (guided capture — number of steps depends on what's still needed)
   const webcamRef = useRef<Webcam | null>(null);
   const [cameraFlowOpen, setCameraFlowOpen] = useState(false);
   const [cameraStepIndex, setCameraStepIndex] = useState(0);
+  const [cameraSteps, setCameraSteps] = useState<SlotKey[]>(ALL_CAMERA_STEPS);
   const [cameraCapturedFiles, setCameraCapturedFiles] = useState<Partial<Record<SlotKey, File>>>({});
   const [cameraCapturedPreview, setCameraCapturedPreview] = useState<Partial<Record<SlotKey, string>>>({});
   const [currentCapture, setCurrentCapture] = useState<string | null>(null);
@@ -503,6 +576,9 @@ export default function UploadIdentificationDrawer({
     setCameraSubmitting(false);
     setRetakingSlot(null);
     setShowConfirmModal(false);
+    errorModalQueueRef.current = [];
+    errorModalOpenRef.current = false;
+    setErrorModal({ open: false, fileId: "", fileName: "", kind: "invalid_id" });
   }, [selected]);
 
   const handleClose = useCallback(() => {
@@ -633,7 +709,7 @@ export default function UploadIdentificationDrawer({
     });
   }
 
-  async function detectIdentification(id: string, file: File, fromCamera = false) {
+  async function detectIdentification(id: string, file: File) {
     const result = await fetchDetection(file);
     const fileName = selectedRef.current.find((s) => s.id === id)?.file.name ?? "";
 
@@ -645,16 +721,17 @@ export default function UploadIdentificationDrawer({
             : s,
         ),
       );
-      // Only show modal for manual uploads, not camera captures (to avoid multiple pop-ups)
-      if (!fromCamera) {
-        setDetectionFailModal({
-          open: true,
-          fileId: id,
-          fileName,
-          reason: result.error,
-          kind: "error",
-        });
-      }
+      const isResolutionIssue =
+        result.error.toLowerCase().includes("blur") ||
+        result.error.toLowerCase().includes("unclear") ||
+        result.error.toLowerCase().includes("readable");
+
+      openErrorModal({
+        fileId: id,
+        fileName,
+        kind: isResolutionIssue ? "resolution_issue" : "unable_to_process",
+        customReason: result.error,
+      });
       return;
     }
 
@@ -675,45 +752,39 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 100);
     
-    // Only show modals for manual uploads, not camera captures (to avoid multiple pop-ups)
-    // Camera-captured files show errors inline instead
-    if (!fromCamera) {
-      if (!result.detection.isIdentification) {
-        setDetectionFailModal({
-          open: true,
-          fileId: id,
-          fileName,
-          reason:
-            result.detection.reason?.trim() ||
-            "This file doesn't appear to be an acceptable government-issued photo ID under LSO By-Law 7.1.",
-          kind: "rejected",
-        });
-      } else if (result.detection.expiryStatus === "expired") {
-        // Show modal for expired IDs
-        setDetectionFailModal({
-          open: true,
-          fileId: id,
-          fileName,
-          reason: `This ${result.detection.documentType || "ID"} expired on ${result.detection.expiryDate || "an unknown date"}. Please upload a valid, non-expired ID.`,
-          kind: "expired",
-          documentType: result.detection.documentType ?? undefined,
-          expiryDate: result.detection.expiryDate ?? undefined,
-        });
-      }
+    if (!result.detection.isIdentification) {
+      openErrorModal({
+        fileId: id,
+        fileName,
+        kind: "invalid_id",
+        customReason: result.detection.reason?.trim() || undefined,
+      });
+    } else if (result.detection.expiryStatus === "expired") {
+      openErrorModal({
+        fileId: id,
+        fileName,
+        kind: "expired",
+        documentType: result.detection.documentType ?? undefined,
+        expiryDate: result.detection.expiryDate ?? undefined,
+      });
     }
   }
 
   function addFiles(files: FileList | File[]) {
     const incoming = Array.from(files);
-    const errors: string[] = [];
-    const queuedForDetection: { id: string; file: File; fromCamera: boolean }[] = [];
+    const queuedForDetection: { id: string; file: File }[] = [];
     const additions: SelectedFile[] = [];
     const working = [...selected];
 
     for (const f of incoming) {
       const err = validateFile(f);
       if (err) {
-        errors.push(`${f.name}: ${err}`);
+        const isFileTooLarge = err.includes("10 MB") || err.toLowerCase().includes("size");
+        openErrorModal({
+          fileId: "",
+          fileName: f.name,
+          kind: isFileTooLarge ? "file_too_large" : "invalid_file_type",
+        });
         continue;
       }
       
@@ -733,7 +804,7 @@ export default function UploadIdentificationDrawer({
       };
       additions.push(nextItem);
       working.push(nextItem);
-      queuedForDetection.push({ id, file: f, fromCamera: false });
+      queuedForDetection.push({ id, file: f });
     }
 
     if (additions.length > 0) {
@@ -741,12 +812,11 @@ export default function UploadIdentificationDrawer({
       setSelected((prev) => recomputeDuplicates([...prev, ...additions]));
     }
 
-    if (errors.length) setGlobalError(errors.join(" • "));
-    else setGlobalError(null);
+    setGlobalError(null);
 
     // Kick off Gemini detection for each newly added file (fire-and-forget).
-    queuedForDetection.forEach(({ id, file, fromCamera }) => {
-      void detectIdentification(id, file, fromCamera);
+    queuedForDetection.forEach(({ id, file }) => {
+      void detectIdentification(id, file);
     });
   }
 
@@ -759,7 +829,8 @@ export default function UploadIdentificationDrawer({
   }
 
   function openManualClassify(fileId: string, fileName: string) {
-    setDetectionFailModal({ open: false, fileId: "", fileName: "", reason: "", kind: "rejected" });
+    errorModalQueueRef.current = [];
+    closeErrorModal();
     
     // Pre-fill with existing detection if available
     const existingFile = selected.find((s) => s.id === fileId);
@@ -869,11 +940,41 @@ export default function UploadIdentificationDrawer({
 
   // ── Camera flow handlers ────────────────────────────────────────────────────
 
-  const currentCameraSlot = CAMERA_STEPS[cameraStepIndex] ?? null;
+  const currentCameraSlot = cameraSteps[cameraStepIndex] ?? null;
   const cameraCapturedCount = Object.keys(cameraCapturedFiles).length;
-  const cameraFlowReadyToSubmit = CAMERA_STEPS.every((k) => !!cameraCapturedFiles[k]);
+  const cameraFlowReadyToSubmit =
+    cameraSteps.length > 0 && cameraSteps.every((k) => !!cameraCapturedFiles[k]);
+
+  // Count IDs already provided in this drawer so the camera only asks for what's left
+  function countAlreadyProvidedIds(): number {
+    // Count complete IDs in the current selection (front+back, both-sides, or single-sided)
+    const selectedComplete = docAnalysis.filter((d) => d.complete).length;
+
+    // Count distinct base types in previously uploaded docs as already-provided IDs
+    const existingPrefixes = new Set<string>();
+    for (const doc of existing) {
+      if (!doc.custom_type) continue;
+      const prefix = doc.custom_type
+        .replace(/_front$|_back$|_front-and-back$/i, "")
+        .toLowerCase()
+        .trim();
+      if (prefix) existingPrefixes.add(prefix);
+    }
+
+    return selectedComplete + existingPrefixes.size;
+  }
+
+  // Decide which camera slots to walk the user through based on what's still missing
+  function computeCameraStepsNeeded(): SlotKey[] {
+    const alreadyProvided = countAlreadyProvidedIds();
+    if (alreadyProvided >= 2) return [];
+    if (alreadyProvided === 1) return SECONDARY_CAMERA_STEPS;
+    return ALL_CAMERA_STEPS;
+  }
 
   function openCameraFlow() {
+    const stepsNeeded = computeCameraStepsNeeded();
+    setCameraSteps(stepsNeeded.length > 0 ? stepsNeeded : ALL_CAMERA_STEPS);
     setCameraFlowOpen(true);
     setCameraStepIndex(0);
     setCameraCapturedFiles({});
@@ -941,7 +1042,7 @@ export default function UploadIdentificationDrawer({
 
     // If retaking a single slot, return to review screen
     if (retakingSlot) {
-      setCameraStepIndex(CAMERA_STEPS.length);
+      setCameraStepIndex(cameraSteps.length);
       setCurrentCapture(null);
       setCameraError(null);
       setSharpnessScore(null);
@@ -951,7 +1052,7 @@ export default function UploadIdentificationDrawer({
       return;
     }
 
-    if (cameraStepIndex < CAMERA_STEPS.length - 1) {
+    if (cameraStepIndex < cameraSteps.length - 1) {
       setCameraStepIndex((prev) => prev + 1);
       setCurrentCapture(null);
       setCameraError(null);
@@ -961,7 +1062,7 @@ export default function UploadIdentificationDrawer({
       return;
     }
 
-    setCameraStepIndex(CAMERA_STEPS.length);
+    setCameraStepIndex(cameraSteps.length);
     setCurrentCapture(null);
     setCameraError(null);
     setSharpnessScore(null);
@@ -970,7 +1071,7 @@ export default function UploadIdentificationDrawer({
   }
 
   function openCameraStep(stepKey: SlotKey) {
-    const nextIndex = CAMERA_STEPS.indexOf(stepKey);
+    const nextIndex = cameraSteps.indexOf(stepKey);
     if (nextIndex < 0) return;
     setCameraStepIndex(nextIndex);
     setCurrentCapture(null);
@@ -982,7 +1083,7 @@ export default function UploadIdentificationDrawer({
   }
 
   function retakeSingleSlot(stepKey: SlotKey) {
-    const nextIndex = CAMERA_STEPS.indexOf(stepKey);
+    const nextIndex = cameraSteps.indexOf(stepKey);
     if (nextIndex < 0) return;
     setCameraStepIndex(nextIndex);
     setCurrentCapture(null);
@@ -995,15 +1096,19 @@ export default function UploadIdentificationDrawer({
 
   async function handleFinishCameraFlow() {
     if (!cameraFlowReadyToSubmit) {
-      setCameraError("Please capture front and back for both IDs before finishing.");
+      setCameraError(
+        cameraSteps.length === ALL_CAMERA_STEPS.length
+          ? "Please capture front and back for both IDs before finishing."
+          : "Please capture front and back of the remaining ID before finishing.",
+      );
       return;
     }
 
     // Convert camera captures to SelectedFile entries and add to selected state
     const newFiles: SelectedFile[] = [];
-    const queuedForDetection: { id: string; file: File; fromCamera: boolean }[] = [];
+    const queuedForDetection: { id: string; file: File }[] = [];
 
-    for (const slotKey of CAMERA_STEPS) {
+    for (const slotKey of cameraSteps) {
       const file = cameraCapturedFiles[slotKey];
       const preview = cameraCapturedPreview[slotKey];
       if (!file) continue;
@@ -1023,7 +1128,7 @@ export default function UploadIdentificationDrawer({
         fromCamera: true,
       };
       newFiles.push(newEntry);
-      queuedForDetection.push({ id, file, fromCamera: true });
+      queuedForDetection.push({ id, file });
     }
 
     if (newFiles.length > 0) {
@@ -1035,8 +1140,8 @@ export default function UploadIdentificationDrawer({
     closeCameraFlow();
 
     // Run AI detection on each captured image
-    queuedForDetection.forEach(({ id, file, fromCamera }) => {
-      void detectIdentification(id, file, fromCamera);
+    queuedForDetection.forEach(({ id, file }) => {
+      void detectIdentification(id, file);
     });
   }
 
@@ -1201,7 +1306,9 @@ export default function UploadIdentificationDrawer({
     const isSingleSided = docs.some(d => d.sideRequirement === "single-sided");
     // Use isComplete from detection if available, otherwise calculate
     const hasCompleteDoc = docs.some(d => d.isComplete);
-    const complete = hasCompleteDoc || isSingleSided || hasBothSides || (hasFront && hasBack);
+    // For single-sided documents (passports), having either front or both makes it complete
+    // This allows users to upload passport back as well without issues
+    const complete = hasCompleteDoc || isSingleSided || hasBothSides || (hasFront && hasBack) || (isSingleSided && (hasFront || hasBack || hasBothSides));
     docAnalysis.push({ type, hasFront, hasBack, hasBothSides, isSingleSided, complete });
   }
 
@@ -1219,9 +1326,46 @@ export default function UploadIdentificationDrawer({
     s => s.detection?.isIdentification && s.detection.documentType
   ).length;
 
-  const hasDetectionFailures = selected.some(
-    (s) => s.detectionError !== null || (s.detection !== null && !s.detection.isIdentification),
+  // Get complete single-sided document types (like passports) to be lenient with their backs
+  const completeSingleSidedTypes = new Set(
+    docAnalysis
+      .filter(d => d.complete && d.isSingleSided)
+      .map(d => d.type.toLowerCase())
   );
+  
+  // Check for detection failures, but be lenient with potential passport backs
+  // If we have a complete passport and a file fails detection, it might just be the passport back
+  // which is not required - don't block submission for this
+  const hasDetectionFailures = selected.some((s) => {
+    // Helper to check if this file is likely a passport back
+    const isLikelyPassportBack = () => {
+      const fileNameHasBack = s.file.name.toLowerCase().includes("back");
+      const hasCompletePassport = completeSingleSidedTypes.has("canadian passport") || 
+                                   completeSingleSidedTypes.has("foreign passport");
+      const labelIndicatesBack = s.label.includes("back");
+      
+      return (fileNameHasBack && hasCompletePassport) || 
+             (labelIndicatesBack && completeSingleSidedTypes.size > 0);
+    };
+    
+    // Detection errors - be lenient for potential passport backs
+    if (s.detectionError !== null) {
+      if (isLikelyPassportBack()) {
+        return false; // Don't block for passport back detection errors
+      }
+      return true;
+    }
+    
+    // If detection succeeded but it's not identification
+    if (s.detection !== null && !s.detection.isIdentification) {
+      if (isLikelyPassportBack()) {
+        return false; // Don't block for passport back rejection
+      }
+      return true;
+    }
+    
+    return false;
+  });
 
   // Check for expired or expiring-soon IDs
   const expiredDocs = selected.filter(
@@ -1317,14 +1461,26 @@ export default function UploadIdentificationDrawer({
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900">Have a camera?</p>
                 <p className="text-xs text-gray-500">
-                  Capture each ID with your camera — no need to save the photo first.
+                  {hasPendingDetection
+                    ? "Analyzing your uploaded files… camera will be available once that's done."
+                    : "Capture each ID with your camera — no need to save the photo first."}
                 </p>
               </div>
             </div>
-            <Button variant="secondary" size="sm" onClick={openCameraFlow} disabled={uploading} className="flex-shrink-0">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={openCameraFlow}
+              disabled={uploading || hasPendingDetection}
+              className="flex-shrink-0"
+            >
               <span className="inline-flex items-center gap-1.5">
-                <Camera size={14} />
-                Use Camera
+                {hasPendingDetection ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Camera size={14} />
+                )}
+                {hasPendingDetection ? "Analyzing..." : "Use Camera"}
               </span>
             </Button>
           </div>
@@ -1545,17 +1701,9 @@ export default function UploadIdentificationDrawer({
                               )}
                             </div>
                           ) : s.detectionError ? (
-                            <div className="flex flex-col gap-0.5 mt-0.5">
-                              <p className="text-[11px] font-medium text-red-600">Unable to process</p>
-                              <p className="text-[10px] text-red-500 line-clamp-2">{s.detectionError}</p>
-                            </div>
+                            <p className="text-[11px] font-medium text-red-600 mt-0.5">Unable to process</p>
                           ) : s.detection && !s.detection.isIdentification ? (
-                            <div className="flex flex-col gap-0.5 mt-0.5">
-                              <p className="text-[11px] font-medium text-amber-600">Invalid ID</p>
-                              <p className="text-[10px] text-amber-500 line-clamp-2">
-                                {s.detection.reason || "Not a valid government-issued ID"}
-                              </p>
-                            </div>
+                            <p className="text-[11px] font-medium text-red-600 mt-0.5">Invalid ID</p>
                           ) : (
                             <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
                           )}
@@ -1599,13 +1747,13 @@ export default function UploadIdentificationDrawer({
                 "rounded-xl border overflow-hidden bg-white",
                 completeDocCount >= 2
                   ? "border-green-200"
-                  : "border-amber-200",
+                  : "border-gray-200 border-t-4 border-t-amber-400",
               ].join(" ")}
             >
               {/* Status Header */}
               <div className={[
                 "px-4 py-3 flex items-center gap-3",
-                completeDocCount >= 2 ? "bg-green-50" : "bg-amber-50",
+                completeDocCount >= 2 ? "bg-green-50 border-b border-green-100" : "bg-white",
               ].join(" ")}>
                 {completeDocCount >= 2 ? (
                   <>
@@ -1625,12 +1773,12 @@ export default function UploadIdentificationDrawer({
                       <AlertCircle size={18} className="text-white" strokeWidth={2.5} />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-amber-800">
+                      <p className="text-sm font-bold text-gray-900">
                         {completeDocCount === 0 
                           ? "2 Government IDs Required" 
                           : "1 More Government ID Required"}
                       </p>
-                      <p className="text-xs text-amber-700">
+                      <p className="text-xs text-gray-900">
                         {completeDocCount}/2 complete
                         {incompleteDocCount > 0 && " — see what's missing below"}
                       </p>
@@ -1639,21 +1787,19 @@ export default function UploadIdentificationDrawer({
                 )}
               </div>
 
-              {/* Document Details */}
+              {/* Document Details — always white background below header */}
               {docAnalysis.length > 0 && (
-                <div className="px-4 py-3 bg-white space-y-2">
+                <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
                   {docAnalysis.map((doc, idx) => (
                     <div key={idx} className="flex items-start gap-2.5 text-xs">
                       {doc.complete ? (
                         <CheckCircle2 size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
                       ) : (
-                        <AlertCircle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                        <AlertCircle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       )}
-                      <div className="min-w-0 flex-1">
-                        <span className={doc.complete ? "font-semibold text-green-800" : "font-semibold text-amber-800"}>
-                          {doc.type}
-                        </span>
-                        <span className={doc.complete ? "text-green-600" : "text-amber-600"}>
+                      <div className="min-w-0 flex-1 text-gray-900">
+                        <span className="font-semibold">{doc.type}</span>
+                        <span>
                           {doc.complete 
                             ? doc.isSingleSided 
                               ? " — verified" 
@@ -1672,7 +1818,7 @@ export default function UploadIdentificationDrawer({
               {/* Action hint for incomplete state */}
               {completeDocCount < 2 && (
                 <div className="px-4 py-2.5 bg-white border-t border-gray-100">
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-gray-900">
                     {incompleteDocCount > 0 && completeDocCount < 2
                       ? "Upload the missing side, or add a different government ID."
                       : completeDocCount === 0
@@ -1685,19 +1831,6 @@ export default function UploadIdentificationDrawer({
             </div>
           )}
 
-          {/* Duplicate warning callout */}
-          {selected.length > 0 && !hasPendingDetection && selected.some(s => s.isDuplicate) && (
-            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-amber-600" />
-              <div>
-                <span className="font-semibold">Duplicate ID detected.</span>{" "}
-                <span>
-                  One or more IDs appear to have already been uploaded. Are you sure you want to include them? You can remove duplicates if they were uploaded by mistake.
-                </span>
-              </div>
-            </div>
-          )}
-
           {/* Detection errors callout */}
           {selected.length > 0 && !hasPendingDetection && hasDetectionFailures && (
             <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
@@ -1705,21 +1838,6 @@ export default function UploadIdentificationDrawer({
               <span>
               Some files couldn’t be identified as valid government IDs. Remove them and try again.
               </span>
-            </div>
-          )}
-
-          {/* Expired ID warning */}
-          {selected.length > 0 && !hasPendingDetection && hasExpiredDocs && (
-            <div className="flex items-start gap-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
-              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-red-600" />
-              <div>
-                <span className="font-semibold">Expired ID detected.</span>{" "}
-                <span>
-                  {expiredDocs.length === 1
-                    ? `Your ${expiredDocs[0].detection?.documentType} has expired. Please upload a valid, non-expired ID.`
-                    : `${expiredDocs.length} of your IDs have expired. Please upload valid, non-expired IDs.`}
-                </span>
-              </div>
             </div>
           )}
 
@@ -1787,8 +1905,8 @@ export default function UploadIdentificationDrawer({
         </div>
       </div>
 
-      {/* Detection failure modal */}
-      {detectionFailModal.open && (
+      {/* Simplified error modal */}
+      {errorModal.open && (
         <>
           <div
             className="fixed inset-0 z-[80] bg-black/40"
@@ -1801,47 +1919,34 @@ export default function UploadIdentificationDrawer({
             aria-label="File upload error"
           >
             <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
-              {/* Icon band */}
+              {/* Icon */}
               <div className="flex justify-center pt-8 pb-4">
                 <div className="w-14 h-14 rounded-full bg-[#FEF2F2] flex items-center justify-center">
                   <AlertCircle size={28} className="text-[#C10007]" strokeWidth={1.75} />
                 </div>
               </div>
 
-              {/* Text */}
+              {/* Title and reason */}
               <div className="px-6 pb-6 text-center space-y-3">
                 <h3 className="text-base font-bold text-gray-900">
-                  {detectionFailModal.kind === "expired"
-                    ? "This ID has expired"
-                    : detectionFailModal.kind === "rejected"
-                      ? "Invalid ID"
-                      : "We weren't able to process this file"}
+                  {getErrorModalTitle(errorModal.kind)}
                 </h3>
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  {detectionFailModal.reason || (
-                    detectionFailModal.kind === "expired"
-                      ? `Your ${detectionFailModal.documentType || "ID"} expired on ${detectionFailModal.expiryDate || "an unknown date"}. Expired IDs cannot be used for identity verification. Please upload a valid, non-expired ID.`
-                      : detectionFailModal.kind === "rejected"
-                        ? "This document could not be verified as an acceptable government-issued ID. Please upload a valid government-issued photo ID, such as a passport or driver's licence."
-                        : "Please try again with a clearer image or smaller file size."
+                  {getErrorModalMessage(
+                    errorModal.kind,
+                    errorModal.documentType,
+                    errorModal.expiryDate,
+                    errorModal.customReason
                   )}
                 </p>
               </div>
 
-              {/* Action */}
+              {/* Single OK button */}
               <div className="px-6 pb-6">
                 <Button
                   variant="secondary"
                   fullWidth
-                  onClick={() =>
-                    setDetectionFailModal({
-                      open: false,
-                      fileId: "",
-                      fileName: "",
-                      reason: "",
-                      kind: "rejected",
-                    })
-                  }
+                  onClick={closeErrorModal}
                 >
                   OK
                 </Button>
@@ -2049,14 +2154,16 @@ export default function UploadIdentificationDrawer({
               <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
                 <div className="pr-4">
                   <h3 className="text-sm font-bold text-gray-900">Use Camera - Guided Capture</h3>
-                  {cameraStepIndex < CAMERA_STEPS.length ? (
+                  {cameraStepIndex < cameraSteps.length ? (
                     <p className="text-xs text-gray-500 mt-1">
-                      Step {cameraStepIndex + 1} of {CAMERA_STEPS.length}:{" "}
+                      Step {cameraStepIndex + 1} of {cameraSteps.length}:{" "}
                       {SLOT_LABELS[currentCameraSlot as SlotKey]}
                     </p>
                   ) : (
                     <p className="text-xs text-gray-500 mt-1">
-                      Review all captured images, then click Finish.
+                      {cameraSteps.length === ALL_CAMERA_STEPS.length
+                        ? "Review all captured images, then click Finish."
+                        : "Review your captured image, then click Finish."}
                     </p>
                   )}
                 </div>
@@ -2070,7 +2177,7 @@ export default function UploadIdentificationDrawer({
               </div>
 
               <div className="px-5 py-4 space-y-3">
-                {cameraStepIndex < CAMERA_STEPS.length ? (
+                {cameraStepIndex < cameraSteps.length ? (
                   !currentCapture ? (
                     <>
                       <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-xl bg-gray-950">
@@ -2120,8 +2227,8 @@ export default function UploadIdentificationDrawer({
                   )
                 ) : (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-                      {CAMERA_STEPS.map((key) => (
+                    <div className={`grid gap-2 sm:gap-3 ${cameraSteps.length <= 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4"}`}>
+                      {cameraSteps.map((key) => (
                         <div key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-2 sm:p-2.5">
                           <p className="text-[10px] sm:text-xs font-semibold text-gray-700 mb-1.5 truncate">{SLOT_LABELS[key]}</p>
                           {cameraCapturedPreview[key] ? (
@@ -2149,7 +2256,7 @@ export default function UploadIdentificationDrawer({
                       ))}
                     </div>
                     <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
-                      Captured {cameraCapturedCount} of {CAMERA_STEPS.length} required photos.
+                      Captured {cameraCapturedCount} of {cameraSteps.length} required photos.
                     </div>
                   </div>
                 )}
@@ -2163,7 +2270,7 @@ export default function UploadIdentificationDrawer({
               </div>
 
               <div className="px-5 py-4 border-t border-gray-100 flex flex-wrap gap-2">
-                {cameraStepIndex < CAMERA_STEPS.length ? (
+                {cameraStepIndex < cameraSteps.length ? (
                   !currentCapture ? (
                     <Button
                       variant="primary"
@@ -2202,9 +2309,11 @@ export default function UploadIdentificationDrawer({
                         className="sm:flex-1"
                       >
                         <span className="inline-flex items-center gap-1.5">
-                          {cameraStepIndex < CAMERA_STEPS.length - 1
+                          {cameraStepIndex < cameraSteps.length - 1
                             ? "Use & Next Step"
-                            : "Use & Review All"}
+                            : cameraSteps.length === 1
+                              ? "Use & Review"
+                              : "Use & Review All"}
                           <ArrowRight size={14} />
                         </span>
                       </Button>
@@ -2215,7 +2324,7 @@ export default function UploadIdentificationDrawer({
                     <Button
                       variant="secondary"
                       fullWidth
-                      onClick={() => openCameraStep(CAMERA_STEPS[0])}
+                      onClick={() => openCameraStep(cameraSteps[0])}
                       className="sm:flex-1"
                     >
                       Capture Again
