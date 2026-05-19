@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Upload, FileText, Trash2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { upload } from "@vercel/blob/client";
 import Button from "@/components/ui/Button";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
@@ -98,16 +99,38 @@ export default function UploadAgreementDrawer({
     setUploading(true);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("lead_id", leadId ?? "unknown");
-      fd.append("doc_type", "aps");
-      const res = await fetch("/api/uploadblobstorage", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error ?? "Upload failed");
-      
-      const fileUrl = data.url ?? data.file_url;
-      
+      // Direct browser-to-Vercel-Blob upload, bypassing the 4.5 MB
+      // serverless function body limit.
+      const blob = await upload(
+        `corporate-docs/${leadId ?? "unknown"}/${Date.now()}-${file.name}`,
+        file,
+        {
+          access: "public",
+          handleUploadUrl: "/api/blob/aps-upload",
+          clientPayload: JSON.stringify({
+            lead_id: leadId ?? "unknown",
+            doc_type: "aps",
+          }),
+        }
+      );
+
+      const fileUrl = blob.url;
+
+      const metaRes = await fetch("/api/intake/save-aps-metadata", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: leadId ?? "unknown",
+          doc_type: "aps",
+          file_name: file.name,
+          file_url: fileUrl,
+        }),
+      });
+      const metaData = await metaRes.json();
+      if (!metaData.success) {
+        throw new Error(metaData.error ?? "Failed to save document metadata.");
+      }
+
       // If we have a taskId, record the response in the DB to mark task as done
       if (taskId) {
         const respRes = await fetch("/api/task-responses", {

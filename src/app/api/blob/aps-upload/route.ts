@@ -6,6 +6,8 @@ const ALLOWED_CONTENT_TYPES = [
   "application/pdf",
   "image/jpeg",
   "image/png",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
 export async function POST(req: Request) {
