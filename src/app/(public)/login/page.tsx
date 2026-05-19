@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import {
   Mail,
   Lock,
@@ -10,9 +10,53 @@ import {
   Building2,
   Shield,
   FileCheck,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+
+function LinkExpiredBanner() {
+  const searchParams = useSearchParams();
+  const [dismissed, setDismissed] = useState(false);
+
+  if (searchParams.get("reason") !== "link_expired" || dismissed) return null;
+
+  const detail = searchParams.get("detail");
+  const body =
+    detail === "used"
+      ? "This invitation has already been used. Sign in below or reset your password if you've forgotten it."
+      : detail === "missing"
+      ? "This activation link is invalid. Please contact your iClosed advisor for a new invitation."
+      : detail === "error"
+      ? "We couldn't process your activation link. Please try again, or contact your iClosed advisor."
+      : "This link is no longer valid. Please contact your iClosed advisor or use the Forgot Password option below to request a new one.";
+
+  return (
+    <div
+      role="alert"
+      className="mb-6 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-amber-900"
+    >
+      <AlertTriangle
+        size={16}
+        strokeWidth={2}
+        className="mt-0.5 flex-shrink-0 text-amber-600"
+      />
+      <div className="flex-1 text-[0.82rem] leading-relaxed">
+        <p className="font-semibold">Your activation link has expired</p>
+        <p className="mt-0.5 text-amber-800">{body}</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        aria-label="Dismiss notification"
+        className="flex flex-shrink-0 items-center rounded p-1 text-amber-600 transition-colors duration-150 hover:text-amber-900 cursor-pointer"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -146,6 +190,10 @@ export default function LoginPage() {
               Sign in to your customer portal
             </p>
           </div>
+
+          <Suspense fallback={null}>
+            <LinkExpiredBanner />
+          </Suspense>
 
           <form
             onSubmit={handleSubmit}

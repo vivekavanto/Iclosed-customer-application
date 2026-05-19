@@ -13,7 +13,6 @@ import Step2 from "@/components/intake/Step2";
 import Step4 from "@/components/intake/Step4";
 import Step5Contact from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
 import { upload } from "@vercel/blob/client";
 import { useToast } from "@/components/ui/Toast";
 
@@ -59,22 +58,28 @@ export default function ServiceSelection() {
 
   useEffect(() => {
     const loadAuthProfile = async () => {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.email) return;
+      const meRes = await fetch("/api/auth/me", { cache: "no-store" });
+      if (!meRes.ok) return;
 
-      // Fetch client profile via deals API (returns first_name, last_name, phone)
-      const res = await fetch("/api/deals");
+      const me = await meRes.json();
+      const email = me?.user?.email;
+      if (!email) return;
+
+      const res = await fetch("/api/deals", { cache: "no-store" });
       const data = res.ok ? await res.json() : null;
       const first = data?.deals?.[0];
 
+      const serverName = [me.user.first_name, me.user.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
       setAuthProfile({
-        fullName: first ? `${first.first_name ?? ""} ${first.last_name ?? ""}`.trim() : "",
-        email: user.email,
-        phone: first?.phone ?? "",
+        fullName:
+          serverName ||
+          (first ? `${first.first_name ?? ""} ${first.last_name ?? ""}`.trim() : ""),
+        email,
+        phone: me.user.phone ?? first?.phone ?? "",
       });
     };
     loadAuthProfile();
