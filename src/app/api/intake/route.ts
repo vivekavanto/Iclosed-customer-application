@@ -285,6 +285,12 @@ export async function POST(req: Request) {
           const [cpFirst, ...cpRest] = (cp.fullName ?? "").split(" ");
           const cpLast = cpRest.join(" ");
 
+          // role is "purchaser" | "seller" from the intake form's
+          // Co-Purchaser / Co-Seller stacks. Stored so the admin panel can
+          // label each co-person correctly (esp. for Purchase & Sale leads).
+          const cpRole =
+            cp.role === "purchaser" || cp.role === "seller" ? cp.role : null;
+
           const { data: cpLead, error: cpError } = await supabaseAdmin
             .from("leads")
             .insert({
@@ -311,6 +317,7 @@ export async function POST(req: Request) {
               aps_signed_purchase: apsPurchase,
               aps_signed_sale: apsSale,
               co_persons: [],
+              co_person_role: cpRole,
               parent_lead_id: lead.id,
               client_id: clientId,
             })
@@ -339,7 +346,7 @@ export async function POST(req: Request) {
         const excludeIds = [lead.id, ...coPersonLeadIds];
         const { data: matchingLeads } = await supabaseAdmin
           .from("leads")
-          .select("id, status, address_postal_code")
+          .select("id, status, address_postal_code, selling_address_street, selling_address_city, selling_address_postal_code")
           .not("id", "in", `(${excludeIds.join(",")})`)
           .neq("email", normEmail)
           .is("parent_lead_id", null)
@@ -358,20 +365,67 @@ export async function POST(req: Request) {
             if (matched.status === "Converted") {
               // Matched lead already has a deal — auto-link + auto-convert this lead
               // Set parent_lead_id to link as co-purchaser
+
+              // P&S split: if the new intake is Purchase & Sale and the seller-side
+              // address differs from the matched primary's seller-side address,
+              // the intake is really two unrelated deals (joining matched's
+              // purchase, plus an independent sale). Strip the sale side off the
+              // joining lead so it becomes a Purchase-only co-purchaser of
+              // matched's family; a separate Sale-only lead is inserted below.
+              const normSellStreet = (selling_address_street ?? "").trim().toLowerCase();
+              const matchedSellStreet = (matched.selling_address_street ?? "").trim().toLowerCase();
+              const shouldSplitSale =
+                sub_service === "both" &&
+                !!normSellStreet &&
+                normSellStreet !== matchedSellStreet;
+
+              const linkUpdate: Record<string, unknown> = {
+                parent_lead_id: matched.id,
+                address_match_flag: { matched_lead_id: matched.id, status: "approved" },
+              };
+              if (shouldSplitSale) {
+                Object.assign(linkUpdate, {
+                  lead_type: "Purchase",
+                  sub_service: "buying",
+                  selling_address_street: null,
+                  selling_address_unit: null,
+                  selling_address_city: null,
+                  selling_address_postal_code: null,
+                  selling_address_province: null,
+                  selling_price: null,
+                  aps_signed_sale: null,
+                  aps_uploaded_sale: null,
+                });
+              }
+
               await supabaseAdmin
                 .from("leads")
-                .update({
-                  parent_lead_id: matched.id,
-                  address_match_flag: { matched_lead_id: matched.id, status: "approved" },
-                })
+                .update(linkUpdate)
                 .eq("id", lead.id);
 
               // Also link any co-person leads
               for (const cpId of coPersonLeadIds) {
-                await supabaseAdmin
-                  .from("leads")
-                  .update({ parent_lead_id: matched.id })
-                  .eq("id", cpId);
+                const cpUpdate: Record<string, unknown> = { parent_lead_id: matched.id };
+                if (shouldSplitSale) {
+                  // Co-persons were created as P&S with the same selling address
+                  // mirrored from the primary. Strip the sale side off them too
+                  // so they're consistent co-purchasers on matched's family. (We
+                  // can't tell here whether any of them was meant as a co-seller
+                  // of the original sale — that needs an explicit role field.)
+                  Object.assign(cpUpdate, {
+                    lead_type: "Purchase",
+                    sub_service: "buying",
+                    selling_address_street: null,
+                    selling_address_unit: null,
+                    selling_address_city: null,
+                    selling_address_postal_code: null,
+                    selling_address_province: null,
+                    selling_price: null,
+                    aps_signed_sale: null,
+                    aps_uploaded_sale: null,
+                  });
+                }
+                await supabaseAdmin.from("leads").update(cpUpdate).eq("id", cpId);
               }
 
               // Re-fetch lead with updated parent_lead_id
@@ -401,6 +455,61 @@ export async function POST(req: Request) {
                         lead: cpLead,
                         parentClientId: result.client_id,
                       });
+                    }
+                  }
+
+                  // If we split the sale side off, create a separate Sale-only
+                  // lead + deal for the user's own seller property. Same
+                  // person/client, independent primary lead (no parent_lead_id),
+                  // not linked to matched's family.
+                  if (shouldSplitSale) {
+                    try {
+                      const saleApsAggregate = !!apsSale;
+                      const { data: saleLead, error: saleLeadErr } = await supabaseAdmin
+                        .from("leads")
+                        .insert({
+                          first_name,
+                          last_name,
+                          email,
+                          phone,
+                          service,
+                          sub_service: "selling",
+                          lead_type: "Sale",
+                          price: cleanSellingPrice,
+                          selling_price: null,
+                          address_street: selling_address_street,
+                          address_unit: selling_address_unit,
+                          address_city: selling_address_city,
+                          address_postal_code: selling_address_postal_code,
+                          address_province: selling_address_province,
+                          selling_address_street: null,
+                          selling_address_unit: null,
+                          selling_address_city: null,
+                          selling_address_postal_code: null,
+                          selling_address_province: null,
+                          aps_signed: saleApsAggregate,
+                          aps_signed_purchase: null,
+                          aps_signed_sale: null,
+                          co_persons: [],
+                          referral_source: referral_source || null,
+                          client_id: result.client_id,
+                        })
+                        .select()
+                        .single();
+
+                      if (saleLeadErr) {
+                        console.warn("[Intake] P&S split: sale lead insert failed (non-blocking):", saleLeadErr.message);
+                      } else if (saleLead) {
+                        const saleResult = await convertSingleLead({
+                          lead: saleLead,
+                          parentClientId: result.client_id,
+                        });
+                        if (!saleResult.success) {
+                          console.warn("[Intake] P&S split: sale lead convert failed (non-blocking):", saleResult.error);
+                        }
+                      }
+                    } catch (splitErr) {
+                      console.warn("[Intake] P&S split (non-blocking):", splitErr);
                     }
                   }
 

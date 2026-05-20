@@ -21,6 +21,9 @@ interface CoPerson {
     fullName: string;
     email: string;
     phone: string;
+    // Which stack the entry came from on the intake form. The intake API
+    // persists this so the admin panel can label P&S co-persons correctly.
+    role: "purchaser" | "seller";
 }
 
 interface CoPersonCard {
@@ -255,16 +258,18 @@ export default function Step5Contact({
             return;
         }
 
-        // Collect valid co-persons from active stacks only
-        const cardToCoPerson = (card: CoPersonCard): CoPerson => ({
+        // Collect valid co-persons from active stacks only — tag each one with
+        // the role it was entered under so the backend can store it.
+        const cardToCoPerson = (role: "purchaser" | "seller") => (card: CoPersonCard): CoPerson => ({
             id: card.id,
             fullName: card.fullName,
             email: card.email,
             phone: card.phone,
+            role,
         });
         const coPersons: CoPerson[] = [
-            ...(showPurchaserStack ? coPurchaserCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson) : []),
-            ...(showSellerStack ? coSellerCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson) : []),
+            ...(showPurchaserStack ? coPurchaserCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson("purchaser")) : []),
+            ...(showSellerStack ? coSellerCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson("seller")) : []),
         ];
 
         const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;

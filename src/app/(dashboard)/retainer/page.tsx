@@ -113,6 +113,8 @@ export default function RetainerPage() {
   const [date, setDate] = useState(getTodayDateString());
   const [signature, setSignature] = useState("");
   const [propertyAddress, setPropertyAddress] = useState("");
+  const [purchaseAddress, setPurchaseAddress] = useState<string | null>(null);
+  const [saleAddress, setSaleAddress] = useState<string | null>(null);
   const [leadType, setLeadType] = useState("");
   const [side, setSide] = useState<"purchase" | "sale" | null>(null);
   const [retainerCurrent, setRetainerCurrent] = useState(1);
@@ -135,6 +137,8 @@ export default function RetainerPage() {
         if (data.property_address) {
           setPropertyAddress(data.property_address);
         }
+        setPurchaseAddress(data.purchase_address ?? null);
+        setSaleAddress(data.sale_address ?? null);
         if (data.lead_type) {
           setLeadType(data.lead_type);
         }
@@ -220,14 +224,30 @@ export default function RetainerPage() {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             Retainer Agreement
           </h1>
-          {side && (
-            <p className="text-sm font-semibold text-[#C10007] mt-2">
-              {side === "purchase" ? "Purchase Property" : "Sale Property"}
-            </p>
+          {/* Combined P&S retainer — show both addresses with labels */}
+          {purchaseAddress && saleAddress ? (
+            <div className="mt-2 space-y-1">
+              <p className="text-sm text-gray-500">
+                <span className="font-semibold text-gray-700">Purchase Property:</span>{" "}
+                {purchaseAddress}
+              </p>
+              <p className="text-sm text-gray-500">
+                <span className="font-semibold text-gray-700">Sale Property:</span>{" "}
+                {saleAddress}
+              </p>
+            </div>
+          ) : (
+            <>
+              {side && (
+                <p className="text-sm font-semibold text-[#C10007] mt-2">
+                  {side === "purchase" ? "Purchase Property" : "Sale Property"}
+                </p>
+              )}
+              <p className="text-sm text-gray-500 mt-2">
+                {propertyAddress || "Address not available"}
+              </p>
+            </>
           )}
-          <p className="text-sm text-gray-500 mt-2">
-            {propertyAddress || "Address not available"}
-          </p>
           <p className="text-sm text-gray-400 mt-0.5">
             Transaction Type: {leadType || "N/A"}
           </p>

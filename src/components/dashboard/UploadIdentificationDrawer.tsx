@@ -432,6 +432,8 @@ export default function UploadIdentificationDrawer({
   const [existing, setExisting] = useState<ExistingDoc[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [replacingId, setReplacingId] = useState<string | null>(null);
@@ -563,6 +565,8 @@ export default function UploadIdentificationDrawer({
     setExisting([]);
     setGlobalError(null);
     setUploading(false);
+    setSavingDraft(false);
+    setDraftSaved(false);
     setDragOver(false);
     setCameraFlowOpen(false);
     setCameraStepIndex(0);
@@ -1253,6 +1257,85 @@ export default function UploadIdentificationDrawer({
     setShowConfirmModal(true);
   }
 
+  // Save current selection as a draft — uploads files to blob storage but does
+  // NOT mark the task as completed. Skips files that are still being analyzed
+  // or have failed detection (we don't want to persist known-invalid IDs).
+  async function handleSaveDraft() {
+    if (!leadId) {
+      setGlobalError("Missing lead. Please refresh and try again.");
+      return;
+    }
+
+    // Nothing in the picker → nothing to save. Just close gracefully.
+    if (selected.length === 0) {
+      handleClose();
+      return;
+    }
+
+    const validToSave = selected.filter(
+      (s) => !s.detecting && !s.detectionError && !s.isDuplicate,
+    );
+
+    if (validToSave.length === 0) {
+      setGlobalError(
+        "No saveable documents — please wait for analysis to finish or remove invalid files.",
+      );
+      return;
+    }
+
+    setSavingDraft(true);
+    setGlobalError(null);
+
+    try {
+      const uploads = validToSave.map(async (s) => {
+        const fd = new FormData();
+        fd.append("file", s.file);
+        fd.append("lead_id", leadId);
+        fd.append("doc_type", DOC_TYPE);
+        const customType = s.detection?.documentType
+          ? `${s.detection.documentType}${s.detection.side !== "unknown" ? `_${s.detection.side}` : ""}`
+          : "identification";
+        fd.append("custom_type", customType);
+        appendDetectionFields(fd, s.detection);
+        const res = await fetch("/api/uploadblobstorage", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!data.success)
+          throw new Error(`${s.file.name}: ${data.error ?? "Upload failed"}`);
+      });
+
+      await Promise.all(uploads);
+
+      // Clear in-memory selection + refresh existing docs from DB so the user
+      // sees their saved state immediately if they don't navigate away.
+      selected.forEach((s) => {
+        if (s.previewUrl) URL.revokeObjectURL(s.previewUrl);
+      });
+      setSelected([]);
+
+      try {
+        const r = await fetch(
+          `/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}`,
+        );
+        const d = await r.json();
+        if (d.success) setExisting(d.docs ?? []);
+      } catch {
+        /* non-fatal — the docs are saved; reload just refreshes the UI */
+      }
+
+      setDraftSaved(true);
+      setTimeout(() => handleClose(), 1500);
+    } catch (err: unknown) {
+      setGlobalError(
+        err instanceof Error ? err.message : "Failed to save draft.",
+      );
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   // ── Derived state ───────────────────────────────────────────────────────────
 
   const totalCount = selected.length + existing.length;
@@ -1863,6 +1946,14 @@ export default function UploadIdentificationDrawer({
               <span>{globalError}</span>
             </div>
           )}
+
+          {/* Draft saved success indicator */}
+          {draftSaved && (
+            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+              <CheckCircle2 size={14} strokeWidth={2.5} className="flex-shrink-0" />
+              <span className="font-semibold">Draft saved! You can come back later to finish.</span>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -1870,16 +1961,17 @@ export default function UploadIdentificationDrawer({
           <Button
             variant="secondary"
             fullWidth
-            onClick={handleClose}
-            disabled={uploading}
+            onClick={handleSaveDraft}
+            disabled={uploading || hasPendingDetection}
+            loading={savingDraft}
             className="sm:flex-1"
           >
-            Cancel
+            Save as Draft
           </Button>
           <Button
             variant="primary"
             fullWidth
-            disabled={selected.length === 0 || hasPendingDetection}
+            disabled={selected.length === 0 || hasPendingDetection || savingDraft}
             loading={uploading}
             onClick={() => {
               if (canUpload) {

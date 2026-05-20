@@ -10,6 +10,10 @@ interface RetainerPdfParams {
   leadType: string;
   uniqueId: string;
   side?: "purchase" | "sale" | null;
+  // When BOTH are provided, the PDF renders two address lines labelled
+  // "Purchase Property" and "Sale Property" (used for combined P&S retainers).
+  purchaseAddress?: string;
+  saleAddress?: string;
 }
 
 const FAQ_ITEMS = [
@@ -102,7 +106,19 @@ function wrapText(
 export async function generateRetainerPdf(
   params: RetainerPdfParams
 ): Promise<Uint8Array> {
-  const { fullName, signature, signedDate, propertyAddress, leadType, uniqueId, side } = params;
+  const {
+    fullName,
+    signature,
+    signedDate,
+    propertyAddress,
+    leadType,
+    uniqueId,
+    side,
+    purchaseAddress,
+    saleAddress,
+  } = params;
+
+  const isCombined = Boolean(purchaseAddress && saleAddress);
 
   const doc = await PDFDocument.create();
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -144,16 +160,41 @@ export async function generateRetainerPdf(
   page.drawText("Retainer Agreement", { x: margin, y, font: bold, size: 18, color: rgb(0.1, 0.1, 0.1) });
   y -= 28;
 
-  // Side label (only for Purchase & Sale leads — distinguishes the two PDFs)
-  if (side === "purchase" || side === "sale") {
+  // Side label (legacy single-side P&S PDFs only — the combined retainer below
+  // shows both addresses and does not need this label).
+  if (!isCombined && (side === "purchase" || side === "sale")) {
     const sideLabel = side === "purchase" ? "Purchase Property" : "Sale Property";
     page.drawText(`Property Role: ${sideLabel}`, { x: margin, y, font: bold, size: 10, color: brandColor });
     y -= 18;
   }
 
-  // Property & type
-  page.drawText(propertyAddress || "Address not available", { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
-  y -= 16;
+  // Property address(es)
+  if (isCombined) {
+    // Combined P&S retainer — show both labelled addresses
+    const labelWidth = 130;
+    page.drawText("Purchase Property:", { x: margin, y, font: bold, size: 9, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText(purchaseAddress || "Address not available", {
+      x: margin + labelWidth,
+      y,
+      font: regular,
+      size: 9,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+    y -= 14;
+    page.drawText("Sale Property:", { x: margin, y, font: bold, size: 9, color: rgb(0.2, 0.2, 0.2) });
+    page.drawText(saleAddress || "Address not available", {
+      x: margin + labelWidth,
+      y,
+      font: regular,
+      size: 9,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+    y -= 16;
+  } else {
+    page.drawText(propertyAddress || "Address not available", { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
+    y -= 16;
+  }
+
   page.drawText(`Transaction Type: ${leadType || "N/A"}`, { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
   y -= 16;
 

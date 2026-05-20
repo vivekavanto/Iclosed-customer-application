@@ -15,9 +15,12 @@ const PURCHASE_AND_SALE = "Purchase & Sale";
  * GET /api/retainer/check
  *
  * Checks if the authenticated user has signed every required retainer.
- * For "Purchase & Sale" leads we expand the lead into TWO slots — one for
- * the purchase property and one for the sale property — and require a
- * signature for each.
+ *
+ * "Purchase & Sale" leads now collect ONE combined retainer (side=null) that
+ * lists BOTH the purchase and sale property addresses. Legacy P&S leads that
+ * already have both side-specific signatures (purchase + sale) are still
+ * considered fully signed, so users mid-flow under the old behaviour are not
+ * forced to sign again.
  */
 export async function GET() {
   try {
@@ -50,17 +53,8 @@ export async function GET() {
 
     const leadById = new Map((leads || []).map((l) => [l.id, l]));
 
-    // Build slots in the same order as leadIds (which is newest-first).
-    const slots: Slot[] = [];
-    for (const id of leadIds) {
-      const lead = leadById.get(id);
-      if (lead?.lead_type === PURCHASE_AND_SALE) {
-        slots.push({ leadId: id, side: "purchase" });
-        slots.push({ leadId: id, side: "sale" });
-      } else {
-        slots.push({ leadId: id, side: null });
-      }
-    }
+    // One slot per lead — P&S retainers are now combined.
+    const slots: Slot[] = leadIds.map((id) => ({ leadId: id, side: null }));
 
     const { data: signatures } = await supabaseAdmin
       .from("retainer_signatures")
@@ -72,14 +66,29 @@ export async function GET() {
       (signatures || []).map((s) => signedKey(s.lead_id, (s.side ?? null) as Side))
     );
 
-    const signedCount = slots.filter((s) =>
-      signedSet.has(signedKey(s.leadId, s.side))
-    ).length;
+    const isLeadSigned = (leadId: string, leadType: string): boolean => {
+      // New combined signature (side=null) → done
+      if (signedSet.has(signedKey(leadId, null))) return true;
+      // Legacy P&S: both side-specific signatures present → done
+      if (leadType === PURCHASE_AND_SALE) {
+        return (
+          signedSet.has(signedKey(leadId, "purchase")) &&
+          signedSet.has(signedKey(leadId, "sale"))
+        );
+      }
+      return false;
+    };
+
+    const signedCount = slots.filter((s) => {
+      const lead = leadById.get(s.leadId);
+      return isLeadSigned(s.leadId, lead?.lead_type ?? "");
+    }).length;
     const totalRetainers = slots.length;
 
-    const nextSlot = slots.find(
-      (s) => !signedSet.has(signedKey(s.leadId, s.side))
-    );
+    const nextSlot = slots.find((s) => {
+      const lead = leadById.get(s.leadId);
+      return !isLeadSigned(s.leadId, lead?.lead_type ?? "");
+    });
 
     if (!nextSlot) {
       return NextResponse.json({ signed: true });
@@ -91,28 +100,40 @@ export async function GET() {
       ? `${lead.first_name ?? ""} ${lead.last_name ?? ""}`.trim()
       : "";
 
-    const addressParts =
-      nextSlot.side === "sale"
-        ? [
-            lead?.selling_address_street,
-            lead?.selling_address_city,
-            lead?.selling_address_province,
-            lead?.selling_address_postal_code,
-          ]
-        : [
-            lead?.address_street,
-            lead?.address_city,
-            lead?.address_province,
-            lead?.address_postal_code,
-          ];
+    const purchaseAddress = [
+      lead?.address_street,
+      lead?.address_city,
+      lead?.address_province,
+      lead?.address_postal_code,
+    ]
+      .filter(Boolean)
+      .join(", ");
 
-    const propertyAddress = addressParts.filter(Boolean).join(", ");
+    const saleAddress = [
+      lead?.selling_address_street,
+      lead?.selling_address_city,
+      lead?.selling_address_province,
+      lead?.selling_address_postal_code,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+    const isPS = lead?.lead_type === PURCHASE_AND_SALE;
+
+    // For backward compatibility with single-side leads, keep `property_address`
+    // populated with the relevant address. P&S leads also receive structured
+    // purchase_address + sale_address so the UI can render both.
+    const propertyAddress = isPS
+      ? [purchaseAddress, saleAddress].filter(Boolean).join(" / ")
+      : purchaseAddress;
 
     return NextResponse.json({
       signed: false,
       full_name: fullName,
       signed_date: new Date().toISOString().split("T")[0],
       property_address: propertyAddress,
+      purchase_address: isPS ? purchaseAddress : null,
+      sale_address: isPS ? saleAddress : null,
       lead_type: lead?.lead_type ?? "",
       side: nextSlot.side,
       retainer_current: signedCount + 1,

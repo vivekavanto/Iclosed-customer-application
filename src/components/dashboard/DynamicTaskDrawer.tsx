@@ -526,6 +526,16 @@ export default function DynamicTaskDrawer({
           });
           setValues(preValues);
           setExistingFiles(preFiles);
+
+          // For Upload Identification, auto-expand the manual upload panel
+          // when there are already saved files so they show as "Previously submitted"
+          // without the user having to click into the section.
+          if (
+            taskTitle.toLowerCase().includes("upload identification") &&
+            Object.keys(preFiles).length > 0
+          ) {
+            setManualUploadOpen(true);
+          }
         }
       })
       .catch(() => setGlobalError("Failed to load form fields."))
@@ -744,7 +754,47 @@ export default function DynamicTaskDrawer({
     setGlobalError(null);
 
     try {
-      // Save text/select/textarea responses without validation
+      // Merge any in-memory files from manual picker + camera flow.
+      // Camera files take precedence (latest capture wins).
+      const activeFiles: Record<string, File> = { ...files, ...cameraFiles };
+
+      // ── 1. Upload any new in-memory files to blob storage ──
+      const fileResponses: Array<{
+        field_id: string;
+        field_label: string;
+        field_type: string;
+        file_url: string;
+        file_name: string;
+      }> = [];
+
+      for (const field of fields.filter((f) => f.field_type === "file")) {
+        const file = activeFiles[field.id];
+        if (!file) continue;
+
+        const cfg = getFileConfig(field.options);
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("lead_id", leadId ?? "unknown");
+        fd.append("doc_type", cfg.doc_type);
+
+        const res = await fetch("/api/uploadblobstorage", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!data.success)
+          throw new Error(`Upload failed for "${field.label}": ${data.error}`);
+
+        fileResponses.push({
+          field_id: field.id,
+          field_label: field.label,
+          field_type: "file",
+          file_url: data.url ?? data.file_url,
+          file_name: file.name,
+        });
+      }
+
+      // ── 2. Text/select/textarea responses (skip empty so draft can be partial) ──
       const textResponses = fields
         .filter((f) => f.field_type !== "file" && f.field_type !== "checkbox")
         .filter((f) => values[f.id]?.trim())
@@ -755,8 +805,9 @@ export default function DynamicTaskDrawer({
           value: values[f.id] ?? "",
         }));
 
-      // Keep existing file responses
+      // ── 3. Keep existing file responses that weren't replaced this session ──
       const existingFileResponses = Object.entries(existingFiles)
+        .filter(([fieldId]) => !activeFiles[fieldId])
         .map(([fieldId, info]) => {
           const field = fields.find((f) => f.id === fieldId);
           return {
@@ -768,7 +819,11 @@ export default function DynamicTaskDrawer({
           };
         });
 
-      const allResponses = [...textResponses, ...existingFileResponses];
+      const allResponses = [
+        ...textResponses,
+        ...fileResponses,
+        ...existingFileResponses,
+      ];
 
       if (allResponses.length > 0) {
         const res = await fetch("/api/task-responses", {
@@ -802,7 +857,7 @@ export default function DynamicTaskDrawer({
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
   const isMortgageTask = taskTitle.toLowerCase().includes("status of mortgage");
-  const hasDraftOption = isPersonalInfoTask || isMortgageTask;
+  const hasDraftOption = isPersonalInfoTask || isMortgageTask || isUploadIdTask;
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {
@@ -1607,7 +1662,7 @@ export default function DynamicTaskDrawer({
                   }}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
-                  Submit Information
+                  {isUploadIdTask ? "Save & Continue" : "Submit Information"}
                 </Button>
               </>
             ) : (
