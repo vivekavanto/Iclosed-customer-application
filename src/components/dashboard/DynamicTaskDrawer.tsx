@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
+import { upload } from "@vercel/blob/client";
 import {
   X,
   Upload,
@@ -661,24 +662,44 @@ export default function DynamicTaskDrawer({
         if (!file) continue; // no new file for this slot
 
         const cfg = getFileConfig(field.options);
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("lead_id", leadId ?? "unknown");
-        fd.append("doc_type", cfg.doc_type);
+        const safeLeadId = leadId ?? "unknown";
 
-        const res = await fetch("/api/uploadblobstorage", {
+        // Direct browser-to-Vercel-Blob upload to bypass the 4.5 MB
+        // serverless function body limit (FUNCTION_PAYLOAD_TOO_LARGE).
+        const blob = await upload(
+          `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
+          file,
+          {
+            access: "public",
+            handleUploadUrl: "/api/blob/upload",
+            clientPayload: JSON.stringify({
+              lead_id: safeLeadId,
+              doc_type: cfg.doc_type,
+            }),
+          }
+        );
+
+        const metaRes = await fetch("/api/blob/save-doc-metadata", {
           method: "POST",
-          body: fd,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lead_id: safeLeadId,
+            doc_type: cfg.doc_type,
+            file_name: file.name,
+            file_url: blob.url,
+          }),
         });
-        const data = await res.json();
-        if (!data.success)
-          throw new Error(`Upload failed for "${field.label}": ${data.error}`);
+        const metaData = await metaRes.json();
+        if (!metaData.success)
+          throw new Error(
+            `Upload failed for "${field.label}": ${metaData.error}`
+          );
 
         fileResponses.push({
           field_id: field.id,
           field_label: field.label,
           field_type: "file",
-          file_url: data.url ?? data.file_url,
+          file_url: blob.url,
           file_name: file.name,
         });
       }
@@ -772,24 +793,44 @@ export default function DynamicTaskDrawer({
         if (!file) continue;
 
         const cfg = getFileConfig(field.options);
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("lead_id", leadId ?? "unknown");
-        fd.append("doc_type", cfg.doc_type);
+        const safeLeadId = leadId ?? "unknown";
 
-        const res = await fetch("/api/uploadblobstorage", {
+        // Direct browser-to-Vercel-Blob upload to bypass the 4.5 MB
+        // serverless function body limit (FUNCTION_PAYLOAD_TOO_LARGE).
+        const blob = await upload(
+          `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
+          file,
+          {
+            access: "public",
+            handleUploadUrl: "/api/blob/upload",
+            clientPayload: JSON.stringify({
+              lead_id: safeLeadId,
+              doc_type: cfg.doc_type,
+            }),
+          }
+        );
+
+        const metaRes = await fetch("/api/blob/save-doc-metadata", {
           method: "POST",
-          body: fd,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lead_id: safeLeadId,
+            doc_type: cfg.doc_type,
+            file_name: file.name,
+            file_url: blob.url,
+          }),
         });
-        const data = await res.json();
-        if (!data.success)
-          throw new Error(`Upload failed for "${field.label}": ${data.error}`);
+        const metaData = await metaRes.json();
+        if (!metaData.success)
+          throw new Error(
+            `Upload failed for "${field.label}": ${metaData.error}`
+          );
 
         fileResponses.push({
           field_id: field.id,
           field_label: field.label,
           field_type: "file",
-          file_url: data.url ?? data.file_url,
+          file_url: blob.url,
           file_name: file.name,
         });
       }
