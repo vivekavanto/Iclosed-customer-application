@@ -209,8 +209,8 @@ function FileSlot({
     const allowed = cfg.accept.split(",").map((s) => s.trim());
     if (!allowed.includes(ext))
       return `Invalid file type. Only ${cfg.accept.replace(/\./g, "").toUpperCase()} files are allowed.`;
-    if (f.size > cfg.max_mb * 1024 * 1024)
-      return `File size (${(f.size / 1024 / 1024).toFixed(1)}MB) exceeds the ${cfg.max_mb}MB limit.`;
+    if (f.size > cfg.max_mb * 1000 * 1000)
+      return `File size (${(f.size / 1000 / 1000).toFixed(1)}MB) exceeds the ${cfg.max_mb}MB limit.`;
     return null;
   }
 
@@ -265,7 +265,9 @@ function FileSlot({
             {file.name}
           </p>
           <p className="text-xs text-gray-400">
-            {(file.size / 1024 / 1024).toFixed(1)} MB
+            {file.size < 1000 * 1000
+              ? `${(file.size / 1000).toFixed(1)} KB`
+              : `${(file.size / 1000 / 1000).toFixed(2)} MB`}
           </p>
         </div>
         <button
