@@ -387,9 +387,6 @@ export default function BlogDetails() {
 
               {/* Badge row */}
               <div className="mb-5 flex flex-wrap items-center gap-2.5">
-                <span className="rounded-full border border-red-100 bg-red-50 px-4 py-1 text-[10px] font-bold uppercase tracking-widest text-[#C10007]">
-                  {post.status}
-                </span>
                 {post.category && (
                   <span className="rounded-full border border-gray-100 bg-gray-50 px-4 py-1 text-[10px] font-bold uppercase tracking-widest text-gray-500">
                     {post.category}

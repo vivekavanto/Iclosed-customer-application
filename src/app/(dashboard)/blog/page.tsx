@@ -42,7 +42,7 @@ const blogPosts = [
     excerpt:
       "Clarify the differences between a legal deed and a mortgage and what each means for your property ownership.",
     date: "February 10, 2026",
-    status: "published" ,
+    status: "draft" ,
     readTime: "6 min read",
     image: "/blog1.png",
   },
@@ -69,7 +69,29 @@ const blogPosts = [
 ];
 
 export default function Blog() {
-  const [featured, ...rest] = blogPosts;
+  const publishedPosts = blogPosts.filter((post) => post.status === "published");
+  const [featured, ...rest] = publishedPosts;
+
+  if (!featured) {
+    return (
+      <div className="min-h-screen bg-[#fdfcfc]">
+        <main className="mx-auto max-w-7xl py-5">
+          <div className="mb-12 text-center">
+            <div className="mb-3 flex items-center justify-center gap-3">
+              <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C10007]/30" />
+              <p className="text-[11px] font-bold uppercase tracking-[0.26em] text-[#C10007]">
+                Blog management
+              </p>
+              <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C10007]/30" />
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
+              No published articles yet
+            </h2>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
@@ -113,9 +135,6 @@ export default function Blog() {
               <div className="flex flex-1 flex-col justify-center px-7 py-8 sm:px-10 lg:px-14 lg:py-12">
 
                 <div className="mb-5 flex flex-wrap items-center gap-2.5">
-                  <span className="rounded-full border border-red-100 bg-red-50 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#C10007]">
-                    {featured.status}
-                  </span>
                   <span className="text-xs font-medium text-gray-400">
                     {featured.readTime}
                   </span>
@@ -168,9 +187,6 @@ export default function Blog() {
 
                   {/* Meta */}
                   <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#C10007]">
-                      {post.status}
-                    </span>
                     <span className="text-xs font-medium text-gray-400">
                       {post.readTime}
                     </span>

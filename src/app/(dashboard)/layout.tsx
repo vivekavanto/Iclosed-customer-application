@@ -3,23 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import {
-  Menu,
-  X,
-  LogOut,
-  LayoutDashboard,
-  FileText,
-  Info,
-  BookOpen,
-} from "lucide-react";
+import { Menu, X, LogOut, LayoutDashboard, BookOpen } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
 // import Footer from "@/components/layout/Footer";
 
 const navLinks = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Documents", href: "/documents", icon: FileText },
-  { label: "Details", href: "/details", icon: Info },
   { label: "Blog", href: "/blog", icon: BookOpen },
 ];
 
@@ -29,7 +19,10 @@ const navLinks = [
 
 function IClosedLogo() {
   return (
-    <Link href="/" className="flex items-center select-none flex-shrink-0">
+    <Link
+      href="/dashboard"
+      className="flex items-center select-none flex-shrink-0"
+    >
       <span
         className="text-[var(--color-primary)] font-bold italic text-xl leading-none"
         style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
