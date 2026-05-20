@@ -227,17 +227,39 @@ export async function POST(req: Request) {
         { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN! }
       );
 
-      // 3. Save to lead_corporate_docs (one row per signed retainer)
-      await supabaseAdmin.from("lead_corporate_docs").insert({
-        lead_id: leadId,
-        doc_type: "retainer_agreement",
-        file_name:
-          side === "sale"
-            ? "retainer-agreement-sale.pdf"
-            : side === "purchase"
-              ? "retainer-agreement-purchase.pdf"
-              : "retainer-agreement.pdf",
-        file_url: blob.url,
+      // 3. Save to lead_corporate_docs (one row per signed retainer).
+      //    `is_identification: false` mirrors what the other inserters into
+      //    this table pass (uploadblobstorage, save-aps-metadata) — if the
+      //    column is NOT NULL in the schema, omitting it silently fails the
+      //    insert and the PDF row never appears.
+      //    Errors here MUST be checked: an un-checked insert error is the
+      //    reason no retainer PDFs were appearing in the table even though
+      //    blob upload succeeded.
+      const { error: docInsertErr } = await supabaseAdmin
+        .from("lead_corporate_docs")
+        .insert({
+          lead_id: leadId,
+          doc_type: "retainer_agreement",
+          file_name:
+            side === "sale"
+              ? "retainer-agreement-sale.pdf"
+              : side === "purchase"
+                ? "retainer-agreement-purchase.pdf"
+                : "retainer-agreement.pdf",
+          file_url: blob.url,
+          is_identification: false,
+        });
+
+      if (docInsertErr) {
+        throw new Error(
+          `lead_corporate_docs insert failed: ${docInsertErr.message}`,
+        );
+      }
+
+      console.log("[Retainer Sign] PDF row inserted in lead_corporate_docs:", {
+        leadId,
+        side: side ?? "main",
+        url: blob.url,
       });
 
       // 4. Email PDF to client
