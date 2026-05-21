@@ -99,6 +99,10 @@ interface SelectedFile {
   isDuplicate: boolean;
   duplicateReason: string | null;
   fromCamera: boolean;
+  // SHA-256 hash of the file's bytes. Used to detect *exact* duplicate uploads
+  // (e.g. the same passport image uploaded twice) without flagging two
+  // different files that happen to share a filename or byte size.
+  contentHash: string | null;
 }
 
 interface ExistingDoc {
@@ -167,6 +171,20 @@ function isImageFile(f: File) {
 
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// Compute a SHA-256 content hash for the given file. Two files with the same
+// hash are bit-for-bit identical; two different files (even with the same name
+// and byte size) will produce different hashes.
+async function computeFileContentHash(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, "0");
+  }
+  return hex;
 }
 
 async function computeImageSharpnessScore(dataUrl: string): Promise<number> {
@@ -370,7 +388,7 @@ function AcceptableDocumentsSection() {
         </div>
 
         <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
-          <AlertCircle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <AlertCircle size={13} className="text-[#C10007] flex-shrink-0 mt-0.5" />
           <p className="text-xs text-gray-500">
             <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid
             government ID for these purposes.
@@ -649,68 +667,50 @@ export default function UploadIdentificationDrawer({
     return "other";
   }
 
-  // Recompute duplicate flags for all files based on file-level and document-level matches
+  // Recompute duplicate flags for all files — duplicates are detected ONLY when
+  // the exact same FILE is uploaded more than once (bit-for-bit identical
+  // content, verified via SHA-256 hash). Two different files classified as the
+  // same document type (e.g. two different passport scans, one per person) are
+  // NEVER treated as duplicates.
+  //
+  // While a file's hash is still being computed, we conservatively skip the
+  // check for that file — it'll be re-evaluated automatically once the hash is
+  // available.
   function recomputeDuplicates(files: SelectedFile[]): SelectedFile[] {
     return files.map((file, index) => {
       let isDuplicate = false;
       let duplicateReason: string | null = null;
-      
-      // Check file-level duplicates (same file name and size) against earlier files
-      for (let i = 0; i < index; i++) {
-        const other = files[i];
-        if (other.file.name === file.file.name && other.file.size === file.file.size) {
-          isDuplicate = true;
-          duplicateReason = "This file has already been uploaded. Are you sure you want to upload it again?";
-          break;
-        }
-      }
-      
-      // Check document-level duplicates (same document type + side) against earlier files
-      if (!isDuplicate && file.detection?.isIdentification && file.detection.documentType) {
-        const fileType = file.detection.documentType;
-        const fileSide = file.detection.side;
-        
+
+      if (file.contentHash) {
         for (let i = 0; i < index; i++) {
           const other = files[i];
-          if (other.detection?.isIdentification && other.detection.documentType) {
-            const otherType = other.detection.documentType;
-            const otherSide = other.detection.side;
-            
-            // Same document type and same side = duplicate
-            if (otherType === fileType && otherSide === fileSide) {
-              isDuplicate = true;
-              duplicateReason = `This ${fileType}${fileSide !== "unknown" && file.detection.sideRequirement !== "single-sided" ? ` (${fileSide})` : ""} has already been uploaded. Are you sure you want to upload it again?`;
-              break;
-            }
-            // Same document type with front-and-back in either = duplicate
-            if (otherType === fileType && (otherSide === "front-and-back" || fileSide === "front-and-back")) {
-              isDuplicate = true;
-              duplicateReason = `This ${fileType} has already been uploaded. Are you sure you want to upload it again?`;
-              break;
-            }
+          if (other.contentHash && other.contentHash === file.contentHash) {
+            isDuplicate = true;
+            duplicateReason = "This exact file has already been uploaded.";
+            break;
           }
         }
       }
-      
-      // Also check against existing (previously uploaded) documents
-      if (!isDuplicate && file.detection?.isIdentification && file.detection.documentType) {
-        const fileType = file.detection.documentType;
-        const fileTypeLower = fileType.toLowerCase();
-        
-        for (const doc of existing) {
-          if (doc.custom_type) {
-            const existingType = doc.custom_type.toLowerCase();
-            if (existingType.includes(fileTypeLower) || fileTypeLower.includes(existingType.split("_")[0])) {
-              isDuplicate = true;
-              duplicateReason = `A ${fileType} was previously uploaded. Are you sure you want to upload another?`;
-              break;
-            }
-          }
-        }
-      }
-      
+
       return { ...file, isDuplicate, duplicateReason };
     });
+  }
+
+  // Compute a content hash for the given file, then re-run duplicate detection
+  // across the current selection. Fire-and-forget from the caller.
+  async function attachContentHash(id: string, file: File) {
+    try {
+      const hash = await computeFileContentHash(file);
+      setSelected((prev) => {
+        const updated = prev.map((s) =>
+          s.id === id ? { ...s, contentHash: hash } : s,
+        );
+        return recomputeDuplicates(updated);
+      });
+    } catch {
+      /* If hashing fails we leave contentHash null — the file simply won't be
+         flagged as a duplicate, which is the safer default. */
+    }
   }
 
   async function detectIdentification(id: string, file: File) {
@@ -805,6 +805,7 @@ export default function UploadIdentificationDrawer({
         isDuplicate: false,
         duplicateReason: null,
         fromCamera: false,
+        contentHash: null,
       };
       additions.push(nextItem);
       working.push(nextItem);
@@ -812,15 +813,17 @@ export default function UploadIdentificationDrawer({
     }
 
     if (additions.length > 0) {
-      // Add files and immediately compute duplicates for file-level matches
       setSelected((prev) => recomputeDuplicates([...prev, ...additions]));
     }
 
     setGlobalError(null);
 
-    // Kick off Gemini detection for each newly added file (fire-and-forget).
+    // Kick off Gemini detection AND SHA-256 hashing for each newly added file
+    // (fire-and-forget). Duplicate flags update automatically once each hash
+    // resolves.
     queuedForDetection.forEach(({ id, file }) => {
       void detectIdentification(id, file);
+      void attachContentHash(id, file);
     });
   }
 
@@ -1130,22 +1133,23 @@ export default function UploadIdentificationDrawer({
         isDuplicate: false,
         duplicateReason: null,
         fromCamera: true,
+        contentHash: null,
       };
       newFiles.push(newEntry);
       queuedForDetection.push({ id, file });
     }
 
     if (newFiles.length > 0) {
-      // Add files and compute duplicates for file-level matches
       setSelected((prev) => recomputeDuplicates([...prev, ...newFiles]));
     }
 
-    // Close camera flow and return to main upload view
     closeCameraFlow();
 
-    // Run AI detection on each captured image
+    // Run AI detection AND SHA-256 hashing on each captured image. Duplicate
+    // flags will update automatically once each hash resolves.
     queuedForDetection.forEach(({ id, file }) => {
       void detectIdentification(id, file);
+      void attachContentHash(id, file);
     });
   }
 
@@ -1166,12 +1170,8 @@ export default function UploadIdentificationDrawer({
       setGlobalError("Missing lead. Please refresh and try again.");
       return;
     }
-    if (hasDetectionFailures) {
-      setGlobalError("Please remove files that could not be identified as valid government IDs.");
-      return;
-    }
-    if (completeDocCount < 2) {
-      setGlobalError("Please upload at least 2 complete government IDs (front and back for each, or single-sided IDs).");
+    if (selected.length < 2) {
+      setGlobalError("Please upload at least 2 identification documents.");
       return;
     }
 
@@ -1245,15 +1245,10 @@ export default function UploadIdentificationDrawer({
       setGlobalError("Missing lead. Please refresh and try again.");
       return;
     }
-    if (hasDetectionFailures) {
-      setGlobalError("Please remove files that could not be identified as valid government IDs.");
+    if (selected.length < 2) {
+      setGlobalError("Please upload at least 2 identification documents.");
       return;
     }
-    if (completeDocCount < 2) {
-      setGlobalError("Please upload at least 2 complete government IDs (front and back for each, or single-sided IDs).");
-      return;
-    }
-    // Show confirmation modal
     setShowConfirmModal(true);
   }
 
@@ -1273,12 +1268,12 @@ export default function UploadIdentificationDrawer({
     }
 
     const validToSave = selected.filter(
-      (s) => !s.detecting && !s.detectionError && !s.isDuplicate,
+      (s) => !s.detecting && !s.isDuplicate,
     );
 
     if (validToSave.length === 0) {
       setGlobalError(
-        "No saveable documents — please wait for analysis to finish or remove invalid files.",
+        "No saveable documents — please wait for analysis to finish or remove duplicate files.",
       );
       return;
     }
@@ -1337,8 +1332,6 @@ export default function UploadIdentificationDrawer({
   }
 
   // ── Derived state ───────────────────────────────────────────────────────────
-
-  const totalCount = selected.length + existing.length;
 
   // Group detected documents by type to determine if both sides are present
   // Now supports multiple documents detected in a single file
@@ -1399,16 +1392,6 @@ export default function UploadIdentificationDrawer({
   const completeDocCount = docAnalysis.filter(d => d.complete).length;
   const incompleteDocCount = docAnalysis.filter(d => !d.complete).length;
 
-  // Set of document types that are complete across all files (for cross-file awareness)
-  const completeDocTypes = new Set(
-    docAnalysis.filter(d => d.complete).map(d => d.type)
-  );
-
-  // Check if we have valid identified documents
-  const validIdentifiedCount = selected.filter(
-    s => s.detection?.isIdentification && s.detection.documentType
-  ).length;
-
   // Get complete single-sided document types (like passports) to be lenient with their backs
   const completeSingleSidedTypes = new Set(
     docAnalysis
@@ -1460,17 +1443,14 @@ export default function UploadIdentificationDrawer({
   const hasExpiredDocs = expiredDocs.length > 0;
   const hasExpiringSoonDocs = expiringSoonDocs.length > 0;
 
-  // Need at least 2 complete documents to upload
-  const needsMoreDocs = completeDocCount < 2;
   const hasPendingDetection = selected.some(s => s.detecting);
-  
-  // Block upload if any ID is expired
+
+  // Allow upload as long as we have at least 2 files and analysis has finished.
+  // Invalid / expired / incomplete IDs are surfaced as warnings but do not block
+  // submission (e.g. the primary user uploading on behalf of their spouse).
   const canUpload =
-    selected.length > 0 && 
-    !uploading && 
-    !hasDetectionFailures && 
-    !hasExpiredDocs &&
-    completeDocCount >= 2 &&
+    selected.length >= 2 &&
+    !uploading &&
     !hasPendingDetection;
 
   return (
@@ -1705,31 +1685,32 @@ export default function UploadIdentificationDrawer({
               </h3>
               <ul className="space-y-2">
                 {selected.map((s) => {
-                  const hasError = s.detectionError || (s.detection && !s.detection.isIdentification);
+                  const hasError =
+                    !!s.detectionError ||
+                    (s.detection && !s.detection.isIdentification) ||
+                    s.detection?.expiryStatus === "expired" ||
+                    s.detection?.expiryStatus === "expiring_soon" ||
+                    s.isDuplicate;
                   const isDetected = s.detection?.isIdentification && s.detection.documentType;
-                  const showDuplicate = s.isDuplicate && isDetected;
+                  const showDuplicate = s.isDuplicate;
                   return (
                     <li
                       key={s.id}
                       className={[
                         "rounded-lg border bg-white",
-                        hasError ? "border-amber-200" : showDuplicate ? "border-amber-300" : "border-gray-200",
+                        hasError
+                          ? "border-red-300"
+                          : isDetected
+                            ? "border-green-200"
+                            : "border-gray-200",
                       ].join(" ")}
                     >
                       <div className="flex items-center gap-3 px-3 py-2.5">
                         <div className="flex items-center gap-1.5 flex-shrink-0">
                           {s.detecting ? (
                             <Loader2 size={14} className="animate-spin text-gray-400 flex-shrink-0" />
-                          ) : s.detectionError ? (
-                            <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
-                          ) : s.detection && !s.detection.isIdentification ? (
-                            <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
-                          ) : s.detection?.expiryStatus === "expired" ? (
-                            <AlertCircle size={14} className="text-red-500 flex-shrink-0" />
-                          ) : showDuplicate ? (
-                            <AlertCircle size={14} className="text-amber-500 flex-shrink-0" />
-                          ) : s.detection?.expiryStatus === "expiring_soon" ? (
-                            <Clock size={14} className="text-amber-500 flex-shrink-0" />
+                          ) : hasError ? (
+                            <AlertCircle size={14} className="text-[#C10007] flex-shrink-0" />
                           ) : s.detection?.isIdentification ? (
                             <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
                           ) : (
@@ -1754,7 +1735,7 @@ export default function UploadIdentificationDrawer({
                           <p className="text-xs font-medium text-gray-800 truncate">{s.file.name}</p>
                           {isDetected ? (
                             <div className="flex flex-col gap-0.5 mt-0.5">
-                              <p className={`text-[11px] font-medium truncate ${showDuplicate ? "text-amber-600" : "text-green-600"}`}>
+                              <p className={`text-[11px] font-medium truncate ${hasError ? "text-[#C10007]" : "text-green-600"}`}>
                                 {s.detection!.documentType}
                                 {s.detection!.sideRequirement === "single-sided"
                                   ? ""
@@ -1765,30 +1746,54 @@ export default function UploadIdentificationDrawer({
                                       : ""}
                               </p>
                               {showDuplicate && (
-                                <div className="flex items-center gap-1 text-[10px] text-amber-600 font-medium" title={s.duplicateReason ?? undefined}>
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
                                   <AlertCircle size={10} />
-                                  <span>Duplicate detected</span>
+                                  <span>Duplicate file</span>
                                 </div>
                               )}
                               {s.detection!.expiryStatus === "expired" && (
-                                <div className="flex items-center gap-1 text-[10px] text-red-600 font-medium">
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium">
                                   <Clock size={10} />
                                   <span>Expired{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
                                 </div>
                               )}
                               {s.detection!.expiryStatus === "expiring_soon" && (
-                                <div className="flex items-center gap-1 text-[10px] text-amber-600 font-medium">
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium">
                                   <Clock size={10} />
                                   <span>Expiring soon{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
                                 </div>
                               )}
                             </div>
                           ) : s.detectionError ? (
-                            <p className="text-[11px] font-medium text-red-600 mt-0.5">Unable to process</p>
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] font-medium text-[#C10007]">Unable to process</p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                            </div>
                           ) : s.detection && !s.detection.isIdentification ? (
-                            <p className="text-[11px] font-medium text-red-600 mt-0.5">Invalid ID</p>
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] font-medium text-[#C10007]">Invalid ID</p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                            </div>
                           ) : (
-                            <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                         {/* Reclassify button - opens modal */}
@@ -1830,7 +1835,7 @@ export default function UploadIdentificationDrawer({
                 "rounded-xl border overflow-hidden bg-white",
                 completeDocCount >= 2
                   ? "border-green-200"
-                  : "border-gray-200 border-t-4 border-t-amber-400",
+                  : "border-red-300 border-t-4 border-t-[#C10007]",
               ].join(" ")}
             >
               {/* Status Header */}
@@ -1852,18 +1857,18 @@ export default function UploadIdentificationDrawer({
                   </>
                 ) : (
                   <>
-                    <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-[#C10007] flex items-center justify-center flex-shrink-0">
                       <AlertCircle size={18} className="text-white" strokeWidth={2.5} />
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-900">
-                        {completeDocCount === 0 
-                          ? "2 Government IDs Required" 
-                          : "1 More Government ID Required"}
+                        {completeDocCount === 0
+                          ? "2 Government IDs Recommended"
+                          : "1 More Government ID Recommended"}
                       </p>
                       <p className="text-xs text-gray-900">
-                        {completeDocCount}/2 complete
-                        {incompleteDocCount > 0 && " — see what's missing below"}
+                        {completeDocCount}/2 verified
+                        {incompleteDocCount > 0 && " — see details below"}
                       </p>
                     </div>
                   </>
@@ -1878,16 +1883,16 @@ export default function UploadIdentificationDrawer({
                       {doc.complete ? (
                         <CheckCircle2 size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
                       ) : (
-                        <AlertCircle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                        <AlertCircle size={14} className="text-[#C10007] flex-shrink-0 mt-0.5" />
                       )}
                       <div className="min-w-0 flex-1 text-gray-900">
                         <span className="font-semibold">{doc.type}</span>
                         <span>
-                          {doc.complete 
-                            ? doc.isSingleSided 
-                              ? " — verified" 
-                              : doc.hasBothSides 
-                                ? " — front & back in one image" 
+                          {doc.complete
+                            ? doc.isSingleSided
+                              ? " — verified"
+                              : doc.hasBothSides
+                                ? " — front & back in one image"
                                 : " — both sides verified"
                             : ` — missing ${!doc.hasFront && !doc.hasBack ? "front & back" : !doc.hasFront ? "front" : "back"}`
                           }
@@ -1903,10 +1908,10 @@ export default function UploadIdentificationDrawer({
                 <div className="px-4 py-2.5 bg-white border-t border-gray-100">
                   <p className="text-xs text-gray-900">
                     {incompleteDocCount > 0 && completeDocCount < 2
-                      ? "Upload the missing side, or add a different government ID."
+                      ? "You can still submit — upload the missing side or a different ID for best results."
                       : completeDocCount === 0
-                        ? "Upload front and back of each ID, or single-sided IDs like a passport."
-                        : "Upload one more government ID to complete verification."
+                        ? "You can still submit — for best results upload front and back of each ID, or single-sided IDs like a passport."
+                        : "You can still submit — upload one more government ID to complete verification."
                     }
                   </p>
                 </div>
@@ -1916,18 +1921,18 @@ export default function UploadIdentificationDrawer({
 
           {/* Detection errors callout */}
           {selected.length > 0 && !hasPendingDetection && hasDetectionFailures && (
-            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-amber-600" />
+            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-[#C10007]" />
               <span>
-              Some files couldn’t be identified as valid government IDs. Remove them and try again.
+                Some files couldn&rsquo;t be identified as valid government IDs. You can still submit, but please double-check these documents.
               </span>
             </div>
           )}
 
           {/* Expiring soon warning */}
           {selected.length > 0 && !hasPendingDetection && !hasExpiredDocs && hasExpiringSoonDocs && (
-            <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-amber-600" />
+            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-[#C10007]" />
               <div>
                 <span className="font-semibold">ID expiring soon.</span>{" "}
                 <span>
@@ -1986,13 +1991,9 @@ export default function UploadIdentificationDrawer({
               ? "Upload Documents"
               : hasPendingDetection
                 ? "Analyzing..."
-                : hasDetectionFailures || hasExpiredDocs
-                  ? "Remove Invalid IDs"
-                  : completeDocCount === 0
-                    ? "Upload 2 Valid IDs"
-                    : completeDocCount === 1
-                      ? "Upload 1 More ID"
-                      : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
+                : selected.length < 2
+                  ? "Add at Least 2 Documents"
+                  : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
           </Button>
         </div>
       </div>
@@ -2185,16 +2186,16 @@ export default function UploadIdentificationDrawer({
           >
             <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
               {/* Warning banner */}
-              <div className="bg-amber-50 border-b border-amber-100 px-5 py-4">
+              <div className="bg-[#FEF2F2] border-b border-red-200 px-5 py-4">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0 mt-0.5">
-                    <AlertCircle size={20} className="text-amber-600" strokeWidth={2} />
+                    <AlertCircle size={20} className="text-[#C10007]" strokeWidth={2} />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-amber-800">
+                    <p className="text-sm font-bold text-[#C10007]">
                       ID cannot be changed after submission.
                     </p>
-                    <p className="text-sm text-amber-700 mt-1 leading-relaxed">
+                    <p className="text-sm text-[#C10007]/90 mt-1 leading-relaxed">
                       Please ensure it is accurate before submitting — otherwise you&apos;ll have to contact a law clerk to change the info.
                     </p>
                   </div>

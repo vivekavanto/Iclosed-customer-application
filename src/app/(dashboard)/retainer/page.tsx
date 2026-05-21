@@ -319,15 +319,15 @@ export default function RetainerPage() {
             </div>
 
             <Input
-              label="Enter your full name"
+              label="Full name"
               hint="(Signature)"
               required
-              placeholder="Type your full name"
+              placeholder="Your full name"
               value={signature}
-              onChange={(e) => {
-                setSignature(e.target.value);
-                if (errors.signature) setErrors((prev) => ({ ...prev, signature: undefined }));
-              }}
+              readOnly
+              disabled
+              aria-readonly="true"
+              className="cursor-not-allowed"
               error={errors.signature}
             />
           </div>
@@ -356,7 +356,7 @@ export default function RetainerPage() {
             , for more details on terms of service, and user agreement.
           </p>
           <Button type="submit" size="md" loading={loading}>
-            Submit
+            I agree
           </Button>
         </div>
       </form>
