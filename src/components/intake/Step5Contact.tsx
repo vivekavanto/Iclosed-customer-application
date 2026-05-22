@@ -26,13 +26,19 @@ interface CoPerson {
     role: "purchaser" | "seller";
 }
 
-interface CoPersonCard {
+export interface CoPersonCard {
     id: string;
     fullName: string;
     email: string;
     phone: string;
     errors: { fullName?: string; email?: string; phone?: string };
     touched: { fullName?: boolean; email?: boolean; phone?: boolean };
+}
+
+export interface ContactInfo {
+    fullName: string;
+    email: string;
+    phone: string;
 }
 
 const makeEmptyCard = (): CoPersonCard => ({
@@ -55,6 +61,18 @@ interface Step5ContactProps {
     initialData?: { fullName: string; email: string; phone: string };
     /** Determines which co-person sections render: buying→Co-Purchaser, selling→Co-Seller, both→both sections */
     selectedClosingOption?: string | null;
+    // Lifted state — owned by the intake page so values persist when the user
+    // navigates Back to an earlier step and returns.
+    contactInfo: ContactInfo;
+    setContactInfo: React.Dispatch<React.SetStateAction<ContactInfo>>;
+    coPurchaserCards: CoPersonCard[];
+    setCoPurchaserCards: React.Dispatch<React.SetStateAction<CoPersonCard[]>>;
+    coSellerCards: CoPersonCard[];
+    setCoSellerCards: React.Dispatch<React.SetStateAction<CoPersonCard[]>>;
+    referralSource: string;
+    setReferralSource: React.Dispatch<React.SetStateAction<string>>;
+    referralOther: string;
+    setReferralOther: React.Dispatch<React.SetStateAction<string>>;
 }
 
 export default function Step5Contact({
@@ -66,6 +84,16 @@ export default function Step5Contact({
     onComplete,
     initialData,
     selectedClosingOption,
+    contactInfo,
+    setContactInfo,
+    coPurchaserCards,
+    setCoPurchaserCards,
+    coSellerCards,
+    setCoSellerCards,
+    referralSource,
+    setReferralSource,
+    referralOther,
+    setReferralOther,
 }: Step5ContactProps) {
     const isBoth = selectedClosingOption === "both";
     const isSelling = selectedClosingOption === "selling";
@@ -73,10 +101,11 @@ export default function Step5Contact({
     const showSellerStack = isBoth || isSelling;
     const { error: toastError } = useToast();
 
-    // ── Co-person state ──
+    // Alias lifted props back to the local names used throughout the JSX.
+    const formData = contactInfo;
+    const setFormData = setContactInfo;
+
     const [submitting, setSubmitting] = React.useState(false);
-    const [coPurchaserCards, setCoPurchaserCards] = React.useState<CoPersonCard[]>(() => []);
-    const [coSellerCards, setCoSellerCards] = React.useState<CoPersonCard[]>(() => []);
 
     const formatCoPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -155,31 +184,9 @@ export default function Step5Contact({
         "Repeat client",
         "Other",
     ];
-    const [referralSource, setReferralSource] = React.useState("");
-    const [referralOther, setReferralOther] = React.useState("");
-
     const [isValid, setIsValid] = React.useState(false);
-    const [formData, setFormData] = React.useState({
-        fullName: initialData?.fullName ?? "",
-        email: initialData?.email ?? "",
-        phone: initialData?.phone ?? "",
-    });
 
     const isLoggedIn = !!initialData?.email;
-    const initialDataAppliedRef = React.useRef(false);
-
-    // Sync pre-fill when auth data loads asynchronously — but only ONCE so
-    // we never overwrite values the user has already typed.
-    React.useEffect(() => {
-        if (initialData && !initialDataAppliedRef.current) {
-            setFormData({
-                fullName: initialData.fullName,
-                email: initialData.email,
-                phone: initialData.phone,
-            });
-            initialDataAppliedRef.current = true;
-        }
-    }, [initialData?.fullName, initialData?.email, initialData?.phone]);
 
     const [errors, setErrors] = React.useState<{
         fullName?: string;
@@ -255,6 +262,54 @@ export default function Step5Contact({
             if (showPurchaserStack) setCoPurchaserCards(updatedPurchaserCards);
             if (showSellerStack) setCoSellerCards(updatedSellerCards);
             toastError("Please complete all co-person information or remove empty cards.");
+            return;
+        }
+
+        // Block submission when a co-person shares an email with the primary
+        // contact or with another co-person — same email = same person.
+        const normalizeEmail = (e: string) => e.trim().toLowerCase();
+        const primaryEmail = normalizeEmail(formData.email);
+        const purchaserDupIds = new Map<string, string>();
+        const sellerDupIds = new Map<string, string>();
+        const seenEmails = new Map<string, "primary" | "purchaser" | "seller">();
+        seenEmails.set(primaryEmail, "primary");
+
+        const activeStacks: Array<{ which: "purchaser" | "seller"; cards: CoPersonCard[] }> = [
+            ...(showPurchaserStack ? [{ which: "purchaser" as const, cards: coPurchaserCards }] : []),
+            ...(showSellerStack ? [{ which: "seller" as const, cards: coSellerCards }] : []),
+        ];
+
+        for (const { which, cards } of activeStacks) {
+            for (const card of cards) {
+                if (isCardEmpty(card)) continue;
+                const email = normalizeEmail(card.email);
+                const conflict = seenEmails.get(email);
+                if (conflict) {
+                    const msg =
+                        conflict === "primary"
+                            ? "Cannot match the primary contact's email."
+                            : "This email is already used by another co-person.";
+                    (which === "purchaser" ? purchaserDupIds : sellerDupIds).set(card.id, msg);
+                } else {
+                    seenEmails.set(email, which);
+                }
+            }
+        }
+
+        if (purchaserDupIds.size > 0 || sellerDupIds.size > 0) {
+            const applyDupErrors = (dupIds: Map<string, string>) => (prev: CoPersonCard[]) =>
+                prev.map(card => {
+                    const msg = dupIds.get(card.id);
+                    if (!msg) return card;
+                    return {
+                        ...card,
+                        errors: { ...card.errors, email: msg },
+                        touched: { ...card.touched, email: true },
+                    };
+                });
+            if (purchaserDupIds.size > 0) setCoPurchaserCards(applyDupErrors(purchaserDupIds));
+            if (sellerDupIds.size > 0) setCoSellerCards(applyDupErrors(sellerDupIds));
+            toastError("A co-purchaser or co-seller cannot be the same person as the primary contact.");
             return;
         }
 

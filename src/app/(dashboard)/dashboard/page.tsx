@@ -35,6 +35,7 @@ interface Task {
   document_url: string | null;
   milestone_id: string | null;
   side?: "purchase" | "sale" | null;
+  template_order_index?: number | null;
   milestones?: {
     id: string;
     title: string;
@@ -171,8 +172,20 @@ function AttentionCard({
   // Deduplicate tasks so no task title appears twice
   const uniqueTasks = deduplicateTasks(tasks);
 
-  // Rolling visibility: always show the first 3 incomplete tasks.
-  const allPending = uniqueTasks.filter((t) => !t.completed);
+  // Rolling visibility: always show the first 3 incomplete tasks, sorted by
+  // the per-task order configured on task_templates.order_index (the "task no."
+  // the team maintains in the admin panel). Tasks without a template (manual
+  // additions) fall to the end so they don't jump ahead of the configured
+  // workflow. Stable sort preserves the API's due-date order as the tiebreaker.
+  const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
+  const allPending = uniqueTasks
+    .filter((t) => !t.completed)
+    .slice()
+    .sort((a, b) => {
+      const ao = a.template_order_index ?? ORDER_FALLBACK;
+      const bo = b.template_order_index ?? ORDER_FALLBACK;
+      return ao - bo;
+    });
   const pending = allPending.slice(0, TASK_BATCH_SIZE);
 
   // Create a stable key from pending task IDs to use as dependency

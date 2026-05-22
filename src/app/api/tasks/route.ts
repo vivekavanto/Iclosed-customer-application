@@ -232,7 +232,7 @@ export async function GET(req: Request) {
       await Promise.all([
         supabaseAdmin
           .from("tasks")
-          .select("*")
+          .select("*, task_template:task_templates(order_index)")
           .in("deal_id", dealIds)
           .order("due_date", { ascending: true, nullsFirst: false }),
 
@@ -283,12 +283,20 @@ export async function GET(req: Request) {
     }
 
     // ─────────────────────────────────────────
-    // Attach milestone info to tasks
+    // Attach milestone info to tasks. Also flatten the joined
+    // task_template.order_index up to a top-level field so the dashboard can
+    // sort "Needs Your Attention" by the per-task order configured in the
+    // task_templates table.
     // ─────────────────────────────────────────
-    const enriched = (tasks ?? []).map((t: any) => ({
-      ...t,
-      milestones: t.milestone_id ? milestoneMap[t.milestone_id] ?? null : null,
-    }));
+    const enriched = (tasks ?? []).map((t: any) => {
+      const tpl = Array.isArray(t.task_template) ? t.task_template[0] : t.task_template;
+      const { task_template, ...rest } = t;
+      return {
+        ...rest,
+        milestones: t.milestone_id ? milestoneMap[t.milestone_id] ?? null : null,
+        template_order_index: tpl?.order_index ?? null,
+      };
+    });
 
     return NextResponse.json({
       success: true,

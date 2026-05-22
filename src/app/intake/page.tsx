@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Home, Briefcase, FileText } from "lucide-react";
 import HorizontalProgress, {
   Step,
@@ -11,7 +11,10 @@ import Modal from "@/components/ui/Modal";
 import { Step1 } from "@/components/intake/Step1";
 import Step2 from "@/components/intake/Step2";
 import Step4 from "@/components/intake/Step4";
-import Step5Contact from "@/components/intake/Step5Contact";
+import Step5Contact, {
+  CoPersonCard,
+  ContactInfo,
+} from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { useToast } from "@/components/ui/Toast";
@@ -53,6 +56,19 @@ export default function ServiceSelection() {
     phone: string;
   } | undefined>(undefined);
 
+  // Step 4 (Contact) state lives here so values survive when the user clicks
+  // Back to step 3 and returns. Step5Contact owns only its validation UI state.
+  const [contactInfo, setContactInfo] = useState<ContactInfo>({
+    fullName: "",
+    email: "",
+    phone: "",
+  });
+  const [coPurchaserCards, setCoPurchaserCards] = useState<CoPersonCard[]>([]);
+  const [coSellerCards, setCoSellerCards] = useState<CoPersonCard[]>([]);
+  const [referralSource, setReferralSource] = useState("");
+  const [referralOther, setReferralOther] = useState("");
+  const authPrefillAppliedRef = useRef(false);
+
   const router = useRouter();
   const { error: toastError } = useToast();
 
@@ -84,6 +100,21 @@ export default function ServiceSelection() {
     };
     loadAuthProfile();
   }, []);
+
+  // Prefill contact form from the signed-in profile exactly once per page
+  // load. Running this here (rather than inside Step5Contact) means the
+  // prefill doesn't re-fire if the user navigates Back and forward again,
+  // which would overwrite anything they had typed.
+  useEffect(() => {
+    if (authProfile && !authPrefillAppliedRef.current) {
+      setContactInfo({
+        fullName: authProfile.fullName,
+        email: authProfile.email,
+        phone: authProfile.phone,
+      });
+      authPrefillAppliedRef.current = true;
+    }
+  }, [authProfile]);
 
   const getStatus = (currentStep: number, stepId: number): StepStatus => {
     return currentStep === stepId
@@ -160,6 +191,12 @@ export default function ServiceSelection() {
       city: "",
       postalCode: "",
     });
+    setContactInfo({ fullName: "", email: "", phone: "" });
+    setCoPurchaserCards([]);
+    setCoSellerCards([]);
+    setReferralSource("");
+    setReferralOther("");
+    authPrefillAppliedRef.current = false;
   };
 
   return (
@@ -228,6 +265,16 @@ export default function ServiceSelection() {
             setShowSuccessModal={setShowSuccessModal}
             initialData={authProfile}
             selectedClosingOption={selectedClosingOption}
+            contactInfo={contactInfo}
+            setContactInfo={setContactInfo}
+            coPurchaserCards={coPurchaserCards}
+            setCoPurchaserCards={setCoPurchaserCards}
+            coSellerCards={coSellerCards}
+            setCoSellerCards={setCoSellerCards}
+            referralSource={referralSource}
+            setReferralSource={setReferralSource}
+            referralOther={referralOther}
+            setReferralOther={setReferralOther}
             onComplete={async (contactData) => {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
