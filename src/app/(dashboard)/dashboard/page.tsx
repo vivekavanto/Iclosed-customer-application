@@ -118,7 +118,10 @@ const statusConfig = {
 ════════════════════════════════════════════════════ */
 
 
-const TASK_BATCH_SIZE = 3;
+// Display order for the "Needs Your Attention" list is sourced from
+// task_templates.order_index (exposed on each task as template_order_index
+// by /api/tasks). The team can adjust the order from the admin panel without
+// a code change, so no hardcoded list lives in this file.
 
 // Deduplicate tasks by title — keep the incomplete one if both exist
 function deduplicateTasks(tasks: Task[]): Task[] {
@@ -172,11 +175,12 @@ function AttentionCard({
   // Deduplicate tasks so no task title appears twice
   const uniqueTasks = deduplicateTasks(tasks);
 
-  // Rolling visibility: always show the first 3 incomplete tasks, sorted by
-  // the per-task order configured on task_templates.order_index (the "task no."
-  // the team maintains in the admin panel). Tasks without a template (manual
-  // additions) fall to the end so they don't jump ahead of the configured
-  // workflow. Stable sort preserves the API's due-date order as the tiebreaker.
+  // Show ALL incomplete tasks, sorted by the per-task order configured on
+  // task_templates.order_index (the "task no." the team maintains in the
+  // admin panel). Tasks without a template (manual additions) fall to the
+  // end so they don't jump ahead of the configured workflow. Stable sort
+  // preserves the API's due-date order as the tiebreaker.
+  // Completed tasks naturally fall away because of the !completed filter.
   const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
   const allPending = uniqueTasks
     .filter((t) => !t.completed)
@@ -186,7 +190,10 @@ function AttentionCard({
       const bo = b.template_order_index ?? ORDER_FALLBACK;
       return ao - bo;
     });
-  const pending = allPending.slice(0, TASK_BATCH_SIZE);
+
+  // Previously we capped the visible list at TASK_BATCH_SIZE (3). We now
+  // render every pending task the backend returns.
+  const pending = allPending;
 
   // Create a stable key from pending task IDs to use as dependency
   const pendingIdsKey = pending.map((t) => t.id).join(",");
