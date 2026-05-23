@@ -56,13 +56,15 @@ export async function GET() {
 
     console.log(`[dashboardproperty] Leads after filter: ${leads.length}`, leads.map(l => ({ id: l.id, email: l.email, parent_lead_id: l.parent_lead_id })));
 
-    // ── Fetch ALL deals for this client ───────────────────────
+    // ── Fetch ACTIVE deals for this client ────────────────────
+    // Dashboard only surfaces deals the client can still act on.
     const { data: deals, error: dealError } = await supabaseAdmin
       .from("deals")
       .select(
         "id, file_number, type, status, closing_date, property_address, price, selling_price, selling_property_address, lead_id"
       )
       .eq("client_id", client.id)
+      .eq("status", "Active")
       .order("created_at", { ascending: false });
 
     if (dealError) {
@@ -86,8 +88,11 @@ export async function GET() {
       }
     }
 
-    // ── Build property for every lead (deal optional) ─────────
-    const properties = leads.map((lead) => {
+    // ── Build property ONLY for leads that have an active deal ─
+    // Leads without an active deal are hidden from the dashboard entirely.
+    const properties = leads
+      .filter((lead) => !!dealsByLeadId[lead.id])
+      .map((lead) => {
       const deal = dealsByLeadId[lead.id] ?? null;
 
       return {
