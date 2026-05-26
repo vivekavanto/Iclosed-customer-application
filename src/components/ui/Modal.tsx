@@ -7,6 +7,7 @@ interface ModalProps extends HTMLAttributes<HTMLDivElement> {
   onClose: () => void;
   title?: string;
   size?: "sm" | "md" | "lg" | "xl";
+  overlayClassName?: string;
 }
 
 const sizeClasses = {
@@ -22,6 +23,7 @@ export default function Modal({
   title,
   size = "md",
   className = "",
+  overlayClassName = "",
   children,
   ...rest
 }: ModalProps) {
@@ -49,7 +51,12 @@ export default function Modal({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className={[
+        "fixed inset-0 z-50 flex items-center justify-center p-4",
+        overlayClassName,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       role="dialog"
       aria-modal="true"
       aria-label={title ?? "Modal"}

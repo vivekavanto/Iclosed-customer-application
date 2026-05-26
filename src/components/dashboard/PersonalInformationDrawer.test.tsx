@@ -1,12 +1,31 @@
+import type { ReactElement } from "react";
 import { beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import "@testing-library/jest-dom/jest-globals";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PersonalInformationDrawer from "./PersonalInformationDrawer";
+import { ToastProvider } from "@/components/ui/Toast";
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = jest.fn(() => {});
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    })),
+  });
 });
+
+function renderDrawer(ui: ReactElement) {
+  return render(<ToastProvider>{ui}</ToastProvider>);
+}
 
 function setupFetchMocks(options?: { saveOk?: boolean }) {
   const saveOk = options?.saveOk ?? true;
@@ -71,7 +90,7 @@ describe("PersonalInformationDrawer", () => {
 
   it("renders the dialog when open", async () => {
     setupFetchMocks();
-    render(
+    renderDrawer(
       <PersonalInformationDrawer open onClose={jest.fn()} taskId="task-1" />,
     );
     await flushFieldDefinitionsFetch();
@@ -83,7 +102,7 @@ describe("PersonalInformationDrawer", () => {
     setupFetchMocks();
     const user = userEvent.setup();
     const onClose = jest.fn();
-    render(<PersonalInformationDrawer open onClose={onClose} taskId="task-1" />);
+    renderDrawer(<PersonalInformationDrawer open onClose={onClose} taskId="task-1" />);
     await flushFieldDefinitionsFetch();
 
     await user.click(screen.getByRole("button", { name: /close/i }));
@@ -93,7 +112,7 @@ describe("PersonalInformationDrawer", () => {
   it("shows validation errors when Save & Continue is clicked with an empty form", async () => {
     setupFetchMocks();
     const user = userEvent.setup();
-    render(<PersonalInformationDrawer open onClose={jest.fn()} taskId="task-1" />);
+    renderDrawer(<PersonalInformationDrawer open onClose={jest.fn()} taskId="task-1" />);
     await flushFieldDefinitionsFetch();
 
     await user.click(screen.getByRole("button", { name: /save & continue/i }));
@@ -104,7 +123,7 @@ describe("PersonalInformationDrawer", () => {
 
   it("prefills address fields from property when opened", async () => {
     setupFetchMocks();
-    const { rerender } = render(
+    const { rerender } = renderDrawer(
       <PersonalInformationDrawer
         open={false}
         onClose={jest.fn()}
@@ -119,17 +138,19 @@ describe("PersonalInformationDrawer", () => {
     );
 
     rerender(
-      <PersonalInformationDrawer
-        open
-        onClose={jest.fn()}
-        taskId="task-1"
-        property={{
-          phone: "(647) 111-2222",
-          address_street: "99 Prefill Rd",
-          address_city: "Ottawa",
-          address_postal_code: "K1A0A6",
-        }}
-      />,
+      <ToastProvider>
+        <PersonalInformationDrawer
+          open
+          onClose={jest.fn()}
+          taskId="task-1"
+          property={{
+            phone: "(647) 111-2222",
+            address_street: "99 Prefill Rd",
+            address_city: "Ottawa",
+            address_postal_code: "K1A0A6",
+          }}
+        />
+      </ToastProvider>,
     );
 
     await flushFieldDefinitionsFetch();
@@ -148,7 +169,7 @@ describe("PersonalInformationDrawer", () => {
     const onClose = jest.fn();
     const onSaved = jest.fn();
 
-    render(
+    renderDrawer(
       <PersonalInformationDrawer
         open
         onClose={onClose}

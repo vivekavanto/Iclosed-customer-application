@@ -788,6 +788,8 @@ export default function DashboardPage() {
         taskId={activeTask?.id ?? null}
         taskTitle={activeTask?.title ?? "Task Details"}
         leadId={leadId ?? undefined}
+        clientFirstName={activeProperty?.first_name}
+        clientLastName={activeProperty?.last_name}
         onTaskCompleted={(id) => {
           setDynamicDrawerOpen(false);
           markDone(id);

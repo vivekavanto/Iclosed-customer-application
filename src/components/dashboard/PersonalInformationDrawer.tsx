@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import { X, Info } from "lucide-react";
 import Button from "@/components/ui/Button";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
+import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
 interface PersonalInformationDrawerProps {
   open: boolean;
   onClose: () => void;
   property?: {
+    lead_id?: string;
+    first_name?: string | null;
+    last_name?: string | null;
     phone?: string | null;
     address_street?: string | null;
     address_city?: string | null;
@@ -597,6 +601,12 @@ export default function PersonalInformationDrawer({
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+
+          <ClientNameReadOnlySection
+            firstName={property?.first_name}
+            lastName={property?.last_name}
+            leadId={property?.lead_id}
+          />
 
           {/* Phone number */}
           <div>

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
+import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
 /* ─────────────────────────────────────────────
@@ -66,6 +67,8 @@ interface DynamicTaskDrawerProps {
   taskId: string | null;
   taskTitle: string;
   leadId?: string;
+  clientFirstName?: string | null;
+  clientLastName?: string | null;
   onTaskCompleted?: (taskId: string) => void;
 }
 
@@ -441,6 +444,8 @@ export default function DynamicTaskDrawer({
   taskId,
   taskTitle,
   leadId,
+  clientFirstName,
+  clientLastName,
   onTaskCompleted,
 }: DynamicTaskDrawerProps) {
   const isLargeScreen = useIsLargeScreen();
@@ -1296,6 +1301,14 @@ export default function DynamicTaskDrawer({
           )}
 
           {/* Render dynamic fields */}
+          {!fieldsLoading && isPersonalInfoTask && (
+            <ClientNameReadOnlySection
+              firstName={clientFirstName}
+              lastName={clientLastName}
+              leadId={leadId}
+            />
+          )}
+
           {!fieldsLoading &&
             fields.map((field) => {
               const isIdTask = isUploadIdTask;
