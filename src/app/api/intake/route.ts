@@ -276,6 +276,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
 
+    // Track every lead row created in this intake so each one triggers an
+    // admin notification, regardless of path (primary, co-person, sale-split).
+    const notifyLeadIds: string[] = [lead.id];
+
     // ── 3. Create co-person leads ─────────────────────────────
     const coPersonLeadIds: string[] = [];
 
@@ -328,6 +332,7 @@ export async function POST(req: Request) {
             console.warn(`[Intake] Co-person lead insert failed for ${cp.email}:`, cpError.message);
           } else if (cpLead) {
             coPersonLeadIds.push(cpLead.id);
+            notifyLeadIds.push(cpLead.id);
           }
         } catch (cpErr) {
           console.warn("[Intake] Co-person lead creation failed (non-blocking):", cpErr);
@@ -500,6 +505,7 @@ export async function POST(req: Request) {
                       if (saleLeadErr) {
                         console.warn("[Intake] P&S split: sale lead insert failed (non-blocking):", saleLeadErr.message);
                       } else if (saleLead) {
+                        notifyLeadIds.push(saleLead.id);
                         const saleResult = await convertSingleLead({
                           lead: saleLead,
                           parentClientId: result.client_id,
@@ -550,9 +556,16 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── 6. Notify iClosed team of new intake (non-blocking) ────
-    sendLeadNotificationEmail(lead.id).catch((err) =>
-      console.error("[Intake] Team notification failed:", err)
+    // ── 6. Notify iClosed team for every lead created in this intake ───
+    // Awaited so a serverless instance termination after the response can't
+    // silently drop the notification. Each send is wrapped individually so
+    // one failure doesn't skip the others.
+    await Promise.all(
+      notifyLeadIds.map((id) =>
+        sendLeadNotificationEmail(id).catch((err) =>
+          console.error("[Intake] Team notification failed for lead", id, err)
+        )
+      )
     );
 
     return NextResponse.json({

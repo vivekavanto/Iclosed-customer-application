@@ -402,6 +402,12 @@ export default function SetPasswordPage() {
                   </p>
                 )}
 
+                {!error && confirmPassword.length > 0 && password !== confirmPassword && (
+                  <p className="text-sm text-red-600 font-medium leading-tight">
+                    Passwords do not match. Please try again
+                  </p>
+                )}
+
                 {/* Submit button */}
                 <button
                   type="submit"

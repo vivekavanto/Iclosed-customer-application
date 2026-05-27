@@ -10,7 +10,9 @@ export async function sendWelcomeEmail(leadId: string): Promise<boolean> {
   try {
     const { data: lead } = await supabaseAdmin
       .from("leads")
-      .select("id, first_name, last_name, email, lead_type, address_street, address_city")
+      .select(
+        "id, parent_lead_id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code",
+      )
       .eq("id", leadId)
       .single();
 

@@ -1,6 +1,6 @@
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { renderMilestoneTemplate } from "@/lib/email-templates/milestone";
+import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 
 /**
  * Sends a new-lead notification email to the iClosed team
@@ -25,7 +25,7 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
     // Fetch the "Lead Notification Email" template from Supabase
     const { data: template, error: tmplErr } = await supabaseAdmin
       .from("email_templates")
-      .select("name, body")
+      .select("name, subject, body")
       .ilike("name", "%Lead Notification%")
       .eq("is_active", true)
       .or("is_deleted.eq.false,is_deleted.is.null")
@@ -120,9 +120,11 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
 </div>`
       : "";
 
-    // ── Render template with all placeholders ────────────────
-    const html = renderMilestoneTemplate(template.body, {
+    const templateVariables: Record<string, string> = {
       full_name: fullName,
+      "user.first_name": lead.first_name || "",
+      "user.last_name": lead.last_name || "",
+      "user.get_full_name": fullName,
       lead_type: lead.lead_type || "—",
       email: lead.email || "—",
       phone: lead.phone || "—",
@@ -134,9 +136,16 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
       submitted_at: submittedAt,
       lead_details_table: leadDetailsTable,
       co_persons_section: coPersonsSection,
-    });
+    };
 
-    const subject = `New Lead: ${fullName}${lead.lead_type ? ` — ${lead.lead_type}` : ""}`;
+    // ── Render template with all placeholders ────────────────
+    const html = renderMilestoneTemplate(template.body, templateVariables);
+
+    const subject = resolveTemplateSubject(
+      template,
+      templateVariables,
+      `New Lead: ${fullName}${lead.lead_type ? ` — ${lead.lead_type}` : ""}`,
+    );
 
     const { error } = await resend.emails.send({
       from: EMAIL_FROM,
