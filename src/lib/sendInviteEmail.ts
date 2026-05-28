@@ -1,6 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
+import { buildLeadAddressPartsForEmail, formatLeadTypeLabel } from "@/lib/leadEmailAddress";
+import { splitCombinedAddressPhrase } from "@/lib/email-templates/splitCombinedAddressPhrase";
 
 export interface SendInviteEmailResult {
   success: boolean;
@@ -25,7 +27,9 @@ export async function sendInviteEmail(
   try {
     const { data: lead } = await supabaseAdmin
       .from("leads")
-      .select("id, first_name, last_name, email, lead_type, address_street, address_city")
+      .select(
+        "id, parent_lead_id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code",
+      )
       .eq("id", leadId)
       .single();
 
@@ -101,20 +105,25 @@ export async function sendInviteEmail(
     }
 
     const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(" ");
-    const leadAddress = [lead.address_street, lead.address_city].filter(Boolean).join(", ");
+    const addressParts = await buildLeadAddressPartsForEmail(lead);
+    const leadAddress = addressParts.combinedString;
+    const leadType = formatLeadTypeLabel(lead.lead_type);
 
     const variables: Record<string, string> = {
       "user.first_name": lead.first_name || "",
       "user.last_name": lead.last_name || "",
       "user.get_full_name": fullName || "there",
       "first_name": lead.first_name || "there",
-      "lead_type": lead.lead_type || "property",
+      "lead_type": leadType || "property",
       "lead_address": leadAddress || "your property",
       "confirmation_url": actionLink ?? "",
       "invite_link": actionLink ?? "",
     };
 
-    const html = renderMilestoneTemplate(template.body, variables);
+    const rawHtml = renderMilestoneTemplate(template.body, variables);
+    // Match the welcome email: split combined "Purchase & Sale of A and B"
+    // into "Purchase of A and Sale of B" in the body.
+    const html = splitCombinedAddressPhrase(rawHtml, addressParts);
     const subject = resolveTemplateSubject(template, variables, "You have been invited to iClosed");
 
     const { error: sendError } = await resend.emails.send({

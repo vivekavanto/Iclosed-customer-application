@@ -586,8 +586,15 @@ export default function DashboardPage() {
 
   function handleTaskClick(task: Task) {
     setActiveTask(task);
-    if (task.title.toLowerCase().includes("upload identification")) {
+    const title = task.title.toLowerCase();
+    if (title.includes("upload identification")) {
       setIdDrawerOpen(true);
+    } else if (title.includes("provide personal information")) {
+      // PPI gets its dedicated drawer so admin-entered values (including
+      // "Save as Draft") prefill all 13 fields from task_responses. The
+      // generic DynamicTaskDrawer only prefilled by field_id and was missing
+      // values for the half-dozen PPI fields that don't live on the lead row.
+      setPersonalInfoDrawerOpen(true);
     } else {
       setDynamicDrawerOpen(true);
     }

@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "./milestone";
-import { buildLeadAddressForEmail, formatLeadTypeLabel } from "@/lib/leadEmailAddress";
+import { buildLeadAddressPartsForEmail, formatLeadTypeLabel } from "@/lib/leadEmailAddress";
+import { splitCombinedAddressPhrase } from "./splitCombinedAddressPhrase";
 
 export async function buildWelcomeEmailHtml(params: {
   lead: any;
@@ -24,7 +25,8 @@ export async function buildWelcomeEmailHtml(params: {
   // Combines purchase + selling addresses for Purchase & Sale leads (with a
   // family-sibling fallback when intake split the two sides across leads).
   // See src/lib/leadEmailAddress.ts.
-  const leadAddress = await buildLeadAddressForEmail(lead);
+  const addressParts = await buildLeadAddressPartsForEmail(lead);
+  const leadAddress = addressParts.combinedString;
   const leadType = formatLeadTypeLabel(lead.lead_type);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://iclosed-customer-application-rosy.vercel.app";
@@ -39,7 +41,12 @@ export async function buildWelcomeEmailHtml(params: {
     "dashboard_link": `${siteUrl}/login`,
   };
 
-  const html = renderMilestoneTemplate(template.body, variables);
+  const rawHtml = renderMilestoneTemplate(template.body, variables);
+  // For Purchase & Sale leads the template renders "the Purchase & Sale of
+  // <purchase> and <selling>", which reads ambiguously. Rewrite the body
+  // phrase to "Purchase of <purchase> and Sale of <selling>" without
+  // touching the subject (which only shows the addresses).
+  const html = splitCombinedAddressPhrase(rawHtml, addressParts);
   const subject = resolveTemplateSubject(template, variables, "Thank you for your inquiry");
 
   return { html, subject };

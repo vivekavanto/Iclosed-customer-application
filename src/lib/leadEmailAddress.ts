@@ -51,10 +51,24 @@ type LeadAddressFields = {
   selling_address_postal_code?: string | null;
 };
 
+export type LeadAddressParts = {
+  combinedString: string;
+  purchase: string;
+  selling: string;
+  isCombined: boolean;
+};
+
 export async function buildLeadAddressForEmail(
   lead: LeadAddressFields | null | undefined,
 ): Promise<string> {
-  if (!lead) return "";
+  const parts = await buildLeadAddressPartsForEmail(lead);
+  return parts.combinedString;
+}
+
+export async function buildLeadAddressPartsForEmail(
+  lead: LeadAddressFields | null | undefined,
+): Promise<LeadAddressParts> {
+  if (!lead) return { combinedString: "", purchase: "", selling: "", isCombined: false };
 
   const rawType = (lead.lead_type ?? "").toLowerCase().trim();
   const typeIsCombined = rawType.includes("purchase") && rawType.includes("sale");
@@ -150,8 +164,15 @@ export async function buildLeadAddressForEmail(
   }
 
   if (treatAsCombined) {
-    return [purchase, selling].filter(Boolean).join(" and ");
+    return {
+      combinedString: [purchase, selling].filter(Boolean).join(" and "),
+      purchase,
+      selling,
+      isCombined: Boolean(purchase && selling),
+    };
   }
-  if (typeIsSaleOnly) return selling || purchase;
-  return purchase;
+  if (typeIsSaleOnly) {
+    return { combinedString: selling || purchase, purchase, selling, isCombined: false };
+  }
+  return { combinedString: purchase, purchase, selling, isCombined: false };
 }

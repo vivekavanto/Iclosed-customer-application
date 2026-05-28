@@ -65,6 +65,7 @@ export async function PATCH(
       } else {
         // Non-completion updates (status change, document upload) — sync fields only
         syncSharedTaskPatch({
+          sourceTaskId: task.id,
           dealId: task.deal_id,
           taskTemplateId: task.task_template_id,
           patch: {

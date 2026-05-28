@@ -1,6 +1,24 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
+import { findFamilySharedTaskPeers, isApsTemplate } from "@/lib/findFamilySharedTaskPeers";
+
+/**
+ * Helper: resolves the source task's title + APS-ness so the peer lookup can
+ * fall back to a title match for cross-side mirroring (Purchase ↔ Sale).
+ */
+async function resolveSourceTaskMeta(taskId: string): Promise<{
+  title: string | null;
+  isApsTask: boolean;
+}> {
+  const { data: task } = await supabaseAdmin
+    .from("tasks")
+    .select("title, task_template_id")
+    .eq("id", taskId)
+    .maybeSingle();
+  const title = task?.title ?? null;
+  const isApsTask = await isApsTemplate(task?.task_template_id ?? null);
+  return { title, isApsTask };
+}
 
 /**
  * When a shared task is completed, sync it to all linked deals.
@@ -13,18 +31,29 @@ export async function syncSharedTaskCompletion(params: {
 }): Promise<void> {
   const { taskId, dealId, taskTemplateId } = params;
 
-  const linkedDealIds = await getLinkedDealIds(dealId);
-  if (linkedDealIds.length === 0) return;
+  // Cross-side aware peer lookup: matches by task_template_id AND (non-APS)
+  // by case-insensitive title so a Sale-side co-seller's task is included
+  // even though its template id differs from the Purchase-side source.
+  const { title, isApsTask } = await resolveSourceTaskMeta(taskId);
+  const peers = await findFamilySharedTaskPeers({
+    sourceTaskId: taskId,
+    dealId,
+    taskTemplateId,
+    title,
+    isApsTask,
+  });
+  if (peers.length === 0) return;
 
-  // Find matching tasks on linked deals (same template, not yet completed)
-  const { data: linkedTasks } = await supabaseAdmin
+  // Only mirror to peers that aren't already completed (matches previous behaviour)
+  const peerIds = peers.map((p) => p.id);
+  const { data: openLinked } = await supabaseAdmin
     .from("tasks")
     .select("id, deal_id, milestone_id")
-    .in("deal_id", linkedDealIds)
-    .eq("task_template_id", taskTemplateId)
+    .in("id", peerIds)
     .eq("completed", false);
 
-  if (!linkedTasks || linkedTasks.length === 0) return;
+  const linkedTasks = openLinked ?? [];
+  if (linkedTasks.length === 0) return;
 
   // Get source task responses to copy
   const { data: sourceResponses } = await supabaseAdmin
@@ -78,17 +107,18 @@ export async function syncSharedTaskResponses(params: {
 }): Promise<void> {
   const { taskId, dealId, taskTemplateId } = params;
 
-  const linkedDealIds = await getLinkedDealIds(dealId);
-  if (linkedDealIds.length === 0) return;
+  // Cross-side aware peer lookup — see syncSharedTaskCompletion above.
+  const { title, isApsTask } = await resolveSourceTaskMeta(taskId);
+  const peers = await findFamilySharedTaskPeers({
+    sourceTaskId: taskId,
+    dealId,
+    taskTemplateId,
+    title,
+    isApsTask,
+  });
+  if (peers.length === 0) return;
 
-  // Find matching tasks on linked deals (same template)
-  const { data: linkedTasks } = await supabaseAdmin
-    .from("tasks")
-    .select("id")
-    .in("deal_id", linkedDealIds)
-    .eq("task_template_id", taskTemplateId);
-
-  if (!linkedTasks || linkedTasks.length === 0) return;
+  const linkedTasks = peers.map((p) => ({ id: p.id }));
 
   // Get source task responses to copy
   const { data: sourceResponses } = await supabaseAdmin
@@ -119,6 +149,7 @@ export async function syncSharedTaskResponses(params: {
  * linked deals' matching tasks (same task_template_id).
  */
 export async function syncSharedTaskPatch(params: {
+  sourceTaskId: string;
   dealId: string;
   taskTemplateId: string;
   patch: {
@@ -129,15 +160,25 @@ export async function syncSharedTaskPatch(params: {
     document_name?: string | null;
   };
 }): Promise<void> {
-  const { dealId, taskTemplateId, patch } = params;
-  const linkedDealIds = await getLinkedDealIds(dealId);
-  if (linkedDealIds.length === 0) return;
+  const { sourceTaskId, dealId, taskTemplateId, patch } = params;
+
+  // Cross-side aware peer lookup — matches title-equivalent shared tasks on
+  // the opposite side of a Purchase & Sale family so co-sellers receive the
+  // status/document update too. APS keeps its template-id-only scope.
+  const { title, isApsTask } = await resolveSourceTaskMeta(sourceTaskId);
+  const peers = await findFamilySharedTaskPeers({
+    sourceTaskId,
+    dealId,
+    taskTemplateId,
+    title,
+    isApsTask,
+  });
+  if (peers.length === 0) return;
 
   await supabaseAdmin
     .from("tasks")
     .update(patch)
-    .in("deal_id", linkedDealIds)
-    .eq("task_template_id", taskTemplateId);
+    .in("id", peers.map((p) => p.id));
 }
 
 /**

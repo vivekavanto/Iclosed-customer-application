@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Info } from "lucide-react";
 import Button from "@/components/ui/Button";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
@@ -395,6 +395,10 @@ export default function PersonalInformationDrawer({
   const [saving, setSaving] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [dbFields, setDbFields] = useState<DbField[]>([]);
+  // Tracks whether the one-time prefill from task_responses has already run for
+  // the current open/taskId pair. Without this, the responses fetch (async)
+  // could clobber values the user starts typing immediately on open.
+  const prefilledRef = useRef<string | null>(null);
 
   // Fetch DB-driven field definitions (labels, options, required, field_id) for this task.
   // On failure or missing template, the drawer falls back to SLOT_FALLBACKS so UI still renders.
@@ -412,6 +416,81 @@ export default function PersonalInformationDrawer({
       .catch(() => {
         /* fallback lists render */
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, taskId]);
+
+  // Prefill the form from existing task_responses on open. The admin can fill
+  // this task (including "Save as Draft") from the admin panel before the
+  // customer's account is even created — when the customer eventually opens
+  // the drawer, those saved values must show up so they don't have to re-enter
+  // anything. Without this fetch, the drawer only prefilled phone/street/
+  // city/postal from the lead row, leaving the other 9 fields blank.
+  //
+  // Responses win over property data: task_responses is the freshest
+  // admin/client-entered value for this specific task; the lead row is older
+  // and may be stale.
+  useEffect(() => {
+    if (!open) {
+      prefilledRef.current = null;
+      return;
+    }
+    if (!taskId) return;
+    if (prefilledRef.current === taskId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/task-responses?task_id=${encodeURIComponent(taskId)}`,
+        );
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled) return;
+
+        // GET endpoint returns { success, responses } — fall back to a bare
+        // array in case the shape changes.
+        const responses: Array<{ field_label?: string | null; value?: string | null }> =
+          Array.isArray(j?.responses) ? j.responses : Array.isArray(j) ? j : [];
+        if (responses.length === 0) {
+          prefilledRef.current = taskId;
+          return;
+        }
+
+        // Map each response into the form slot whose matcher recognises its
+        // label. Whitespace / casing differences between the DB label and the
+        // matcher are absorbed by lowercasing + trimming first.
+        const next: Partial<FormData> = {};
+        for (const r of responses) {
+          const label = String(r.field_label ?? "").trim().toLowerCase();
+          if (!label) continue;
+          const value = String(r.value ?? "").trim();
+          if (!value) continue;
+          for (const key of Object.keys(SLOT_MATCHERS) as SlotKey[]) {
+            if (SLOT_MATCHERS[key](label)) {
+              // Reformat stored phone values so already-formatted strings and
+              // raw 10-digit strings both render as "(416) 555-1234".
+              next[key] =
+                key === "phone" || key === "employerPhone"
+                  ? formatPhone(value)
+                  : value;
+              break;
+            }
+          }
+        }
+
+        if (Object.keys(next).length > 0 && !cancelled) {
+          setForm((prev) => ({ ...prev, ...next }));
+        }
+        prefilledRef.current = taskId;
+      } catch (err) {
+        console.error(
+          "[PersonalInformationDrawer] task_responses prefill failed:",
+          err,
+        );
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -525,6 +604,9 @@ export default function PersonalInformationDrawer({
         body: JSON.stringify({
           task_id: taskId,
           responses,
+          // Without this flag the API auto-completes the task on every save,
+          // so "Save as Draft" would silently mark the task done.
+          draft: asDraft,
         })
       });
 
