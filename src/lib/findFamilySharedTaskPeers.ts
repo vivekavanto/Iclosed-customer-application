@@ -1,23 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 
-/**
- * Resolves the set of `tasks.id`s that should be kept in lockstep with a given
- * shared task across the deal's co-purchaser / co-seller family.
- *
- * Why this exists: shared tasks are mirrored by `task_template_id`, but a
- * Purchase-side template and a Sale-side template have different ids. So for
- * Purchase & Sale deals the template-id match never crosses sides, and
- * co-sellers never receive sync updates for tasks like "Status of Mortgage",
- * "Upload Home Insurance Policy", or "Schedule an Appointment". Falling back
- * to a case-insensitive title match within the same family fixes this without
- * changing the data model.
- *
- * APS is intentionally excluded from the title fallback — it has dedicated
- * side-scoped completion logic in the admin's completeApsTask.
- *
- * Returns peer task ids (excludes the source task itself).
- */
+
 export async function findFamilySharedTaskPeers(params: {
   sourceTaskId: string;
   dealId: string;

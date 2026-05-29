@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<title>iClosed Web Application — Project Review</title>
+<style>
+  body { font-family: "Calibri","Segoe UI",Arial,sans-serif; color:#1a1a1a; line-height:1.5;
+         max-width: 900px; margin: 40px auto; padding: 0 32px; font-size: 11pt; }
+  h1 { font-size: 24pt; color:#0b3d91; border-bottom:3px solid #0b3d91; padding-bottom:8px; }
+  h2 { font-size: 16pt; color:#0b3d91; margin-top:28px; border-bottom:1px solid #ccc; padding-bottom:4px; }
+  h3 { font-size: 13pt; color:#222; margin-top:20px; }
+  h4 { font-size: 11.5pt; color:#b00020; margin-top:16px; margin-bottom:4px; }
+  p { margin: 8px 0; }
+  code { background:#f3f3f3; border:1px solid #e0e0e0; border-radius:3px; padding:1px 4px;
+         font-family:"Consolas",monospace; font-size:9.5pt; }
+  .ref { font-family:"Consolas",monospace; font-size:9.5pt; color:#0b3d91; }
+  blockquote { border-left:4px solid #f0ad4e; background:#fff8ec; margin:12px 0; padding:8px 16px;
+               font-style:italic; }
+  table { border-collapse:collapse; width:100%; margin:14px 0; font-size:10pt; }
+  th { background:#0b3d91; color:#fff; text-align:left; padding:7px 9px; }
+  td { border:1px solid #ddd; padding:6px 9px; vertical-align:top; }
+  tr:nth-child(even) td { background:#f7f9fc; }
+  ul { margin:8px 0 8px 0; padding-left:22px; }
+  li { margin:3px 0; }
+  hr { border:none; border-top:1px solid #ddd; margin:24px 0; }
+  strong { color:#000; }
+  @media print { body { margin:0; max-width:100%; } h2 { page-break-after:avoid; } table,blockquote{ page-break-inside:avoid; } }
+</style></head><body>
+<h1>iClosed Web Application — Project Review</h1>
+<p><strong>Prepared for:</strong> Client Presentation</p>
+<p><strong>Date:</strong> 29 May 2026</p>
+<p><strong>Application:</strong> iClosed — Real-estate legal closing portal</p>
+<p><strong>Stack reviewed:</strong> Next.js 16 · React 19 · TypeScript · Supabase (PostgreSQL + Auth) · Vercel Blob · Resend</p>
+<hr/>
+<h2>1. Executive Summary</h2>
+<p>iClosed is a well-structured, modern web application that manages the end-to-end real-estate</p>
+<p>closing experience — lead intake, task and milestone tracking, document upload, e-signature of</p>
+<p>retainer agreements, and co-purchaser collaboration. The codebase is clean and the core identity</p>
+<p>logic (how a logged-in user is matched to their client record) is genuinely robust.</p>
+<p>However, this review found a <strong>systemic authorization gap</strong>. The application reliably knows <em>who</em></p>
+<p>a user is, but in most places it does **not enforce <em>what</em> that user is allowed to see or change.**</p>
+<p>As a result, sensitive client data — **including uploaded identification documents (passports,</p>
+<p>driver's licenses), personal information, deal pricing, and the entire admin dataset** — can</p>
+<p>currently be <strong>read and in some cases modified or deleted without logging in.</strong></p>
+<blockquote><strong>Headline risk:</strong> Sensitive client data, including uploaded ID documents, is currently</blockquote>
+<blockquote>retrievable and modifiable without authentication.</blockquote>
+<p>The good news: the root cause is a single, well-understood design decision (described in §3), and</p>
+<p>the fixes follow a clear, low-to-moderate-effort path. None of the findings indicate a rewrite is</p>
+<p>needed — they are additions of access-control checks to existing, otherwise-sound code.</p>
+<h3>Risk Dashboard</h3>
+<table><thead><tr><th>Severity</th><th>Count</th><th>Examples</th></tr></thead><tbody><tr><td>🔴 <strong>Critical</strong></td><td>5</td><td>Unauthenticated admin API; ID documents readable/deletable by anyone; task tampering</td></tr><tr><td>🟠 <strong>High</strong></td><td>3</td><td>Further IDOR endpoints; open CORS; database-level isolation disabled</td></tr><tr><td>🟡 <strong>Medium</strong></td><td>7</td><td>No rate limiting; logic bugs; missing error handling; no input validation</td></tr><tr><td>🟢 <strong>Low</strong></td><td>4</td><td>No automated tests/CI; hard-coded values; inconsistent error formats</td></tr></tbody></table>
+<h3>Overall verdict</h3>
+<p><strong>Not yet ready for production handling of real client PII</strong> in its current state. With the</p>
+<p><strong>Phase 0 + Phase 1</strong> remediation (estimated ~2–3 weeks of focused work, see §6), the most serious</p>
+<p>exposures can be closed. The application is a strong foundation — the gaps are fixable, not</p>
+<p>fundamental.</p>
+<hr/>
+<h2>2. Scope &amp; Methodology</h2>
+<p><strong>What was reviewed:</strong></p>
+<ul>
+<li>The complete repository: all API route handlers, authentication and data-access layers, key</li>
+</ul>
+<p>  React UI flows, the SQL migration files, and project configuration.</p>
+<ul>
+<li>Three focus areas, as requested: <strong>security threats</strong>, <strong>missing/incorrect logic</strong>, and</li>
+</ul>
+<p>  <strong>code quality &amp; architecture</strong>.</p>
+<p><strong>How findings were verified:</strong></p>
+<ul>
+<li>Every finding marked <strong>VERIFIED</strong> in this document was confirmed by opening the actual source</li>
+</ul>
+<p>  file and reading the exact code — file paths and line numbers are cited so your development team</p>
+<p>  can go straight to them.</p>
+<ul>
+<li>The git history was checked to determine whether secret keys were ever committed.</li>
+</ul>
+<p>**What was <em>not</em> covered (recommended as follow-up):**</p>
+<ul>
+<li>A live penetration test against the running application.</li>
+<li>An audit of the actual Supabase <strong>Row-Level Security (RLS)</strong> policies configured in the live</li>
+</ul>
+<p>  database (this review can only see the application code, not the database's own rules — see §3).</p>
+<ul>
+<li>A dependency vulnerability (CVE) scan of the full package tree.</li>
+</ul>
+<hr/>
+<h2>3. The Root Cause (Please read this first)</h2>
+<p>Almost every security finding in this report traces back to <strong>one architectural decision.</strong></p>
+<p>Every server-side API route in the application connects to the database using the</p>
+<p><strong>Supabase "service-role" client</strong> (<span class="ref">src/lib/supabaseAdmin.ts</span>). The</p>
+<p>service role is an all-powerful key that <strong>bypasses Supabase's Row-Level Security (RLS)</strong> — the</p>
+<p>database feature that would normally guarantee "User A can only ever see User A's rows," *even if</p>
+<p>the application code has a bug.*</p>
+<p>This has two consequences:</p>
+<p>1. <strong>No safety net.</strong> Because RLS is bypassed, the database will hand back <em>any</em> row the code asks</p>
+<p>   for. Security therefore depends <strong>entirely</strong> on each individual API route remembering to check</p>
+<p>   "does this data belong to the person making the request?" — and many of them do not.</p>
+<p>2. <strong>Identity is solved; authorization is not.</strong> The function that identifies the logged-in user,</p>
+<p>   <span class="ref">src/lib/getAuthClient.ts</span>, is genuinely well-built — it has a robust</p>
+<p>   4-step fallback to correctly match a user to their client record even in tricky co-purchaser</p>
+<p>   and renamed-account scenarios. **The problem is that most routes don't <em>use</em> this identity to</p>
+<p>   filter their queries.** Several routes accept an <code>email</code>, a <code>lead_id</code>, or a task <code>id</code> straight</p>
+<p>   from the URL and return data with no login required at all.</p>
+<blockquote><strong>In one sentence:</strong> The app knows who you are, but mostly doesn't check whether you're allowed</blockquote>
+<blockquote>to have what you're asking for — and the database has been configured not to stop it either.</blockquote>
+<p>Fixing this is the spine of the remediation plan in §6: add an ownership check to each route, and</p>
+<p>turn the database safety net (RLS) back on as defense-in-depth.</p>
+<hr/>
+<h2>4. Security Findings</h2>
+<p>Each finding lists <strong>what it is</strong>, <strong>how it could be exploited</strong>, <strong>what data is at risk</strong>, its</p>
+<p><strong>severity</strong>, and the <strong>recommended fix</strong>.</p>
+<h3>🔴 CRITICAL</h3>
+<h4>C1 — Admin API has no authentication</h4>
+<p><strong>File:</strong> <span class="ref">src/app/api/admin/leads/route.ts</span> (and the wider <code>admin/*</code> folder) · <strong>VERIFIED</strong></p>
+<ul>
+<li><strong>What:</strong> The admin endpoints have no login or role check whatsoever. <code>GET /api/admin/leads</code></li>
+</ul>
+<p>  returns <strong>every lead in the system</strong> — full name, email, phone, address, and price. The same</p>
+<p>  no-auth pattern applies to <code>admin/convert-lead</code>, <code>admin/clients/[id]/name</code>,</p>
+<p>  <code>admin/clients/merge</code>, and <code>admin/link-co-purchaser</code>. Several also send</p>
+<p>  <code>Access-Control-Allow-Origin: *</code>, inviting cross-site calls.</p>
+<ul>
+<li><strong>Exploit:</strong> Anyone who knows (or guesses) the URL can download the entire customer database, or</li>
+</ul>
+<p>  rename/merge client accounts.</p>
+<ul>
+<li><strong>Data at risk:</strong> The complete customer dataset; account integrity (merge can effectively</li>
+</ul>
+<p>  hand one person's deals to another).</p>
+<ul>
+<li><strong>Fix:</strong> Require an authenticated admin session on every <code>admin/*</code> route (see <code>requireAdmin()</code>,</li>
+</ul>
+<p>  §6 Phase 1). Restrict CORS to known origins.</p>
+<h4>C2 — Uploaded ID documents are readable and deletable by anyone (IDOR)</h4>
+<p><strong>File:</strong> <span class="ref">src/app/api/lead-identification-docs/route.ts</span> · <strong>VERIFIED</strong></p>
+<ul>
+<li><strong>What:</strong> <code>GET</code> returns identification documents for <em>any</em> <code>lead_id</code> supplied in the URL, with</li>
+</ul>
+<p>  no login or ownership check. <code>DELETE</code> removes <em>any</em> document by its <code>id</code>, also unchecked.</p>
+<ul>
+<li><strong>Exploit:</strong> By iterating IDs, an attacker can harvest scanned passports / driver's licenses for</li>
+</ul>
+<p>  all clients, or delete a client's submitted documents.</p>
+<ul>
+<li><strong>Data at risk:</strong> Government-issued identity documents — among the most sensitive PII the firm</li>
+</ul>
+<p>  holds, with direct identity-theft and regulatory implications.</p>
+<ul>
+<li><strong>Fix:</strong> Require authentication; confirm the lead/document belongs to the requesting client (or</li>
+</ul>
+<p>  an admin) before returning or deleting.</p>
+<h4>C3 — Deal details exposed via an email parameter</h4>
+<p><strong>File:</strong> <span class="ref">src/app/api/deals/route.ts</span> (lines 55–104) · <strong>VERIFIED</strong></p>
+<ul>
+<li><strong>What:</strong> The primary, session-authenticated path of this endpoint is correctly written. But it</li>
+</ul>
+<p>  then falls back to a <code>?email=</code> lookup that returns a client's <strong>entire deal set</strong> to anyone who</p>
+<p>  supplies that email — no login required. (A <code>?lead_id=</code> fallback behaves similarly.)</p>
+<ul>
+<li><strong>Exploit:</strong> Knowing a client's email (often easy to guess or find) yields their file numbers,</li>
+</ul>
+<p>  property addresses, prices, and closing dates.</p>
+<ul>
+<li><strong>Data at risk:</strong> Transaction details and PII for any client.</li>
+<li><strong>Fix:</strong> Remove the unauthenticated <code>email</code>/<code>lead_id</code> fallbacks, or gate them behind an</li>
+</ul>
+<p>  authenticated/admin context.</p>
+<h4>C4 — Any task can be completed/modified without authorization</h4>
+<p><strong>File:</strong> [src/app/api/tasks/[id]/route.ts](src/app/api/tasks/[id]/route.ts) · <strong>VERIFIED</strong></p>
+<ul>
+<li><strong>What:</strong> <code>PATCH /api/tasks/[id]</code> updates a task — marking it complete, setting document URLs,</li>
+</ul>
+<p>  and advancing the deal's milestones — with <strong>no check</strong> that the task belongs to the caller.</p>
+<ul>
+<li><strong>Exploit:</strong> Anyone can mark other clients' tasks complete or attach/replace document URLs,</li>
+</ul>
+<p>  corrupting the closing workflow and triggering downstream milestone emails.</p>
+<ul>
+<li><strong>Data at risk:</strong> Workflow integrity for every deal; potential for false "completed" states on</li>
+</ul>
+<p>  legal-process steps.</p>
+<ul>
+<li><strong>Fix:</strong> Resolve the caller's client via <code>getAuthClient()</code> and verify the task's deal belongs to</li>
+</ul>
+<p>  them before mutating.</p>
+<h4>C5 — Production service-role key stored in a plaintext backup file</h4>
+<p><strong>File:</strong> <code>.env.local.prod-backup</code> (on the developer machine) · <strong>VERIFIED (with correction)</strong></p>
+<ul>
+<li><strong>What:</strong> A backup file holds the <strong>production</strong> Supabase service-role key (full database</li>
+</ul>
+<p>  bypass), plus the Resend (email) and Vercel Blob (storage) tokens, in plaintext.</p>
+<ul>
+<li><strong>Correction to note for the client:</strong> These <code>.env</code> files are <strong>correctly excluded from git</strong></li>
+</ul>
+<p>  (<code>.gitignore</code> contains <code>.env*</code>) and a history check confirmed they were <strong>never committed</strong>. So</p>
+<p>  this is <strong>not</strong> a public source-code leak. The real risk is <strong>key-handling hygiene</strong> — a</p>
+<p>  production secret that grants total database access living unencrypted in a casually-named</p>
+<p>  backup file on a workstation (easily copied, emailed, or synced to cloud backup by accident).</p>
+<ul>
+<li><strong>Exploit:</strong> Anyone who obtains the file gets unrestricted read/write to the production database.</li>
+<li><strong>Fix (Phase 0):</strong> Delete the on-disk backup, and <strong>rotate</strong> the service-role, Resend, and Blob</li>
+</ul>
+<p>  keys as a precaution. Keep production secrets only in the hosting provider's secret store.</p>
+<h3>🟠 HIGH</h3>
+<h4>H1 — Additional IDOR endpoints (no ownership check)</h4>
+<p><strong>VERIFIED (pattern confirmed on representative files)</strong></p>
+<ul>
+<li><code>GET /api/task-responses</code> returns submitted form answers by <code>task_id</code>;</li>
+</ul>
+<p>  <code>/api/uploadblobstorage</code> and <code>/api/blob/save-doc-metadata</code> write documents against a <code>lead_id</code>;</p>
+<p>  <code>/api/intake/mark-aps-uploaded</code> advances workflow — all by an ID with no ownership check.</p>
+<ul>
+<li><strong>Fix:</strong> Same as C2/C4 — authenticate and verify ownership.</li>
+</ul>
+<h4>H2 — Open CORS on sensitive endpoints</h4>
+<ul>
+<li>Several <code>admin/<em></code> routes return <code>Access-Control-Allow-Origin: </em></code>, which combined with the</li>
+</ul>
+<p>  missing auth (C1) makes them callable from any website.</p>
+<ul>
+<li><strong>Fix:</strong> Restrict to the application's own origin(s).</li>
+</ul>
+<h4>H3 — Database-level isolation (RLS) is bypassed everywhere</h4>
+<ul>
+<li>The service-role client (§3) means the database enforces no row-level isolation. Even after the</li>
+</ul>
+<p>  code-level checks are added, there is no second line of defense.</p>
+<ul>
+<li><strong>Fix:</strong> Enable and audit Supabase RLS so the database independently enforces "users see only</li>
+</ul>
+<p>  their own rows" (Phase 2).</p>
+<h3>🟡 MEDIUM / 🟢 LOW (security)</h3>
+<table><thead><tr><th>ID</th><th>Finding</th><th>Severity</th></tr></thead><tbody><tr><td>M1</td><td><strong>No rate limiting</strong> on auth, data, or upload endpoints — enables brute force, enumeration, and bulk data exfiltration.</td><td>Medium</td></tr><tr><td>M2</td><td><strong>No input/type validation</strong> on query params (IDs are not validated as UUIDs); malformed input can leak structural detail via error messages.</td><td>Medium</td></tr><tr><td>M3</td><td><strong>Unbounded queries / no pagination</strong> — endpoints return all rows at once, a PII-exposure and performance concern as data grows.</td><td>Medium</td></tr></tbody></table>
+<hr/>
+<h2>5. Logic &amp; Correctness Findings</h2>
+<p>These are bugs in behaviour (not security), all <strong>VERIFIED</strong> in source.</p>
+<table><thead><tr><th>ID</th><th>Finding</th><th>File</th><th>Severity</th></tr></thead><tbody><tr><td><strong>L1</strong></td><td><strong>Operator-precedence bug.</strong> `includes("sign") &amp;&amp; includes("virtually") \</td><td>\</td><td>includes("person")` mis-binds, so it matches <em>any</em> label containing "person" (e.g. "personal information"). The signing-method field resolves incorrectly.</td><td><span class="ref">PersonalInformationDrawer.tsx:109</span></td><td>Medium</td></tr><tr><td><strong>L2</strong></td><td><strong>Duplicate identical query.</strong> <code>siblings</code> and <code>updatedSiblings</code> run the exact same database query back-to-back; <code>siblings</code> is never used. A wasted round-trip, and the "re-fetch to get updated state" comment is misleading (nothing changed between the two).</td><td><span class="ref">task-responses/route.ts:186</span></td><td>Medium</td></tr><tr><td><strong>L3</strong></td><td><strong>Fire-and-forget sync.</strong> Shared-task synchronisation (for co-purchaser / Purchase-&amp;-Sale families) is launched without <code>await</code> and only <code>.catch(log)</code>. If it fails, linked family members silently see stale/incomplete data with no error surfaced.</td><td>[tasks/[id]/route.ts:60](src/app/api/tasks/[id]/route.ts#L60)</td><td>Medium</td></tr><tr><td><strong>L4</strong></td><td><strong>Unchecked bulk writes.</strong> The task insert in lead conversion and the side-tagging updates ignore their error results and proceed regardless, so a failed write passes silently.</td><td><span class="ref">convertLead.ts</span> · <span class="ref">tasks/route.ts</span></td><td>Medium</td></tr><tr><td><strong>L5</strong></td><td><strong>Milestone-advancement race.</strong> Milestone completion uses a check-then-update pattern with no locking; two tasks completing at once can double-advance or skip a milestone.</td><td><span class="ref">syncSharedTask.ts</span> + task routes</td><td>Medium</td></tr><tr><td><strong>L6</strong></td><td><strong>Unvalidated normalization.</strong> Unknown citizenship values pass through unchanged, allowing typo/garbage values to be persisted.</td><td><span class="ref">task-responses/route.ts</span></td><td>Low</td></tr></tbody></table>
+<hr/>
+<h2>6. Code Quality &amp; Maintainability</h2>
+<ul>
+<li><strong>Duplicated milestone-advancement logic</strong> appears in three places</li>
+</ul>
+<p>  ([tasks/[id]/route.ts](src/app/api/tasks/[id]/route.ts),</p>
+<p>  <span class="ref">task-responses/route.ts</span>,</p>
+<p>  <span class="ref">syncSharedTask.ts</span>). This should be a single shared helper — keeping</p>
+<p>  three copies in sync is error-prone (and is part of why L5 exists in multiple paths).</p>
+<ul>
+<li><strong>Near-zero automated tests.</strong> Only three component tests exist; there is <strong>no coverage</strong> for API</li>
+</ul>
+<p>  routes, authentication, lead conversion, or task syncing — the highest-risk business logic — and</p>
+<p>  <strong>no CI pipeline</strong>. Regressions are likely to reach production unnoticed.</p>
+<ul>
+<li><strong>Lost design documentation.</strong> The explanatory JSDoc in the in-progress</li>
+</ul>
+<p>  <span class="ref">findFamilySharedTaskPeers.ts</span> was removed, which will make</p>
+<p>  the cross-side matching logic harder for future maintainers to safely change.</p>
+<ul>
+<li><strong>Minor:</strong> inconsistent API error-response shapes (<code>{success,error}</code> vs <code>{error}</code>), hard-coded</li>
+</ul>
+<p>  contact phone/email in UI, and broad <code>any</code> usage / unsafe type casts in a few places.</p>
+<hr/>
+<h2>7. Remediation Roadmap</h2>
+<p>A phased plan — earlier phases address the highest risk for the least effort.</p>
+<h3>Phase 0 — Immediate (a few days)</h3>
+<ul>
+<li><strong>Rotate</strong> the Supabase service-role, Resend, and Blob keys; <strong>delete</strong> the</li>
+</ul>
+<p>  <code>.env.local.prod-backup</code> file from local disk. <em>(C5)</em></p>
+<ul>
+<li>Add an <strong>admin authentication guard</strong> to every <code>admin/<em></code> route. </em>(C1)*</li>
+<li><strong>Lock down CORS</strong> to the application's own origins. <em>(H2)</em></li>
+</ul>
+<h3>Phase 1 — Authorization (1–2 weeks)</h3>
+<ul>
+<li>Introduce shared guards — <code>requireClient()</code> and <code>requireAdmin()</code> — built on the existing,</li>
+</ul>
+<p>  already-solid <span class="ref">getAuthClient.ts</span>.</p>
+<ul>
+<li><strong>Scope every data route</strong> to the resolved client, and <strong>add ownership checks</strong> to all IDOR</li>
+</ul>
+<p>  endpoints (ID documents, deals, tasks, task-responses, uploads). <em>(C2, C3, C4, H1)</em></p>
+<ul>
+<li>Remove or gate the unauthenticated <code>email</code> / <code>lead_id</code> fallbacks. <em>(C3)</em></li>
+</ul>
+<h3>Phase 2 — Defense in depth (1–2 weeks)</h3>
+<ul>
+<li><strong>Enable and audit Supabase RLS</strong> so the database enforces isolation even if a route is missed.</li>
+</ul>
+<p>  <em>(H3)</em></p>
+<ul>
+<li>Add <strong>rate limiting</strong> and <strong>UUID/input validation</strong>. <em>(M1, M2)</em></li>
+<li>Add <strong>pagination</strong> to list endpoints. <em>(M3)</em></li>
+</ul>
+<h3>Phase 3 — Correctness &amp; quality (ongoing)</h3>
+<ul>
+<li>Fix logic bugs <strong>L1–L6</strong>.</li>
+<li>Extract the <strong>shared milestone-advancement helper</strong>.</li>
+<li>Add <strong>automated tests</strong> (API routes, auth, lead conversion, task sync) and a <strong>CI pipeline</strong>.</li>
+</ul>
+<table><thead><tr><th>Phase</th><th>Focus</th><th>Effort</th><th>Priority</th></tr></thead><tbody><tr><td>0</td><td>Secret rotation + admin lockdown</td><td>~2–3 days</td><td>🔴 Do now</td></tr><tr><td>1</td><td>Per-route authorization</td><td>~1–2 weeks</td><td>🔴 Critical</td></tr><tr><td>2</td><td>RLS, rate limiting, validation</td><td>~1–2 weeks</td><td>🟠 High</td></tr><tr><td>3</td><td>Bug fixes, refactor, tests/CI</td><td>Ongoing</td><td>🟡 Medium</td></tr></tbody></table>
+<hr/>
+<h2>8. Technical Appendix</h2>
+<h3>8.1 Findings reference table</h3>
+<table><thead><tr><th>ID</th><th>Severity</th><th>Location</th><th>Issue</th><th>Recommendation</th></tr></thead><tbody><tr><td>C1</td><td>Critical</td><td><code>api/admin/*/route.ts</code></td><td>Admin API has no auth; open CORS</td><td>Require admin session; lock CORS</td></tr><tr><td>C2</td><td>Critical</td><td><code>api/lead-identification-docs/route.ts</code></td><td>ID docs readable/deletable by anyone (IDOR)</td><td>Auth + ownership check</td></tr><tr><td>C3</td><td>Critical</td><td><code>api/deals/route.ts:55</code></td><td>Deals exposed via <code>?email=</code> fallback</td><td>Remove/gate fallback</td></tr><tr><td>C4</td><td>Critical</td><td><code>api/tasks/[id]/route.ts</code></td><td>Task PATCH has no ownership check</td><td>Verify task→deal→client ownership</td></tr><tr><td>C5</td><td>Critical</td><td><code>.env.local.prod-backup</code></td><td>Prod service-role key in plaintext backup (gitignored, not committed)</td><td>Delete file; rotate keys</td></tr><tr><td>H1</td><td>High</td><td><code>task-responses</code>, <code>uploadblobstorage</code>, <code>blob/save-doc-metadata</code>, <code>intake/mark-aps-uploaded</code></td><td>Further IDOR</td><td>Auth + ownership check</td></tr><tr><td>H2</td><td>High</td><td><code>api/admin/*</code></td><td><code>Access-Control-Allow-Origin: *</code></td><td>Restrict origins</td></tr><tr><td>H3</td><td>High</td><td><code>lib/supabaseAdmin.ts</code> (used everywhere)</td><td>Service role bypasses RLS — no DB safety net</td><td>Enable/audit RLS</td></tr><tr><td>M1</td><td>Medium</td><td>All endpoints</td><td>No rate limiting</td><td>Add rate limiting</td></tr><tr><td>M2</td><td>Medium</td><td>Query params</td><td>No input/UUID validation</td><td>Validate inputs</td></tr><tr><td>M3</td><td>Medium</td><td>List endpoints</td><td>No pagination / unbounded queries</td><td>Paginate</td></tr><tr><td>L1</td><td>Medium</td><td><code>PersonalInformationDrawer.tsx:109</code></td><td>Operator-precedence bug</td><td>Add parentheses</td></tr><tr><td>L2</td><td>Medium</td><td><code>task-responses/route.ts:186</code></td><td>Duplicate identical query</td><td>Remove dead query</td></tr><tr><td>L3</td><td>Medium</td><td><code>tasks/[id]/route.ts:60</code></td><td>Fire-and-forget sync, errors swallowed</td><td>Await / surface errors</td></tr><tr><td>L4</td><td>Medium</td><td><code>convertLead.ts</code>, <code>tasks/route.ts</code></td><td>Unchecked bulk writes</td><td>Check write results</td></tr><tr><td>L5</td><td>Medium</td><td><code>syncSharedTask.ts</code> + task routes</td><td>Milestone-advancement race</td><td>Centralize + guard</td></tr><tr><td>L6</td><td>Low</td><td><code>task-responses/route.ts</code></td><td>Unvalidated normalization persists garbage</td><td>Validate enum</td></tr><tr><td>Q1</td><td>Low</td><td>3 files</td><td>Duplicated milestone logic</td><td>Extract shared helper</td></tr><tr><td>Q2</td><td>Low</td><td>Repo-wide</td><td>Near-zero tests, no CI</td><td>Add tests + CI</td></tr><tr><td>Q3</td><td>Low</td><td>Repo-wide</td><td>Inconsistent error shapes, hard-coded values</td><td>Standardize</td></tr></tbody></table>
+<h3>8.2 Architecture summary (for the development team)</h3>
+<ul>
+<li><strong>Stack:</strong> Next.js 16 (App Router) · React 19 · TypeScript · Supabase (PostgreSQL + Auth, JWT in</li>
+</ul>
+<p>  HTTP-only cookies via <code>@supabase/ssr</code>) · Vercel Blob (document storage) · Resend (email) ·</p>
+<p>  TailwindCSS · pdf-lib (retainer PDFs). Deployed on Vercel.</p>
+<ul>
+<li><strong>Domain:</strong> Real-estate legal closings. Customers submit a lead (purchase / sale / refinance),</li>
+</ul>
+<p>  which an admin converts into a <em>deal</em>; the deal carries <em>milestones</em> (closing phases) and <em>tasks</em></p>
+<p>  (action items), driven by reusable <em>templates</em>. Supports dual-sided <strong>Purchase &amp; Sale</strong> deals and</p>
+<p>  <strong>co-purchaser families</strong> with shared, synchronised tasks. Includes retainer e-signature and</p>
+<p>  AI-assisted document identification.</p>
+<ul>
+<li><strong>Core entities:</strong> <code>clients</code>, <code>leads</code>, <code>deals</code>, <code>milestones</code>, <code>tasks</code>, <code>task_templates</code>,</li>
+</ul>
+<p>  <code>stage_templates</code>, <code>task_responses</code>, <code>retainer_signatures</code>, document tables (Vercel Blob).</p>
+<ul>
+<li><strong>Auth/data layers:</strong> <span class="ref">getAuthClient.ts</span> (identity — well built),</li>
+</ul>
+<p>  <span class="ref">supabaseAdmin.ts</span> (service-role client — the root-cause concern of §3),</p>
+<p>  <span class="ref">supabaseClient.ts</span> (anon client).</p>
+<hr/>
+<p>*This document reflects a static review of the application source code as of the date above. A</p>
+<p>live penetration test and an audit of the production database's RLS policies are recommended as</p>
+<p>follow-up to confirm the runtime posture.*</p>
+</body></html>
