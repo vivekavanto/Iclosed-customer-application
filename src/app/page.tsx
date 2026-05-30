@@ -10,7 +10,6 @@ const brands = [
   "exp REALTY",
   "COLDWELL BANKER",
 ];
-
 const steps = [
   {
     num: "01",
