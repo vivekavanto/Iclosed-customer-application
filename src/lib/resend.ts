@@ -11,4 +11,4 @@ export const resend = new Resend(apiKey);
 export const EMAIL_FROM =
   process.env.EMAIL_FROM || "iClosed <noreply@iclosed.ca>";
 
-export const EMAIL_REPLY_TO = "testing@iclosed.ca";
+export const EMAIL_REPLY_TO = "testing@navawilson.law";
