@@ -555,6 +555,26 @@ function StatusTimeline({
 /* ─────────────────────────────────────────────
    PAGE
 ───────────────────────────────────────────── */
+
+// For a "Purchase & Sale" deal the dashboard splits into a Purchase tab and a
+// Sale tab. It used to always open on "purchase", which hid data the admin
+// pre-filled on the other side — e.g. a co-seller whose Personal Information
+// was entered on the Sale side would land on an empty Purchase tab. Admin
+// pre-fill marks that side's "Provide Personal Information" task Completed, so
+// use it as the signal. Conservative: only switch to Sale when Sale is the
+// side that actually holds the client's filled Personal Information; otherwise
+// return null and the caller keeps the historical "purchase" default.
+function pickDefaultSide(tasks: Task[]): "purchase" | "sale" | null {
+  const isPPI = (t: Task) =>
+    (t.title ?? "").toLowerCase().includes("personal information");
+  const ppiFilled = (side: "purchase" | "sale") =>
+    tasks.some((t) => t.side === side && isPPI(t) && t.completed);
+
+  if (ppiFilled("purchase")) return "purchase";
+  if (ppiFilled("sale")) return "sale";
+  return null;
+}
+
 export default function DashboardPage() {
   // ── Multiple properties / deals (one tab per lead) ─────────
   const [properties, setProperties] = useState<PropertyData[]>([]);
@@ -570,6 +590,9 @@ export default function DashboardPage() {
 
   // ── Purchase/Sale tab state (only used when active deal is "Purchase & Sale") ──
   const [selectedSide, setSelectedSide] = useState<"purchase" | "sale">("purchase");
+  // Lead id for which the content-aware default side has already been applied.
+  // Lets the auto-default run once per property while preserving manual clicks.
+  const autoSideLeadRef = useRef<string | null>(null);
 
   // ── Drawer state ──────────────────────────────────────────
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
@@ -628,6 +651,9 @@ export default function DashboardPage() {
   // ── Reset selected side when switching properties ─────────
   useEffect(() => {
     setSelectedSide("purchase");
+    // Re-arm the content-aware default so it re-applies once this property's
+    // tasks load (see fetchDealData below).
+    autoSideLeadRef.current = null;
   }, [activeLeadId]);
 
   // ── When active lead/deal changes: reload tasks + milestones ──
@@ -656,7 +682,18 @@ export default function DashboardPage() {
         const tasksRes = await fetch(`/api/tasks?deal_id=${activeDealId}`);
         if (tasksRes.ok) {
           const d = await tasksRes.json();
-          if (d.success) setTasks(d.tasks);
+          if (d.success) {
+            setTasks(d.tasks);
+            // Land the user on the side that actually has content (e.g. the
+            // Sale side where the admin pre-filled a co-seller's Personal
+            // Information). Runs once per property; manual tab clicks afterward
+            // are preserved because the ref is only reset on property change.
+            if (autoSideLeadRef.current !== activeLeadId) {
+              const preferred = pickDefaultSide(d.tasks as Task[]);
+              if (preferred) setSelectedSide(preferred);
+              autoSideLeadRef.current = activeLeadId;
+            }
+          }
         }
       } catch (err) {
         console.error("Deal data fetch error:", err);

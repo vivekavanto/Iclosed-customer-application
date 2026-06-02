@@ -90,14 +90,19 @@ export async function POST(req: Request) {
     const normFirst = (first_name ?? "").trim().toLowerCase();
     const normLast = (last_name ?? "").trim().toLowerCase();
     const normStreet = (address_street ?? "").trim().toLowerCase();
+    // Unit is part of the address identity — two different units in the same
+    // building share street/city/postal, so without this a unit-15 intake would
+    // wrongly match a unit-12 lead and get auto-linked to its deal.
+    const normUnit = (address_unit ?? "").trim().toLowerCase().replace(/\s/g, "");
     const normCity = (address_city ?? "").trim().toLowerCase();
     const normPostal = (address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
 
-    const matchesAddress = (l: { address_street: string | null; address_city: string | null; address_postal_code: string | null }) => {
+    const matchesAddress = (l: { address_street: string | null; address_unit: string | null; address_city: string | null; address_postal_code: string | null }) => {
       const lStreet = (l.address_street ?? "").trim().toLowerCase();
+      const lUnit = (l.address_unit ?? "").trim().toLowerCase().replace(/\s/g, "");
       const lCity = (l.address_city ?? "").trim().toLowerCase();
       const lPostal = (l.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
-      return lStreet === normStreet && lCity === normCity && lPostal === normPostal;
+      return lStreet === normStreet && lUnit === normUnit && lCity === normCity && lPostal === normPostal;
     };
 
     if (normStreet && normCity) {
@@ -105,7 +110,7 @@ export async function POST(req: Request) {
       if (normEmail) {
         const { data: existingLeads } = await supabaseAdmin
           .from("leads")
-          .select("id, email, address_street, address_city, address_postal_code")
+          .select("id, email, address_street, address_unit, address_city, address_postal_code")
           .ilike("email", normEmail);
 
         if (existingLeads && existingLeads.some(matchesAddress)) {
@@ -122,7 +127,7 @@ export async function POST(req: Request) {
         if (aliasMatch) {
           const { data: clientLeads } = await supabaseAdmin
             .from("leads")
-            .select("id, address_street, address_city, address_postal_code")
+            .select("id, address_street, address_unit, address_city, address_postal_code")
             .eq("client_id", aliasMatch.id);
           if (clientLeads && clientLeads.some(matchesAddress)) {
             return NextResponse.json(
@@ -351,7 +356,7 @@ export async function POST(req: Request) {
         const excludeIds = [lead.id, ...coPersonLeadIds];
         const { data: matchingLeads } = await supabaseAdmin
           .from("leads")
-          .select("id, status, address_postal_code, selling_address_street, selling_address_city, selling_address_postal_code")
+          .select("id, status, address_unit, address_postal_code, selling_address_street, selling_address_city, selling_address_postal_code")
           .not("id", "in", `(${excludeIds.join(",")})`)
           .neq("email", normEmail)
           .is("parent_lead_id", null)
@@ -360,8 +365,9 @@ export async function POST(req: Request) {
 
         if (matchingLeads && matchingLeads.length > 0) {
           const matched = matchingLeads.find((ml) => {
+            const mlUnit = (ml.address_unit ?? "").trim().toLowerCase().replace(/\s/g, "");
             const mlPostal = (ml.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
-            return mlPostal === normPostal;
+            return mlUnit === normUnit && mlPostal === normPostal;
           });
 
           if (matched) {
@@ -544,16 +550,20 @@ export async function POST(req: Request) {
     }
 
     // ── 5. Trigger welcome email ───────────────────────────────
-    // Skip welcome email if auto-converted (invite email already sent by convertSingleLead)
-    if (!autoConverted) {
-      try {
-        await sendWelcomeEmail(lead.id);
-        await Promise.all(
-          coPersonLeadIds.map((cpLeadId) => sendWelcomeEmail(cpLeadId))
-        );
-      } catch (err) {
-        console.error("[Intake] Welcome email failed:", err);
-      }
+    // Send the welcome email for every intake completion, whether or not the
+    // address-match auto-conversion ran. This used to be skipped when
+    // autoConverted was true (on the assumption convertSingleLead's invite
+    // email replaced it), but that left auto-joined clients with no welcome —
+    // and, when the invite failed, with no email at all. The login and
+    // welcome-email fallbacks filter on welcome_email_sent, so sending here
+    // won't double-send.
+    try {
+      await sendWelcomeEmail(lead.id);
+      await Promise.all(
+        coPersonLeadIds.map((cpLeadId) => sendWelcomeEmail(cpLeadId))
+      );
+    } catch (err) {
+      console.error("[Intake] Welcome email failed:", err);
     }
 
     // ── 6. Notify iClosed team for every lead created in this intake ───

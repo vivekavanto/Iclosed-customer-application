@@ -1,5 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeal } from "@/lib/getAuthClient";
+import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -278,6 +279,105 @@ export async function GET(req: Request) {
         if (outOfSyncTaskIds.includes(t.id)) {
           t.completed = true;
           t.status = "Completed";
+        }
+      }
+    }
+
+    // ─────────────────────────────────────────
+    // Reconcile shared-task completion from family peers.
+    //
+    // Shared tasks ("Status of Mortgage", etc.) physically exist as a separate
+    // row per person. Completion is pushed once at submit time
+    // (syncSharedTaskCompletion) and only reaches peer rows that already exist,
+    // are linked via parent_lead_id, and are is_shared=true at that moment. A
+    // co-purchaser/co-seller row created or linked AFTER the primary submitted
+    // is born Pending and is never reconciled — so the admin panel (which reads
+    // the primary deal's shared row) shows it complete while this portal, which
+    // reads the logged-in person's OWN row, shows it Pending forever.
+    //
+    // Heal on read: if any family peer for the same shared task is completed,
+    // mark this person's row completed too. We intentionally do NOT advance
+    // milestones / trigger emails here — that would re-fire on every page load.
+    // ─────────────────────────────────────────
+    const sharedPending = (tasks ?? []).filter((t: any) => t.is_shared && !t.completed);
+
+    if (sharedPending.length > 0) {
+      // All OTHER deals in the lead family (primary + co-purchaser/co-seller),
+      // excluding the logged-in person's own deals.
+      const linkedSets = await Promise.all(dealIds.map((d) => getLinkedDealIds(d)));
+      const localDealSet = new Set(dealIds);
+      const familyOtherDealIds = [
+        ...new Set(linkedSets.flat().filter((id) => !localDealSet.has(id))),
+      ];
+
+      if (familyOtherDealIds.length > 0) {
+        const { data: peerCompleted } = await supabaseAdmin
+          .from("tasks")
+          .select("task_template_id, title")
+          .in("deal_id", familyOtherDealIds)
+          .eq("is_shared", true)
+          .eq("completed", true);
+
+        if (peerCompleted && peerCompleted.length > 0) {
+          // APS tasks must match by template id only — their titles are identical
+          // across Purchase/Sale sides but represent different documents. Every
+          // other shared task may also match by case-insensitive title to bridge
+          // the differing per-side template ids (mirrors findFamilySharedTaskPeers).
+          const templateIds = [
+            ...new Set(
+              [...sharedPending, ...peerCompleted]
+                .map((t: any) => t.task_template_id)
+                .filter(Boolean)
+            ),
+          ];
+          const apsIds = new Set<string>();
+          if (templateIds.length > 0) {
+            const { data: tplRows } = await supabaseAdmin
+              .from("task_templates")
+              .select("id, is_aps_task")
+              .in("id", templateIds);
+            for (const r of tplRows ?? []) {
+              if (r.is_aps_task) apsIds.add(r.id);
+            }
+          }
+
+          const completedTemplateIds = new Set(
+            peerCompleted.map((p: any) => p.task_template_id).filter(Boolean)
+          );
+          const completedTitles = new Set(
+            peerCompleted.map((p: any) => p.title?.trim().toLowerCase()).filter(Boolean)
+          );
+
+          const reconcileIds: string[] = [];
+          for (const t of sharedPending) {
+            const byTemplate =
+              t.task_template_id && completedTemplateIds.has(t.task_template_id);
+            const localIsAps = t.task_template_id ? apsIds.has(t.task_template_id) : false;
+            const byTitle =
+              !localIsAps &&
+              t.title &&
+              completedTitles.has(t.title.trim().toLowerCase());
+            if (byTemplate || byTitle) reconcileIds.push(t.id);
+          }
+
+          if (reconcileIds.length > 0) {
+            await supabaseAdmin
+              .from("tasks")
+              .update({
+                completed: true,
+                status: "Completed",
+                completed_at: new Date().toISOString(),
+              })
+              .in("id", reconcileIds);
+
+            const reconcileSet = new Set(reconcileIds);
+            for (const t of tasks ?? []) {
+              if (reconcileSet.has(t.id)) {
+                t.completed = true;
+                t.status = "Completed";
+              }
+            }
+          }
         }
       }
     }
