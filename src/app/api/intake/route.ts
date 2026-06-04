@@ -2,7 +2,6 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
-import { convertSingleLead, syncSharedTasksAcrossDeals } from "@/lib/convertLead";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { NextResponse } from "next/server";
 
@@ -136,6 +135,43 @@ export async function POST(req: Request) {
             );
           }
         }
+      }
+    }
+
+    // ── Block intake for an address that already has a converted deal ──
+    // Once a deal exists for an address, a DIFFERENT person submitting an
+    // intake for the same address must NOT auto-join the deal as a
+    // co-purchaser/co-seller. Co-purchasers/co-sellers can only be added by an
+    // admin from the admin panel. So we reject the submission outright instead
+    // of creating the lead. (Same-person resubmissions are already caught by
+    // the email/name duplicate checks above.)
+    if (normStreet && normCity && normEmail) {
+      // Fetch all converted primary leads at this city by a DIFFERENT person,
+      // then compare street/unit/city/postal in JS (trim + lowercase) so
+      // DB-side whitespace/casing differences don't cause a miss.
+      const { data: convertedMatches } = await supabaseAdmin
+        .from("leads")
+        .select("id, email, address_street, address_unit, address_city, address_postal_code")
+        .eq("status", "Converted")
+        .neq("email", normEmail)
+        .is("parent_lead_id", null)
+        .ilike("address_city", normCity);
+
+      const hasConvertedDeal = (convertedMatches ?? []).some(matchesAddress);
+
+      console.log(
+        `[Intake] Converted-deal block check: street="${normStreet}" city="${normCity}" unit="${normUnit}" postal="${normPostal}" email="${normEmail}" → candidates=${convertedMatches?.length ?? 0}, blocked=${hasConvertedDeal}`
+      );
+
+      if (hasConvertedDeal) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "A deal already exists for this property. A co-purchaser or co-seller can only be added by an admin. Please contact us to be added to this deal.",
+          },
+          { status: 409 }
+        );
       }
     }
 
@@ -346,17 +382,21 @@ export async function POST(req: Request) {
     }
 
     // ── 4. Address match detection (co-purchaser) ─────────────
-    // Flags when a DIFFERENT person (different email) submits for the same address.
-    // If the matched lead is already Converted (has a deal), auto-link + auto-convert.
+    // Flags when a DIFFERENT person (different email) submits for the same
+    // address as an existing, NOT-yet-converted lead, so an admin can review
+    // and link them from the admin panel. Addresses that already have a
+    // converted deal are rejected earlier (before the lead is created), so we
+    // never auto-link or auto-convert a co-purchaser/co-seller here — that can
+    // only be done by an admin.
     let addressMatch = false;
-    let autoConverted = false;
+    const autoConverted = false;
 
     try {
       if (normStreet && normCity && normPostal) {
         const excludeIds = [lead.id, ...coPersonLeadIds];
         const { data: matchingLeads } = await supabaseAdmin
           .from("leads")
-          .select("id, status, address_unit, address_postal_code, selling_address_street, selling_address_city, selling_address_postal_code")
+          .select("id, status, address_unit, address_postal_code")
           .not("id", "in", `(${excludeIds.join(",")})`)
           .neq("email", normEmail)
           .is("parent_lead_id", null)
@@ -373,175 +413,15 @@ export async function POST(req: Request) {
           if (matched) {
             addressMatch = true;
 
-            if (matched.status === "Converted") {
-              // Matched lead already has a deal — auto-link + auto-convert this lead
-              // Set parent_lead_id to link as co-purchaser
-
-              // P&S split: if the new intake is Purchase & Sale and the seller-side
-              // address differs from the matched primary's seller-side address,
-              // the intake is really two unrelated deals (joining matched's
-              // purchase, plus an independent sale). Strip the sale side off the
-              // joining lead so it becomes a Purchase-only co-purchaser of
-              // matched's family; a separate Sale-only lead is inserted below.
-              const normSellStreet = (selling_address_street ?? "").trim().toLowerCase();
-              const matchedSellStreet = (matched.selling_address_street ?? "").trim().toLowerCase();
-              const shouldSplitSale =
-                sub_service === "both" &&
-                !!normSellStreet &&
-                normSellStreet !== matchedSellStreet;
-
-              const linkUpdate: Record<string, unknown> = {
-                parent_lead_id: matched.id,
-                address_match_flag: { matched_lead_id: matched.id, status: "approved" },
-              };
-              if (shouldSplitSale) {
-                Object.assign(linkUpdate, {
-                  lead_type: "Purchase",
-                  sub_service: "buying",
-                  selling_address_street: null,
-                  selling_address_unit: null,
-                  selling_address_city: null,
-                  selling_address_postal_code: null,
-                  selling_address_province: null,
-                  selling_price: null,
-                  aps_signed_sale: null,
-                  aps_uploaded_sale: null,
-                });
-              }
-
-              await supabaseAdmin
-                .from("leads")
-                .update(linkUpdate)
-                .eq("id", lead.id);
-
-              // Also link any co-person leads
-              for (const cpId of coPersonLeadIds) {
-                const cpUpdate: Record<string, unknown> = { parent_lead_id: matched.id };
-                if (shouldSplitSale) {
-                  // Co-persons were created as P&S with the same selling address
-                  // mirrored from the primary. Strip the sale side off them too
-                  // so they're consistent co-purchasers on matched's family. (We
-                  // can't tell here whether any of them was meant as a co-seller
-                  // of the original sale — that needs an explicit role field.)
-                  Object.assign(cpUpdate, {
-                    lead_type: "Purchase",
-                    sub_service: "buying",
-                    selling_address_street: null,
-                    selling_address_unit: null,
-                    selling_address_city: null,
-                    selling_address_postal_code: null,
-                    selling_address_province: null,
-                    selling_price: null,
-                    aps_signed_sale: null,
-                    aps_uploaded_sale: null,
-                  });
-                }
-                await supabaseAdmin.from("leads").update(cpUpdate).eq("id", cpId);
-              }
-
-              // Re-fetch lead with updated parent_lead_id
-              const { data: updatedLead } = await supabaseAdmin
-                .from("leads")
-                .select("*")
-                .eq("id", lead.id)
-                .single();
-
-              if (updatedLead) {
-                // Auto-convert this lead (creates client, deal, milestones, tasks, invite)
-                const result = await convertSingleLead({ lead: updatedLead });
-
-                if (result.success) {
-                  autoConverted = true;
-
-                  // Auto-convert co-person leads too
-                  for (const cpId of coPersonLeadIds) {
-                    const { data: cpLead } = await supabaseAdmin
-                      .from("leads")
-                      .select("*")
-                      .eq("id", cpId)
-                      .single();
-
-                    if (cpLead) {
-                      await convertSingleLead({
-                        lead: cpLead,
-                        parentClientId: result.client_id,
-                      });
-                    }
-                  }
-
-                  // If we split the sale side off, create a separate Sale-only
-                  // lead + deal for the user's own seller property. Same
-                  // person/client, independent primary lead (no parent_lead_id),
-                  // not linked to matched's family.
-                  if (shouldSplitSale) {
-                    try {
-                      const saleApsAggregate = !!apsSale;
-                      const { data: saleLead, error: saleLeadErr } = await supabaseAdmin
-                        .from("leads")
-                        .insert({
-                          first_name,
-                          last_name,
-                          email,
-                          phone,
-                          service,
-                          sub_service: "selling",
-                          lead_type: "Sale",
-                          price: cleanSellingPrice,
-                          selling_price: null,
-                          address_street: selling_address_street,
-                          address_unit: selling_address_unit,
-                          address_city: selling_address_city,
-                          address_postal_code: selling_address_postal_code,
-                          address_province: selling_address_province,
-                          selling_address_street: null,
-                          selling_address_unit: null,
-                          selling_address_city: null,
-                          selling_address_postal_code: null,
-                          selling_address_province: null,
-                          aps_signed: saleApsAggregate,
-                          aps_signed_purchase: null,
-                          aps_signed_sale: null,
-                          co_persons: [],
-                          referral_source: referral_source || null,
-                          client_id: result.client_id,
-                        })
-                        .select()
-                        .single();
-
-                      if (saleLeadErr) {
-                        console.warn("[Intake] P&S split: sale lead insert failed (non-blocking):", saleLeadErr.message);
-                      } else if (saleLead) {
-                        notifyLeadIds.push(saleLead.id);
-                        const saleResult = await convertSingleLead({
-                          lead: saleLead,
-                          parentClientId: result.client_id,
-                        });
-                        if (!saleResult.success) {
-                          console.warn("[Intake] P&S split: sale lead convert failed (non-blocking):", saleResult.error);
-                        }
-                      }
-                    } catch (splitErr) {
-                      console.warn("[Intake] P&S split (non-blocking):", splitErr);
-                    }
-                  }
-
-                  // Sync shared tasks across all linked deals
-                  try {
-                    await syncSharedTasksAcrossDeals(result.deal_id);
-                  } catch (syncErr) {
-                    console.warn("[Intake] Shared task sync failed (non-blocking):", syncErr);
-                  }
-                }
-              }
-            } else {
-              // Matched lead is NOT converted yet — just flag for admin review
-              await supabaseAdmin
-                .from("leads")
-                .update({
-                  address_match_flag: { matched_lead_id: matched.id, status: "pending" },
-                })
-                .eq("id", lead.id);
-            }
+            // Flag for admin review. A converted match would have been rejected
+            // before this lead was inserted, so this is always a not-yet-converted
+            // match that an admin can choose to link as a co-purchaser/co-seller.
+            await supabaseAdmin
+              .from("leads")
+              .update({
+                address_match_flag: { matched_lead_id: matched.id, status: "pending" },
+              })
+              .eq("id", lead.id);
           }
         }
       }
