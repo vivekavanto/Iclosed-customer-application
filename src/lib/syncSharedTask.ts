@@ -31,9 +31,9 @@ export async function syncSharedTaskCompletion(params: {
 }): Promise<void> {
   const { taskId, dealId, taskTemplateId } = params;
 
-  // Cross-side aware peer lookup: matches by task_template_id AND (non-APS)
-  // by case-insensitive title so a Sale-side co-seller's task is included
-  // even though its template id differs from the Purchase-side source.
+  // Side-isolated peer lookup: matches by task_template_id AND (non-APS) by
+  // case-insensitive title within the SAME side, so same-side parties stay in
+  // lockstep but Purchase/Sale copies of a task never cross-complete.
   const { title, isApsTask } = await resolveSourceTaskMeta(taskId);
   const peers = await findFamilySharedTaskPeers({
     sourceTaskId: taskId,
@@ -107,7 +107,7 @@ export async function syncSharedTaskResponses(params: {
 }): Promise<void> {
   const { taskId, dealId, taskTemplateId } = params;
 
-  // Cross-side aware peer lookup — see syncSharedTaskCompletion above.
+  // Side-isolated peer lookup — see syncSharedTaskCompletion above.
   const { title, isApsTask } = await resolveSourceTaskMeta(taskId);
   const peers = await findFamilySharedTaskPeers({
     sourceTaskId: taskId,
@@ -162,9 +162,9 @@ export async function syncSharedTaskPatch(params: {
 }): Promise<void> {
   const { sourceTaskId, dealId, taskTemplateId, patch } = params;
 
-  // Cross-side aware peer lookup — matches title-equivalent shared tasks on
-  // the opposite side of a Purchase & Sale family so co-sellers receive the
-  // status/document update too. APS keeps its template-id-only scope.
+  // Side-isolated peer lookup — matches title-equivalent shared tasks on the
+  // SAME side of a Purchase & Sale family. Purchase and Sale copies stay
+  // independent. APS keeps its template-id-only scope.
   const { title, isApsTask } = await resolveSourceTaskMeta(sourceTaskId);
   const peers = await findFamilySharedTaskPeers({
     sourceTaskId,

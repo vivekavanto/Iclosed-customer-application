@@ -496,16 +496,19 @@ export default function PersonalInformationDrawer({
     };
   }, [open, taskId]);
 
-  // Initialize form with property data when opened
+  // Initialize form with property data when opened.
+  // Only the customer's phone is prefilled from the lead. The address fields are
+  // intentionally NOT prefilled: the lead's address_* is the *property* address
+  // the customer is buying/selling (captured during intake), whereas the address
+  // asked here is the customer's *current* address — a different thing. Carrying
+  // the property address over auto-filled the wrong value, so the address fields
+  // are left blank for the customer to enter (name stays read-only above).
   useEffect(() => {
     if (open) {
       setForm((prev) => ({
         ...EMPTY,
         ...prev, // preserve any already entered data if any
         phone: prev.phone || property?.phone || "",
-        streetAddress: prev.streetAddress || property?.address_street || "",
-        city: prev.city || property?.address_city || "",
-        postalCode: prev.postalCode || property?.address_postal_code || "",
       }));
     }
   }, [open, property]);

@@ -313,16 +313,22 @@ export async function GET(req: Request) {
       if (familyOtherDealIds.length > 0) {
         const { data: peerCompleted } = await supabaseAdmin
           .from("tasks")
-          .select("task_template_id, title")
+          .select("task_template_id, title, side")
           .in("deal_id", familyOtherDealIds)
           .eq("is_shared", true)
           .eq("completed", true);
 
         if (peerCompleted && peerCompleted.length > 0) {
-          // APS tasks must match by template id only — their titles are identical
-          // across Purchase/Sale sides but represent different documents. Every
-          // other shared task may also match by case-insensitive title to bridge
-          // the differing per-side template ids (mirrors findFamilySharedTaskPeers).
+          // Matching is SIDE-AWARE: a Purchase-side task only reconciles from a
+          // Purchase-side peer (and Sale from Sale). "Status of Mortgage" and
+          // "Schedule an Appointment" exist on both sides of a Purchase & Sale
+          // family but are different obligations, so they must NOT cross-complete.
+          //
+          // APS tasks match by template id only — their titles are identical
+          // across sides but represent different documents. Every other shared
+          // task may also match by case-insensitive title (within the same side)
+          // to bridge differing per-side template ids.
+          const sideKey = (s: any) => (s ?? "_");
           const templateIds = [
             ...new Set(
               [...sharedPending, ...peerCompleted]
@@ -341,22 +347,28 @@ export async function GET(req: Request) {
             }
           }
 
-          const completedTemplateIds = new Set(
-            peerCompleted.map((p: any) => p.task_template_id).filter(Boolean)
+          // Side-scoped lookup keys: "<side>::<template_id>" and "<side>::<title>".
+          const completedTemplateKeys = new Set(
+            peerCompleted
+              .filter((p: any) => p.task_template_id)
+              .map((p: any) => `${sideKey(p.side)}::${p.task_template_id}`)
           );
-          const completedTitles = new Set(
-            peerCompleted.map((p: any) => p.title?.trim().toLowerCase()).filter(Boolean)
+          const completedTitleKeys = new Set(
+            peerCompleted
+              .filter((p: any) => p.title)
+              .map((p: any) => `${sideKey(p.side)}::${p.title.trim().toLowerCase()}`)
           );
 
           const reconcileIds: string[] = [];
           for (const t of sharedPending) {
             const byTemplate =
-              t.task_template_id && completedTemplateIds.has(t.task_template_id);
+              t.task_template_id &&
+              completedTemplateKeys.has(`${sideKey(t.side)}::${t.task_template_id}`);
             const localIsAps = t.task_template_id ? apsIds.has(t.task_template_id) : false;
             const byTitle =
               !localIsAps &&
               t.title &&
-              completedTitles.has(t.title.trim().toLowerCase());
+              completedTitleKeys.has(`${sideKey(t.side)}::${t.title.trim().toLowerCase()}`);
             if (byTemplate || byTitle) reconcileIds.push(t.id);
           }
 
