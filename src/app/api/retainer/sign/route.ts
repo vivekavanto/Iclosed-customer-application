@@ -51,6 +51,7 @@ export async function POST(req: Request) {
       .from("deals")
       .select("lead_id")
       .eq("client_id", client.id)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false });
 
     const leadIds = (deals || []).map((d) => d.lead_id).filter(Boolean);

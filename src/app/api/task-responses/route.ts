@@ -186,13 +186,15 @@ export async function POST(req: Request) {
         const { data: siblings } = await supabaseAdmin
           .from("tasks")
           .select("id, completed")
-          .eq("milestone_id", task.milestone_id);
+          .eq("milestone_id", task.milestone_id)
+          .eq("is_deleted", false);
 
         // Re-fetch to get updated state after marking this task done
         const { data: updatedSiblings } = await supabaseAdmin
           .from("tasks")
           .select("id, completed")
-          .eq("milestone_id", task.milestone_id);
+          .eq("milestone_id", task.milestone_id)
+          .eq("is_deleted", false);
 
         const allDone =
           (updatedSiblings ?? []).length > 0 &&
@@ -222,6 +224,7 @@ export async function POST(req: Request) {
               .from("milestones")
               .select("id")
               .eq("deal_id", task.deal_id)
+              .eq("is_deleted", false)
               .gt("order_index", currentMs.order_index)
               .neq("status", "Completed")
               .order("order_index", { ascending: true })

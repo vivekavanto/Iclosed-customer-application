@@ -84,7 +84,8 @@ export async function PATCH(
       const { data: siblingsData } = await supabaseAdmin
         .from("tasks")
         .select("id, completed")
-        .eq("milestone_id", task.milestone_id);
+        .eq("milestone_id", task.milestone_id)
+        .eq("is_deleted", false);
 
       const siblings = siblingsData ?? [];
       const allDone = siblings.length > 0 && siblings.every((t) => t.completed);
@@ -116,6 +117,7 @@ export async function PATCH(
             .from("milestones")
             .select("id")
             .eq("deal_id", task.deal_id)
+            .eq("is_deleted", false)
             .gt("order_index", currentMilestone.order_index)
             .neq("status", "Completed")
             .order("order_index", { ascending: true })
@@ -135,6 +137,7 @@ export async function PATCH(
               .from("milestones")
               .select("id")
               .eq("deal_id", task.deal_id)
+              .eq("is_deleted", false)
               .neq("id", nextMilestone.id)
               .neq("status", "Completed")
               .neq("status", "In Progress")

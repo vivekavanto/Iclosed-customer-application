@@ -98,7 +98,8 @@ export async function POST(request: Request) {
       const { data: deals, error: dealsErr } = await supabaseAdmin
         .from("deals")
         .select("lead_id")
-        .eq("client_id", client.id);
+        .eq("client_id", client.id)
+        .eq("is_deleted", false);
 
       console.log("[LOGIN] Deals found:", deals, "Error:", dealsErr?.message);
 

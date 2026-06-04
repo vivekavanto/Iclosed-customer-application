@@ -65,6 +65,7 @@ export async function GET() {
       )
       .eq("client_id", client.id)
       .eq("status", "Active")
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false });
 
     if (dealError) {

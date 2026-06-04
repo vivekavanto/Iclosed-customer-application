@@ -37,7 +37,8 @@ export async function GET(req: Request) {
       const { data: deals } = await supabaseAdmin
         .from("deals")
         .select("id")
-        .eq("client_id", authData.client.id);
+        .eq("client_id", authData.client.id)
+        .eq("is_deleted", false);
 
       dealIds = (deals ?? []).map((d: any) => d.id);
     }
@@ -57,7 +58,8 @@ export async function GET(req: Request) {
         const { data: deals } = await supabaseAdmin
           .from("deals")
           .select("id")
-          .eq("client_id", lead.client_id);
+          .eq("client_id", lead.client_id)
+          .eq("is_deleted", false);
 
         dealIds = (deals ?? []).map((d: any) => d.id);
       }
@@ -67,7 +69,8 @@ export async function GET(req: Request) {
         const { data: deals } = await supabaseAdmin
           .from("deals")
           .select("id")
-          .eq("lead_id", lead_id);
+          .eq("lead_id", lead_id)
+          .eq("is_deleted", false);
 
         dealIds = (deals ?? []).map((d: any) => d.id);
       }
@@ -234,12 +237,14 @@ export async function GET(req: Request) {
           .from("tasks")
           .select("*, task_template:task_templates(order_index)")
           .in("deal_id", dealIds)
+          .eq("is_deleted", false)
           .order("due_date", { ascending: true, nullsFirst: false }),
 
         supabaseAdmin
           .from("milestones")
           .select("id, title, order_index, status")
-          .in("deal_id", dealIds),
+          .in("deal_id", dealIds)
+          .eq("is_deleted", false),
       ]);
 
     if (tasksError) {
