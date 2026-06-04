@@ -50,7 +50,8 @@ export async function syncSharedTaskCompletion(params: {
     .from("tasks")
     .select("id, deal_id, milestone_id")
     .in("id", peerIds)
-    .eq("completed", false);
+    .eq("completed", false)
+    .eq("is_deleted", false);
 
   const linkedTasks = openLinked ?? [];
   if (linkedTasks.length === 0) return;
@@ -188,7 +189,8 @@ export async function advanceMilestone(dealId: string, milestoneId: string) {
   const { data: siblings } = await supabaseAdmin
     .from("tasks")
     .select("id, completed")
-    .eq("milestone_id", milestoneId);
+    .eq("milestone_id", milestoneId)
+    .eq("is_deleted", false);
 
   const allDone = (siblings ?? []).length > 0 && (siblings ?? []).every((t) => t.completed);
   const anyDone = (siblings ?? []).some((t) => t.completed);
@@ -217,6 +219,7 @@ export async function advanceMilestone(dealId: string, milestoneId: string) {
         .from("milestones")
         .select("id")
         .eq("deal_id", dealId)
+        .eq("is_deleted", false)
         .gt("order_index", currentMs.order_index)
         .neq("status", "Completed")
         .order("order_index", { ascending: true })

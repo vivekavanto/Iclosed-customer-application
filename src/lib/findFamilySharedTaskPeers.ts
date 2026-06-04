@@ -22,7 +22,8 @@ export async function findFamilySharedTaskPeers(params: {
       .select("id, deal_id, milestone_id")
       .in("deal_id", linkedDealIds)
       .eq("task_template_id", taskTemplateId)
-      .eq("is_shared", true);
+      .eq("is_shared", true)
+      .eq("is_deleted", false);
     for (const t of byTemplate ?? []) {
       if (t.id !== sourceTaskId) peers.set(t.id, t);
     }
@@ -48,7 +49,8 @@ export async function findFamilySharedTaskPeers(params: {
       .select("id, deal_id, milestone_id")
       .in("deal_id", linkedDealIds)
       .ilike("title", trimmedTitle)
-      .eq("is_shared", true);
+      .eq("is_shared", true)
+      .eq("is_deleted", false);
     titleQuery = sourceSide === null ? titleQuery.is("side", null) : titleQuery.eq("side", sourceSide);
 
     const { data: byTitle } = await titleQuery;

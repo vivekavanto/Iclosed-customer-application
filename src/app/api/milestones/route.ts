@@ -37,7 +37,8 @@ export async function GET(req: Request) {
       const { data: deals } = await supabaseAdmin
         .from("deals")
         .select("id")
-        .eq("client_id", authData.client.id);
+        .eq("client_id", authData.client.id)
+        .eq("is_deleted", false);
 
       dealIds = (deals ?? []).map((d: any) => d.id);
     }
@@ -57,7 +58,8 @@ export async function GET(req: Request) {
         const { data: deals } = await supabaseAdmin
           .from("deals")
           .select("id")
-          .eq("client_id", lead.client_id);
+          .eq("client_id", lead.client_id)
+          .eq("is_deleted", false);
 
         dealIds = (deals ?? []).map((d: any) => d.id);
       }
@@ -67,7 +69,8 @@ export async function GET(req: Request) {
         const { data: deals } = await supabaseAdmin
           .from("deals")
           .select("id")
-          .eq("lead_id", lead_id);
+          .eq("lead_id", lead_id)
+          .eq("is_deleted", false);
 
         dealIds = (deals ?? []).map((d: any) => d.id);
       }
@@ -164,6 +167,7 @@ export async function GET(req: Request) {
           .from("stage_templates")
           .select("id, name, order_index, email_template_id, description, auto_complete")
           .eq("lead_type", stageType)
+          .eq("is_deleted", false)
           .order("order_index", { ascending: true });
 
         if (!stageTemplates || stageTemplates.length === 0) continue;
@@ -225,12 +229,14 @@ export async function GET(req: Request) {
             "id, title, status, milestone_date, order_index, completed_at, deal_id, description, side"
           )
           .in("deal_id", dealIds)
+          .eq("is_deleted", false)
           .order("order_index", { ascending: true }),
 
         supabaseAdmin
           .from("tasks")
           .select("id, milestone_id, completed")
-          .in("deal_id", dealIds),
+          .in("deal_id", dealIds)
+          .eq("is_deleted", false),
       ]);
 
     if (msError) {

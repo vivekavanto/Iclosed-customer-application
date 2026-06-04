@@ -335,6 +335,7 @@ export async function getAuthClientDeal() {
       "id, file_number, type, status, closing_date, property_address, price, lead_id"
     )
     .eq("client_id", client.id)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -356,6 +357,7 @@ export async function getAuthClientDeals() {
       "id, file_number, type, status, closing_date, property_address, price, lead_id"
     )
     .eq("client_id", client.id)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false });
 
   return { client, deals: deals ?? [] };

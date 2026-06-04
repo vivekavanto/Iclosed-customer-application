@@ -65,6 +65,7 @@ export async function GET(req: Request) {
           .from("deals")
           .select("id, file_number, type, status, closing_date, property_address, price, lead_id")
           .eq("client_id", clientByEmail.id)
+          .eq("is_deleted", false)
           .order("created_at", { ascending: false });
 
         const leadIds = (deals ?? []).map((d: any) => d.lead_id).filter(Boolean) as string[];
@@ -119,6 +120,7 @@ export async function GET(req: Request) {
         .from("deals")
         .select("id, file_number, type, status, closing_date, property_address, price, lead_id")
         .eq("lead_id", lead_id)
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false });
 
       const enriched = (deals ?? []).map((deal: any) => ({

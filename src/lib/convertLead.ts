@@ -238,6 +238,7 @@ export async function convertSingleLead(params: {
       .from("stage_templates")
       .select("id, name, order_index, email_template_id, description, auto_complete")
       .eq("lead_type", templateType)
+      .eq("is_deleted", false)
       .order("order_index", { ascending: true });
 
     if (stages && stages.length > 0) {

@@ -41,7 +41,8 @@ export async function getLinkedDealIds(dealId: string): Promise<string[]> {
     .from("deals")
     .select("id")
     .in("lead_id", familyLeadIds)
-    .neq("id", dealId);
+    .neq("id", dealId)
+    .eq("is_deleted", false);
 
   return (linkedDeals ?? []).map((d) => d.id);
 }
