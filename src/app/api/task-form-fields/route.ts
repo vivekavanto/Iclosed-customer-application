@@ -107,15 +107,41 @@ export async function GET(req: Request) {
           .single();
 
         if (lead) {
+          // The person's personal fields (marital/occupation/citizenship/
+          // employer phone) are sourced from the CUSTOMER record (clients) —
+          // the source of truth — resolved by client_id, else email. Falls back
+          // to the lead during the transition (before the lead columns are
+          // dropped). Name/phone/address keep their existing source.
+          let person: any = null;
+          const personCols =
+            "marital_status, citizenship_status, occupation, employer_phone";
+          if (lead.client_id) {
+            const { data: c } = await supabaseAdmin
+              .from("clients")
+              .select(personCols)
+              .eq("id", lead.client_id)
+              .maybeSingle();
+            person = c ?? null;
+          }
+          if (!person && lead.email) {
+            const emailPattern = String(lead.email).replace(/[\\%_]/g, "\\$&");
+            const { data: c } = await supabaseAdmin
+              .from("clients")
+              .select(personCols)
+              .ilike("email", emailPattern)
+              .maybeSingle();
+            person = c ?? null;
+          }
+
           const prefillMapping: Record<string, string | null | undefined> = {
             "Phone Number": lead.phone,
             "Street Address": lead.address_street || deal.property_address,
             "City": lead.address_city,
             "Postal Code": lead.address_postal_code,
-            "Marital Status": lead.marital_status,
-            "Occupation": lead.occupation,
-            "Citizenship Status": lead.citizenship_status,
-            "Business/Employer Phone (Optional)": lead.employer_phone,
+            "Marital Status": person?.marital_status ?? null,
+            "Occupation": person?.occupation ?? null,
+            "Citizenship Status": person?.citizenship_status ?? null,
+            "Business/Employer Phone (Optional)": person?.employer_phone ?? null,
             "First Name": lead.first_name,
             "Last Name": lead.last_name,
             "Email": lead.email

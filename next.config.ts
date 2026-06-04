@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    // Pin the workspace root so Next stops picking up the unrelated
+    // D:\package-lock.json (a different project) as the root directory.
+    root: __dirname,
+  },
   async headers() {
     return [
       {

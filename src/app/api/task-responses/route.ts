@@ -148,33 +148,44 @@ export async function POST(req: Request) {
         );
       }
 
-      // Mirror citizenship_status onto the lead so the admin panel can flag/filter
-      // without joining task_responses. Runs for every citizenship answer, not just
-      // the non-citizen flag — the admin panel may want to display the status regardless.
+      // Mirror citizenship_status onto the CUSTOMER record (public.clients) —
+      // the source of truth for the admin non-citizen flag. Resolve the client
+      // via deal.client_id, else the lead's client_id/email.
       if (citizenshipResp && task.deal_id) {
         const normalized = normalizeCitizenshipValue(String(citizenshipResp.value ?? ""));
         if (normalized) {
           const { data: dealRow } = await supabaseAdmin
             .from("deals")
-            .select("lead_id")
+            .select("client_id, lead_id")
             .eq("id", task.deal_id)
             .single();
-          if (dealRow?.lead_id) {
-            const { error: leadUpdateError } = await supabaseAdmin
+          let clientId: string | null = dealRow?.client_id ?? null;
+          if (!clientId && dealRow?.lead_id) {
+            const { data: leadRow } = await supabaseAdmin
               .from("leads")
+              .select("email, client_id")
+              .eq("id", dealRow.lead_id)
+              .single();
+            clientId = leadRow?.client_id ?? null;
+            if (!clientId && leadRow?.email) {
+              const ep = String(leadRow.email).replace(/[\\%_]/g, "\\$&");
+              const { data: c } = await supabaseAdmin
+                .from("clients")
+                .select("id")
+                .ilike("email", ep)
+                .maybeSingle();
+              clientId = c?.id ?? null;
+            }
+          }
+          if (clientId) {
+            const { error: clientUpdateError } = await supabaseAdmin
+              .from("clients")
               .update({ citizenship_status: normalized })
-              .eq("id", dealRow.lead_id);
-            if (leadUpdateError) {
+              .eq("id", clientId);
+            if (clientUpdateError) {
               console.error(
-                "[CitizenshipMirror] Failed to mirror to leads:",
-                leadUpdateError.message,
-              );
-            } else {
-              console.log(
-                "[CitizenshipMirror] Wrote",
-                normalized,
-                "to lead",
-                dealRow.lead_id,
+                "[CitizenshipMirror] Failed to mirror to clients:",
+                clientUpdateError.message,
               );
             }
           }

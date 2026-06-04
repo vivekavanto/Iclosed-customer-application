@@ -121,7 +121,7 @@ describe("PersonalInformationDrawer", () => {
     expect(screen.getByText(/street address is required/i)).toBeInTheDocument();
   });
 
-  it("prefills address fields from property when opened", async () => {
+  it("prefills phone from property but leaves address fields blank when opened", async () => {
     setupFetchMocks();
     const { rerender } = renderDrawer(
       <PersonalInformationDrawer
@@ -158,9 +158,10 @@ describe("PersonalInformationDrawer", () => {
     await waitFor(() => {
       expect(w.getByRole("textbox", { name: /^phone number/i })).toHaveValue("(647) 111-2222");
     });
-    expect(w.getByRole("textbox", { name: /street address/i })).toHaveValue("99 Prefill Rd");
-    expect(w.getByRole("textbox", { name: /^city/i })).toHaveValue("Ottawa");
-    expect(w.getByRole("textbox", { name: /postal code/i })).toHaveValue("K1A0A6");
+    // The lead's address is the *property* address from intake, not the
+    // customer's current address — it must not auto-populate here.
+    expect(w.getByRole("textbox", { name: /^city/i })).toHaveValue("");
+    expect(w.getByRole("textbox", { name: /postal code/i })).toHaveValue("");
   });
 
   it("posts responses and calls onSaved and onClose after a valid save", async () => {

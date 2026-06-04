@@ -293,6 +293,31 @@ export async function getAuthClient() {
     }
   }
 
+  // ── Activate deals once the client has an account ──────────────────────
+  // Deals are created "inactive" until the client sets up their portal account.
+  // We've now resolved an authenticated client, so flip any of their inactive
+  // deals to "Active" — this is what surfaces them in the dashboard.
+  // Idempotent: after the first activation no rows match, so it's a no-op.
+  if (resolvedClient) {
+    const { data: activated, error: activateErr } = await supabaseAdmin
+      .from("deals")
+      .update({ status: "Active" })
+      .eq("client_id", resolvedClient.id)
+      .eq("status", "Inactive")
+      .select("id");
+
+    if (activateErr) {
+      console.error(
+        "[getAuthClient] Failed to activate inactive deals:",
+        activateErr.message
+      );
+    } else if (activated && activated.length > 0) {
+      console.log(
+        `[getAuthClient] Activated ${activated.length} deal(s) for client ${resolvedClient.id}`
+      );
+    }
+  }
+
   return resolvedClient;
 }
 
