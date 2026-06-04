@@ -145,21 +145,23 @@ export async function POST(req: Request) {
     // admin from the admin panel. So we reject the submission outright instead
     // of creating the lead. (Same-person resubmissions are already caught by
     // the email/name duplicate checks above.)
-    if (normStreet && normCity && normPostal && normEmail) {
+    if (normStreet && normCity && normEmail) {
+      // Fetch all converted primary leads at this street/city by a DIFFERENT
+      // person, then compare street/unit/city/postal in JS (trim + lowercase)
+      // so DB-side whitespace/casing differences don't cause a miss.
       const { data: convertedMatches } = await supabaseAdmin
         .from("leads")
-        .select("id, address_unit, address_postal_code")
+        .select("id, email, address_street, address_unit, address_city, address_postal_code")
         .eq("status", "Converted")
         .neq("email", normEmail)
         .is("parent_lead_id", null)
-        .ilike("address_street", normStreet)
         .ilike("address_city", normCity);
 
-      const hasConvertedDeal = (convertedMatches ?? []).some((ml) => {
-        const mlUnit = (ml.address_unit ?? "").trim().toLowerCase().replace(/\s/g, "");
-        const mlPostal = (ml.address_postal_code ?? "").trim().toLowerCase().replace(/\s/g, "");
-        return mlUnit === normUnit && mlPostal === normPostal;
-      });
+      const hasConvertedDeal = (convertedMatches ?? []).some(matchesAddress);
+
+      console.log(
+        `[Intake] Converted-deal block check: street="${normStreet}" city="${normCity}" unit="${normUnit}" postal="${normPostal}" email="${normEmail}" → candidates=${convertedMatches?.length ?? 0}, blocked=${hasConvertedDeal}`
+      );
 
       if (hasConvertedDeal) {
         return NextResponse.json(
