@@ -381,7 +381,9 @@ export default function RetainerPage() {
 
           {/* ─── Co-person authorization acknowledgement ─────────────────
              Optional checkbox. We collect the answer locally but do not
-             send it to the backend yet — that wiring will land later. */}
+             send it to the backend yet — that wiring will land later.
+             Currently hidden from the frontend. */}
+          {false && (
           <div className="mt-5 pt-5 border-t border-dashed border-gray-200">
             <label
               htmlFor="retainer-co-auth"
@@ -413,6 +415,7 @@ export default function RetainerPage() {
               </span>
             </label>
           </div>
+          )}
         </div>
 
         {/* Submit row */}
