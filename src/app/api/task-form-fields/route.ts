@@ -1,6 +1,65 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
+type TaskFormField = {
+  id: string;
+  field_type: string;
+  label: string;
+  placeholder: string | null;
+  required: boolean;
+  order_index: number;
+  options: any;
+};
+
+const normalizeLabel = (label: string | null | undefined): string =>
+  (label ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+function normalizeMortgageDetailsFields(fields: TaskFormField[]): TaskFormField[] {
+  const companyLabels = new Set([
+    "company name",
+    "mortgage representative company name",
+    "mortgage representative/agent company name",
+    "mortgage representative/agent company",
+  ]);
+
+  return fields
+    .filter((field) => !companyLabels.has(normalizeLabel(field.label)))
+    .map((field) => {
+      const label = normalizeLabel(field.label);
+
+      if (label === "status of mortgage") {
+        return { ...field, label: "Mortage Representative Details" };
+      }
+
+      if (
+        label === "mortgage representative name" ||
+        label === "mortgage representative/agent name"
+      ) {
+        return { ...field, label: "Mortgage Representative/Agent Name", required: true };
+      }
+
+      if (
+        label === "mortgage representative phone number" ||
+        label === "mortgage representative/agent phone number"
+      ) {
+        return {
+          ...field,
+          label: "Mortgage Representative/Agent Phone Number",
+          required: false,
+        };
+      }
+
+      if (
+        label === "mortgage representative email" ||
+        label === "mortgage representative/agent email"
+      ) {
+        return { ...field, label: "Mortgage Representative/Agent Email", required: true };
+      }
+
+      return field;
+    });
+}
+
 /**
  * GET /api/task-form-fields?task_id=xxx
  *
@@ -81,7 +140,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: fieldsError.message }, { status: 400 });
     }
 
-    console.log(`[task-form-fields] Found ${fields?.length ?? 0} fields for template ${templateId}`);
+    let normalizedFields = (fields ?? []) as TaskFormField[];
+    if ((task.title ?? "").trim().toLowerCase() === "mortgage details") {
+      normalizedFields = normalizeMortgageDetailsFields(normalizedFields);
+    }
+
+    console.log(
+      `[task-form-fields] Found ${normalizedFields.length} fields for template ${templateId}`
+    );
 
     // 4. Fetch any existing responses so we can pre-fill the form
     const { data: existingResponses } = await supabaseAdmin
@@ -92,7 +158,7 @@ export async function GET(req: Request) {
     let finalResponses = existingResponses ?? [];
 
     // 5. Pre-fill from lead context if the fields haven't been answered yet
-    if (task.deal_id && fields) {
+    if (task.deal_id && normalizedFields) {
       const { data: deal } = await supabaseAdmin
         .from("deals")
         .select("lead_id, property_address")
@@ -147,7 +213,7 @@ export async function GET(req: Request) {
             "Email": lead.email
           };
 
-          fields.forEach((field) => {
+          normalizedFields.forEach((field) => {
             // Check if this field is already answered in existingResponses
             const hasAnswer = finalResponses.some(r => r.field_id === field.id);
             if (!hasAnswer) {
@@ -173,7 +239,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       task,
-      fields: fields ?? [],
+      fields: normalizedFields,
       existing_responses: finalResponses,
     });
   } catch (err) {

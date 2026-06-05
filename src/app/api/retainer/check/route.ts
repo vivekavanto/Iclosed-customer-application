@@ -48,7 +48,7 @@ export async function GET() {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code"
+        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role"
       )
       .in("id", leadIds);
 
@@ -120,6 +120,7 @@ export async function GET() {
       .join(", ");
 
     const isPS = lead?.lead_type === PURCHASE_AND_SALE;
+    const isCoPerson = Boolean(lead?.parent_lead_id);
 
     // For backward compatibility with single-side leads, keep `property_address`
     // populated with the relevant address. P&S leads also receive structured
@@ -139,6 +140,8 @@ export async function GET() {
       side: nextSlot.side,
       retainer_current: signedCount + 1,
       retainer_total: totalRetainers,
+      is_co_person: isCoPerson,
+      co_person_role: (lead?.co_person_role as "purchaser" | "seller" | null) ?? null,
     });
   } catch (err) {
     console.error("[Retainer Check] Server error:", err);

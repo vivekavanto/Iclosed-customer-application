@@ -902,8 +902,7 @@ export default function DynamicTaskDrawer({
   const cameraReadyToFinish =
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
-  const isMortgageTask = taskTitle.toLowerCase().includes("status of mortgage");
-  const hasDraftOption = isPersonalInfoTask || isMortgageTask || isUploadIdTask;
+  const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {

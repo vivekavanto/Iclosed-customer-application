@@ -83,6 +83,28 @@ function getTodayDateString(): string {
   return localDate.toISOString().split("T")[0];
 }
 
+/**
+ * For a primary signer, return the label that describes their counterpart.
+ * Purchase           → "Co-purchaser"
+ * Sale               → "Co-seller"
+ * Purchase & Sale    → "Co-purchaser / Co-seller"
+ * Falls back to the more specific label when `side` is known on a P&S deal.
+ */
+function getCoPersonLabel(
+  leadType: string,
+  side: "purchase" | "sale" | null
+): string {
+  if (leadType === "Purchase & Sale") {
+    if (side === "purchase") return "Co-purchaser";
+    if (side === "sale") return "Co-seller";
+    return "Co-purchaser / Co-seller";
+  }
+  if (leadType === "Sale") return "Co-seller";
+  if (leadType === "Purchase") return "Co-purchaser";
+  if (side === "sale") return "Co-seller";
+  return "Co-purchaser";
+}
+
 function validate(name: string, date: string, signature: string): FormErrors {
   const errors: FormErrors = {};
 
@@ -119,6 +141,12 @@ export default function RetainerPage() {
   const [side, setSide] = useState<"purchase" | "sale" | null>(null);
   const [retainerCurrent, setRetainerCurrent] = useState(1);
   const [retainerTotal, setRetainerTotal] = useState(1);
+  const [isCoPerson, setIsCoPerson] = useState(false);
+  const [coPersonRole, setCoPersonRole] = useState<"purchaser" | "seller" | null>(
+    null
+  );
+  // Local-only acknowledgement — not yet sent to the backend.
+  const [coAuthAcknowledged, setCoAuthAcknowledged] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -147,6 +175,12 @@ export default function RetainerPage() {
         );
         setRetainerCurrent(data.retainer_current ?? 1);
         setRetainerTotal(data.retainer_total ?? 1);
+        setIsCoPerson(Boolean(data.is_co_person));
+        setCoPersonRole(
+          data.co_person_role === "purchaser" || data.co_person_role === "seller"
+            ? data.co_person_role
+            : null
+        );
       } catch {
         // silently fail — user can fill manually
       }
@@ -344,6 +378,41 @@ export default function RetainerPage() {
               </p>
             </div>
           )}
+
+          {/* ─── Co-person authorization acknowledgement ─────────────────
+             Optional checkbox. We collect the answer locally but do not
+             send it to the backend yet — that wiring will land later. */}
+          <div className="mt-5 pt-5 border-t border-dashed border-gray-200">
+            <label
+              htmlFor="retainer-co-auth"
+              className="flex items-start gap-3 cursor-pointer group"
+            >
+              <input
+                id="retainer-co-auth"
+                type="checkbox"
+                checked={coAuthAcknowledged}
+                onChange={(e) => setCoAuthAcknowledged(e.target.checked)}
+                className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-[#C10007] focus:ring-2 focus:ring-[#C10007]/40 cursor-pointer"
+              />
+              <span className="text-sm leading-relaxed text-gray-700">
+                {isCoPerson ? (
+                  <>
+                    I would like to give the primary the authority to submit
+                    personal information and identification on my behalf.
+                  </>
+                ) : (
+                  <>
+                    I would like to submit Personal Information and
+                    Identification on behalf of my{" "}
+                    <span className="font-semibold text-gray-900">
+                      {getCoPersonLabel(leadType, side)}
+                    </span>
+                    .
+                  </>
+                )}
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Submit row */}

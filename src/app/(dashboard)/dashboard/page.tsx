@@ -123,6 +123,17 @@ const statusConfig = {
 // by /api/tasks). The team can adjust the order from the admin panel without
 // a code change, so no hardcoded list lives in this file.
 
+// Task titles that should never be shown to customers on the frontend,
+// regardless of completion status. Matched case-insensitively and trimmed.
+const HIDDEN_TASK_TITLES = new Set([
+  "schedule appointment",
+  "schedule an appointment",
+]);
+
+function isHiddenTask(task: Task): boolean {
+  return HIDDEN_TASK_TITLES.has(task.title.toLowerCase().trim());
+}
+
 // Deduplicate tasks by title — keep the incomplete one if both exist
 function deduplicateTasks(tasks: Task[]): Task[] {
   const map = new Map<string, Task>();
@@ -172,8 +183,9 @@ function AttentionCard({
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   const prevPendingIdsRef = useRef<string>("");
 
-  // Deduplicate tasks so no task title appears twice
-  const uniqueTasks = deduplicateTasks(tasks);
+  // Deduplicate tasks so no task title appears twice, and drop any tasks
+  // that should never be surfaced to customers (e.g. "Schedule Appointment").
+  const uniqueTasks = deduplicateTasks(tasks).filter((t) => !isHiddenTask(t));
 
   // Show ALL incomplete tasks, sorted by the per-task order configured on
   // task_templates.order_index (the "task no." the team maintains in the
