@@ -153,13 +153,22 @@ export async function GET(req: Request) {
       // Fetch existing milestones once per deal (with side) for fast lookup
       const { data: existingMilestones } = await supabaseAdmin
         .from("milestones")
-        .select("title, side")
+        .select("title, side, stage_template_id")
         .eq("deal_id", dId);
 
       const existingKeys = new Set(
         (existingMilestones ?? []).map(
           (m: any) => `${m.side ?? "_"}:${m.title?.trim().toLowerCase()}`
         )
+      );
+      // Also key by stage_template_id so a RENAMED stage template still
+      // resolves to its existing milestone instead of being re-inserted as a
+      // duplicate (the milestone's snapshot title may no longer match the
+      // template's new name).
+      const existingTemplateKeys = new Set(
+        (existingMilestones ?? [])
+          .filter((m: any) => m.stage_template_id)
+          .map((m: any) => `${m.side ?? "_"}:${m.stage_template_id}`)
       );
 
       for (const { side, stageType } of sides) {
@@ -179,6 +188,7 @@ export async function GET(req: Request) {
 
         const missingMilestones = stageTemplates
           .filter((st: any) => {
+            if (existingTemplateKeys.has(`${side ?? "_"}:${st.id}`)) return false;
             const cleanName = st.name?.trim().replace(/^\t+/, "").replace(/^->?\s*/, "").toLowerCase();
             return !existingKeys.has(`${side ?? "_"}:${cleanName}`);
           })

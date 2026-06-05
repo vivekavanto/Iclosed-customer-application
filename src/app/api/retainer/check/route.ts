@@ -34,15 +34,28 @@ export async function GET() {
 
     const { data: deals } = await supabaseAdmin
       .from("deals")
-      .select("lead_id")
+      .select("lead_id, status")
       .eq("client_id", client.id)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false });
 
-    const leadIds = (deals || []).map((d) => d.lead_id).filter(Boolean);
+    // A deal only requires a retainer once the firm has CONVERTED it.
+    // Intake auto-linked deals (see /api/link-leads) sit at status "Pending"
+    // and must NOT trigger the retainer; admin conversion (see convertLead.ts)
+    // creates the deal as "Active" and marks its lead "Converted". So every
+    // status except "Pending" counts as converted. This is per-deal: a client
+    // with one converted and one pending deal only signs for the converted one.
+    const NON_CONVERTED_DEAL_STATUSES = new Set(["Pending"]);
+    const leadIds = (deals || [])
+      .filter((d) => !NON_CONVERTED_DEAL_STATUSES.has(d.status))
+      .map((d) => d.lead_id)
+      .filter(Boolean);
 
+    // No converted deal yet → no retainer required. Return signed:true so the
+    // dashboard guard doesn't bounce the user onto an empty retainer page
+    // (it only redirects when signed === false).
     if (leadIds.length === 0) {
-      return NextResponse.json({ signed: false });
+      return NextResponse.json({ signed: true });
     }
 
     const { data: leads } = await supabaseAdmin

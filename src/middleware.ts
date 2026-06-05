@@ -21,9 +21,61 @@ import { NextResponse, type NextRequest } from "next/server";
 // param and is run manually; let it handle its own auth rather than double-gate.
 const SELF_PROTECTED = ["/api/admin/backfill-retainer-pdfs"];
 
-export function middleware(request: NextRequest) {
+// Customer-portal PAGES that require an authenticated session. Previously the
+// dashboard only enforced auth client-side (a useEffect redirect in the layout),
+// so an unauthenticated visitor could still load the page shell. We now redirect
+// to /login server-side, before any dashboard markup renders.
+const PROTECTED_PAGES = [
+  "/dashboard",
+  "/details",
+  "/documents",
+  "/profile",
+  "/retainer",
+];
+
+/**
+ * Server-side session guard for customer-portal pages. Redirects to /login
+ * ONLY when there is no Supabase session cookie at all.
+ *
+ * Deliberately a cheap, side-effect-free check — we do NOT call
+ * supabase.auth.getUser() here. Validating (and thereby refreshing) the token
+ * inside middleware on every navigation rotates the refresh token, and if those
+ * rewritten cookies aren't propagated perfectly it desyncs the session and logs
+ * the user out on refresh even while their session is still valid. Real
+ * per-request validation already happens in the API layer (getAuthClient →
+ * getUser returns 401 for invalid/expired sessions) and client-side, so a stale
+ * cookie can never actually load data. Middleware's only job is to stop a
+ * completely unauthenticated visitor from rendering the dashboard shell —
+ * presence of the session cookie is enough for that, and it never false-logs-out
+ * a user whose session hasn't expired.
+ */
+function guardSession(request: NextRequest): NextResponse {
+  // Supabase SSR stores the session in cookie(s) named `sb-<ref>-auth-token`
+  // (chunked as `.0`, `.1`, … when large). Any one present means "has a session".
+  const hasSessionCookie = request.cookies
+    .getAll()
+    .some((c) => /^sb-.*-auth-token/.test(c.name) && Boolean(c.value));
+
+  if (!hasSessionCookie) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", request.nextUrl.pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return NextResponse.next();
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // ── Customer page auth guard ──
+  if (
+    PROTECTED_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+  ) {
+    return guardSession(request);
+  }
+
+  // ── /api/admin/* service-secret gate (everything below) ──
   // Let CORS preflight through (carries no data; the real request is still
   // gated below).
   if (request.method === "OPTIONS") {
@@ -53,6 +105,21 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Scoped to the admin subtree ONLY. Customer and auth routes are untouched.
-  matcher: ["/api/admin/:path*"],
+  // /api/admin/* → service-secret gate.
+  // Customer-portal pages → server-side session guard (redirect to /login).
+  // Base path + subpaths are listed explicitly so e.g. /dashboard itself is
+  // matched, not only /dashboard/<something>.
+  matcher: [
+    "/api/admin/:path*",
+    "/dashboard",
+    "/dashboard/:path*",
+    "/details",
+    "/details/:path*",
+    "/documents",
+    "/documents/:path*",
+    "/profile",
+    "/profile/:path*",
+    "/retainer",
+    "/retainer/:path*",
+  ],
 };

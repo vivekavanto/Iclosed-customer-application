@@ -49,16 +49,24 @@ export async function POST(req: Request) {
 
     const { data: deals } = await supabaseAdmin
       .from("deals")
-      .select("lead_id")
+      .select("lead_id, status")
       .eq("client_id", client.id)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false });
 
-    const leadIds = (deals || []).map((d) => d.lead_id).filter(Boolean);
+    // Mirror /api/retainer/check EXACTLY: only CONVERTED deals require a
+    // retainer. Intake auto-linked deals sit at "Pending" and must be excluded
+    // here too — otherwise the two endpoints disagree on which lead is "next to
+    // sign" and a signature could be misattributed to a not-yet-converted deal.
+    const NON_CONVERTED_DEAL_STATUSES = new Set(["Pending"]);
+    const leadIds = (deals || [])
+      .filter((d) => !NON_CONVERTED_DEAL_STATUSES.has(d.status))
+      .map((d) => d.lead_id)
+      .filter(Boolean);
 
     if (leadIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: "No leads found for this account" },
+        { success: false, error: "No converted deals found for this account" },
         { status: 404 }
       );
     }

@@ -264,6 +264,59 @@ export async function getAuthClient() {
     }
   }
 
+  // ── Backfill a blank name from leads / auth metadata ─────────────────────
+  // The name is captured at intake into the `leads` table, but some auth paths
+  // (notably invite / magic-link, which never hit /api/auth/login) never copy
+  // it onto the client row — leaving the dashboard to render the literal "User"
+  // fallback. Whenever the resolved client has no name, recover it here so
+  // EVERY auth path is covered, not just password login. Prefer the leads table
+  // (source of truth from intake), then fall back to Supabase auth metadata.
+  if (
+    resolvedClient &&
+    !resolvedClient.first_name?.trim() &&
+    !resolvedClient.last_name?.trim()
+  ) {
+    let first = "";
+    let last = "";
+
+    if (user.email) {
+      const { data: namedLead } = await supabaseAdmin
+        .from("leads")
+        .select("first_name, last_name")
+        .ilike("email", user.email.trim())
+        .not("first_name", "is", null)
+        .neq("first_name", "")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (namedLead?.first_name) {
+        first = namedLead.first_name;
+        last = namedLead.last_name ?? "";
+      }
+    }
+
+    // Fall back to Supabase auth metadata if the leads table had nothing.
+    if (!first && !last) {
+      const meta = user.user_metadata ?? {};
+      const displayName = (meta.display_name || meta.full_name || "").trim();
+      const parts = displayName.split(" ");
+      first = (meta.first_name as string) || parts[0] || "";
+      last = (meta.last_name as string) || parts.slice(1).join(" ") || "";
+    }
+
+    if (first || last) {
+      await supabaseAdmin
+        .from("clients")
+        .update({ first_name: first, last_name: last })
+        .eq("id", resolvedClient.id);
+      resolvedClient.first_name = first;
+      resolvedClient.last_name = last;
+      console.log(
+        `[getAuthClient] Backfilled name for client ${resolvedClient.id} (${first} ${last})`.trim()
+      );
+    }
+  }
+
   // ── Self-heal: ensure ALL leads with this email point to the resolved client
   // This runs regardless of which step found the client, so new co-purchaser
   // leads from intake always get re-linked on next dashboard visit.
