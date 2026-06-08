@@ -1,65 +1,6 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
-type TaskFormField = {
-  id: string;
-  field_type: string;
-  label: string;
-  placeholder: string | null;
-  required: boolean;
-  order_index: number;
-  options: any;
-};
-
-const normalizeLabel = (label: string | null | undefined): string =>
-  (label ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-
-function normalizeMortgageDetailsFields(fields: TaskFormField[]): TaskFormField[] {
-  const companyLabels = new Set([
-    "company name",
-    "mortgage representative company name",
-    "mortgage representative/agent company name",
-    "mortgage representative/agent company",
-  ]);
-
-  return fields
-    .filter((field) => !companyLabels.has(normalizeLabel(field.label)))
-    .map((field) => {
-      const label = normalizeLabel(field.label);
-
-      if (label === "status of mortgage") {
-        return { ...field, label: "Mortage Representative Details" };
-      }
-
-      if (
-        label === "mortgage representative name" ||
-        label === "mortgage representative/agent name"
-      ) {
-        return { ...field, label: "Mortgage Representative/Agent Name", required: true };
-      }
-
-      if (
-        label === "mortgage representative phone number" ||
-        label === "mortgage representative/agent phone number"
-      ) {
-        return {
-          ...field,
-          label: "Mortgage Representative/Agent Phone Number",
-          required: false,
-        };
-      }
-
-      if (
-        label === "mortgage representative email" ||
-        label === "mortgage representative/agent email"
-      ) {
-        return { ...field, label: "Mortgage Representative/Agent Email", required: true };
-      }
-
-      return field;
-    });
-}
-
 /**
  * GET /api/task-form-fields?task_id=xxx
  *
@@ -140,14 +81,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: fieldsError.message }, { status: 400 });
     }
 
-    let normalizedFields = (fields ?? []) as TaskFormField[];
-    if ((task.title ?? "").trim().toLowerCase() === "mortgage details") {
-      normalizedFields = normalizeMortgageDetailsFields(normalizedFields);
-    }
-
-    console.log(
-      `[task-form-fields] Found ${normalizedFields.length} fields for template ${templateId}`
-    );
+    console.log(`[task-form-fields] Found ${fields?.length ?? 0} fields for template ${templateId}`);
 
     // 4. Fetch any existing responses so we can pre-fill the form
     const { data: existingResponses } = await supabaseAdmin
@@ -158,7 +92,7 @@ export async function GET(req: Request) {
     let finalResponses = existingResponses ?? [];
 
     // 5. Pre-fill from lead context if the fields haven't been answered yet
-    if (task.deal_id && normalizedFields) {
+    if (task.deal_id && fields) {
       const { data: deal } = await supabaseAdmin
         .from("deals")
         .select("lead_id, property_address")
@@ -173,47 +107,21 @@ export async function GET(req: Request) {
           .single();
 
         if (lead) {
-          // The person's personal fields (marital/occupation/citizenship/
-          // employer phone) are sourced from the CUSTOMER record (clients) —
-          // the source of truth — resolved by client_id, else email. Falls back
-          // to the lead during the transition (before the lead columns are
-          // dropped). Name/phone/address keep their existing source.
-          let person: any = null;
-          const personCols =
-            "marital_status, citizenship_status, occupation, employer_phone";
-          if (lead.client_id) {
-            const { data: c } = await supabaseAdmin
-              .from("clients")
-              .select(personCols)
-              .eq("id", lead.client_id)
-              .maybeSingle();
-            person = c ?? null;
-          }
-          if (!person && lead.email) {
-            const emailPattern = String(lead.email).replace(/[\\%_]/g, "\\$&");
-            const { data: c } = await supabaseAdmin
-              .from("clients")
-              .select(personCols)
-              .ilike("email", emailPattern)
-              .maybeSingle();
-            person = c ?? null;
-          }
-
           const prefillMapping: Record<string, string | null | undefined> = {
             "Phone Number": lead.phone,
             "Street Address": lead.address_street || deal.property_address,
             "City": lead.address_city,
             "Postal Code": lead.address_postal_code,
-            "Marital Status": person?.marital_status ?? null,
-            "Occupation": person?.occupation ?? null,
-            "Citizenship Status": person?.citizenship_status ?? null,
-            "Business/Employer Phone (Optional)": person?.employer_phone ?? null,
+            "Marital Status": lead.marital_status,
+            "Occupation": lead.occupation,
+            "Citizenship Status": lead.citizenship_status,
+            "Business/Employer Phone (Optional)": lead.employer_phone,
             "First Name": lead.first_name,
             "Last Name": lead.last_name,
             "Email": lead.email
           };
 
-          normalizedFields.forEach((field) => {
+          fields.forEach((field) => {
             // Check if this field is already answered in existingResponses
             const hasAnswer = finalResponses.some(r => r.field_id === field.id);
             if (!hasAnswer) {
@@ -239,7 +147,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       task,
-      fields: normalizedFields,
+      fields: fields ?? [],
       existing_responses: finalResponses,
     });
   } catch (err) {
