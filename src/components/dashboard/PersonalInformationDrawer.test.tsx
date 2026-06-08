@@ -37,6 +37,12 @@ function setupFetchMocks(options?: { saveOk?: boolean }) {
         json: () => Promise.resolve({ success: true, fields: [] }),
       } as Response);
     }
+    if (url.includes("/api/client-personal-info")) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ success: true, personalInfo: null }),
+      } as Response);
+    }
     if (url.includes("/api/task-responses")) {
       return Promise.resolve({
         ok: saveOk,

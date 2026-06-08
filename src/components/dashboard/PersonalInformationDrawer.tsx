@@ -513,6 +513,61 @@ export default function PersonalInformationDrawer({
     }
   }, [open, property]);
 
+  // Prefill the customer's REUSABLE personal info from their `clients` record
+  // so a returning customer starting a new deal doesn't re-enter it. Only the
+  // fields stored on `clients` are pulled (phone, marital status, citizenship,
+  // occupation, employer phone) — address is intentionally left blank (see the
+  // property effect above: the lead address is the *property* address, not the
+  // customer's home address).
+  //
+  // Fills ONLY empty slots, so freshly-saved task_responses (the per-task
+  // source of truth, prefilled by the effect above) and anything the user has
+  // already typed always win over the clients-table values.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/client-personal-info", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled || !j?.success || !j.personalInfo) return;
+
+        const p = j.personalInfo as {
+          phone?: string | null;
+          marital_status?: string | null;
+          citizenship_status?: string | null;
+          occupation?: string | null;
+          employer_phone?: string | null;
+        };
+
+        const next: Partial<FormData> = {};
+        if (p.phone) next.phone = formatPhone(String(p.phone));
+        if (p.marital_status) next.maritalStatus = String(p.marital_status);
+        if (p.citizenship_status) next.citizenshipStatus = String(p.citizenship_status);
+        if (p.occupation) next.occupation = String(p.occupation);
+        if (p.employer_phone) next.employerPhone = formatPhone(String(p.employer_phone));
+        if (Object.keys(next).length === 0) return;
+
+        setForm((prev) => {
+          const merged = { ...prev };
+          (Object.keys(next) as SlotKey[]).forEach((k) => {
+            if (!String(prev[k] ?? "").trim()) merged[k] = next[k] as string;
+          });
+          return merged;
+        });
+      } catch (err) {
+        console.error(
+          "[PersonalInformationDrawer] client personal-info prefill failed:",
+          err,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   // Close on Escape
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {

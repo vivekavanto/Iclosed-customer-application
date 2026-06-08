@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     // Fetch task context for shared-task syncing
     const { data: task, error: taskFetchError } = await supabaseAdmin
       .from("tasks")
-      .select("id, deal_id, milestone_id, is_shared, task_template_id")
+      .select("id, title, deal_id, milestone_id, is_shared, task_template_id")
       .eq("id", task_id)
       .single();
 
@@ -148,12 +148,52 @@ export async function POST(req: Request) {
         );
       }
 
-      // Mirror citizenship_status onto the CUSTOMER record (public.clients) —
-      // the source of truth for the admin non-citizen flag. Resolve the client
-      // via deal.client_id, else the lead's client_id/email.
-      if (citizenshipResp && task.deal_id) {
-        const normalized = normalizeCitizenshipValue(String(citizenshipResp.value ?? ""));
-        if (normalized) {
+      // Mirror the customer's REUSABLE personal info onto the CUSTOMER record
+      // (public.clients) so their NEXT deal can pre-fill these fields and they
+      // don't have to re-enter them. citizenship_status also remains the source
+      // of truth for the admin non-citizen flag. Resolve the client via
+      // deal.client_id, else the lead's client_id/email.
+      //
+      // Scoped to the Personal Information task only: other tasks (e.g. Mortgage
+      // Details) have their own "phone" fields that must NOT overwrite the
+      // customer's personal phone on the clients record.
+      const isPersonalInfoTask = (task.title ?? "")
+        .trim()
+        .toLowerCase()
+        .includes("personal information");
+
+      if (isPersonalInfoTask && task.deal_id) {
+        // Pull the reusable fields out of the submitted responses by matching
+        // their labels (keyword-based, tolerant of small label variations).
+        const findVal = (pred: (label: string) => boolean): string | null => {
+          const r = responses.find((x: any) =>
+            pred(String(x.field_label ?? "").toLowerCase()),
+          );
+          const v = r?.value != null ? String(r.value).trim() : "";
+          return v ? v : null;
+        };
+
+        const phoneVal = findVal(
+          (l) => l.includes("phone") && !l.includes("employer") && !l.includes("business"),
+        );
+        const maritalVal = findVal((l) => l.includes("marital"));
+        const occupationVal = findVal((l) => l.includes("occupation"));
+        const employerPhoneVal = findVal(
+          (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")),
+        );
+        const citizenshipRaw = findVal((l) => l.includes("citizenship"));
+        const citizenshipVal = citizenshipRaw
+          ? normalizeCitizenshipValue(citizenshipRaw)
+          : null;
+
+        const clientUpdate: Record<string, string> = {};
+        if (phoneVal) clientUpdate.phone = phoneVal;
+        if (maritalVal) clientUpdate.marital_status = maritalVal;
+        if (occupationVal) clientUpdate.occupation = occupationVal;
+        if (employerPhoneVal) clientUpdate.employer_phone = employerPhoneVal;
+        if (citizenshipVal) clientUpdate.citizenship_status = citizenshipVal;
+
+        if (Object.keys(clientUpdate).length > 0) {
           const { data: dealRow } = await supabaseAdmin
             .from("deals")
             .select("client_id, lead_id")
@@ -180,11 +220,11 @@ export async function POST(req: Request) {
           if (clientId) {
             const { error: clientUpdateError } = await supabaseAdmin
               .from("clients")
-              .update({ citizenship_status: normalized })
+              .update(clientUpdate)
               .eq("id", clientId);
             if (clientUpdateError) {
               console.error(
-                "[CitizenshipMirror] Failed to mirror to clients:",
+                "[PersonalInfoMirror] Failed to mirror to clients:",
                 clientUpdateError.message,
               );
             }
