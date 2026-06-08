@@ -90,6 +90,25 @@ interface DealData {
 }
 
 /* ─────────────────────────────────────────────
+   DATE HELPERS
+───────────────────────────────────────────── */
+// Format a date-only value (e.g. a Postgres `date` column → "2026-06-15").
+// `new Date("2026-06-15")` parses as UTC midnight, which `toLocaleDateString`
+// then shifts back a day for users west of UTC (e.g. June 14 in Toronto).
+// Build the Date from the parts so it stays in local time and the displayed
+// day matches the DB/JSON value exactly.
+function formatDateOnly(
+  value: string | null,
+  options: Intl.DateTimeFormatOptions,
+  fallback = "TBD"
+): string {
+  if (!value) return fallback;
+  const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return fallback;
+  return new Date(y, m - 1, d).toLocaleDateString("en-CA", options);
+}
+
+/* ─────────────────────────────────────────────
    STATUS CONFIG
 ───────────────────────────────────────────── */
 const statusConfig = {
@@ -473,13 +492,11 @@ function StatusTimeline({
             const isInProgress = milestone.status === "In Progress";
             const hasDescription = milestone.description;
             const isLast = idx === filtered.length - 1;
-            const formattedDate = milestone.milestone_date
-              ? new Date(milestone.milestone_date).toLocaleDateString("en-CA", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })
-              : null;
+            const formattedDate = formatDateOnly(
+              milestone.milestone_date,
+              { month: "short", day: "numeric", year: "numeric" },
+              ""
+            ) || null;
 
             return (
               <div
@@ -814,13 +831,11 @@ export default function DashboardPage() {
     ? tasks.filter((t) => (t.side ?? null) === selectedSide)
     : tasks;
 
-  const closingFormatted = activeDeal?.closing_date
-    ? new Date(activeDeal.closing_date).toLocaleDateString("en-CA", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    })
-    : "TBD";
+  const closingFormatted = formatDateOnly(activeDeal?.closing_date ?? null, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
     <div className="space-y-5 pb-8">
