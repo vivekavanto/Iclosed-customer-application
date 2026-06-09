@@ -239,6 +239,10 @@ export async function GET(req: Request) {
           .select("*, task_template:task_templates(order_index)")
           .in("deal_id", dealIds)
           .eq("is_deleted", false)
+          // Primary sort is the per-deal tasks.order_index (kept in sync with the
+          // template order, and overridable per-deal from the admin deal page).
+          // due_date stays as a tiebreaker for rows that lack an order_index.
+          .order("order_index", { ascending: true, nullsFirst: false })
           .order("due_date", { ascending: true, nullsFirst: false }),
 
         supabaseAdmin
