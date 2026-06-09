@@ -484,6 +484,8 @@ export default function DynamicTaskDrawer({
   const [acceptableDocsOpen, setAcceptableDocsOpen] = useState(false);
   const [manualUploadOpen, setManualUploadOpen] = useState(false);
   const [manualUploadStep, setManualUploadStep] = useState(0);
+  // Guards the one-time clients-table prefill per open/taskId (see effect below).
+  const clientInfoPrefilledRef = useRef<string | null>(null);
 
   const CALENDLY_URL = "https://calendly.com/iclosed-navawilson/iclosed-lead-meeting";
 
@@ -511,6 +513,7 @@ export default function DynamicTaskDrawer({
     setManualUploadStep(0);
     setSaved(false);
     setDraftSaved(false);
+    clientInfoPrefilledRef.current = null;
 
     fetch(`/api/task-form-fields?task_id=${taskId}`)
       .then((r) => r.json())
@@ -547,6 +550,78 @@ export default function DynamicTaskDrawer({
       .catch(() => setGlobalError("Failed to load form fields."))
       .finally(() => setFieldsLoading(false));
   }, [open, taskId]);
+
+  // ── Prefill reusable personal info from the `clients` record ──
+  // Re-port of the autopopulate that used to live in PersonalInformationDrawer.
+  // For "Provide Personal Information", pull the customer's reusable fields
+  // (phone, marital status, citizenship, occupation, employer phone) from their
+  // `clients` row so returning customers don't re-enter them. Dynamic fields are
+  // keyed by id, so we match each client field to a field by its label. Fills
+  // ONLY empty slots — task_responses prefill and anything the user typed win.
+  useEffect(() => {
+    if (!open || !taskId) return;
+    const isPPI = taskTitle.toLowerCase().includes("provide personal information");
+    if (!isPPI || fields.length === 0) return;
+    if (clientInfoPrefilledRef.current === taskId) return;
+    clientInfoPrefilledRef.current = taskId;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/client-personal-info", { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled || !j?.success || !j.personalInfo) return;
+
+        const p = j.personalInfo as {
+          phone?: string | null;
+          marital_status?: string | null;
+          citizenship_status?: string | null;
+          occupation?: string | null;
+          employer_phone?: string | null;
+        };
+
+        const matchers: Array<{
+          value?: string | null;
+          isPhone?: boolean;
+          match: (label: string) => boolean;
+        }> = [
+          { value: p.phone, isPhone: true, match: (l) => l.includes("phone") && !l.includes("employer") && !l.includes("business") },
+          { value: p.marital_status, match: (l) => l.includes("marital") },
+          { value: p.citizenship_status, match: (l) => l.includes("citizenship") },
+          { value: p.occupation, match: (l) => l.includes("occupation") },
+          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")) },
+        ];
+
+        const next: Record<string, string> = {};
+        for (const m of matchers) {
+          if (!m.value) continue;
+          const field = fields.find((f) =>
+            m.match(String(f.label ?? "").trim().toLowerCase()),
+          );
+          if (!field) continue;
+          next[field.id] = m.isPhone ? formatPhone(String(m.value)) : String(m.value);
+        }
+        if (Object.keys(next).length === 0 || cancelled) return;
+
+        setValues((prev) => {
+          const merged = { ...prev };
+          for (const [id, val] of Object.entries(next)) {
+            if (!String(prev[id] ?? "").trim()) merged[id] = val;
+          }
+          return merged;
+        });
+      } catch (err) {
+        console.error(
+          "[DynamicTaskDrawer] client personal-info prefill failed:",
+          err,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, taskId, taskTitle, fields]);
 
   // ── Escape key & scroll lock ──
   useEffect(() => {

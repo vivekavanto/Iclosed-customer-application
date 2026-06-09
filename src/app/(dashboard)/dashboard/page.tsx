@@ -17,7 +17,6 @@ import {
   Home,
   FileText,
 } from "lucide-react";
-import PersonalInformationDrawer from "@/components/dashboard/PersonalInformationDrawer";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import { useToast } from "@/components/ui/Toast";
@@ -624,7 +623,6 @@ export default function DashboardPage() {
   const autoSideLeadRef = useRef<string | null>(null);
 
   // ── Drawer state ──────────────────────────────────────────
-  const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
   const [idDrawerOpen, setIdDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
@@ -641,13 +639,12 @@ export default function DashboardPage() {
     const title = task.title.toLowerCase();
     if (title.includes("upload identification")) {
       setIdDrawerOpen(true);
-    } else if (title.includes("provide personal information")) {
-      // PPI gets its dedicated drawer so admin-entered values (including
-      // "Save as Draft") prefill all 13 fields from task_responses. The
-      // generic DynamicTaskDrawer only prefilled by field_id and was missing
-      // values for the half-dozen PPI fields that don't live on the lead row.
-      setPersonalInfoDrawerOpen(true);
     } else {
+      // Everything else — including "Provide Personal Information" — goes
+      // through the DB-driven DynamicTaskDrawer so every field defined on the
+      // task template renders automatically (and stays in sync as templates
+      // change), rather than a hardcoded slot list that silently drops fields
+      // like the Sale-side "New Home Address".
       setDynamicDrawerOpen(true);
     }
   }
@@ -839,18 +836,6 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5 pb-8">
-
-      {/* ── Personal Information Drawer ── */}
-      <PersonalInformationDrawer
-        open={personalInfoDrawerOpen}
-        onClose={() => setPersonalInfoDrawerOpen(false)}
-        property={activeProperty}
-        taskId={activeTask?.id}
-        onSaved={async () => {
-          setPersonalInfoDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
-        }}
-      />
 
       {/* ── Dynamic Task Drawer (DB-driven form fields) ── */}
       <DynamicTaskDrawer
