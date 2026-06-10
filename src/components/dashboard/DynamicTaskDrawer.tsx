@@ -79,6 +79,27 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
+// Reads a conditional-visibility rule out of a field's `options` JSON.
+// Shape (set in the DB, not hardcoded here):
+//   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
+function getVisibleWhen(
+  opts: unknown,
+): { field_label: string; equals: string } | null {
+  if (
+    opts &&
+    typeof opts === "object" &&
+    !Array.isArray(opts) &&
+    "visible_when" in opts
+  ) {
+    const vw = (opts as { visible_when?: { field_label?: string; equals?: string } })
+      .visible_when;
+    if (vw?.field_label && vw.equals != null) {
+      return { field_label: String(vw.field_label), equals: String(vw.equals) };
+    }
+  }
+  return null;
+}
+
 // Format phone as (416) 555-1234
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -677,33 +698,60 @@ export default function DynamicTaskDrawer({
     });
   }
 
+  // Resolve whether a field should currently be shown, based on its (optional)
+  // visible_when rule and the live answer of the parent field it depends on.
+  // Matching the parent is done by label (case-insensitive) and the comparison
+  // is case-insensitive so "Rented"/"rented" both work. Fails open: if there's
+  // no rule, or the parent can't be found, the field stays visible.
+  function isFieldVisible(field: FormField): boolean {
+    const rule = getVisibleWhen(field.options);
+    if (!rule) return true;
+    const parent = fields.find(
+      (f) =>
+        f.label.trim().toLowerCase() === rule.field_label.trim().toLowerCase(),
+    );
+    if (!parent) return true;
+    const current = (values[parent.id] ?? "").trim().toLowerCase();
+    return current === rule.equals.trim().toLowerCase();
+  }
+
+  // A conditional field (one with a visible_when rule) is treated as required
+  // whenever it is visible, even if the DB `required` flag is false.
+  function fieldRequired(field: FormField): boolean {
+    return field.required || !!getVisibleWhen(field.options);
+  }
+
   function validate(activeFiles: Record<string, File> = files): boolean {
     const newErrors: Record<string, string> = {};
     for (const field of fields) {
+      // Skip fields hidden by an unmet visible_when condition.
+      if (!isFieldVisible(field)) continue;
+
+      const required = fieldRequired(field);
       const val = values[field.id]?.trim() ?? "";
 
       if (field.field_type === "file") {
-        if (field.required && !activeFiles[field.id] && !existingFiles[field.id]) {
+        if (required && !activeFiles[field.id] && !existingFiles[field.id]) {
           newErrors[field.id] = `${field.label} is required.`;
         }
       } else if (field.field_type === "checkbox") {
-        if (field.required && values[field.id] !== "true") {
+        if (required && values[field.id] !== "true") {
           newErrors[field.id] = `${field.label} is required.`;
         }
       } else if (field.field_type === "email") {
-        if (field.required && !val) {
+        if (required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
         } else if (val && !isValidEmail(val)) {
           newErrors[field.id] = "Enter a valid email address.";
         }
       } else if (field.field_type === "phone") {
-        if (field.required && !val) {
+        if (required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
         } else if (val && !isValidPhone(val)) {
           newErrors[field.id] = "Enter a valid phone number in (416) 555-1234 format.";
         }
       } else {
-        if (field.required && !val) {
+        if (required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
         }
       }
@@ -791,7 +839,9 @@ export default function DynamicTaskDrawer({
           field_id: f.id,
           field_label: f.label,
           field_type: f.field_type,
-          value: values[f.id] ?? "",
+          // Submit hidden (condition-not-met) fields as blank so we never
+          // persist a stale answer the user can no longer see.
+          value: isFieldVisible(f) ? (values[f.id] ?? "") : "",
         }));
 
       // ── 3. Checkbox responses ──
@@ -1385,6 +1435,9 @@ export default function DynamicTaskDrawer({
 
           {!fieldsLoading &&
             fields.map((field) => {
+              // Hide fields whose visible_when condition isn't currently met.
+              if (!isFieldVisible(field)) return null;
+
               const isIdTask = isUploadIdTask;
               const fileFields = fields.filter((f) => f.field_type === "file");
               const fileIdx = fileFields.indexOf(field);
@@ -1548,7 +1601,7 @@ export default function DynamicTaskDrawer({
                   <div key={field.id}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
-                      {field.required && (
+                      {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
@@ -1642,7 +1695,7 @@ export default function DynamicTaskDrawer({
                   <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
-                      {field.required && (
+                      {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
@@ -1685,7 +1738,7 @@ export default function DynamicTaskDrawer({
                   <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
-                      {field.required && (
+                      {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
@@ -1714,7 +1767,7 @@ export default function DynamicTaskDrawer({
                 <div key={field.id} id={`field-${field.id}`}>
                   <label className="text-sm font-semibold text-gray-800 mb-2 block">
                     {field.label}
-                    {field.required ? (
+                    {fieldRequired(field) ? (
                       <span className="text-[#C10007] ml-1">*</span>
                     ) : (
                       <span className="text-gray-400 font-normal text-xs ml-2">(Optional)</span>
