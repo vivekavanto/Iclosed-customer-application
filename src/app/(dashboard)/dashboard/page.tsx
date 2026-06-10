@@ -34,6 +34,7 @@ interface Task {
   document_url: string | null;
   milestone_id: string | null;
   side?: "purchase" | "sale" | null;
+  order_index?: number | null;
   template_order_index?: number | null;
   milestones?: {
     id: string;
@@ -205,19 +206,21 @@ function AttentionCard({
   // that should never be surfaced to customers (e.g. "Schedule Appointment").
   const uniqueTasks = deduplicateTasks(tasks).filter((t) => !isHiddenTask(t));
 
-  // Show ALL incomplete tasks, sorted by the per-task order configured on
-  // task_templates.order_index (the "task no." the team maintains in the
-  // admin panel). Tasks without a template (manual additions) fall to the
-  // end so they don't jump ahead of the configured workflow. Stable sort
-  // preserves the API's due-date order as the tiebreaker.
+  // Show ALL incomplete tasks, sorted by the per-task order the team maintains
+  // in the admin panel. Primary key is the per-deal tasks.order_index (which is
+  // kept in sync with the template order and can be overridden per-deal from the
+  // admin deal page); template_order_index (the live task_templates.order_index)
+  // is the fallback for rows whose per-deal value isn't set yet. Tasks without
+  // either (manual additions) fall to the end so they don't jump ahead of the
+  // configured workflow. Stable sort preserves the API's due-date tiebreaker.
   // Completed tasks naturally fall away because of the !completed filter.
   const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
   const allPending = uniqueTasks
     .filter((t) => !t.completed)
     .slice()
     .sort((a, b) => {
-      const ao = a.template_order_index ?? ORDER_FALLBACK;
-      const bo = b.template_order_index ?? ORDER_FALLBACK;
+      const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
+      const bo = b.order_index ?? b.template_order_index ?? ORDER_FALLBACK;
       return ao - bo;
     });
 

@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code"
+        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role"
       )
       .in("id", leadIds);
 
@@ -179,15 +179,36 @@ export async function POST(req: Request) {
       : "";
 
     const isPS = lead?.lead_type === PURCHASE_AND_SALE;
+    const isCoPerson = Boolean(lead?.parent_lead_id);
+    const coRole = (lead?.co_person_role as "purchaser" | "seller" | null) ?? null;
+
+    // Mirror /api/retainer/check: a P&S deal is two independent transactions for
+    // its co-persons. A co-purchaser retains us only for the PURCHASE side, a
+    // co-seller only for the SALE side — so their PDF/email must show only that
+    // side's property. The primary client retains and sees both sides.
+    const coPurchaserOnly = isPS && isCoPerson && coRole === "purchaser";
+    const coSellerOnly = isPS && isCoPerson && coRole === "seller";
+    const showCombined = isPS && !coPurchaserOnly && !coSellerOnly;
+
+    // The signature row keeps `side` = null (combined-signature detection in
+    // isLeadSigned relies on it); `displaySide` only drives PDF/email labelling
+    // and the document file name for single-side co-persons.
+    const displaySide: Side = coPurchaserOnly
+      ? "purchase"
+      : coSellerOnly
+        ? "sale"
+        : side;
 
     // For non-P&S leads, propertyAddress is the single relevant address.
-    // For P&S leads we still pass a combined string for templates/logs that
+    // For combined P&S we pass a joined string for templates/logs that
     // reference a single `propertyAddress`, but the PDF + email also receive
     // the structured purchase/sale addresses so each can be rendered with its
-    // own label.
-    const propertyAddress = isPS
+    // own label. Single-side co-persons get only their own side's address.
+    const propertyAddress = showCombined
       ? [purchaseAddress, saleAddress].filter(Boolean).join(" / ")
-      : purchaseAddress;
+      : coSellerOnly
+        ? saleAddress
+        : purchaseAddress;
 
     // PDF generation, blob upload, doc-row insert, and post-sign email all
     // run synchronously BEFORE we return the response. This used to live in a
@@ -223,13 +244,13 @@ export async function POST(req: Request) {
         propertyAddress,
         leadType: lead?.lead_type ?? "",
         uniqueId,
-        side,
-        purchaseAddress: isPS ? purchaseAddress : undefined,
-        saleAddress: isPS ? saleAddress : undefined,
+        side: displaySide,
+        purchaseAddress: showCombined ? purchaseAddress : undefined,
+        saleAddress: showCombined ? saleAddress : undefined,
       });
 
       // 2. Upload to Vercel Blob (combined PDF for P&S uses "main" segment)
-      const sideSegment = side ?? "main";
+      const sideSegment = displaySide ?? "main";
       const blob = await put(
         `corporate-docs/${leadId}/${sideSegment}/${Date.now()}-retainer-agreement.pdf`,
         Buffer.from(pdfBytes),
@@ -250,9 +271,9 @@ export async function POST(req: Request) {
           lead_id: leadId,
           doc_type: "retainer_agreement",
           file_name:
-            side === "sale"
+            displaySide === "sale"
               ? "retainer-agreement-sale.pdf"
-              : side === "purchase"
+              : displaySide === "purchase"
                 ? "retainer-agreement-purchase.pdf"
                 : "retainer-agreement.pdf",
           file_url: blob.url,
@@ -277,9 +298,9 @@ export async function POST(req: Request) {
           firstName: lead.first_name ?? "",
           propertyAddress,
           leadType: lead.lead_type ?? "",
-          side,
-          purchaseAddress: isPS ? purchaseAddress : undefined,
-          saleAddress: isPS ? saleAddress : undefined,
+          side: displaySide,
+          purchaseAddress: showCombined ? purchaseAddress : undefined,
+          saleAddress: showCombined ? saleAddress : undefined,
         });
 
         await resend.emails.send({
@@ -291,9 +312,9 @@ export async function POST(req: Request) {
           attachments: [
             {
               filename:
-                side === "sale"
+                displaySide === "sale"
                   ? "retainer-agreement-sale.pdf"
-                  : side === "purchase"
+                  : displaySide === "purchase"
                     ? "retainer-agreement-purchase.pdf"
                     : "retainer-agreement.pdf",
               content: Buffer.from(pdfBytes),

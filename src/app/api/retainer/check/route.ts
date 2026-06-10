@@ -134,27 +134,46 @@ export async function GET() {
 
     const isPS = lead?.lead_type === PURCHASE_AND_SALE;
     const isCoPerson = Boolean(lead?.parent_lead_id);
+    const coRole = (lead?.co_person_role as "purchaser" | "seller" | null) ?? null;
+
+    // A P&S deal is treated as two independent transactions for its co-persons:
+    // a co-purchaser retains us only for the PURCHASE side and must see only the
+    // purchase property, a co-seller only the SALE side. The primary client (and
+    // any co-person without an explicit role) retains both sides and sees both.
+    const coPurchaserOnly = isPS && isCoPerson && coRole === "purchaser";
+    const coSellerOnly = isPS && isCoPerson && coRole === "seller";
+    const showCombined = isPS && !coPurchaserOnly && !coSellerOnly;
+
+    // Surface a side label for single-side viewers (co-purchaser/co-seller) so
+    // the page renders e.g. "Purchase Property" above the one relevant address.
+    const displaySide: Side = coPurchaserOnly
+      ? "purchase"
+      : coSellerOnly
+        ? "sale"
+        : nextSlot.side;
 
     // For backward compatibility with single-side leads, keep `property_address`
-    // populated with the relevant address. P&S leads also receive structured
-    // purchase_address + sale_address so the UI can render both.
-    const propertyAddress = isPS
+    // populated with the relevant address. Only combined P&S viewers receive
+    // structured purchase_address + sale_address so the UI renders both.
+    const propertyAddress = showCombined
       ? [purchaseAddress, saleAddress].filter(Boolean).join(" / ")
-      : purchaseAddress;
+      : coSellerOnly
+        ? saleAddress
+        : purchaseAddress;
 
     return NextResponse.json({
       signed: false,
       full_name: fullName,
       signed_date: new Date().toISOString().split("T")[0],
       property_address: propertyAddress,
-      purchase_address: isPS ? purchaseAddress : null,
-      sale_address: isPS ? saleAddress : null,
+      purchase_address: showCombined ? purchaseAddress : null,
+      sale_address: showCombined ? saleAddress : null,
       lead_type: lead?.lead_type ?? "",
-      side: nextSlot.side,
+      side: displaySide,
       retainer_current: signedCount + 1,
       retainer_total: totalRetainers,
       is_co_person: isCoPerson,
-      co_person_role: (lead?.co_person_role as "purchaser" | "seller" | null) ?? null,
+      co_person_role: coRole,
     });
   } catch (err) {
     console.error("[Retainer Check] Server error:", err);
