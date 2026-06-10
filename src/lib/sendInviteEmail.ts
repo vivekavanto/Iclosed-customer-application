@@ -39,6 +39,10 @@ export async function sendInviteEmail(
 
     let actionLink: string | null = null;
     let authUserId: string | null = null;
+    // True when the email already has a Supabase auth account. Existing users
+    // get the "Log into iClosed" email (login + password-reset links) instead
+    // of the first-time "invite user" / set-password email.
+    let isExistingUser = false;
 
     const inviteResult = await supabaseAdmin.auth.admin.generateLink({
       type: "invite",
@@ -55,7 +59,7 @@ export async function sendInviteEmail(
     } else {
       const errCode = (inviteResult.error as { code?: string } | null)?.code;
       const errMsg = inviteResult.error?.message?.toLowerCase() ?? "";
-      const isExistingUser =
+      isExistingUser =
         errCode === "user_already_exists" ||
         errCode === "email_exists" ||
         errMsg.includes("already registered") ||
@@ -87,44 +91,86 @@ export async function sendInviteEmail(
       }
     }
 
-    const { data: template } = await supabaseAdmin
-      .from("email_templates")
-      .select("name, subject, body")
-      .ilike("name", "invite user%")
-      .eq("is_active", true)
-      .or("is_deleted.eq.false,is_deleted.is.null")
-      .limit(1)
-      .maybeSingle();
-
-    if (!template?.body) {
-      return {
-        success: false,
-        authUserId,
-        error: "Invite email template not found in email_templates (name like 'invite user%', is_active=true)",
-      };
-    }
+    const fetchTemplate = async (namePrefix: string) =>
+      (
+        await supabaseAdmin
+          .from("email_templates")
+          .select("name, subject, body")
+          .ilike("name", namePrefix)
+          .eq("is_active", true)
+          .or("is_deleted.eq.false,is_deleted.is.null")
+          .limit(1)
+          .maybeSingle()
+      ).data;
 
     const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(" ");
     const addressParts = await buildLeadAddressPartsForEmail(lead);
     const leadAddress = addressParts.combinedString;
     const leadType = formatLeadTypeLabel(lead.lead_type);
 
-    const variables: Record<string, string> = {
+    // Existing users get the "Log into iClosed" template (login + reset links);
+    // first-time users get the "invite user" template (set-password link). The
+    // login button points at the portal /login page, derived from redirectTo so
+    // we don't re-read the env here. The reset link is the one-time recovery
+    // action link generated above.
+    let template = isExistingUser ? await fetchTemplate("Log into iClosed%") : null;
+    let fallbackSubject: string;
+
+    const loginUrl = `${new URL(redirectTo).origin}/login`;
+
+    const baseVariables: Record<string, string> = {
       "user.first_name": lead.first_name || "",
       "user.last_name": lead.last_name || "",
       "user.get_full_name": fullName || "there",
       "first_name": lead.first_name || "there",
       "lead_type": leadType || "property",
       "lead_address": leadAddress || "your property",
-      "confirmation_url": actionLink ?? "",
-      "invite_link": actionLink ?? "",
+      "purchase_address": addressParts.purchase || leadAddress || "your property",
+      "sale_address": addressParts.selling || "",
     };
+
+    let variables: Record<string, string>;
+
+    if (isExistingUser && template?.body) {
+      fallbackSubject = "Log into your iClosed account";
+      variables = {
+        ...baseVariables,
+        "login_url": loginUrl,
+        "reset_url": actionLink ?? "",
+        // alias so a template authored with {{ confirmation_url }} still resolves
+        "confirmation_url": actionLink ?? "",
+      };
+    } else {
+      // First-time user, OR existing user but the "Log into iClosed" template is
+      // missing/inactive — fall back to the invite template so an email still goes out.
+      if (isExistingUser) {
+        console.warn(
+          "[InviteEmail] 'Log into iClosed' template not found/inactive; falling back to invite-user template for",
+          lead.email,
+        );
+      }
+      template = await fetchTemplate("invite user%");
+      if (!template?.body) {
+        return {
+          success: false,
+          authUserId,
+          error:
+            "Invite email template not found in email_templates (name like 'invite user%', is_active=true)",
+        };
+      }
+      fallbackSubject = "You have been invited to iClosed";
+      variables = {
+        ...baseVariables,
+        "confirmation_url": actionLink ?? "",
+        "invite_link": actionLink ?? "",
+      };
+    }
 
     const rawHtml = renderMilestoneTemplate(template.body, variables);
     // Match the welcome email: split combined "Purchase & Sale of A and B"
     // into "Purchase of A and Sale of B" in the body.
     const html = splitCombinedAddressPhrase(rawHtml, addressParts);
-    const subject = resolveTemplateSubject(template, variables, "You have been invited to iClosed");
+    const subject = resolveTemplateSubject(template, variables, fallbackSubject);
 
     const { error: sendError } = await resend.emails.send({
       from: EMAIL_FROM,
@@ -142,7 +188,14 @@ export async function sendInviteEmail(
       };
     }
 
-    console.log("[InviteEmail] Sent to", lead.email, "for lead", leadId);
+    console.log(
+      "[InviteEmail] Sent",
+      isExistingUser ? "(log-in)" : "(invite)",
+      "to",
+      lead.email,
+      "for lead",
+      leadId,
+    );
     return { success: true, authUserId, error: null };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error sending invite email";
