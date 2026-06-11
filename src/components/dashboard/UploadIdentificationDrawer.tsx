@@ -149,8 +149,35 @@ const DEFAULT_ORDER: LabelKey[] = [
   "secondary_back",
 ];
 
-function labelText(label: LabelKey) {
-  return LABEL_OPTIONS.find((o) => o.value === label)?.text ?? "Other";
+// Decode the `custom_type` stored on a previously-uploaded document back into a
+// human-readable label so the classification survives a Save-as-Draft → return
+// round trip. Stored values come in a few shapes:
+//   - Detection-derived:  "Driver's License_front", "Permanent Resident Card_front-and-back"
+//   - Legacy label keys:  "primary_front", "secondary_back", "other"
+//   - Generic fallback:   "identification"
+function formatExistingDocLabel(customType: string | null): string {
+  if (!customType) return "Document";
+
+  // Legacy/manual label keys (primary_front, secondary_back, …)
+  const known = LABEL_OPTIONS.find((o) => o.value === customType);
+  if (known) return known.text;
+
+  if (customType === "identification") return "Identification";
+
+  // Detection-derived format: "<Document Type>_<side>"
+  const match = /^(.*)_(front-and-back|front|back)$/i.exec(customType);
+  if (match) {
+    const type = match[1];
+    const side = match[2].toLowerCase();
+    const sideLabel =
+      side === "front-and-back"
+        ? "Front & Back"
+        : side.charAt(0).toUpperCase() + side.slice(1);
+    return `${type} — ${sideLabel}`;
+  }
+
+  // Document type with no side suffix (single-sided IDs like passports)
+  return customType;
 }
 
 function validateFile(f: File): string | null {
@@ -1174,6 +1201,10 @@ export default function UploadIdentificationDrawer({
       setGlobalError("Please upload at least 2 identification documents.");
       return;
     }
+    if (hasDriversLicenseMissingBack) {
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
 
     setUploading(true);
     setGlobalError(null);
@@ -1247,6 +1278,10 @@ export default function UploadIdentificationDrawer({
     }
     if (selected.length < 2) {
       setGlobalError("Please upload at least 2 identification documents.");
+      return;
+    }
+    if (hasDriversLicenseMissingBack) {
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     setShowConfirmModal(true);
@@ -1392,6 +1427,20 @@ export default function UploadIdentificationDrawer({
   const completeDocCount = docAnalysis.filter(d => d.complete).length;
   const incompleteDocCount = docAnalysis.filter(d => !d.complete).length;
 
+  // Driver's licenses are a strictly two-sided ID: the back MUST be provided.
+  // Unlike other incomplete IDs (which are surfaced as soft warnings), a
+  // driver's license missing its back HARD-BLOCKS submission until the user
+  // adds the back side (or a single image showing both sides).
+  const driversLicensesMissingBack = docAnalysis.filter((d) => {
+    const t = d.type.toLowerCase();
+    const isDriversLicense = t.includes("driver") && t.includes("licen");
+    if (!isDriversLicense) return false;
+    // A single image containing both sides, or separate front + back, satisfies it.
+    if (d.hasBothSides || d.hasBack) return false;
+    return true;
+  });
+  const hasDriversLicenseMissingBack = driversLicensesMissingBack.length > 0;
+
   // Get complete single-sided document types (like passports) to be lenient with their backs
   const completeSingleSidedTypes = new Set(
     docAnalysis
@@ -1451,7 +1500,8 @@ export default function UploadIdentificationDrawer({
   const canUpload =
     selected.length >= 2 &&
     !uploading &&
-    !hasPendingDetection;
+    !hasPendingDetection &&
+    !hasDriversLicenseMissingBack;
 
   return (
     <>
@@ -1524,9 +1574,7 @@ export default function UploadIdentificationDrawer({
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900">Have a camera?</p>
                 <p className="text-xs text-gray-500">
-                  {hasPendingDetection
-                    ? "Analyzing your uploaded files… camera will be available once that's done."
-                    : "Capture each ID with your camera — no need to save the photo first."}
+                  Capture each ID with your camera — no need to save the photo first.
                 </p>
               </div>
             </div>
@@ -1534,16 +1582,12 @@ export default function UploadIdentificationDrawer({
               variant="secondary"
               size="sm"
               onClick={openCameraFlow}
-              disabled={uploading || hasPendingDetection}
+              disabled={uploading}
               className="flex-shrink-0"
             >
               <span className="inline-flex items-center gap-1.5">
-                {hasPendingDetection ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Camera size={14} />
-                )}
-                {hasPendingDetection ? "Analyzing..." : "Use Camera"}
+                <Camera size={14} />
+                Use Camera
               </span>
             </Button>
           </div>
@@ -1638,7 +1682,7 @@ export default function UploadIdentificationDrawer({
                         )}
                         {doc.custom_type && (
                           <p className="text-[10px] font-medium text-green-700 mt-0.5">
-                            {labelText(doc.custom_type as LabelKey)}
+                            {formatExistingDocLabel(doc.custom_type)}
                           </p>
                         )}
                       </div>
@@ -1906,12 +1950,14 @@ export default function UploadIdentificationDrawer({
               {/* Action hint for incomplete state */}
               {completeDocCount < 2 && (
                 <div className="px-4 py-2.5 bg-white border-t border-gray-100">
-                  <p className="text-xs text-gray-900">
-                    {incompleteDocCount > 0 && completeDocCount < 2
-                      ? "You can still submit — upload the missing side or a different ID for best results."
-                      : completeDocCount === 0
-                        ? "You can still submit — for best results upload front and back of each ID, or single-sided IDs like a passport."
-                        : "You can still submit — upload one more government ID to complete verification."
+                  <p className={`text-xs ${hasDriversLicenseMissingBack ? "text-[#C10007] font-semibold" : "text-gray-900"}`}>
+                    {hasDriversLicenseMissingBack
+                      ? "Upload the back side of your driver's license to continue — it's required before you can submit."
+                      : incompleteDocCount > 0 && completeDocCount < 2
+                        ? "You can still submit — upload the missing side or a different ID for best results."
+                        : completeDocCount === 0
+                          ? "You can still submit — for best results upload front and back of each ID, or single-sided IDs like a passport."
+                          : "You can still submit — upload one more government ID to complete verification."
                     }
                   </p>
                 </div>
@@ -1976,24 +2022,12 @@ export default function UploadIdentificationDrawer({
           <Button
             variant="primary"
             fullWidth
-            disabled={selected.length === 0 || hasPendingDetection || savingDraft}
+            disabled={!canUpload || savingDraft}
             loading={uploading}
-            onClick={() => {
-              if (canUpload) {
-                handleUploadClick();
-              } else {
-                verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-              }
-            }}
+            onClick={handleUploadClick}
             className="sm:flex-1"
           >
-            {selected.length === 0
-              ? "Upload Documents"
-              : hasPendingDetection
-                ? "Analyzing..."
-                : selected.length < 2
-                  ? "Add at Least 2 Documents"
-                  : `Upload ${selected.length} Document${selected.length > 1 ? "s" : ""}`}
+            Submit
           </Button>
         </div>
       </div>
