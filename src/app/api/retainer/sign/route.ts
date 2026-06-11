@@ -5,6 +5,7 @@ import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 
 type Side = "purchase" | "sale" | null;
 
@@ -209,6 +210,7 @@ export async function POST(req: Request) {
       : coSellerOnly
         ? saleAddress
         : purchaseAddress;
+    const displayLeadType = formatLeadTypeLabelForRecipient(lead);
 
     // PDF generation, blob upload, doc-row insert, and post-sign email all
     // run synchronously BEFORE we return the response. This used to live in a
@@ -242,7 +244,7 @@ export async function POST(req: Request) {
         signature,
         signedDate,
         propertyAddress,
-        leadType: lead?.lead_type ?? "",
+        leadType: displayLeadType,
         uniqueId,
         side: displaySide,
         purchaseAddress: showCombined ? purchaseAddress : undefined,
@@ -297,7 +299,7 @@ export async function POST(req: Request) {
         const { html, subject } = await buildRetainerEmailHtml({
           firstName: lead.first_name ?? "",
           propertyAddress,
-          leadType: lead.lead_type ?? "",
+          leadType: displayLeadType,
           side: displaySide,
           purchaseAddress: showCombined ? purchaseAddress : undefined,
           saleAddress: showCombined ? saleAddress : undefined,

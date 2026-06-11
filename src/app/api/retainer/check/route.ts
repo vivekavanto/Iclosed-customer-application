@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
+import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 
 type Side = "purchase" | "sale" | null;
 
@@ -161,6 +162,8 @@ export async function GET() {
         ? saleAddress
         : purchaseAddress;
 
+    const displayLeadType = formatLeadTypeLabelForRecipient(lead);
+
     return NextResponse.json({
       signed: false,
       full_name: fullName,
@@ -168,7 +171,7 @@ export async function GET() {
       property_address: propertyAddress,
       purchase_address: showCombined ? purchaseAddress : null,
       sale_address: showCombined ? saleAddress : null,
-      lead_type: lead?.lead_type ?? "",
+      lead_type: displayLeadType,
       side: displaySide,
       retainer_current: signedCount + 1,
       retainer_total: totalRetainers,

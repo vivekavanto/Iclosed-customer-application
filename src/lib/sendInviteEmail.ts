@@ -1,7 +1,10 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
-import { buildLeadAddressPartsForEmail, formatLeadTypeLabel } from "@/lib/leadEmailAddress";
+import {
+  buildLeadAddressPartsForEmail,
+  formatLeadTypeLabelForRecipient,
+} from "@/lib/leadEmailAddress";
 import { splitCombinedAddressPhrase } from "@/lib/email-templates/splitCombinedAddressPhrase";
 
 export interface SendInviteEmailResult {
@@ -28,7 +31,7 @@ export async function sendInviteEmail(
     const { data: lead } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, parent_lead_id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code",
+        "id, parent_lead_id, co_person_role, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code",
       )
       .eq("id", leadId)
       .single();
@@ -106,7 +109,7 @@ export async function sendInviteEmail(
     const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(" ");
     const addressParts = await buildLeadAddressPartsForEmail(lead);
     const leadAddress = addressParts.combinedString;
-    const leadType = formatLeadTypeLabel(lead.lead_type);
+    const leadType = formatLeadTypeLabelForRecipient(lead);
 
     // Existing users get the "Log into iClosed" template (login + reset links);
     // first-time users get the "invite user" template (set-password link). The

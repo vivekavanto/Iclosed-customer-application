@@ -33,13 +33,28 @@ export function formatLeadTypeLabel(rawType: string | null | undefined): string 
   return (rawType ?? "").trim();
 }
 
+export function formatLeadTypeLabelForRecipient(
+  lead: Pick<LeadAddressFields, "lead_type" | "parent_lead_id" | "co_person_role"> | null | undefined,
+): string {
+  const baseLabel = formatLeadTypeLabel(lead?.lead_type);
+  const isCoPerson = Boolean(lead?.parent_lead_id);
+
+  if (baseLabel === "Purchase & Sale" && isCoPerson) {
+    if (lead?.co_person_role === "purchaser") return "Purchase";
+    if (lead?.co_person_role === "seller") return "Sale";
+  }
+
+  return baseLabel;
+}
+
 function joinAddress(parts: (string | null | undefined)[]): string {
   return parts.filter(Boolean).join(", ");
 }
 
-type LeadAddressFields = {
+export type LeadAddressFields = {
   id?: string | null;
   parent_lead_id?: string | null;
+  co_person_role?: string | null;
   lead_type?: string | null;
   address_street?: string | null;
   address_city?: string | null;
@@ -73,6 +88,10 @@ export async function buildLeadAddressPartsForEmail(
   const rawType = (lead.lead_type ?? "").toLowerCase().trim();
   const typeIsCombined = rawType.includes("purchase") && rawType.includes("sale");
   const typeIsSaleOnly = !typeIsCombined && rawType.includes("sale");
+  const isCoPerson = Boolean(lead.parent_lead_id);
+  const coRole = lead.co_person_role === "purchaser" || lead.co_person_role === "seller"
+    ? lead.co_person_role
+    : null;
 
   let purchase = joinAddress([
     lead.address_street,
@@ -161,6 +180,13 @@ export async function buildLeadAddressPartsForEmail(
         }
       }
     }
+  }
+
+  if (treatAsCombined && isCoPerson && coRole === "purchaser") {
+    return { combinedString: purchase, purchase, selling, isCombined: false };
+  }
+  if (treatAsCombined && isCoPerson && coRole === "seller") {
+    return { combinedString: selling || purchase, purchase, selling, isCombined: false };
   }
 
   if (treatAsCombined) {

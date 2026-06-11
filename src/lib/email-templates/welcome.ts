@@ -1,10 +1,19 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "./milestone";
-import { buildLeadAddressPartsForEmail, formatLeadTypeLabel } from "@/lib/leadEmailAddress";
+import {
+  buildLeadAddressPartsForEmail,
+  formatLeadTypeLabelForRecipient,
+} from "@/lib/leadEmailAddress";
+import type { LeadAddressFields } from "@/lib/leadEmailAddress";
 import { splitCombinedAddressPhrase } from "./splitCombinedAddressPhrase";
 
+type WelcomeLead = LeadAddressFields & {
+  first_name?: string | null;
+  last_name?: string | null;
+};
+
 export async function buildWelcomeEmailHtml(params: {
-  lead: any;
+  lead: WelcomeLead;
 }): Promise<{ html: string; subject: string }> {
   const { lead } = params;
 
@@ -27,7 +36,7 @@ export async function buildWelcomeEmailHtml(params: {
   // See src/lib/leadEmailAddress.ts.
   const addressParts = await buildLeadAddressPartsForEmail(lead);
   const leadAddress = addressParts.combinedString;
-  const leadType = formatLeadTypeLabel(lead.lead_type);
+  const leadType = formatLeadTypeLabelForRecipient(lead);
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://iclosed-customer-application-rosy.vercel.app";
 
