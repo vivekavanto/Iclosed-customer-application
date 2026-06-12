@@ -74,9 +74,10 @@ interface PropertyData {
   last_name: string | null;
   phone: string | null;
   lead_type: string | null;
-  // "purchaser" | "seller" when this client is a co-person on a Purchase & Sale
+  // "purchase" | "sale" when this client is a co-person on a Purchase & Sale
   // deal (party to only that one side). null for a primary client (sees both).
-  co_person_role: string | null;
+  // Computed authoritatively by /api/dashboardproperty.
+  recipient_side: "purchase" | "sale" | null;
 }
 
 interface DealData {
@@ -609,19 +610,6 @@ function pickDefaultSide(tasks: Task[]): "purchase" | "sale" | null {
   return null;
 }
 
-// A co-person on a Purchase & Sale deal retains us for only ONE side: a
-// co-purchaser for the purchase, a co-seller for the sale. This maps their
-// role to the single side they're allowed to see. Returns null for a primary
-// client, who sees both sides. When non-null, the dashboard hides the other
-// side's tab, address, tasks and milestones.
-function sideForRole(
-  role: string | null | undefined,
-): "purchase" | "sale" | null {
-  if (role === "purchaser") return "purchase";
-  if (role === "seller") return "sale";
-  return null;
-}
-
 export default function DashboardPage() {
   // ── Multiple properties / deals (one tab per lead) ─────────
   const [properties, setProperties] = useState<PropertyData[]>([]);
@@ -696,7 +684,7 @@ export default function DashboardPage() {
   // ── Reset selected side when switching properties ─────────
   useEffect(() => {
     const prop = properties.find((p) => p.lead_id === activeLeadId) ?? null;
-    const restricted = sideForRole(prop?.co_person_role);
+    const restricted = prop?.recipient_side ?? null;
     // A co-person is locked to their one side (co-purchaser → purchase,
     // co-seller → sale); everyone else defaults to purchase.
     setSelectedSide(restricted ?? "purchase");
@@ -810,7 +798,7 @@ export default function DashboardPage() {
   const tabEntries = properties.flatMap((p) => {
     const deal = p.deal_id ? deals.find((d) => d.id === p.deal_id) ?? null : null;
     if (deal?.type === "Purchase & Sale") {
-      const restricted = sideForRole(p.co_person_role);
+      const restricted = p.recipient_side;
       const purchaseTab = {
         key: `${p.lead_id}:purchase`,
         lead_id: p.lead_id,

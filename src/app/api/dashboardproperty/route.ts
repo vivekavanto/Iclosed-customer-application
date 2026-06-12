@@ -4,6 +4,32 @@ import { getAuthClient } from "@/lib/getAuthClient";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The single side a co-person is party to on a Purchase & Sale deal:
+ *   co-purchaser → "purchase", co-seller → "sale".
+ * Returns null for a primary client (sees both sides).
+ *
+ * Prefers the explicit `co_person_role`. For older co-person leads created
+ * before that column was populated, falls back to the lead's own single-sided
+ * `lead_type` ("Purchase" → purchase, "Sale" → sale). A co-person whose role is
+ * null AND whose lead_type is the combined "Purchase & Sale" is genuinely
+ * ambiguous → null (shows both; needs the role backfilled in admin).
+ */
+function recipientSideForLead(lead: {
+  parent_lead_id: string | null;
+  co_person_role: string | null;
+  lead_type: string | null;
+}): "purchase" | "sale" | null {
+  if (!lead.parent_lead_id) return null; // primary client — both sides
+  if (lead.co_person_role === "purchaser") return "purchase";
+  if (lead.co_person_role === "seller") return "sale";
+  const lt = (lead.lead_type ?? "").toLowerCase();
+  const isCombined = lt.includes("purchase") && lt.includes("sale");
+  if (!isCombined && lt.includes("sale")) return "sale";
+  if (!isCombined && lt.includes("purchase")) return "purchase";
+  return null;
+}
+
 export async function GET() {
   try {
     // ── Resolve authenticated client ──────────────────────────
@@ -113,10 +139,10 @@ export async function GET() {
         last_name: client.last_name || lead.last_name,
         phone: client.phone || lead.phone || null,
         lead_type: lead.lead_type || deal?.type || null,
-        // A co-purchaser/co-seller retains us for ONE side of a Purchase & Sale
-        // deal. The dashboard uses this to show only that side's property,
+        // The single side a co-purchaser/co-seller is party to on a Purchase &
+        // Sale deal. The dashboard uses this to show only that side's property,
         // tasks and milestones. NULL for a primary client (sees both sides).
-        co_person_role: lead.parent_lead_id ? lead.co_person_role || null : null,
+        recipient_side: recipientSideForLead(lead),
       };
     });
 
