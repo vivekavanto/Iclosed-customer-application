@@ -22,8 +22,9 @@ export async function buildRetainerEmailHtml(params: {
 
   const isCombined = Boolean(purchaseAddress && saleAddress);
 
-  // For combined P&S retainers there is no single "side" — suppress the
-  // legacy side label/suffix/row so the email doesn't mislabel the doc.
+  // The "Property Role" label has been removed from the retainer email. The
+  // subject suffix now carries the property address instead of the legacy
+  // side label, and the Property Role row is no longer rendered in the body.
   const sideLabel = isCombined
     ? ""
     : side === "purchase"
@@ -31,14 +32,13 @@ export async function buildRetainerEmailHtml(params: {
       : side === "sale"
         ? "Sale Property"
         : "";
-  const sideSuffix = sideLabel ? ` (${sideLabel})` : "";
 
-  const propertyRoleRow = sideLabel
-    ? `<tr>
-      <td style="padding: 4px 12px 4px 0; font-weight: bold; color: #555;">Property Role:</td>
-      <td style="padding: 4px 0;">${sideLabel}</td>
-    </tr>`
-    : "";
+  // Subject suffix = the property address. For combined P&S retainers there is
+  // no single address to show in the subject, so the suffix is suppressed.
+  const subjectAddress = isCombined ? "" : (propertyAddress || "");
+  const sideSuffix = subjectAddress ? ` (${subjectAddress})` : "";
+
+  const propertyRoleRow = "";
 
   // For combined P&S, render both addresses inside property_address so that
   // existing templates (which only know about {{property_address}}) still
