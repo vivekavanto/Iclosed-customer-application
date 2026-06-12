@@ -74,6 +74,9 @@ interface PropertyData {
   last_name: string | null;
   phone: string | null;
   lead_type: string | null;
+  // "purchaser" | "seller" when this client is a co-person on a Purchase & Sale
+  // deal (party to only that one side). null for a primary client (sees both).
+  co_person_role: string | null;
 }
 
 interface DealData {
@@ -606,6 +609,19 @@ function pickDefaultSide(tasks: Task[]): "purchase" | "sale" | null {
   return null;
 }
 
+// A co-person on a Purchase & Sale deal retains us for only ONE side: a
+// co-purchaser for the purchase, a co-seller for the sale. This maps their
+// role to the single side they're allowed to see. Returns null for a primary
+// client, who sees both sides. When non-null, the dashboard hides the other
+// side's tab, address, tasks and milestones.
+function sideForRole(
+  role: string | null | undefined,
+): "purchase" | "sale" | null {
+  if (role === "purchaser") return "purchase";
+  if (role === "seller") return "sale";
+  return null;
+}
+
 export default function DashboardPage() {
   // ── Multiple properties / deals (one tab per lead) ─────────
   const [properties, setProperties] = useState<PropertyData[]>([]);
@@ -679,11 +695,16 @@ export default function DashboardPage() {
 
   // ── Reset selected side when switching properties ─────────
   useEffect(() => {
-    setSelectedSide("purchase");
-    // Re-arm the content-aware default so it re-applies once this property's
-    // tasks load (see fetchDealData below).
-    autoSideLeadRef.current = null;
-  }, [activeLeadId]);
+    const prop = properties.find((p) => p.lead_id === activeLeadId) ?? null;
+    const restricted = sideForRole(prop?.co_person_role);
+    // A co-person is locked to their one side (co-purchaser → purchase,
+    // co-seller → sale); everyone else defaults to purchase.
+    setSelectedSide(restricted ?? "purchase");
+    // For a locked co-person, suppress the content-aware auto-default so it
+    // can't flip them to the other side; otherwise re-arm it so it re-applies
+    // once this property's tasks load (see fetchDealData below).
+    autoSideLeadRef.current = restricted ? activeLeadId : null;
+  }, [activeLeadId, properties]);
 
   // ── When active lead/deal changes: reload tasks + milestones ──
   useEffect(() => {
@@ -782,26 +803,31 @@ export default function DashboardPage() {
   const isBothDeal = activeDeal?.type === "Purchase & Sale";
   const showSale = isBothDeal && selectedSide === "sale";
 
-  // Tab entries — "Purchase & Sale" deals expand into 2 separate tabs (one per side)
+  // Tab entries — "Purchase & Sale" deals expand into 2 separate tabs (one per
+  // side) for the PRIMARY client. A co-person is party to only their one side,
+  // so we emit just that side's tab (co-purchaser → Purchase, co-seller → Sale)
+  // and never expose the other side.
   const tabEntries = properties.flatMap((p) => {
     const deal = p.deal_id ? deals.find((d) => d.id === p.deal_id) ?? null : null;
     if (deal?.type === "Purchase & Sale") {
-      return [
-        {
-          key: `${p.lead_id}:purchase`,
-          lead_id: p.lead_id,
-          side: "purchase" as "purchase" | "sale" | null,
-          label: p.address_street,
-          icon: Home,
-        },
-        {
-          key: `${p.lead_id}:sale`,
-          lead_id: p.lead_id,
-          side: "sale" as "purchase" | "sale" | null,
-          label: p.selling_address_street,
-          icon: FileText,
-        },
-      ];
+      const restricted = sideForRole(p.co_person_role);
+      const purchaseTab = {
+        key: `${p.lead_id}:purchase`,
+        lead_id: p.lead_id,
+        side: "purchase" as "purchase" | "sale" | null,
+        label: p.address_street,
+        icon: Home,
+      };
+      const saleTab = {
+        key: `${p.lead_id}:sale`,
+        lead_id: p.lead_id,
+        side: "sale" as "purchase" | "sale" | null,
+        label: p.selling_address_street,
+        icon: FileText,
+      };
+      if (restricted === "purchase") return [purchaseTab];
+      if (restricted === "sale") return [saleTab];
+      return [purchaseTab, saleTab];
     }
     return [
       {
