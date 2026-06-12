@@ -137,6 +137,25 @@ export async function GET() {
     const isCoPerson = Boolean(lead?.parent_lead_id);
     const coRole = (lead?.co_person_role as "purchaser" | "seller" | null) ?? null;
 
+    // Does the current primary have any co-persons (co-purchaser / co-seller)?
+    // The retainer's "submit on behalf of my co-person" checkbox is only
+    // relevant when at least one co-person exists. Co-persons themselves
+    // always have a primary, so this lookup only matters for primaries.
+    let hasCoPersons = false;
+    let hasCoPurchaser = false;
+    let hasCoSeller = false;
+    if (!isCoPerson) {
+      const { data: coPersons } = await supabaseAdmin
+        .from("leads")
+        .select("co_person_role")
+        .eq("parent_lead_id", nextSlot.leadId);
+      hasCoPersons = (coPersons?.length ?? 0) > 0;
+      for (const cp of coPersons || []) {
+        if (cp.co_person_role === "purchaser") hasCoPurchaser = true;
+        else if (cp.co_person_role === "seller") hasCoSeller = true;
+      }
+    }
+
     // A P&S deal is treated as two independent transactions for its co-persons:
     // a co-purchaser retains us only for the PURCHASE side and must see only the
     // purchase property, a co-seller only the SALE side. The primary client (and
@@ -177,6 +196,9 @@ export async function GET() {
       retainer_total: totalRetainers,
       is_co_person: isCoPerson,
       co_person_role: coRole,
+      has_co_persons: hasCoPersons,
+      has_co_purchaser: hasCoPurchaser,
+      has_co_seller: hasCoSeller,
     });
   } catch (err) {
     console.error("[Retainer Check] Server error:", err);

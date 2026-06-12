@@ -95,14 +95,33 @@ function getCoPersonLabel(
   side: "purchase" | "sale" | null
 ): string {
   if (leadType === "Purchase & Sale") {
-    if (side === "purchase") return "Co-purchaser";
-    if (side === "sale") return "Co-seller";
-    return "Co-purchaser / Co-seller";
+    if (side === "purchase") return "Co-purchaser(s)";
+    if (side === "sale") return "Co-seller(s)";
+    return "Co-purchaser(s) / Co-seller(s)";
   }
-  if (leadType === "Sale") return "Co-seller";
-  if (leadType === "Purchase") return "Co-purchaser";
-  if (side === "sale") return "Co-seller";
-  return "Co-purchaser";
+  if (leadType === "Sale") return "Co-seller(s)";
+  if (leadType === "Purchase") return "Co-purchaser(s)";
+  if (side === "sale") return "Co-seller(s)";
+  return "Co-purchaser(s)";
+}
+
+/**
+ * Label for the primary's "submit on behalf of my co-person" checkbox, based on
+ * which co-persons actually exist. For a Purchase & Sale deal the primary may
+ * have a co-purchaser, a co-seller, or both — reflect exactly what they have.
+ */
+function getPrimaryCoPersonLabel(
+  leadType: string,
+  side: "purchase" | "sale" | null,
+  hasCoPurchaser: boolean,
+  hasCoSeller: boolean
+): string {
+  if (leadType === "Purchase & Sale") {
+    if (hasCoPurchaser && hasCoSeller) return "Co-purchaser(s) / Co-seller(s)";
+    if (hasCoPurchaser) return "Co-purchaser(s)";
+    if (hasCoSeller) return "Co-seller(s)";
+  }
+  return getCoPersonLabel(leadType, side);
 }
 
 function validate(name: string, date: string, signature: string): FormErrors {
@@ -145,6 +164,11 @@ export default function RetainerPage() {
   const [coPersonRole, setCoPersonRole] = useState<"purchaser" | "seller" | null>(
     null
   );
+  // Whether the current primary has any co-persons. Drives whether the
+  // "submit on behalf of my co-person" acknowledgement checkbox is shown.
+  const [hasCoPersons, setHasCoPersons] = useState(false);
+  const [hasCoPurchaser, setHasCoPurchaser] = useState(false);
+  const [hasCoSeller, setHasCoSeller] = useState(false);
   // Local-only acknowledgement — not yet sent to the backend.
   const [coAuthAcknowledged, setCoAuthAcknowledged] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -181,6 +205,9 @@ export default function RetainerPage() {
             ? data.co_person_role
             : null
         );
+        setHasCoPersons(Boolean(data.has_co_persons));
+        setHasCoPurchaser(Boolean(data.has_co_purchaser));
+        setHasCoSeller(Boolean(data.has_co_seller));
       } catch {
         // silently fail — user can fill manually
       }
@@ -382,8 +409,10 @@ export default function RetainerPage() {
           {/* ─── Co-person authorization acknowledgement ─────────────────
              Optional checkbox. We collect the answer locally but do not
              send it to the backend yet — that wiring will land later.
-             Currently hidden from the frontend. */}
-          {false && (
+             Only shown when a co-person relationship exists: either the
+             current user is a co-person, or the primary has at least one
+             co-purchaser / co-seller. A lone primary never sees it. */}
+          {(isCoPerson || hasCoPersons) && (
           <div className="mt-5 pt-5 border-t border-dashed border-gray-200">
             <label
               htmlFor="retainer-co-auth"
@@ -407,7 +436,12 @@ export default function RetainerPage() {
                     I would like to submit Personal Information and
                     Identification on behalf of my{" "}
                     <span className="font-semibold text-gray-900">
-                      {getCoPersonLabel(leadType, side)}
+                      {getPrimaryCoPersonLabel(
+                        leadType,
+                        side,
+                        hasCoPurchaser,
+                        hasCoSeller
+                      )}
                     </span>
                     .
                   </>
