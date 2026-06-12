@@ -120,13 +120,13 @@ const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 // Acceptable ID types that users can manually select when AI classification fails
 const ACCEPTABLE_ID_TYPES = [
   "Canadian Passport",
-  "Driver's License",
+  "Canadian Driver's License",
   "Canadian Citizenship Card",
-  "Permanent Resident Card",
-  "NEXUS Card",
-  "SIN Card (plastic only)",
+  "Canadian Permanent Resident Card",
+  "US or Canadian NEXUS Card",
+  "Canadian SIN Card (plastic only)",
   "Foreign Passport",
-  "Government-issued Photo ID Card",
+  "Canadian Government-issued Photo ID Card",
 ];
 
 // IDs that only need a single side (info page)
@@ -382,13 +382,13 @@ function appendDetectionFields(fd: FormData, det: DetectionResult | null) {
 function AcceptableDocumentsSection() {
   const acceptableDocs = [
     "Canadian Passport",
-    "Driver's License",
+    "Canadian Driver's License",
     "Canadian Citizenship Card",
-    "Permanent Resident Card",
-    "NEXUS Card",
-    "SIN Card (plastic only)",
+    "Canadian Permanent Resident Card",
+    "US or Canadian NEXUS Card",
+    "Canadian SIN Card (plastic only)",
     "Foreign Passport",
-    "Government-issued Photo ID Card",
+    "Canadian Government-issued Photo ID Card",
   ];
 
   return (
