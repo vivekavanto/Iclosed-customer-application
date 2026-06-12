@@ -1199,6 +1199,11 @@ export default function UploadIdentificationDrawer({
     // Require two fully-verified IDs (2/2) before submission — counting any
     // previously-uploaded draft docs so a returning user can finish without
     // re-uploading everything they already provided.
+    if (hasExpiredDocs) {
+      setGlobalError("One of your IDs is expired. Please remove or replace it before submitting.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (completeDocCount < 2) {
       setGlobalError("Please provide two valid pieces of ID (2/2) before submitting.");
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1290,6 +1295,11 @@ export default function UploadIdentificationDrawer({
   function handleUploadClick() {
     if (!leadId) {
       setGlobalError("Missing lead. Please refresh and try again.");
+      return;
+    }
+    if (hasExpiredDocs) {
+      setGlobalError("One of your IDs is expired. Please remove or replace it before submitting.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     if (completeDocCount < 2) {
@@ -1387,9 +1397,10 @@ export default function UploadIdentificationDrawer({
 
   // Group detected documents by type to determine if both sides are present
   // Now supports multiple documents detected in a single file
-  const detectedDocs: { type: string; side: string; sideRequirement: string; isComplete: boolean; fileId: string }[] = [];
+  const detectedDocs: { type: string; side: string; sideRequirement: string; isComplete: boolean; fileId: string; expired: boolean }[] = [];
   for (const s of selected) {
     if (s.detection?.isIdentification) {
+      const expired = s.detection.expiryStatus === "expired";
       // If multiple documents were detected in this file, add each one
       if (s.detection.multipleDocuments && s.detection.multipleDocuments.length > 0) {
         for (const doc of s.detection.multipleDocuments) {
@@ -1399,6 +1410,7 @@ export default function UploadIdentificationDrawer({
             sideRequirement: doc.sideRequirement,
             isComplete: doc.isComplete,
             fileId: s.id,
+            expired,
           });
         }
       } else if (s.detection.documentType) {
@@ -1412,6 +1424,7 @@ export default function UploadIdentificationDrawer({
           sideRequirement: s.detection.sideRequirement,
           isComplete,
           fileId: s.id,
+          expired,
         });
       }
     }
@@ -1437,7 +1450,9 @@ export default function UploadIdentificationDrawer({
       : "two-sided";
     const isComplete =
       sideRequirement === "single-sided" || side === "front-and-back";
-    detectedDocs.push({ type, side, sideRequirement, isComplete, fileId: doc.id });
+    // Expiry isn't persisted on previously-uploaded docs, so we can't re-check
+    // it here — treat as not-expired (the draft save already screened them).
+    detectedDocs.push({ type, side, sideRequirement, isComplete, fileId: doc.id, expired: false });
   }
 
   // Group by document type
@@ -1449,7 +1464,7 @@ export default function UploadIdentificationDrawer({
   }, {});
 
   // Analyze each document type for side coverage
-  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; isSingleSided: boolean; complete: boolean }[] = [];
+  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; isSingleSided: boolean; complete: boolean; expired: boolean }[] = [];
   for (const [type, docs] of Object.entries(docTypeGroups)) {
     const hasFront = docs.some(d => d.side === "front");
     const hasBack = docs.some(d => d.side === "back");
@@ -1460,12 +1475,16 @@ export default function UploadIdentificationDrawer({
     // For single-sided documents (passports), having either front or both makes it complete
     // This allows users to upload passport back as well without issues
     const complete = hasCompleteDoc || isSingleSided || hasBothSides || (hasFront && hasBack) || (isSingleSided && (hasFront || hasBack || hasBothSides));
-    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, isSingleSided, complete });
+    // An expired ID is NOT a valid piece of ID — flag it so it doesn't count
+    // toward the required two and so the UI can surface it.
+    const expired = docs.some(d => d.expired);
+    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, isSingleSided, complete, expired });
   }
 
-  // Count complete documents (both sides or single-sided)
-  const completeDocCount = docAnalysis.filter(d => d.complete).length;
-  const incompleteDocCount = docAnalysis.filter(d => !d.complete).length;
+  // A document only counts as a VALID/verified ID when it has all required
+  // sides AND is not expired. Expired IDs are surfaced as invalid below.
+  const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired).length;
+  const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired)).length;
 
   // Driver's licenses are a strictly two-sided ID: the back MUST be provided.
   // Unlike other incomplete IDs (which are surfaced as soft warnings), a
@@ -1542,7 +1561,13 @@ export default function UploadIdentificationDrawer({
     completeDocCount >= 2 &&
     !uploading &&
     !hasPendingDetection &&
-    !hasDriversLicenseMissingBack;
+    !hasDriversLicenseMissingBack &&
+    !hasExpiredDocs;
+
+  // Display-only flag for the verification card: are the submission
+  // REQUIREMENTS met (ignoring transient uploading / pending-detection states)?
+  const readyToSubmit =
+    completeDocCount >= 2 && !hasDriversLicenseMissingBack && !hasExpiredDocs;
 
   return (
     <>
@@ -1963,7 +1988,7 @@ export default function UploadIdentificationDrawer({
               ref={verificationStatusRef}
               className={[
                 "rounded-xl border overflow-hidden bg-white",
-                completeDocCount >= 2
+                readyToSubmit
                   ? "border-green-200"
                   : "border-red-300 border-t-4 border-t-[#C10007]",
               ].join(" ")}
@@ -1971,9 +1996,9 @@ export default function UploadIdentificationDrawer({
               {/* Status Header */}
               <div className={[
                 "px-4 py-3 flex items-center gap-3",
-                completeDocCount >= 2 ? "bg-green-50 border-b border-green-100" : "bg-white",
+                readyToSubmit ? "bg-green-50 border-b border-green-100" : "bg-white",
               ].join(" ")}>
-                {completeDocCount >= 2 ? (
+                {readyToSubmit ? (
                   <>
                     <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
                       <CheckCircle2 size={18} className="text-white" strokeWidth={2.5} />
@@ -1992,13 +2017,16 @@ export default function UploadIdentificationDrawer({
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-900">
-                        {completeDocCount === 0
-                          ? "2 Government IDs Recommended"
-                          : "1 More Government ID Recommended"}
+                        {hasExpiredDocs
+                          ? "Expired ID — action needed"
+                          : completeDocCount === 0
+                            ? "2 Valid Government IDs Required"
+                            : "1 More Valid Government ID Required"}
                       </p>
                       <p className="text-xs text-gray-900">
-                        {completeDocCount}/2 verified
-                        {incompleteDocCount > 0 && " — see details below"}
+                        {hasExpiredDocs
+                          ? "An uploaded ID is expired — see details below"
+                          : `${completeDocCount}/2 verified — see details below`}
                       </p>
                     </div>
                   </>
@@ -2008,42 +2036,49 @@ export default function UploadIdentificationDrawer({
               {/* Document Details — always white background below header */}
               {docAnalysis.length > 0 && (
                 <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
-                  {docAnalysis.map((doc, idx) => (
-                    <div key={idx} className="flex items-start gap-2.5 text-xs">
-                      {doc.complete ? (
-                        <CheckCircle2 size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <AlertCircle size={14} className="text-[#C10007] flex-shrink-0 mt-0.5" />
-                      )}
-                      <div className="min-w-0 flex-1 text-gray-900">
-                        <span className="font-semibold">{doc.type}</span>
-                        <span>
-                          {doc.complete
-                            ? doc.isSingleSided
-                              ? " — verified"
-                              : doc.hasBothSides
-                                ? " — front & back in one image"
-                                : " — both sides verified"
-                            : ` — missing ${!doc.hasFront && !doc.hasBack ? "front & back" : !doc.hasFront ? "front" : "back"}`
-                          }
-                        </span>
+                  {docAnalysis.map((doc, idx) => {
+                    const valid = doc.complete && !doc.expired;
+                    return (
+                      <div key={idx} className="flex items-start gap-2.5 text-xs">
+                        {valid ? (
+                          <CheckCircle2 size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle size={14} className="text-[#C10007] flex-shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0 flex-1 text-gray-900">
+                          <span className="font-semibold">{doc.type}</span>
+                          <span className={doc.expired ? "text-[#C10007] font-semibold" : ""}>
+                            {doc.expired
+                              ? " — expired (not a valid ID)"
+                              : doc.complete
+                                ? doc.isSingleSided
+                                  ? " — verified"
+                                  : doc.hasBothSides
+                                    ? " — front & back in one image"
+                                    : " — both sides verified"
+                                : ` — missing ${!doc.hasFront && !doc.hasBack ? "front & back" : !doc.hasFront ? "front" : "back"}`
+                            }
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              {/* Action hint for incomplete state */}
-              {completeDocCount < 2 && (
+              {/* Action hint while submission is blocked */}
+              {!readyToSubmit && (
                 <div className="px-4 py-2.5 bg-white border-t border-gray-100">
-                  <p className={`text-xs ${completeDocCount < 2 ? "text-[#C10007] font-semibold" : "text-gray-900"}`}>
-                    {hasDriversLicenseMissingBack
-                      ? "Upload the back side of your driver's license to continue — it's required before you can submit."
-                      : completeDocCount === 0
-                        ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID, or a single-sided ID like a passport."
-                        : incompleteDocCount > 0
-                          ? "Finish the incomplete ID (upload its missing side) or add another valid ID — you need two verified IDs (2/2) to submit."
-                          : "Add one more valid government ID to submit — two verified IDs (2/2) are required."
+                  <p className="text-xs text-[#C10007] font-semibold">
+                    {hasExpiredDocs
+                      ? "Remove or replace the expired ID — expired documents are not accepted."
+                      : hasDriversLicenseMissingBack
+                        ? "Upload the back side of your driver's license to continue — it's required before you can submit."
+                        : completeDocCount === 0
+                          ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID, or a single-sided ID like a passport."
+                          : incompleteDocCount > 0
+                            ? "Finish the incomplete ID (upload its missing side) or add another valid ID — you need two verified IDs (2/2) to submit."
+                            : "Add one more valid government ID to submit — two verified IDs (2/2) are required."
                     }
                   </p>
                 </div>
