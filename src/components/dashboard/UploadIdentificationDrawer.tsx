@@ -1192,13 +1192,16 @@ export default function UploadIdentificationDrawer({
   // ── Manual upload submit ────────────────────────────────────────────────────
 
   async function handleUpload() {
-    if (selected.length === 0) return;
     if (!leadId) {
       setGlobalError("Missing lead. Please refresh and try again.");
       return;
     }
-    if (selected.length < 2) {
-      setGlobalError("Please upload at least 2 identification documents.");
+    // Require two fully-verified IDs (2/2) before submission — counting any
+    // previously-uploaded draft docs so a returning user can finish without
+    // re-uploading everything they already provided.
+    if (completeDocCount < 2) {
+      setGlobalError("Please provide two valid pieces of ID (2/2) before submitting.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     if (hasDriversLicenseMissingBack) {
@@ -1232,19 +1235,33 @@ export default function UploadIdentificationDrawer({
       const uploaded = await Promise.all(uploads);
 
       if (taskId) {
+        // The task-responses API replaces ALL responses for the task, so we
+        // must include previously-uploaded draft docs alongside the new ones —
+        // otherwise finishing a draft would drop the earlier documents.
+        const existingResponses = existing.map((doc) => ({
+          field_label: doc.custom_type
+            ? formatExistingDocLabel(doc.custom_type)
+            : "Identification Document",
+          field_type: "file",
+          file_url: doc.file_url,
+          file_name: doc.file_name,
+        }));
         const respRes = await fetch("/api/task-responses", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             task_id: taskId,
-            responses: uploaded.map(({ selected: s, url }) => ({
-              field_label: s.detection?.documentType 
-                ? `${s.detection.documentType}${s.detection.side !== "unknown" ? ` (${s.detection.side})` : ""}`
-                : "Identification Document",
-              field_type: "file",
-              file_url: url,
-              file_name: s.file.name,
-            })),
+            responses: [
+              ...uploaded.map(({ selected: s, url }) => ({
+                field_label: s.detection?.documentType 
+                  ? `${s.detection.documentType}${s.detection.side !== "unknown" ? ` (${s.detection.side})` : ""}`
+                  : "Identification Document",
+                field_type: "file",
+                file_url: url,
+                file_name: s.file.name,
+              })),
+              ...existingResponses,
+            ],
           }),
         });
         if (!respRes.ok) throw new Error("Files uploaded, but failed to record task completion.");
@@ -1271,13 +1288,13 @@ export default function UploadIdentificationDrawer({
 
   // Validate before showing confirmation modal
   function handleUploadClick() {
-    if (selected.length === 0) return;
     if (!leadId) {
       setGlobalError("Missing lead. Please refresh and try again.");
       return;
     }
-    if (selected.length < 2) {
-      setGlobalError("Please upload at least 2 identification documents.");
+    if (completeDocCount < 2) {
+      setGlobalError("Please provide two valid pieces of ID (2/2) before submitting.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     if (hasDriversLicenseMissingBack) {
@@ -1400,6 +1417,29 @@ export default function UploadIdentificationDrawer({
     }
   }
 
+  // Fold previously-uploaded (draft) documents into the same analysis so the
+  // verification status card still tells the user what's missing after a
+  // Save-as-Draft → return round trip. Existing docs aren't in `selected`;
+  // their type/side is encoded in `custom_type` (e.g. "Driver's License_front").
+  for (const doc of existing) {
+    const ct = doc.custom_type;
+    if (!ct) continue;
+    // Skip entries that carry no detected document type: the generic
+    // "identification" fallback and legacy/manual label keys (primary_front, …).
+    if (ct === "identification") continue;
+    if (LABEL_OPTIONS.some((o) => o.value === ct)) continue;
+
+    const match = /^(.*)_(front-and-back|front|back)$/i.exec(ct);
+    const type = match ? match[1] : ct;
+    const side = match ? match[2].toLowerCase() : "front-and-back";
+    const sideRequirement = SINGLE_SIDED_IDS.includes(type)
+      ? "single-sided"
+      : "two-sided";
+    const isComplete =
+      sideRequirement === "single-sided" || side === "front-and-back";
+    detectedDocs.push({ type, side, sideRequirement, isComplete, fileId: doc.id });
+  }
+
   // Group by document type
   const docTypeGroups = detectedDocs.reduce<Record<string, typeof detectedDocs>>((acc, doc) => {
     const key = doc.type;
@@ -1494,11 +1534,12 @@ export default function UploadIdentificationDrawer({
 
   const hasPendingDetection = selected.some(s => s.detecting);
 
-  // Allow upload as long as we have at least 2 files and analysis has finished.
-  // Invalid / expired / incomplete IDs are surfaced as warnings but do not block
-  // submission (e.g. the primary user uploading on behalf of their spouse).
+  // Submission requires TWO fully-verified IDs (2/2) — counting any
+  // previously-uploaded draft docs. Incomplete, expired or unverified IDs are
+  // surfaced as warnings/details but do NOT count toward the required two and
+  // therefore block submission until the user provides two valid pieces of ID.
   const canUpload =
-    selected.length >= 2 &&
+    completeDocCount >= 2 &&
     !uploading &&
     !hasPendingDetection &&
     !hasDriversLicenseMissingBack;
@@ -1871,8 +1912,53 @@ export default function UploadIdentificationDrawer({
             </div>
           )}
 
-          {/* Unified Verification Status Section */}
-          {selected.length > 0 && !hasPendingDetection && (
+          {/* Detection errors callout */}
+          {selected.length > 0 && !hasPendingDetection && hasDetectionFailures && (
+            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-[#C10007]" />
+              <span>
+                Some files couldn&rsquo;t be identified as valid government IDs. You can still submit, but please double-check these documents.
+              </span>
+            </div>
+          )}
+
+          {/* Expiring soon warning */}
+          {selected.length > 0 && !hasPendingDetection && !hasExpiredDocs && hasExpiringSoonDocs && (
+            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-[#C10007]" />
+              <div>
+                <span className="font-semibold">ID expiring soon.</span>{" "}
+                <span>
+                  {expiringSoonDocs.length === 1
+                    ? `Your ${expiringSoonDocs[0].detection?.documentType} will expire within 30 days. Consider using a different ID if your closing is after that date.`
+                    : `${expiringSoonDocs.length} of your IDs will expire within 30 days. Consider using different IDs if your closing is after those dates.`}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Global error */}
+          {globalError && (
+            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
+              <span>{globalError}</span>
+            </div>
+          )}
+
+          {/* Draft saved success indicator */}
+          {draftSaved && (
+            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+              <CheckCircle2 size={14} strokeWidth={2.5} className="flex-shrink-0" />
+              <span className="font-semibold">Draft saved! You can come back later to finish.</span>
+            </div>
+          )}
+        </div>
+
+        {/* Verification status — pinned just above the footer so the user
+            always sees what's missing / whether they can submit, without having
+            to scroll to the bottom of the document list. */}
+        {(selected.length > 0 || existing.length > 0) && !hasPendingDetection && (
+          <div className="px-6 pt-4 border-t border-gray-100 max-h-[38vh] overflow-y-auto">
             <div
               ref={verificationStatusRef}
               className={[
@@ -1950,62 +2036,21 @@ export default function UploadIdentificationDrawer({
               {/* Action hint for incomplete state */}
               {completeDocCount < 2 && (
                 <div className="px-4 py-2.5 bg-white border-t border-gray-100">
-                  <p className={`text-xs ${hasDriversLicenseMissingBack ? "text-[#C10007] font-semibold" : "text-gray-900"}`}>
+                  <p className={`text-xs ${completeDocCount < 2 ? "text-[#C10007] font-semibold" : "text-gray-900"}`}>
                     {hasDriversLicenseMissingBack
                       ? "Upload the back side of your driver's license to continue — it's required before you can submit."
-                      : incompleteDocCount > 0 && completeDocCount < 2
-                        ? "You can still submit — upload the missing side or a different ID for best results."
-                        : completeDocCount === 0
-                          ? "You can still submit — for best results upload front and back of each ID, or single-sided IDs like a passport."
-                          : "You can still submit — upload one more government ID to complete verification."
+                      : completeDocCount === 0
+                        ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID, or a single-sided ID like a passport."
+                        : incompleteDocCount > 0
+                          ? "Finish the incomplete ID (upload its missing side) or add another valid ID — you need two verified IDs (2/2) to submit."
+                          : "Add one more valid government ID to submit — two verified IDs (2/2) are required."
                     }
                   </p>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Detection errors callout */}
-          {selected.length > 0 && !hasPendingDetection && hasDetectionFailures && (
-            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
-              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-[#C10007]" />
-              <span>
-                Some files couldn&rsquo;t be identified as valid government IDs. You can still submit, but please double-check these documents.
-              </span>
-            </div>
-          )}
-
-          {/* Expiring soon warning */}
-          {selected.length > 0 && !hasPendingDetection && !hasExpiredDocs && hasExpiringSoonDocs && (
-            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
-              <Clock size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5 text-[#C10007]" />
-              <div>
-                <span className="font-semibold">ID expiring soon.</span>{" "}
-                <span>
-                  {expiringSoonDocs.length === 1
-                    ? `Your ${expiringSoonDocs[0].detection?.documentType} will expire within 30 days. Consider using a different ID if your closing is after that date.`
-                    : `${expiringSoonDocs.length} of your IDs will expire within 30 days. Consider using different IDs if your closing is after those dates.`}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Global error */}
-          {globalError && (
-            <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
-              <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
-              <span>{globalError}</span>
-            </div>
-          )}
-
-          {/* Draft saved success indicator */}
-          {draftSaved && (
-            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
-              <CheckCircle2 size={14} strokeWidth={2.5} className="flex-shrink-0" />
-              <span className="font-semibold">Draft saved! You can come back later to finish.</span>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex flex-col-reverse sm:flex-row gap-3">
