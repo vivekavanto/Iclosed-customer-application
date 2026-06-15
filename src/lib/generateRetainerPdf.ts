@@ -113,7 +113,6 @@ export async function generateRetainerPdf(
     propertyAddress,
     leadType,
     uniqueId,
-    side,
     purchaseAddress,
     saleAddress,
   } = params;
@@ -159,14 +158,6 @@ export async function generateRetainerPdf(
 
   page.drawText("Retainer Agreement", { x: margin, y, font: bold, size: 18, color: rgb(0.1, 0.1, 0.1) });
   y -= 28;
-
-  // Side label (legacy single-side P&S PDFs only — the combined retainer below
-  // shows both addresses and does not need this label).
-  if (!isCombined && (side === "purchase" || side === "sale")) {
-    const sideLabel = side === "purchase" ? "Purchase Property" : "Sale Property";
-    page.drawText(`Property Role: ${sideLabel}`, { x: margin, y, font: bold, size: 10, color: brandColor });
-    y -= 18;
-  }
 
   // Property address(es)
   if (isCombined) {
