@@ -2,8 +2,8 @@
 
 import { useState, useEffect, FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, MapPin, Tag, Shield, ArrowRight } from "lucide-react";
 import FAQAccordion, { FAQItem } from "@/components/retainer/FAQAccordion";
+import RetainerPermissionFlow from "@/components/retainer/RetainerPermissionFlow";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
@@ -106,9 +106,9 @@ function getCoPersonLabel(
 }
 
 /**
- * Label for the primary's "submit on behalf of my co-person" checkbox, based on
- * which co-persons actually exist. For a Purchase & Sale deal the primary may
- * have a co-purchaser, a co-seller, or both — reflect exactly what they have.
+ * Label for the primary's permission-flow copy, based on which co-persons
+ * actually exist. For a Purchase & Sale deal the primary may have a
+ * co-purchaser, a co-seller, or both — reflect exactly what they have.
  */
 function getPrimaryCoPersonLabel(
   leadType: string,
@@ -164,15 +164,12 @@ export default function RetainerPage() {
   const [coPersonRole, setCoPersonRole] = useState<"purchaser" | "seller" | null>(
     null
   );
-  // Whether the current primary has any co-persons. Drives whether the
-  // "submit on behalf of my co-person" acknowledgement checkbox is shown.
   const [hasCoPersons, setHasCoPersons] = useState(false);
   const [hasCoPurchaser, setHasCoPurchaser] = useState(false);
   const [hasCoSeller, setHasCoSeller] = useState(false);
-  // Local-only acknowledgement — not yet sent to the backend.
-  const [coAuthAcknowledged, setCoAuthAcknowledged] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
+  const [showPermissionFlow, setShowPermissionFlow] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -242,16 +239,25 @@ export default function RetainerPage() {
         return;
       }
 
-      setSubmitted(true);
-      setTimeout(() => {
-        router.push("/dashboard");
-        router.refresh();
-      }, 2000);
+      if (isCoPerson || hasCoPersons) {
+        setShowPermissionFlow(true);
+      } else {
+        setSubmitted(true);
+        setTimeout(() => {
+          router.push("/dashboard");
+          router.refresh();
+        }, 2000);
+      }
     } catch {
       setErrors({ name: "Something went wrong. Please try again." });
     } finally {
       setLoading(false);
     }
+  };
+
+  const finishAndRedirect = () => {
+    router.push("/dashboard");
+    router.refresh();
   };
 
   /* Success State */
@@ -406,50 +412,6 @@ export default function RetainerPage() {
             </div>
           )}
 
-          {/* ─── Co-person authorization acknowledgement ─────────────────
-             Optional checkbox. We collect the answer locally but do not
-             send it to the backend yet — that wiring will land later.
-             Only shown when a co-person relationship exists: either the
-             current user is a co-person, or the primary has at least one
-             co-purchaser / co-seller. A lone primary never sees it. */}
-          {(isCoPerson || hasCoPersons) && (
-          <div className="mt-5 pt-5 border-t border-dashed border-gray-200">
-            <label
-              htmlFor="retainer-co-auth"
-              className="flex items-start gap-3 cursor-pointer group"
-            >
-              <input
-                id="retainer-co-auth"
-                type="checkbox"
-                checked={coAuthAcknowledged}
-                onChange={(e) => setCoAuthAcknowledged(e.target.checked)}
-                className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-[#C10007] focus:ring-2 focus:ring-[#C10007]/40 cursor-pointer"
-              />
-              <span className="text-sm leading-relaxed text-gray-700">
-                {isCoPerson ? (
-                  <>
-                    I would like to give the primary the authority to submit
-                    personal information and identification on my behalf.
-                  </>
-                ) : (
-                  <>
-                    I would like to submit Personal Information and
-                    Identification on behalf of my{" "}
-                    <span className="font-semibold text-gray-900">
-                      {getPrimaryCoPersonLabel(
-                        leadType,
-                        side,
-                        hasCoPurchaser,
-                        hasCoSeller
-                      )}
-                    </span>
-                    .
-                  </>
-                )}
-              </span>
-            </label>
-          </div>
-          )}
         </div>
 
         {/* Submit row */}
@@ -466,6 +428,19 @@ export default function RetainerPage() {
           </Button>
         </div>
       </form>
+
+      <RetainerPermissionFlow
+        open={showPermissionFlow}
+        onComplete={finishAndRedirect}
+        userName={name}
+        isCoPerson={isCoPerson}
+        coPersonLabel={getPrimaryCoPersonLabel(
+          leadType,
+          side,
+          hasCoPurchaser,
+          hasCoSeller
+        )}
+      />
     </div>
   );
 }
