@@ -41,11 +41,11 @@ interface ApsBlockProps {
   side: Side;
   signed: YesNo;
   setSigned: (v: "yes" | "no") => void;
-  file: File | null;
-  setFile: (f: File | null) => void;
+  files: File[];
+  setFiles: (f: File[]) => void;
 }
 
-const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setFile }) => {
+const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, setFiles }) => {
   const [isDragging, setIsDragging] = useState(false);
   const { error: toastError } = useToast();
 
@@ -59,26 +59,38 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
       ? "For the property you're buying"
       : "For the property you're selling";
 
-  const handlePickFile = useCallback(
-    (f: File) => {
-      const err = validateFile(f);
-      if (err) {
-        toastError(err);
-        return;
+  // Accept multiple files: validate each and APPEND the valid ones so the
+  // client can upload the agreement plus amendments/waivers.
+  const handlePickFiles = useCallback(
+    (picked: FileList | File[]) => {
+      const valid: File[] = [];
+      for (const f of Array.from(picked)) {
+        const err = validateFile(f);
+        if (err) {
+          toastError(`"${f.name}" — ${err}`);
+          continue;
+        }
+        valid.push(f);
       }
-      setFile(f);
+      if (valid.length > 0) setFiles([...files, ...valid]);
     },
-    [setFile, toastError]
+    [files, setFiles, toastError]
+  );
+
+  const removeFile = useCallback(
+    (index: number) => {
+      setFiles(files.filter((_, i) => i !== index));
+    },
+    [files, setFiles]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      const f = e.dataTransfer.files?.[0];
-      if (f) handlePickFile(f);
+      if (e.dataTransfer.files?.length) handlePickFiles(e.dataTransfer.files);
     },
-    [handlePickFile]
+    [handlePickFiles]
   );
 
   const segClass = (active: boolean) =>
@@ -150,31 +162,41 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, file, setF
             <p className="text-gray-600 text-sm text-center">
               <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
             </p>
-            <p className="text-gray-400 text-xs mt-0.5">PDF, JPG, PNG — max 10 MB</p>
+            <p className="text-gray-400 text-xs mt-0.5">
+              {files.length > 0 ? "Add more files · " : ""}PDF, JPG, PNG — max 10 MB each
+            </p>
             <input
               id={inputId}
               type="file"
+              multiple
               accept=".pdf,.jpg,.jpeg,.png"
               className="hidden"
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handlePickFile(f);
+                if (e.target.files?.length) handlePickFiles(e.target.files);
                 e.target.value = "";
               }}
             />
           </div>
 
-          {file && (
-            <div className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2 mt-3">
-              <p className="text-green-700 text-xs font-medium truncate">
-                ✓ {file.name}
-              </p>
-              <button
-                onClick={() => setFile(null)}
-                className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
-              >
-                Remove
-              </button>
+          {files.length > 0 && (
+            <div className="space-y-2 mt-3">
+              {files.map((f, idx) => (
+                <div
+                  key={`${f.name}-${idx}`}
+                  className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2"
+                >
+                  <p className="text-green-700 text-xs font-medium truncate">
+                    ✓ {f.name}{" "}
+                    <span className="text-green-600/70 font-normal">({formatBytes(f.size)})</span>
+                  </p>
+                  <button
+                    onClick={() => removeFile(idx)}
+                    className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -189,10 +211,10 @@ interface Step4Props {
   setApsPurchaseSigned: (v: "yes" | "no") => void;
   apsSaleSigned: YesNo;
   setApsSaleSigned: (v: "yes" | "no") => void;
-  purchaseFile: File | null;
-  setPurchaseFile: (f: File | null) => void;
-  saleFile: File | null;
-  setSaleFile: (f: File | null) => void;
+  purchaseFiles: File[];
+  setPurchaseFiles: (f: File[]) => void;
+  saleFiles: File[];
+  setSaleFiles: (f: File[]) => void;
   setStep: (step: number) => void;
   step: number;
 }
@@ -203,10 +225,10 @@ const Step4: React.FC<Step4Props> = ({
   setApsPurchaseSigned,
   apsSaleSigned,
   setApsSaleSigned,
-  purchaseFile,
-  setPurchaseFile,
-  saleFile,
-  setSaleFile,
+  purchaseFiles,
+  setPurchaseFiles,
+  saleFiles,
+  setSaleFiles,
   setStep,
   step,
 }) => {
@@ -323,8 +345,8 @@ const Step4: React.FC<Step4Props> = ({
                     side="purchase"
                     signed={apsPurchaseSigned}
                     setSigned={setApsPurchaseSigned}
-                    file={purchaseFile}
-                    setFile={setPurchaseFile}
+                    files={purchaseFiles}
+                    setFiles={setPurchaseFiles}
                   />
                 </div>
               )}
@@ -334,8 +356,8 @@ const Step4: React.FC<Step4Props> = ({
                     side="sale"
                     signed={apsSaleSigned}
                     setSigned={setApsSaleSigned}
-                    file={saleFile}
-                    setFile={setSaleFile}
+                    files={saleFiles}
+                    setFiles={setSaleFiles}
                   />
                 </div>
               )}

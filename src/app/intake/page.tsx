@@ -30,8 +30,8 @@ export default function ServiceSelection() {
   const [step, setStep] = useState(1);
   const [apsPurchaseSigned, setApsPurchaseSigned] = useState<"yes" | "no" | null>(null);
   const [apsSaleSigned, setApsSaleSigned] = useState<"yes" | "no" | null>(null);
-  const [purchaseFile, setPurchaseFile] = useState<File | null>(null);
-  const [saleFile, setSaleFile] = useState<File | null>(null);
+  const [purchaseFiles, setPurchaseFiles] = useState<File[]>([]);
+  const [saleFiles, setSaleFiles] = useState<File[]>([]);
 
   // Derived for back-compat with Step1/Step2/Step5Contact, which still expect a
   // single agreementSigned signal. "yes" if any active side is signed.
@@ -177,8 +177,8 @@ export default function ServiceSelection() {
     setSellingPrice("");
     setApsPurchaseSigned(null);
     setApsSaleSigned(null);
-    setPurchaseFile(null);
-    setSaleFile(null);
+    setPurchaseFiles([]);
+    setSaleFiles([]);
     setAddressData({
       street: "",
       unit: "",
@@ -246,10 +246,10 @@ export default function ServiceSelection() {
             setApsPurchaseSigned={setApsPurchaseSigned}
             apsSaleSigned={apsSaleSigned}
             setApsSaleSigned={setApsSaleSigned}
-            purchaseFile={purchaseFile}
-            setPurchaseFile={setPurchaseFile}
-            saleFile={saleFile}
-            setSaleFile={setSaleFile}
+            purchaseFiles={purchaseFiles}
+            setPurchaseFiles={setPurchaseFiles}
+            saleFiles={saleFiles}
+            setSaleFiles={setSaleFiles}
             setStep={setStep}
             step={step}
           />
@@ -330,11 +330,15 @@ export default function ServiceSelection() {
                 const leadId = intakeResult.lead_id;
 
                 const uploads: Array<{ file: File; side: "purchase" | "sale"; docType: string }> = [];
-                if (purchaseFile && apsPurchaseSigned === "yes") {
-                  uploads.push({ file: purchaseFile, side: "purchase", docType: "aps_purchase" });
+                if (apsPurchaseSigned === "yes") {
+                  for (const file of purchaseFiles) {
+                    uploads.push({ file, side: "purchase", docType: "aps_purchase" });
+                  }
                 }
-                if (saleFile && apsSaleSigned === "yes") {
-                  uploads.push({ file: saleFile, side: "sale", docType: "aps_sale" });
+                if (apsSaleSigned === "yes") {
+                  for (const file of saleFiles) {
+                    uploads.push({ file, side: "sale", docType: "aps_sale" });
+                  }
                 }
 
                 for (const u of uploads) {

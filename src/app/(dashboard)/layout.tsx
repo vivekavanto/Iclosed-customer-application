@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { Menu, X, LogOut, LayoutDashboard, BookOpen } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
+import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 // import Footer from "@/components/layout/Footer";
 
 const navLinks = [
@@ -95,6 +96,7 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)]">
       <IdleLogoutGuard />
+      <SessionKeepAlive />
       {/* ── Top Navigation Bar ── */}
       <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-4">

@@ -122,17 +122,46 @@ function getFileConfig(opts: unknown): {
   accept: string;
   max_mb: number;
   doc_type: string;
+  multiple: boolean;
 } {
-  const safeOpts = (opts && typeof opts === "object" ? opts : {}) as {
+  // options can arrive as an object (JSONB parsed by supabase-js) or, in some
+  // setups, as a JSON string — handle both defensively.
+  let parsed: unknown = opts;
+  if (typeof opts === "string") {
+    try {
+      parsed = JSON.parse(opts);
+    } catch {
+      parsed = {};
+    }
+  }
+  const safeOpts = (parsed && typeof parsed === "object" ? parsed : {}) as {
     accept?: string;
     max_mb?: number;
     doc_type?: string;
+    multiple?: boolean;
   };
   return {
     accept: safeOpts.accept ?? ".pdf,.jpg,.jpeg,.png",
     max_mb: safeOpts.max_mb ?? 10,
     doc_type: safeOpts.doc_type ?? "document",
+    // Explicit opt-in via options.multiple (set on the APS field).
+    multiple: safeOpts.multiple === true,
   };
+}
+
+/**
+ * Whether a file field should accept MULTIPLE files. True when either the
+ * field is explicitly flagged (options.multiple) OR it is the APS field —
+ * detected by doc_type "aps" or an "Agreement of Purchase and Sale" label.
+ * The APS detection means multi-file works even if the DB flag was never
+ * applied, and covers every APS template variant (some have no doc_type).
+ */
+function fileFieldAllowsMultiple(field: FormField): boolean {
+  if (field.field_type !== "file") return false;
+  const cfg = getFileConfig(field.options);
+  if (cfg.multiple) return true;
+  if (cfg.doc_type === "aps") return true;
+  return (field.label ?? "").toLowerCase().includes("agreement of purchase");
 }
 
 async function computeImageSharpnessScore(dataUrl: string): Promise<number> {
@@ -371,6 +400,180 @@ function FileSlot({
 }
 
 /* ─────────────────────────────────────────────
+   MULTI FILE UPLOAD SLOT (opt-in via options.multiple)
+   Used for fields like APS that accept the agreement plus its
+   amendments/waivers. Keeps a list of newly-picked files and any
+   previously-submitted files, each individually removable.
+───────────────────────────────────────────── */
+function MultiFileSlot({
+  field,
+  files,
+  existing,
+  error,
+  onAddFiles,
+  onRemoveNew,
+  onRemoveExisting,
+  onError,
+}: {
+  field: FormField;
+  files: File[];
+  existing: { url: string; name: string }[];
+  error: string | null;
+  onAddFiles: (fieldId: string, files: File[]) => void;
+  onRemoveNew: (fieldId: string, index: number) => void;
+  onRemoveExisting: (fieldId: string, index: number) => void;
+  onError?: (fieldId: string, error: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const cfg = getFileConfig(field.options);
+
+  function validateFile(f: File): string | null {
+    const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
+    const allowed = cfg.accept.split(",").map((s) => s.trim());
+    if (!allowed.includes(ext))
+      return `Invalid file type. Only ${cfg.accept.replace(/\./g, "").toUpperCase()} files are allowed.`;
+    if (f.size > cfg.max_mb * 1000 * 1000)
+      return `File size (${(f.size / 1000 / 1000).toFixed(1)}MB) exceeds the ${cfg.max_mb}MB limit.`;
+    return null;
+  }
+
+  function handlePick(picked: FileList | File[]) {
+    const list = Array.from(picked);
+    const valid: File[] = [];
+    for (const f of list) {
+      const err = validateFile(f);
+      if (err) {
+        onError?.(field.id, err);
+        continue;
+      }
+      valid.push(f);
+    }
+    if (valid.length > 0) {
+      onError?.(field.id, "");
+      onAddFiles(field.id, valid);
+    }
+  }
+
+  function fmt(bytes: number) {
+    return bytes < 1000 * 1000
+      ? `${(bytes / 1000).toFixed(1)} KB`
+      : `${(bytes / 1000 / 1000).toFixed(2)} MB`;
+  }
+
+  return (
+    <div>
+      {/* Existing (previously submitted) files */}
+      {existing.length > 0 && (
+        <div className="space-y-2 mb-2">
+          {existing.map((e, i) => (
+            <div
+              key={`ex-${i}`}
+              className="flex items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 px-4 py-3"
+            >
+              <CheckCircle2 size={16} className="text-green-600 shrink-0" strokeWidth={2} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-green-700 truncate">{e.name || "File uploaded"}</p>
+                <p className="text-[11px] text-gray-400">Previously submitted</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemoveExisting(field.id, i)}
+                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
+                aria-label={`Remove ${e.name}`}
+              >
+                <Trash2 size={13} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Newly picked files */}
+      {files.length > 0 && (
+        <div className="space-y-2 mb-2">
+          {files.map((f, i) => (
+            <div
+              key={`new-${i}`}
+              className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{f.name}</p>
+                <p className="text-xs text-gray-400">{fmt(f.size)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemoveNew(field.id, i)}
+                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
+                aria-label={`Remove ${f.name}`}
+              >
+                <Trash2 size={13} strokeWidth={2} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Dropzone — always available so more files can be added */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (e.dataTransfer.files?.length) handlePick(e.dataTransfer.files);
+        }}
+        onClick={() => inputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+        className={[
+          "flex flex-col items-center gap-2 rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-all duration-200 select-none",
+          dragOver ? "border-[#C10007] bg-[#FEF2F2]" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
+        ].join(" ")}
+      >
+        <div
+          className={[
+            "w-9 h-9 rounded-full flex items-center justify-center",
+            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
+          ].join(" ")}
+        >
+          <Upload size={16} className={dragOver ? "text-[#C10007]" : "text-gray-400"} strokeWidth={2} />
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-gray-700">
+            {files.length > 0 || existing.length > 0 ? "Add more files" : field.label}
+          </p>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Click or drag · multiple · {cfg.accept} · Max {cfg.max_mb}MB each
+          </p>
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept={cfg.accept}
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) handlePick(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      {error && (
+        <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
+          <AlertCircle size={11} />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    CUSTOM SELECT (fixed-position dropdown)
 ───────────────────────────────────────────── */
 function CustomSelect({
@@ -481,6 +684,12 @@ export default function DynamicTaskDrawer({
   const [existingFiles, setExistingFiles] = useState<
     Record<string, { url: string; name: string }>
   >({});
+  // Multi-file slots (fields flagged options.multiple — e.g. APS). Kept
+  // separate from the single-file maps so single-file fields are untouched.
+  const [multiFiles, setMultiFiles] = useState<Record<string, File[]>>({});
+  const [existingMultiFiles, setExistingMultiFiles] = useState<
+    Record<string, { url: string; name: string }[]>
+  >({});
   // file upload errors
   const [fileErrors, setFileErrors] = useState<Record<string, string>>({});
   // field validation errors
@@ -517,6 +726,8 @@ export default function DynamicTaskDrawer({
     setValues({});
     setFiles({});
     setExistingFiles({});
+    setMultiFiles({});
+    setExistingMultiFiles({});
     setErrors({});
     setFileErrors({});
     setGlobalError(null);
@@ -540,22 +751,36 @@ export default function DynamicTaskDrawer({
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
-          setFields(data.fields ?? []);
+          const fetchedFields: FormField[] = data.fields ?? [];
+          setFields(fetchedFields);
+          // Which fields accept multiple files (e.g. APS).
+          const multipleFieldIds = new Set(
+            fetchedFields
+              .filter((f) => fileFieldAllowsMultiple(f))
+              .map((f) => f.id),
+          );
           // Pre-fill existing text responses
           const preValues: Record<string, string> = {};
           const preFiles: Record<string, { url: string; name: string }> = {};
+          const preMultiFiles: Record<string, { url: string; name: string }[]> = {};
           (data.existing_responses ?? []).forEach((resp: ExistingResponse) => {
             if (resp.field_id) {
               if (resp.value) preValues[resp.field_id] = resp.value;
-              if (resp.file_url)
-                preFiles[resp.field_id] = {
-                  url: resp.file_url,
-                  name: resp.file_name ?? "",
-                };
+              if (resp.file_url) {
+                const entry = { url: resp.file_url, name: resp.file_name ?? "" };
+                if (multipleFieldIds.has(resp.field_id)) {
+                  // Collect ALL files for a multiple field into an array.
+                  (preMultiFiles[resp.field_id] ??= []).push(entry);
+                } else {
+                  // Single field: last response wins (existing behavior).
+                  preFiles[resp.field_id] = entry;
+                }
+              }
             }
           });
           setValues(preValues);
           setExistingFiles(preFiles);
+          setExistingMultiFiles(preMultiFiles);
 
           // For Upload Identification, auto-expand the manual upload panel
           // when there are already saved files so they show as "Previously submitted"
@@ -698,6 +923,24 @@ export default function DynamicTaskDrawer({
     });
   }
 
+  // ── Multi-file slot handlers (options.multiple fields) ──
+  function addMultiFiles(fieldId: string, picked: File[]) {
+    setMultiFiles((prev) => ({ ...prev, [fieldId]: [...(prev[fieldId] ?? []), ...picked] }));
+    setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+  }
+  function removeMultiNewFile(fieldId: string, index: number) {
+    setMultiFiles((prev) => ({
+      ...prev,
+      [fieldId]: (prev[fieldId] ?? []).filter((_, i) => i !== index),
+    }));
+  }
+  function removeMultiExistingFile(fieldId: string, index: number) {
+    setExistingMultiFiles((prev) => ({
+      ...prev,
+      [fieldId]: (prev[fieldId] ?? []).filter((_, i) => i !== index),
+    }));
+  }
+
   // Resolve whether a field should currently be shown, based on its (optional)
   // visible_when rule and the live answer of the parent field it depends on.
   // Matching the parent is done by label (case-insensitive) and the comparison
@@ -731,7 +974,15 @@ export default function DynamicTaskDrawer({
       const val = values[field.id]?.trim() ?? "";
 
       if (field.field_type === "file") {
-        if (required && !activeFiles[field.id] && !existingFiles[field.id]) {
+        if (fileFieldAllowsMultiple(field)) {
+          // Multiple field: satisfied by any new OR kept existing file.
+          const hasAny =
+            (multiFiles[field.id]?.length ?? 0) > 0 ||
+            (existingMultiFiles[field.id]?.length ?? 0) > 0;
+          if (required && !hasAny) {
+            newErrors[field.id] = `${field.label} is required.`;
+          }
+        } else if (required && !activeFiles[field.id] && !existingFiles[field.id]) {
           newErrors[field.id] = `${field.label} is required.`;
         }
       } else if (field.field_type === "checkbox") {
@@ -832,6 +1083,52 @@ export default function DynamicTaskDrawer({
         });
       }
 
+      // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
+      for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
+        const picked = multiFiles[field.id] ?? [];
+        if (picked.length === 0) continue;
+
+        const cfg = getFileConfig(field.options);
+        const safeLeadId = leadId ?? "unknown";
+
+        for (const file of picked) {
+          const blob = await upload(
+            `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
+            file,
+            {
+              access: "public",
+              handleUploadUrl: "/api/blob/upload",
+              clientPayload: JSON.stringify({
+                lead_id: safeLeadId,
+                doc_type: cfg.doc_type,
+              }),
+            }
+          );
+
+          const metaRes = await fetch("/api/blob/save-doc-metadata", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lead_id: safeLeadId,
+              doc_type: cfg.doc_type,
+              file_name: file.name,
+              file_url: blob.url,
+            }),
+          });
+          const metaData = await metaRes.json();
+          if (!metaData.success)
+            throw new Error(`Upload failed for "${field.label}": ${metaData.error}`);
+
+          fileResponses.push({
+            field_id: field.id,
+            field_label: field.label,
+            field_type: "file",
+            file_url: blob.url,
+            file_name: file.name,
+          });
+        }
+      }
+
       // ── 2. Build text/select/textarea responses ──
       const textResponses = fields
         .filter((f) => f.field_type !== "file" && f.field_type !== "checkbox")
@@ -868,10 +1165,27 @@ export default function DynamicTaskDrawer({
           };
         });
 
+      // ── 4b. Keep previously-submitted files for multiple-file fields that
+      // the user didn't remove (the task-responses POST overwrites, so we
+      // must re-send them or they'd be dropped). ──
+      const existingMultiResponses = Object.entries(existingMultiFiles).flatMap(
+        ([fieldId, list]) => {
+          const field = fields.find((f) => f.id === fieldId);
+          return (list ?? []).map((info) => ({
+            field_id: fieldId,
+            field_label: field?.label ?? "",
+            field_type: "file",
+            file_url: info.url,
+            file_name: info.name,
+          }));
+        },
+      );
+
       const allResponses = [
         ...textResponses,
         ...fileResponses,
         ...existingFileResponses,
+        ...existingMultiResponses,
         ...checkboxResponses,
       ];
 
@@ -965,6 +1279,52 @@ export default function DynamicTaskDrawer({
         });
       }
 
+      // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
+      for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
+        const picked = multiFiles[field.id] ?? [];
+        if (picked.length === 0) continue;
+
+        const cfg = getFileConfig(field.options);
+        const safeLeadId = leadId ?? "unknown";
+
+        for (const file of picked) {
+          const blob = await upload(
+            `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
+            file,
+            {
+              access: "public",
+              handleUploadUrl: "/api/blob/upload",
+              clientPayload: JSON.stringify({
+                lead_id: safeLeadId,
+                doc_type: cfg.doc_type,
+              }),
+            }
+          );
+
+          const metaRes = await fetch("/api/blob/save-doc-metadata", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lead_id: safeLeadId,
+              doc_type: cfg.doc_type,
+              file_name: file.name,
+              file_url: blob.url,
+            }),
+          });
+          const metaData = await metaRes.json();
+          if (!metaData.success)
+            throw new Error(`Upload failed for "${field.label}": ${metaData.error}`);
+
+          fileResponses.push({
+            field_id: field.id,
+            field_label: field.label,
+            field_type: "file",
+            file_url: blob.url,
+            file_name: file.name,
+          });
+        }
+      }
+
       // ── 2. Text/select/textarea responses (skip empty so draft can be partial) ──
       const textResponses = fields
         .filter((f) => f.field_type !== "file" && f.field_type !== "checkbox")
@@ -990,10 +1350,26 @@ export default function DynamicTaskDrawer({
           };
         });
 
+      // ── 3b. Keep previously-submitted files for multiple-file fields the
+      // user didn't remove (the POST overwrites, so re-send them). ──
+      const existingMultiResponses = Object.entries(existingMultiFiles).flatMap(
+        ([fieldId, list]) => {
+          const field = fields.find((f) => f.id === fieldId);
+          return (list ?? []).map((info) => ({
+            field_id: fieldId,
+            field_label: field?.label ?? "",
+            field_type: "file",
+            file_url: info.url,
+            file_name: info.name,
+          }));
+        },
+      );
+
       const allResponses = [
         ...textResponses,
         ...fileResponses,
         ...existingFileResponses,
+        ...existingMultiResponses,
       ];
 
       if (allResponses.length > 0) {
@@ -1605,16 +1981,29 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
-                    <FileSlot
-                      field={field}
-                      file={files[field.id] ?? null}
-                      existingUrl={existingFiles[field.id]?.url ?? null}
-                      existingName={existingFiles[field.id]?.name ?? null}
-                      error={fileErrors[field.id] ?? null}
-                      onFile={setFile}
-                      onClear={clearFile}
-                      onError={(id, err) => setFileErrors((prev) => ({ ...prev, [id]: err }))}
-                    />
+                    {fileFieldAllowsMultiple(field) ? (
+                      <MultiFileSlot
+                        field={field}
+                        files={multiFiles[field.id] ?? []}
+                        existing={existingMultiFiles[field.id] ?? []}
+                        error={fileErrors[field.id] ?? null}
+                        onAddFiles={addMultiFiles}
+                        onRemoveNew={removeMultiNewFile}
+                        onRemoveExisting={removeMultiExistingFile}
+                        onError={(id, err) => setFileErrors((prev) => ({ ...prev, [id]: err }))}
+                      />
+                    ) : (
+                      <FileSlot
+                        field={field}
+                        file={files[field.id] ?? null}
+                        existingUrl={existingFiles[field.id]?.url ?? null}
+                        existingName={existingFiles[field.id]?.name ?? null}
+                        error={fileErrors[field.id] ?? null}
+                        onFile={setFile}
+                        onClear={clearFile}
+                        onError={(id, err) => setFileErrors((prev) => ({ ...prev, [id]: err }))}
+                      />
+                    )}
                     {errors[field.id] && (
                       <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
                         <AlertCircle size={11} />

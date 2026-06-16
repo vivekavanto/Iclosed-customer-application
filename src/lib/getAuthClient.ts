@@ -67,6 +67,20 @@ export async function getAuthClient() {
   const user = await getAuthUser();
   if (!user) return null;
 
+  // Admins/staff are NOT portal customers — they belong in `admin_users`, not
+  // `clients`. Without this guard an admin who opens the customer portal gets a
+  // blank "phantom" client auto-created by Step 4 below and resurrected on every
+  // request (so deleting the stray clients row never sticks). Matches the
+  // "exclude admins from clients" design on the admin side.
+  if (user.email) {
+    const { data: adminRow } = await supabaseAdmin
+      .from("admin_users")
+      .select("id")
+      .ilike("email", user.email.trim())
+      .maybeSingle();
+    if (adminRow) return null;
+  }
+
   type ResolvedClient = {
     id: string;
     email: string;

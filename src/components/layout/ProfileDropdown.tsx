@@ -8,6 +8,7 @@ import { createBrowserClient } from "@supabase/ssr";
 export interface ProfileUser {
   first_name?: string;
   last_name?: string;
+  email?: string;
 }
 
 export default function ProfileDropdown({ user }: { user: ProfileUser | null }) {
@@ -36,6 +37,7 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
 
   const displayName =
     `${user?.first_name || ""} ${user?.last_name || ""}`.trim() || "User";
+  const signedInAs = displayName;
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
@@ -60,7 +62,7 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
           <div className="px-4 py-3 border-b border-[var(--color-border)]">
             <p className="text-xs text-[var(--color-text-muted)]">Signed in as</p>
             <p className="text-sm font-semibold text-[var(--color-text-heading)] truncate">
-              {displayName}
+              {signedInAs}
             </p>
           </div>
           <div className="py-1">
