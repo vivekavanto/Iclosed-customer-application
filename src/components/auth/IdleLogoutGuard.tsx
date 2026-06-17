@@ -28,8 +28,33 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
 // when they return 401 (e.g. the login form's own auth check).
 const AUTH_401_IGNORE_PATHS = ["/api/auth/login", "/api/auth/logout"];
 
-function isIgnoredAuthPath(pathname: string): boolean {
-  return AUTH_401_IGNORE_PATHS.some((p) => pathname.startsWith(p));
+// Endpoints that are ALSO reachable without a session, via an emailed ?token=
+// link (account-free retainer signing). A 401 here means the token is
+// invalid/expired — NOT that a logged-in session expired — so it must not fire
+// the "Session Expired" logout. Logged-in use of these same endpoints carries
+// no token, so a real session expiry is still detected normally.
+const TOKEN_FLOW_PATHS = ["/api/retainer/"];
+
+function requestCarriesToken(parsed: URL, init?: RequestInit): boolean {
+  // GET /api/retainer/check?token=… carries it in the query string.
+  if (parsed.searchParams.has("token")) return true;
+  // POST sign / post-sign send the token in the JSON body.
+  const body = init?.body;
+  if (typeof body === "string" && body.includes('"token"')) return true;
+  return false;
+}
+
+function isIgnoredAuth(parsed: URL, init?: RequestInit): boolean {
+  if (AUTH_401_IGNORE_PATHS.some((p) => parsed.pathname.startsWith(p))) {
+    return true;
+  }
+  if (
+    TOKEN_FLOW_PATHS.some((p) => parsed.pathname.startsWith(p)) &&
+    requestCarriesToken(parsed, init)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export default function IdleLogoutGuard() {
@@ -116,7 +141,7 @@ export default function IdleLogoutGuard() {
           if (
             parsed.origin === window.location.origin &&
             parsed.pathname.startsWith("/api/") &&
-            !isIgnoredAuthPath(parsed.pathname)
+            !isIgnoredAuth(parsed, init)
           ) {
             window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
           }

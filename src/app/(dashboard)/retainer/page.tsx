@@ -162,6 +162,9 @@ export default function RetainerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
   const [postSignChoice, setPostSignChoice] = useState<"activated" | "later" | null>(null);
+  // Account-free link that no longer resolves (expired, revoked, or the lead was
+  // removed). Shown as a clear message instead of a blank, signable form.
+  const [linkError, setLinkError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -173,6 +176,16 @@ export default function RetainerPage() {
           `/api/retainer/check${tk ? `?token=${encodeURIComponent(tk)}` : ""}`
         );
         const data = await res.json();
+        // Account-free token link that no longer resolves (invalid/expired, or
+        // the customer was removed). Show a clear message rather than a blank
+        // form. Only in token mode — a logged-in 401 is a real expired session,
+        // handled by the IdleLogoutGuard, so we leave it alone here.
+        if (tk && (!res.ok || data?.error)) {
+          setLinkError(
+            data?.error || "This retainer link is invalid or has expired."
+          );
+          return;
+        }
         // Nothing left to sign → show the "all signed" confirmation instead of
         // a blank, signable form. The check route returns { signed: true } when
         // every required retainer is already on file (or no converted deal
@@ -307,6 +320,28 @@ export default function RetainerPage() {
           className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-[#C10007]"
           aria-hidden="true"
         />
+      </div>
+    );
+  }
+
+  /* Invalid / expired link State — account-free token no longer resolves */
+  if (linkError) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-6">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-red-50 flex items-center justify-center">
+            <svg className="w-8 h-8 text-[#C10007]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+            </svg>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            Link no longer valid
+          </h1>
+          <p className="text-sm text-gray-500 max-w-md mx-auto">
+            {linkError} Please contact your iClosed advisor to request a new
+            retainer link.
+          </p>
+        </div>
       </div>
     );
   }
