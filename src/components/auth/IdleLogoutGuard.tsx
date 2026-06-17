@@ -28,33 +28,23 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = [
 // when they return 401 (e.g. the login form's own auth check).
 const AUTH_401_IGNORE_PATHS = ["/api/auth/login", "/api/auth/logout"];
 
-// Endpoints that are ALSO reachable without a session, via an emailed ?token=
-// link (account-free retainer signing). A 401 here means the token is
-// invalid/expired — NOT that a logged-in session expired — so it must not fire
-// the "Session Expired" logout. Logged-in use of these same endpoints carries
-// no token, so a real session expiry is still detected normally.
-const TOKEN_FLOW_PATHS = ["/api/retainer/"];
-
-function requestCarriesToken(parsed: URL, init?: RequestInit): boolean {
-  // GET /api/retainer/check?token=… carries it in the query string.
-  if (parsed.searchParams.has("token")) return true;
-  // POST sign / post-sign send the token in the JSON body.
-  const body = init?.body;
-  if (typeof body === "string" && body.includes('"token"')) return true;
-  return false;
+function isIgnoredAuthPath(pathname: string): boolean {
+  return AUTH_401_IGNORE_PATHS.some((p) => pathname.startsWith(p));
 }
 
-function isIgnoredAuth(parsed: URL, init?: RequestInit): boolean {
-  if (AUTH_401_IGNORE_PATHS.some((p) => parsed.pathname.startsWith(p))) {
-    return true;
-  }
-  if (
-    TOKEN_FLOW_PATHS.some((p) => parsed.pathname.startsWith(p)) &&
-    requestCarriesToken(parsed, init)
-  ) {
-    return true;
-  }
-  return false;
+// The retainer link emailed to a brand-new customer (/retainer?token=…) is an
+// ACCOUNT-FREE page: it is opened with NO session, yet it renders inside the
+// authenticated dashboard layout, which fires authenticated calls such as
+// /api/auth/me. Those 401 by design here, so they must NOT trigger the
+// "Session Expired" auto-logout. While we are on that page we suppress the
+// expiry entirely. Logged-in users reach /retainer WITHOUT a token, so a real
+// session expiry is still handled normally.
+function isAccountFreePage(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.location.pathname === "/retainer" &&
+    new URLSearchParams(window.location.search).has("token")
+  );
 }
 
 export default function IdleLogoutGuard() {
@@ -80,6 +70,9 @@ export default function IdleLogoutGuard() {
 
     const expireSession = async () => {
       if (loggingOut) return;
+      // Never auto-logout an account-free page (e.g. the emailed retainer link):
+      // there is no session to expire, and 401s there are expected.
+      if (isAccountFreePage()) return;
       loggingOut = true;
       setShowExpired(true);
       try {
@@ -141,7 +134,7 @@ export default function IdleLogoutGuard() {
           if (
             parsed.origin === window.location.origin &&
             parsed.pathname.startsWith("/api/") &&
-            !isIgnoredAuth(parsed, init)
+            !isIgnoredAuthPath(parsed.pathname)
           ) {
             window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
           }

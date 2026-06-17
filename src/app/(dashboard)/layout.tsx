@@ -60,6 +60,16 @@ export default function DashboardLayout({
   }, [pathname]);
 
   useEffect(() => {
+    // The account-free retainer link (/retainer?token=…) is opened with NO
+    // session. /api/auth/me would 401 here and trip IdleLogoutGuard's
+    // "Session Expired" logout — and there's no logged-in user to show anyway —
+    // so skip the bootstrap in that mode.
+    const isAccountFreeRetainer =
+      pathname === "/retainer" &&
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("token");
+    if (isAccountFreeRetainer) return;
+
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((data) => {
@@ -68,7 +78,7 @@ export default function DashboardLayout({
         }
       })
       .catch((err) => console.error("Failed to fetch user:", err));
-  }, []);
+  }, [pathname]);
 
   // Guard: redirect to /retainer if not signed (skip if already on /retainer)
   useEffect(() => {
