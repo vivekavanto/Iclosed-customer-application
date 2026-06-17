@@ -1,47 +1,59 @@
 import { NextResponse } from 'next/server';
+import { sendResetPasswordEmail } from '@/lib/sendResetPasswordEmail';
 
-// Server-to-server proxy to the admin panel's reset-password endpoint.
-// Calling it from the browser directly triggers CORS (the admin panel only
-// allows certain origins), which is why it failed on dev.iclosed.ca but worked
-// on localhost. Proxying through our own origin avoids CORS entirely.
-const ADMIN_PANEL_URL =
-  process.env.ADMIN_PANEL_URL ?? 'https://iclosed-admin-panel.vercel.app';
-
+/**
+ * Triggers a password reset. The recovery link is generated here (not by the
+ * admin panel) so its redirect target is derived from THIS request's origin —
+ * dev requests get a dev link, prod gets a prod link. This is what fixes the
+ * "email link opens production" problem on dev.iclosed.ca.
+ */
 export async function POST(request: Request) {
   try {
     const { email } = await request.json();
 
     if (!email || typeof email !== 'string' || !email.trim()) {
+      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    }
+
+    const origin = getRequestOrigin(request);
+
+    const result = await sendResetPasswordEmail(email.trim(), origin);
+
+    if (!result.success) {
       return NextResponse.json(
-        { error: 'Email is required' },
-        { status: 400 }
+        { error: result.error || 'Something went wrong. Please try again.' },
+        { status: 500 },
       );
     }
 
-    const res = await fetch(
-      `${ADMIN_PANEL_URL}/api/admin/reset-password`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      }
-    );
-
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: data?.error || 'Something went wrong. Please try again.' },
-        { status: res.status }
-      );
-    }
-
-    // Don't reveal whether the email exists — always return success.
+    // Always a generic success — never reveal whether the email exists.
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
       { error: 'Something went wrong. Please try again.' },
-      { status: 500 }
+      { status: 500 },
     );
   }
+}
+
+/**
+ * The public origin this request came in on. For a same-origin browser POST the
+ * Origin header is the most reliable signal; behind Vercel we fall back to the
+ * forwarded host, then to a configured URL.
+ */
+function getRequestOrigin(request: Request): string {
+  const origin = request.headers.get('origin');
+  if (origin) return origin.replace(/\/+$/, '');
+
+  const forwardedHost =
+    request.headers.get('x-forwarded-host') || request.headers.get('host');
+  if (forwardedHost) {
+    const proto = request.headers.get('x-forwarded-proto') || 'https';
+    return `${proto}://${forwardedHost}`.replace(/\/+$/, '');
+  }
+
+  return (
+    process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ||
+    new URL(request.url).origin
+  ).replace(/\/+$/, '');
 }
