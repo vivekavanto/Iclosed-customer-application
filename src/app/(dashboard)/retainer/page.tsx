@@ -150,13 +150,37 @@ export default function RetainerPage() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Whether every required retainer is already signed (nothing left to sign).
+  const [allSigned, setAllSigned] = useState(false);
+  // Gate the form until the check resolves so we never flash the blank
+  // "Address not available" form before we know there's something to sign.
+  const [checking, setChecking] = useState(true);
+  // Account-free signing: when the page is opened from an emailed retainer link
+  // it carries ?token=. In that mode the signer has no session, so after
+  // signing we offer "Activate account / later" instead of redirecting to the
+  // (login-gated) dashboard.
+  const [token, setToken] = useState<string | null>(null);
+  const [activating, setActivating] = useState(false);
+  const [postSignChoice, setPostSignChoice] = useState<"activated" | "later" | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     async function prefill() {
       try {
-        const res = await fetch("/api/retainer/check");
+        const tk = new URLSearchParams(window.location.search).get("token");
+        setToken(tk);
+        const res = await fetch(
+          `/api/retainer/check${tk ? `?token=${encodeURIComponent(tk)}` : ""}`
+        );
         const data = await res.json();
+        // Nothing left to sign → show the "all signed" confirmation instead of
+        // a blank, signable form. The check route returns { signed: true } when
+        // every required retainer is already on file (or no converted deal
+        // needs one yet), and in that case carries no address/name/type.
+        if (data.signed === true && !data.error) {
+          setAllSigned(true);
+          return;
+        }
         if (data.full_name) {
           setName(data.full_name);
           setSignature(data.full_name);
@@ -183,6 +207,8 @@ export default function RetainerPage() {
         );
       } catch {
         // silently fail — user can fill manually
+      } finally {
+        setChecking(false);
       }
     }
     prefill();
@@ -205,6 +231,7 @@ export default function RetainerPage() {
           full_name: name,
           signature,
           signed_date: date,
+          ...(token ? { token } : {}),
         }),
       });
 
@@ -216,10 +243,14 @@ export default function RetainerPage() {
       }
 
       setSubmitted(true);
-      setTimeout(() => {
-        router.push("/dashboard");
-        router.refresh();
-      }, 2000);
+      // Logged-in signer → back to the dashboard. Account-free (token) signer →
+      // stay on the success screen, which offers "Activate account / later".
+      if (!token) {
+        setTimeout(() => {
+          router.push("/dashboard");
+          router.refresh();
+        }, 2000);
+      }
     } catch {
       setErrors({ name: "Something went wrong. Please try again." });
     } finally {
@@ -227,8 +258,160 @@ export default function RetainerPage() {
     }
   };
 
+  // ── Post-sign account activation (account-free token flow only) ──
+  const handleActivate = async () => {
+    if (!token) return;
+    setActivating(true);
+    try {
+      const res = await fetch("/api/retainer/post-sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, choice: "activate" }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.activate_url) {
+        // Hand off to the admin activation link → portal /set-password.
+        window.location.href = data.activate_url;
+        return;
+      }
+      // Activation couldn't start (e.g. admin webhook unreachable) — fall back
+      // to a "check your email" message rather than blocking the user.
+      setPostSignChoice("activated");
+    } catch {
+      setPostSignChoice("activated");
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  const handleLater = async () => {
+    if (token) {
+      try {
+        await fetch("/api/retainer/post-sign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, choice: "later" }),
+        });
+      } catch {
+        // non-blocking — the signature is already saved
+      }
+    }
+    setPostSignChoice("later");
+  };
+
+  /* Loading State — checking whether anything still needs signing */
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-6">
+        <span
+          className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-[#C10007]"
+          aria-hidden="true"
+        />
+      </div>
+    );
+  }
+
+  /* All-Signed State — every required retainer is already on file */
+  if (allSigned) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-6">
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+            <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            All Retainers Signed
+          </h1>
+          <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+            You&apos;ve signed all of your retainer agreements. There&apos;s nothing left to sign here.
+          </p>
+          <Button size="md" onClick={() => router.push("/dashboard")}>
+            Go to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   /* Success State */
   if (submitted) {
+    // Account-free (token) signer: offer immediate account activation.
+    if (token && postSignChoice === null) {
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Retainer Signed
+            </h1>
+            <p className="text-sm text-gray-500 mb-6">
+              Thanks, {name.split(" ")[0] || "there"}. Activate your account now to
+              upload your documents and ID — or do it later.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button size="md" onClick={handleActivate} loading={activating}>
+                Activate your account
+              </Button>
+              <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
+                I&apos;ll do this later
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // "I'll do this later" acknowledgement.
+    if (token && postSignChoice === "later") {
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Retainer Signed
+            </h1>
+            <p className="text-sm text-gray-500">
+              Thank you for signing. We&apos;ll email you a link to activate your
+              account when you&apos;re ready to upload your documents.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback when activation couldn't start inline (admin webhook offline).
+    if (token && postSignChoice === "activated") {
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Retainer Signed
+            </h1>
+            <p className="text-sm text-gray-500">
+              Thank you for signing. Check your email for a link to activate your
+              account and set your password.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    // Logged-in signer (no token) — original confirmation + auto-redirect.
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-6">
         <div className="text-center">

@@ -68,6 +68,16 @@ function guardSession(request: NextRequest): NextResponse {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // ── Retainer "sign without an account" exception ──
+  // A retainer link emailed to a client carries a ?token= and is meant to be
+  // opened with NO account. The token itself is the credential (validated
+  // server-side against invitation_tokens), so this page must skip the session
+  // guard when a token is present. Without a token, /retainer stays protected
+  // (logged-in clients sign from inside the dashboard as before).
+  if (pathname === "/retainer" && request.nextUrl.searchParams.has("token")) {
+    return NextResponse.next();
+  }
+
   // ── Customer page auth guard ──
   if (
     PROTECTED_PAGES.some((p) => pathname === p || pathname.startsWith(`${p}/`))

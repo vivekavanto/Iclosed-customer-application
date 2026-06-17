@@ -32,14 +32,11 @@ export default function ForgotPasswordPage() {
     }
 
     try {
-      const res = await fetch(
-        "https://iclosed-admin-panel.vercel.app/api/admin/reset-password",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        },
-      );
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);

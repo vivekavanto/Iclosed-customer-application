@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
+import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
@@ -29,16 +30,8 @@ const PURCHASE_AND_SALE = "Purchase & Sale";
  */
 export async function POST(req: Request) {
   try {
-    const client = await getAuthClient();
-    if (!client) {
-      return NextResponse.json(
-        { success: false, error: "Not authenticated" },
-        { status: 401 }
-      );
-    }
-
     const body = await req.json();
-    const { full_name, signature } = body;
+    const { full_name, signature, token } = body;
     const signedDate = new Date().toISOString().split("T")[0];
 
     if (!full_name || !signature) {
@@ -48,28 +41,52 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: deals } = await supabaseAdmin
-      .from("deals")
-      .select("lead_id, status")
-      .eq("client_id", client.id)
-      .eq("is_deleted", false)
-      .order("created_at", { ascending: false });
+    // Two ways to identify the signer (mirrors /api/retainer/check):
+    //   • token → account-free retainer link, maps to exactly one lead.
+    //   • else  → the logged-in client signs their next-unsigned lead.
+    let leadIds: string[] = [];
 
-    // Mirror /api/retainer/check EXACTLY: only CONVERTED deals require a
-    // retainer. Intake auto-linked deals sit at "Pending" and must be excluded
-    // here too — otherwise the two endpoints disagree on which lead is "next to
-    // sign" and a signature could be misattributed to a not-yet-converted deal.
-    const NON_CONVERTED_DEAL_STATUSES = new Set(["Pending"]);
-    const leadIds = (deals || [])
-      .filter((d) => !NON_CONVERTED_DEAL_STATUSES.has(d.status))
-      .map((d) => d.lead_id)
-      .filter(Boolean);
+    if (token) {
+      const leadId = await resolveRetainerLeadId(token);
+      if (!leadId) {
+        return NextResponse.json(
+          { success: false, error: "This retainer link is invalid or has expired." },
+          { status: 401 }
+        );
+      }
+      leadIds = [leadId];
+    } else {
+      const client = await getAuthClient();
+      if (!client) {
+        return NextResponse.json(
+          { success: false, error: "Not authenticated" },
+          { status: 401 }
+        );
+      }
 
-    if (leadIds.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No converted deals found for this account" },
-        { status: 404 }
-      );
+      const { data: deals } = await supabaseAdmin
+        .from("deals")
+        .select("lead_id, status")
+        .eq("client_id", client.id)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false });
+
+      // Mirror /api/retainer/check EXACTLY: only CONVERTED deals require a
+      // retainer. Intake auto-linked deals sit at "Pending" and must be excluded
+      // here too — otherwise the two endpoints disagree on which lead is "next to
+      // sign" and a signature could be misattributed to a not-yet-converted deal.
+      const NON_CONVERTED_DEAL_STATUSES = new Set(["Pending"]);
+      leadIds = (deals || [])
+        .filter((d) => !NON_CONVERTED_DEAL_STATUSES.has(d.status))
+        .map((d) => d.lead_id)
+        .filter(Boolean);
+
+      if (leadIds.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "No converted deals found for this account" },
+          { status: 404 }
+        );
+      }
     }
 
     const { data: leads } = await supabaseAdmin
