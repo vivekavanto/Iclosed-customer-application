@@ -74,7 +74,21 @@ export async function middleware(request: NextRequest) {
   // server-side against invitation_tokens), so this page must skip the session
   // guard when a token is present. Without a token, /retainer stays protected
   // (logged-in clients sign from inside the dashboard as before).
-  if (pathname === "/retainer" && request.nextUrl.searchParams.has("token")) {
+  //
+  // Match ANY /retainer path (not just the exact page) so a token link can
+  // never get caught by the PROTECTED_PAGES guard below and bounced to /login.
+  // Legacy links pointed at /retainer/sign (the path was later flattened to
+  // /retainer); normalize those to the canonical /retainer page, PRESERVING the
+  // ?token= query, instead of 404-ing or redirecting to login.
+  if (
+    (pathname === "/retainer" || pathname.startsWith("/retainer/")) &&
+    request.nextUrl.searchParams.has("token")
+  ) {
+    if (pathname !== "/retainer") {
+      const canonical = new URL("/retainer", request.url);
+      canonical.search = request.nextUrl.search; // keep ?token=…
+      return NextResponse.redirect(canonical);
+    }
     return NextResponse.next();
   }
 
