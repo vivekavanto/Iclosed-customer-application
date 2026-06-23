@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, MapPin, Tag, Shield, ArrowRight } from "lucide-react";
 import FAQAccordion, { FAQItem } from "@/components/retainer/FAQAccordion";
@@ -114,6 +114,31 @@ function getCoPersonNoun(
   side: "purchase" | "sale" | null
 ): string {
   return `${getCoPersonLabel(leadType, side).toLowerCase()}(s)`;
+}
+
+/**
+ * Modal shell for the post-sign result screens — same popup styling as the
+ * "Want to help with your co-purchaser(s) paperwork?" prompt (backdrop + white
+ * rounded card) with the shared green success check. Keeps every post-sign
+ * screen on one consistent popup design.
+ */
+function ResultPopup({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
+        <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+          <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function validate(name: string, date: string, signature: string): FormErrors {
@@ -497,83 +522,62 @@ export default function RetainerPage() {
       if (coPersonChoice !== null) {
         const coNoun = getCoPersonNoun(leadType, side);
         return (
-          <div className="min-h-screen bg-white flex items-center justify-center px-6">
-            <div className="text-center max-w-md">
-              <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-                <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                You&apos;re all set
-              </h1>
-              <p className="text-sm text-gray-500 mb-6">
-                {coPersonChoice
-                  ? `You can now upload documents and ID for your ${coNoun}.`
-                  : `Your ${coNoun} will create their own account to upload their documents and ID.`}
-              </p>
-              <p className="text-sm font-semibold text-gray-900 mb-4">
-                Would you like to continue to account creation now?
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <Button size="md" onClick={handleActivate} loading={activating}>
-                  Yes, continue
-                </Button>
-                <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
-                  Not now
-                </Button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-      return (
-        <div className="min-h-screen bg-white flex items-center justify-center px-6">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
+          <ResultPopup>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              Retainer Signed
+              You&apos;re all set
             </h1>
             <p className="text-sm text-gray-500 mb-6">
-              Thanks, {name.split(" ")[0] || "there"}. Activate your account now to
-              upload your documents and ID — or do it later.
+              {coPersonChoice
+                ? `You can now upload documents and ID for your ${coNoun}.`
+                : `Your ${coNoun} will create their own account to upload their documents and ID.`}
+            </p>
+            <p className="text-sm font-semibold text-gray-900 mb-4">
+              Would you like to continue to account creation now?
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button size="md" onClick={handleActivate} loading={activating}>
-                Activate your account
+                Yes, continue
               </Button>
               <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
-                I&apos;ll do this later
+                Not now
               </Button>
             </div>
+          </ResultPopup>
+        );
+      }
+      return (
+        <ResultPopup>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            Retainer Signed
+          </h1>
+          <p className="text-sm text-gray-500 mb-6">
+            Thanks, {name.split(" ")[0] || "there"}. Activate your account now to
+            upload your documents and ID — or do it later.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Button size="md" onClick={handleActivate} loading={activating}>
+              Activate your account
+            </Button>
+            <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
+              I&apos;ll do this later
+            </Button>
           </div>
-        </div>
+        </ResultPopup>
       );
     }
 
     // "I'll do this later" acknowledgement.
     if (token && postSignChoice === "later") {
       return (
-        <div className="min-h-screen bg-white flex items-center justify-center px-6">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              Retainer Signed
-            </h1>
-            <p className="text-sm text-gray-500">
-              Thank you for signing. We&apos;ll email you a link to activate your
-              account when you&apos;re ready to upload your documents.
-            </p>
-          </div>
-        </div>
+        <ResultPopup>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            Retainer Signed
+          </h1>
+          <p className="text-sm text-gray-500">
+            Thank you for signing. We&apos;ll email you a link to activate your
+            account when you&apos;re ready to upload your documents.
+          </p>
+        </ResultPopup>
       );
     }
 
@@ -582,22 +586,15 @@ export default function RetainerPage() {
     // that email.
     if (token && postSignChoice === "activated") {
       return (
-        <div className="min-h-screen bg-white flex items-center justify-center px-6">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              Check your email
-            </h1>
-            <p className="text-sm text-gray-500">
-              We&apos;ve sent you an email to activate your account. Use the link
-              in it to create your account and set your password.
-            </p>
-          </div>
-        </div>
+        <ResultPopup>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            Check your email
+          </h1>
+          <p className="text-sm text-gray-500">
+            We&apos;ve sent you an email to activate your account. Use the link
+            in it to create your account and set your password.
+          </p>
+        </ResultPopup>
       );
     }
 
@@ -607,42 +604,28 @@ export default function RetainerPage() {
     if (coPersonChoice !== null) {
       const coNoun = getCoPersonNoun(leadType, side);
       return (
-        <div className="min-h-screen bg-white flex items-center justify-center px-6">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              You&apos;re all set
-            </h1>
-            <p className="text-sm text-gray-500 max-w-md mx-auto">
-              {coPersonChoice
-                ? `You can now upload documents and ID for your ${coNoun}.`
-                : `Your ${coNoun} will create their own account to upload their documents and ID.`}
-            </p>
-          </div>
-        </div>
+        <ResultPopup>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            You&apos;re all set
+          </h1>
+          <p className="text-sm text-gray-500">
+            {coPersonChoice
+              ? `You can now upload documents and ID for your ${coNoun}.`
+              : `Your ${coNoun} will create their own account to upload their documents and ID.`}
+          </p>
+        </ResultPopup>
       );
     }
 
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-6">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-            <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-            Agreement Submitted
-          </h1>
-          <p className="text-sm text-gray-500 max-w-md mx-auto">
-            Thank you for signing the retainer agreement. Our team will review and be in touch shortly.
-          </p>
-        </div>
-      </div>
+      <ResultPopup>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+          Agreement Submitted
+        </h1>
+        <p className="text-sm text-gray-500">
+          Thank you for signing the retainer agreement. Our team will review and be in touch shortly.
+        </p>
+      </ResultPopup>
     );
   }
 
