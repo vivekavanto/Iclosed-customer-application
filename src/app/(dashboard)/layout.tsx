@@ -85,14 +85,17 @@ export default function DashboardLayout({
       .catch((err) => console.error("Failed to fetch user:", err));
   }, [pathname]);
 
-  // Guard: redirect to /retainer if not signed (skip if already on /retainer)
+  // Guard: redirect to /retainer if not signed (skip if already on /retainer).
+  // Also redirect when the primary has signed but still owes the "help with
+  // co-purchaser(s) paperwork?" decision (co_person_prompt_pending) — so that
+  // choice can't be skipped by navigating to the dashboard.
   useEffect(() => {
     if (pathname === "/retainer") return;
 
     fetch("/api/retainer/check")
       .then((res) => res.json())
       .then((data) => {
-        if (data.signed === false && !data.error) {
+        if (!data.error && (data.signed === false || data.co_person_prompt_pending)) {
           router.push("/retainer");
         }
       })

@@ -82,7 +82,7 @@ export async function GET(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role"
+        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, submit_on_behalf"
       )
       .in("id", leadIds);
 
@@ -126,6 +126,26 @@ export async function GET(req: Request) {
     });
 
     if (!nextSlot) {
+      // Everything required is signed. But a PRIMARY who has co-person(s) and
+      // hasn't yet answered the "Want to help with their paperwork?" popup
+      // (submit_on_behalf IS NULL) must still answer it — otherwise reloading
+      // or returning after signing would skip the decision entirely. Re-surface
+      // the popup so the value can't be bypassed.
+      const primaryLead = (leads || []).find((l) => !l.parent_lead_id);
+      if (primaryLead && primaryLead.submit_on_behalf == null) {
+        const { count: coCount } = await supabaseAdmin
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("parent_lead_id", primaryLead.id);
+        if ((coCount ?? 0) > 0) {
+          return NextResponse.json({
+            signed: true,
+            co_person_prompt_pending: true,
+            lead_type: formatLeadTypeLabelForRecipient(primaryLead),
+            side: null,
+          });
+        }
+      }
       return NextResponse.json({ signed: true });
     }
 

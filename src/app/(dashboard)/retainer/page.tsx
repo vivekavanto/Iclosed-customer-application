@@ -209,6 +209,18 @@ export default function RetainerPage() {
         // every required retainer is already on file (or no converted deal
         // needs one yet), and in that case carries no address/name/type.
         if (data.signed === true && !data.error) {
+          // A primary who signed but never answered the "help with their
+          // paperwork?" popup is re-prompted here — the decision can't be
+          // skipped by reloading or returning after signing.
+          if (data.co_person_prompt_pending) {
+            setLeadType(data.lead_type ?? "");
+            setSide(
+              data.side === "purchase" || data.side === "sale" ? data.side : null
+            );
+            setShowCoPersonPrompt(true);
+            setSubmitted(true);
+            return;
+          }
           setAllSigned(true);
           return;
         }
@@ -428,12 +440,17 @@ export default function RetainerPage() {
     if (showCoPersonPrompt && coPersonChoice === null) {
       const coNoun = getCoPersonNoun(leadType, side);
       return (
-        <div className="min-h-screen bg-white flex items-center justify-center px-6">
-          <div className="text-center max-w-xl w-full">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Want to help with your co-purchaser(s) paperwork?"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-xl w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 text-center mb-6">
               Want to help with your {coNoun} paperwork?
             </h1>
-            <div className="bg-gray-50 rounded-xl p-6 sm:p-8 text-left">
+            <div className="bg-gray-50 rounded-xl p-6 sm:p-8 text-left border border-gray-100">
               <p className="text-sm font-semibold tracking-wide text-green-700 uppercase mb-4">
                 If you upload on their behalf
               </p>
