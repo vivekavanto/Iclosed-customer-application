@@ -205,6 +205,9 @@ export default function RetainerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
   const [postSignChoice, setPostSignChoice] = useState<"activated" | "later" | null>(null);
+  // Whether the signer already has a portal account. The "Activate your
+  // account" prompt is shown only to NEW clients; existing clients just log in.
+  const [accountExists, setAccountExists] = useState(false);
   // Account-free link that no longer resolves (expired, revoked, or the lead was
   // removed). Shown as a clear message instead of a blank, signable form.
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -242,6 +245,7 @@ export default function RetainerPage() {
             setSide(
               data.side === "purchase" || data.side === "sale" ? data.side : null
             );
+            setAccountExists(Boolean(data.account_exists));
             setShowCoPersonPrompt(true);
             setSubmitted(true);
             return;
@@ -312,6 +316,7 @@ export default function RetainerPage() {
 
       const promptCoPerson = Boolean(data.show_co_person_prompt);
       setShowCoPersonPrompt(promptCoPerson);
+      setAccountExists(Boolean(data.account_exists));
       setSubmitted(true);
       // Logged-in signer → back to the dashboard. Account-free (token) signer →
       // stay on the success screen, which offers "Activate account / later".
@@ -531,17 +536,42 @@ export default function RetainerPage() {
                 ? `You can now upload documents and ID for your ${coNoun}.`
                 : `Your ${coNoun} will create their own account to upload their documents and ID.`}
             </p>
-            <p className="text-sm font-semibold text-gray-900 mb-4">
-              Would you like to continue to account creation now?
+            {/* Account creation is offered to NEW clients only. Existing clients
+                already have an account — they just log in. */}
+            {accountExists ? (
+              <p className="text-sm text-gray-500">
+                Log in to your account to upload your documents and ID.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-gray-900 mb-4">
+                  Would you like to continue to account creation now?
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button size="md" onClick={handleActivate} loading={activating}>
+                    Yes, continue
+                  </Button>
+                  <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
+                    Not now
+                  </Button>
+                </div>
+              </>
+            )}
+          </ResultPopup>
+        );
+      }
+      // Existing clients already have an account — no "Activate your account"
+      // popup; they just log in to upload their documents and ID.
+      if (accountExists) {
+        return (
+          <ResultPopup>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Retainer Signed
+            </h1>
+            <p className="text-sm text-gray-500">
+              Thanks, {name.split(" ")[0] || "there"}. Log in to your account to
+              upload your documents and ID.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button size="md" onClick={handleActivate} loading={activating}>
-                Yes, continue
-              </Button>
-              <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
-                Not now
-              </Button>
-            </div>
           </ResultPopup>
         );
       }

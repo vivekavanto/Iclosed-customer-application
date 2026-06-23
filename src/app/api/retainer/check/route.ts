@@ -3,6 +3,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
+import { leadHasAccount } from "@/lib/leadHasAccount";
 
 type Side = "purchase" | "sale" | null;
 
@@ -82,7 +83,7 @@ export async function GET(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, submit_on_behalf"
+        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, submit_on_behalf, client_id, email"
       )
       .in("id", leadIds);
 
@@ -143,6 +144,7 @@ export async function GET(req: Request) {
             co_person_prompt_pending: true,
             lead_type: formatLeadTypeLabelForRecipient(primaryLead),
             side: null,
+            account_exists: await leadHasAccount(primaryLead),
           });
         }
       }

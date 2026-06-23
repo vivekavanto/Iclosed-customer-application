@@ -7,6 +7,7 @@ import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
+import { leadHasAccount } from "@/lib/leadHasAccount";
 
 type Side = "purchase" | "sale" | null;
 
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role"
+        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, client_id"
       )
       .in("id", leadIds);
 
@@ -367,7 +368,15 @@ export async function POST(req: Request) {
       console.error("[Retainer Sign] PDF/email error:", pdfErr);
     }
 
-    return NextResponse.json({ success: true, show_co_person_prompt: showCoPersonPrompt });
+    // Whether the signer already has a portal account. The "Activate your
+    // account" popup is for NEW clients only — existing clients just log in.
+    const accountExists = await leadHasAccount(lead);
+
+    return NextResponse.json({
+      success: true,
+      show_co_person_prompt: showCoPersonPrompt,
+      account_exists: accountExists,
+    });
   } catch (err) {
     console.error("[Retainer Sign] Server error:", err);
     return NextResponse.json(
