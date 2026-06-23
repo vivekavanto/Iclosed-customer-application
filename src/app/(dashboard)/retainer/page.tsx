@@ -338,19 +338,15 @@ export default function RetainerPage() {
     if (!token) return;
     setActivating(true);
     try {
-      const res = await fetch("/api/retainer/post-sign", {
+      // The activate webhook sends the "Activate Account" email itself. We no
+      // longer redirect the user straight into /set-password — instead we tell
+      // them to use the activation link we just emailed, so account creation
+      // always goes through the emailed link.
+      await fetch("/api/retainer/post-sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, choice: "activate" }),
       });
-      const data = await res.json();
-      if (res.ok && data?.activate_url) {
-        // Hand off to the admin activation link → portal /set-password.
-        window.location.href = data.activate_url;
-        return;
-      }
-      // Activation couldn't start (e.g. admin webhook unreachable) — fall back
-      // to a "check your email" message rather than blocking the user.
       setPostSignChoice("activated");
     } catch {
       setPostSignChoice("activated");
@@ -581,7 +577,9 @@ export default function RetainerPage() {
       );
     }
 
-    // Fallback when activation couldn't start inline (admin webhook offline).
+    // After "Yes, continue": we emailed the activation link rather than
+    // redirecting into /set-password, so the user creates their account from
+    // that email.
     if (token && postSignChoice === "activated") {
       return (
         <div className="min-h-screen bg-white flex items-center justify-center px-6">
@@ -592,11 +590,11 @@ export default function RetainerPage() {
               </svg>
             </div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              Retainer Signed
+              Check your email
             </h1>
             <p className="text-sm text-gray-500">
-              Thank you for signing. Check your email for a link to activate your
-              account and set your password.
+              We&apos;ve sent you an email to activate your account. Use the link
+              in it to create your account and set your password.
             </p>
           </div>
         </div>
