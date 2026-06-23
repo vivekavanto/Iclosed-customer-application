@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, X, LogOut, LayoutDashboard, BookOpen } from "lucide-react";
+import { Menu, X, LogOut, LogIn, LayoutDashboard, BookOpen } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
@@ -53,6 +53,10 @@ export default function DashboardLayout({
     first_name?: string;
     last_name?: string;
   } | null>(null);
+  // The account-free retainer link (/retainer?token=…) is opened with no
+  // session — the visitor hasn't created an account yet (that only happens
+  // after they sign). Show a "Login" link instead of the user menu.
+  const [isAccountFreeRetainer, setIsAccountFreeRetainer] = useState(false);
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -64,11 +68,12 @@ export default function DashboardLayout({
     // session. /api/auth/me would 401 here and trip IdleLogoutGuard's
     // "Session Expired" logout — and there's no logged-in user to show anyway —
     // so skip the bootstrap in that mode.
-    const isAccountFreeRetainer =
+    const accountFree =
       pathname === "/retainer" &&
       typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).has("token");
-    if (isAccountFreeRetainer) return;
+    setIsAccountFreeRetainer(accountFree);
+    if (accountFree) return;
 
     fetch("/api/auth/me")
       .then((res) => res.json())
@@ -139,32 +144,55 @@ export default function DashboardLayout({
 
           {/* Profile (desktop) */}
           <div className="hidden md:block">
-            <ProfileDropdown user={user} />
-          </div>
-
-          {/* Avatar only on mobile (no dropdown, hamburger handles it) */}
-          <div className="flex items-center gap-2 md:hidden">
-            <div className="w-7 h-7 rounded-full bg-[#C10007] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-              {initial}
-            </div>
-          </div>
-
-          {/* Hamburger button */}
-          <button
-            onClick={() => setMobileOpen((v) => !v)}
-            className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? (
-              <X size={20} className="text-gray-700" strokeWidth={2} />
+            {isAccountFreeRetainer ? (
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-heading)] hover:text-[var(--color-primary)] transition-colors"
+              >
+                <LogIn size={16} strokeWidth={2} />
+                Login
+              </Link>
             ) : (
-              <Menu size={20} className="text-gray-700" strokeWidth={2} />
+              <ProfileDropdown user={user} />
             )}
-          </button>
+          </div>
+
+          {/* Mobile: Login link (account-free) or avatar */}
+          {isAccountFreeRetainer ? (
+            <Link
+              href="/login"
+              className="md:hidden flex items-center gap-1.5 text-sm font-medium text-[var(--color-text-heading)]"
+            >
+              <LogIn size={16} strokeWidth={2} />
+              Login
+            </Link>
+          ) : (
+            <>
+              {/* Avatar only on mobile (no dropdown, hamburger handles it) */}
+              <div className="flex items-center gap-2 md:hidden">
+                <div className="w-7 h-7 rounded-full bg-[#C10007] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                  {initial}
+                </div>
+              </div>
+
+              {/* Hamburger button */}
+              <button
+                onClick={() => setMobileOpen((v) => !v)}
+                className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                aria-label="Toggle menu"
+              >
+                {mobileOpen ? (
+                  <X size={20} className="text-gray-700" strokeWidth={2} />
+                ) : (
+                  <Menu size={20} className="text-gray-700" strokeWidth={2} />
+                )}
+              </button>
+            </>
+          )}
         </div>
 
         {/* ── Mobile Menu Drawer ── */}
-        {mobileOpen && (
+        {!isAccountFreeRetainer && mobileOpen && (
           <div className="md:hidden border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 space-y-1">
             {navLinks.map((link) => {
               const Icon = link.icon;

@@ -105,6 +105,17 @@ function getCoPersonLabel(
   return "Co-purchaser";
 }
 
+/**
+ * Lower-cased, pluralised co-person noun for the post-sign popup copy, e.g.
+ * "co-purchaser(s)" / "co-seller(s)".
+ */
+function getCoPersonNoun(
+  leadType: string,
+  side: "purchase" | "sale" | null
+): string {
+  return `${getCoPersonLabel(leadType, side).toLowerCase()}(s)`;
+}
+
 function validate(name: string, date: string, signature: string): FormErrors {
   const errors: FormErrors = {};
 
@@ -147,6 +158,13 @@ export default function RetainerPage() {
   );
   // Local-only acknowledgement — not yet sent to the backend.
   const [coAuthAcknowledged, setCoAuthAcknowledged] = useState(false);
+  // Post-sign "Want to help with your co-purchaser(s) paperwork?" popup.
+  // `showCoPersonPrompt` is set from the sign response — true only when the
+  // signer is a primary applicant who has at least one co-person. `coPersonChoice`
+  // captures their Yes/No answer (persisted via /api/retainer/submit-on-behalf).
+  const [showCoPersonPrompt, setShowCoPersonPrompt] = useState(false);
+  const [coPersonChoice, setCoPersonChoice] = useState<boolean | null>(null);
+  const [savingChoice, setSavingChoice] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -255,10 +273,14 @@ export default function RetainerPage() {
         return;
       }
 
+      const promptCoPerson = Boolean(data.show_co_person_prompt);
+      setShowCoPersonPrompt(promptCoPerson);
       setSubmitted(true);
       // Logged-in signer → back to the dashboard. Account-free (token) signer →
       // stay on the success screen, which offers "Activate account / later".
-      if (!token) {
+      // BUT a primary with co-persons first sees the "help with paperwork?"
+      // popup, so we must NOT auto-redirect past it.
+      if (!token && !promptCoPerson) {
         setTimeout(() => {
           router.push("/dashboard");
           router.refresh();
@@ -268,6 +290,34 @@ export default function RetainerPage() {
       setErrors({ name: "Something went wrong. Please try again." });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Post-sign "help with co-purchaser(s) paperwork?" choice ──
+  // Persists the primary's Yes/No to leads.submit_on_behalf, then advances to
+  // the "You're all set" screen (which, for token signers, offers account
+  // creation). Persistence is best-effort: the signature is already durable, so
+  // we never block the user on a failed write.
+  const handleCoPersonChoice = async (value: boolean) => {
+    setSavingChoice(true);
+    try {
+      await fetch("/api/retainer/submit-on-behalf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submit_on_behalf: value, ...(token ? { token } : {}) }),
+      });
+    } catch {
+      // non-blocking
+    } finally {
+      setCoPersonChoice(value);
+      setSavingChoice(false);
+      // Logged-in signer has no account-creation step → head to the dashboard.
+      if (!token) {
+        setTimeout(() => {
+          router.push("/dashboard");
+          router.refresh();
+        }, 2000);
+      }
     }
   };
 
@@ -372,8 +422,98 @@ export default function RetainerPage() {
 
   /* Success State */
   if (submitted) {
+    // Step 1 — primary applicant with co-person(s): "Want to help with their
+    // paperwork?". Shown before any account-creation prompt; the Yes/No answer
+    // is persisted to leads.submit_on_behalf.
+    if (showCoPersonPrompt && coPersonChoice === null) {
+      const coNoun = getCoPersonNoun(leadType, side);
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center px-6">
+          <div className="text-center max-w-xl w-full">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6">
+              Want to help with your {coNoun} paperwork?
+            </h1>
+            <div className="bg-gray-50 rounded-xl p-6 sm:p-8 text-left">
+              <p className="text-sm font-semibold tracking-wide text-green-700 uppercase mb-4">
+                If you upload on their behalf
+              </p>
+              <ul className="space-y-3">
+                {[
+                  "Upload their ID",
+                  "Upload their verification documents",
+                  "Submit their contact information",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2.5 text-gray-800">
+                    <span className="text-green-600 font-bold leading-6">&#10003;</span>
+                    <span className="leading-6">{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="border-t border-gray-200 mt-5 pt-4">
+                <p className="text-sm text-gray-400">
+                  They&apos;ll still sign their own retainer.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center mt-7">
+              <Button
+                size="md"
+                onClick={() => handleCoPersonChoice(true)}
+                loading={savingChoice}
+              >
+                Yes, I&apos;ll upload on their behalf
+              </Button>
+              <Button
+                size="md"
+                variant="secondary"
+                onClick={() => handleCoPersonChoice(false)}
+                disabled={savingChoice}
+              >
+                No, they will upload themselves
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Account-free (token) signer: offer immediate account activation.
     if (token && postSignChoice === null) {
+      // After the co-person choice the copy becomes the "You're all set" screen
+      // (screens 2 & 3) — heading + choice-specific line + account-creation CTA.
+      if (coPersonChoice !== null) {
+        const coNoun = getCoPersonNoun(leadType, side);
+        return (
+          <div className="min-h-screen bg-white flex items-center justify-center px-6">
+            <div className="text-center max-w-md">
+              <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+                <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                You&apos;re all set
+              </h1>
+              <p className="text-sm text-gray-500 mb-6">
+                {coPersonChoice
+                  ? `You can now upload documents and ID for your ${coNoun}.`
+                  : `Your ${coNoun} will create their own account to upload their documents and ID.`}
+              </p>
+              <p className="text-sm font-semibold text-gray-900 mb-4">
+                Would you like to continue to account creation now?
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button size="md" onClick={handleActivate} loading={activating}>
+                  Yes, continue
+                </Button>
+                <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
+                  Not now
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="min-h-screen bg-white flex items-center justify-center px-6">
           <div className="text-center max-w-md">
@@ -446,7 +586,32 @@ export default function RetainerPage() {
       );
     }
 
-    // Logged-in signer (no token) — original confirmation + auto-redirect.
+    // Logged-in signer (no token) — confirmation + auto-redirect. A primary who
+    // just answered the co-person popup gets the choice-specific "You're all set"
+    // copy; everyone else gets the standard "Agreement Submitted".
+    if (coPersonChoice !== null) {
+      const coNoun = getCoPersonNoun(leadType, side);
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center px-6">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              You&apos;re all set
+            </h1>
+            <p className="text-sm text-gray-500 max-w-md mx-auto">
+              {coPersonChoice
+                ? `You can now upload documents and ID for your ${coNoun}.`
+                : `Your ${coNoun} will create their own account to upload their documents and ID.`}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-6">
         <div className="text-center">

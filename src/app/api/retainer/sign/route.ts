@@ -200,6 +200,19 @@ export async function POST(req: Request) {
     const isCoPerson = Boolean(lead?.parent_lead_id);
     const coRole = (lead?.co_person_role as "purchaser" | "seller" | null) ?? null;
 
+    // The "Want to help with your co-purchaser(s) paperwork?" popup is shown
+    // ONLY to a primary signer (parent_lead_id IS NULL) who actually has at
+    // least one co-person lead linked to them. The client uses this flag to
+    // decide whether to render the popup before the account-creation prompt.
+    let showCoPersonPrompt = false;
+    if (!isCoPerson) {
+      const { count: coPersonCount } = await supabaseAdmin
+        .from("leads")
+        .select("id", { count: "exact", head: true })
+        .eq("parent_lead_id", leadId);
+      showCoPersonPrompt = (coPersonCount ?? 0) > 0;
+    }
+
     // Mirror /api/retainer/check: a P&S deal is two independent transactions for
     // its co-persons. A co-purchaser retains us only for the PURCHASE side, a
     // co-seller only for the SALE side — so their PDF/email must show only that
@@ -354,7 +367,7 @@ export async function POST(req: Request) {
       console.error("[Retainer Sign] PDF/email error:", pdfErr);
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, show_co_person_prompt: showCoPersonPrompt });
   } catch (err) {
     console.error("[Retainer Sign] Server error:", err);
     return NextResponse.json(
