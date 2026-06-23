@@ -653,7 +653,7 @@ export default function RetainerPage() {
     // that email.
     if (token && postSignChoice === "activated") {
       return (
-        <ResultPopup>
+        <ResultPopup plain={postSignDismissed}>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
             Check your email
           </h1>
@@ -661,6 +661,13 @@ export default function RetainerPage() {
             We&apos;ve sent you an email to activate your account. Use the link
             in it to create your account and set your password.
           </p>
+          {!postSignDismissed && (
+            <div className="mt-6 flex justify-center">
+              <Button size="md" onClick={() => setPostSignDismissed(true)}>
+                OK
+              </Button>
+            </div>
+          )}
         </ResultPopup>
       );
     }
