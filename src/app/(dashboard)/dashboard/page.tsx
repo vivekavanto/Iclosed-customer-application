@@ -18,6 +18,7 @@ import {
   FileText,
 } from "lucide-react";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
+import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import { useToast } from "@/components/ui/Toast";
 
@@ -632,6 +633,7 @@ export default function DashboardPage() {
   // ── Drawer state ──────────────────────────────────────────
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
   const [idDrawerOpen, setIdDrawerOpen] = useState(false);
+  const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   // ── Derived: active property + deal ──────────────────────
@@ -646,12 +648,15 @@ export default function DashboardPage() {
     const title = task.title.toLowerCase();
     if (title.includes("upload identification")) {
       setIdDrawerOpen(true);
+    } else if (title.includes("provide personal information")) {
+      // Personal Information has its own dedicated drawer (PersonalInfoTaskDrawer)
+      // so it can be customized independently of the generic task drawer.
+      setPersonalInfoDrawerOpen(true);
     } else {
-      // Everything else — including "Provide Personal Information" — goes
-      // through the DB-driven DynamicTaskDrawer so every field defined on the
-      // task template renders automatically (and stays in sync as templates
-      // change), rather than a hardcoded slot list that silently drops fields
-      // like the Sale-side "New Home Address".
+      // Everything else goes through the DB-driven DynamicTaskDrawer so every
+      // field defined on the task template renders automatically (and stays in
+      // sync as templates change), rather than a hardcoded slot list that
+      // silently drops fields like the Sale-side "New Home Address".
       setDynamicDrawerOpen(true);
     }
   }
@@ -865,6 +870,21 @@ export default function DashboardPage() {
         clientLastName={activeProperty?.last_name}
         onTaskCompleted={(id) => {
           setDynamicDrawerOpen(false);
+          markDone(id);
+        }}
+      />
+
+      {/* ── Personal Information Drawer (dedicated, standalone) ── */}
+      <PersonalInfoTaskDrawer
+        open={personalInfoDrawerOpen}
+        onClose={() => setPersonalInfoDrawerOpen(false)}
+        taskId={activeTask?.id ?? null}
+        taskTitle={activeTask?.title ?? "Provide Personal Information"}
+        leadId={leadId ?? undefined}
+        clientFirstName={activeProperty?.first_name}
+        clientLastName={activeProperty?.last_name}
+        onTaskCompleted={(id) => {
+          setPersonalInfoDrawerOpen(false);
           markDone(id);
         }}
       />

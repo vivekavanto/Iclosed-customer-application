@@ -122,21 +122,47 @@ function getCoPersonNoun(
  * rounded card) with the shared green success check. Keeps every post-sign
  * screen on one consistent popup design.
  */
-function ResultPopup({ children }: { children: ReactNode }) {
+function ResultPopup({
+  children,
+  plain = false,
+}: {
+  children: ReactNode;
+  /** When true, render as a plain centered page instead of a modal overlay —
+   *  used after the user dismisses (OK) a terminal popup. */
+  plain?: boolean;
+}) {
+  const card = (
+    <div
+      className={
+        plain
+          ? "text-center max-w-md w-full"
+          : "bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center"
+      }
+    >
+      <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+        <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
+      {children}
+    </div>
+  );
+
+  if (plain) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-6">
+        {card}
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
-        <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-          <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        {children}
-      </div>
+      {card}
     </div>
   );
 }
@@ -208,6 +234,9 @@ export default function RetainerPage() {
   // Whether the signer already has a portal account. The "Activate your
   // account" prompt is shown only to NEW clients; existing clients just log in.
   const [accountExists, setAccountExists] = useState(false);
+  // Whether the user dismissed (clicked OK on) a terminal post-sign popup, so
+  // we drop the modal backdrop and leave a plain confirmation behind.
+  const [postSignDismissed, setPostSignDismissed] = useState(false);
   // Account-free link that no longer resolves (expired, revoked, or the lead was
   // removed). Shown as a clear message instead of a blank, signable form.
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -596,10 +625,11 @@ export default function RetainerPage() {
       );
     }
 
-    // "I'll do this later" acknowledgement.
+    // "I'll do this later" acknowledgement. Dismissable via OK — clicking it
+    // drops the modal backdrop and leaves a plain confirmation.
     if (token && postSignChoice === "later") {
       return (
-        <ResultPopup>
+        <ResultPopup plain={postSignDismissed}>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
             Retainer Signed
           </h1>
@@ -607,6 +637,13 @@ export default function RetainerPage() {
             Thank you for signing. We&apos;ll email you a link to activate your
             account when you&apos;re ready to upload your documents.
           </p>
+          {!postSignDismissed && (
+            <div className="mt-6 flex justify-center">
+              <Button size="md" onClick={() => setPostSignDismissed(true)}>
+                OK
+              </Button>
+            </div>
+          )}
         </ResultPopup>
       );
     }

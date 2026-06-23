@@ -5,6 +5,12 @@ import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
+import {
+  validateCity,
+  validatePostalCode,
+  validateUnit,
+  validateStreet,
+} from "@/lib/addressValidation";
 import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
 
 interface FormData {
@@ -28,32 +34,17 @@ interface Step3Props {
 function validate(formData: FormData) {
   const errors: Partial<Record<keyof FormData, string>> = {};
 
-  if (!formData.street.trim()) {
-    errors.street = "Street address is required.";
-  }
+  const street = validateStreet(formData.street);
+  if (street) errors.street = street;
 
-  if (!formData.city.trim()) {
-    errors.city = "City is required.";
-  } else if (!/^[A-Za-zÀ-ÖØ-öø-ÿ\s''-]+$/.test(formData.city.trim())) {
-    errors.city = "City name is not valid.";
-  } else if (formData.city.trim().length < 2) {
-    errors.city = "City name is too short.";
-  }
+  const city = validateCity(formData.city);
+  if (city) errors.city = city;
 
-  const postalRegex = /^[A-Za-z]\d[A-Za-z]([ -]?\d[A-Za-z]\d)?$/;
-  if (!formData.postalCode.trim()) {
-    errors.postalCode = "Postal code is required.";
-  } else if (!postalRegex.test(formData.postalCode.trim())) {
-    errors.postalCode = "Enter a valid postal code (e.g. M5V 3A8 or M5V).";
-  }
+  const postalCode = validatePostalCode(formData.postalCode);
+  if (postalCode) errors.postalCode = postalCode;
 
-  if (formData.unit.trim()) {
-    if (!/^[A-Za-z0-9-]+$/.test(formData.unit.trim())) {
-      errors.unit = "Unit can only contain letters, numbers, or hyphens.";
-    } else if (formData.unit.trim().length > 10) {
-      errors.unit = "Unit number is too long.";
-    }
-  }
+  const unit = validateUnit(formData.unit);
+  if (unit) errors.unit = unit;
 
   return errors;
 }
