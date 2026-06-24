@@ -199,24 +199,70 @@ export async function POST(req: Request) {
             .select("client_id, lead_id")
             .eq("id", task.deal_id)
             .single();
-          let clientId: string | null = dealRow?.client_id ?? null;
-          if (!clientId && dealRow?.lead_id) {
-            const { data: leadRow } = await supabaseAdmin
+
+          // Resolve the client whose record this personal info belongs to. The
+          // task's lead is the source of truth for the person — so when the
+          // primary submits on a co-purchaser/co-seller's behalf, this resolves
+          // the CO-PERSON's own client (not the primary's). Prefer the lead's
+          // client_id, then the deal's, then an email match.
+          let leadRow:
+            | { email: string | null; first_name: string | null; last_name: string | null; client_id: string | null }
+            | null = null;
+          if (dealRow?.lead_id) {
+            const { data } = await supabaseAdmin
               .from("leads")
-              .select("email, client_id")
+              .select("email, first_name, last_name, client_id")
               .eq("id", dealRow.lead_id)
               .single();
-            clientId = leadRow?.client_id ?? null;
-            if (!clientId && leadRow?.email) {
-              const ep = String(leadRow.email).replace(/[\\%_]/g, "\\$&");
-              const { data: c } = await supabaseAdmin
-                .from("clients")
-                .select("id")
-                .ilike("email", ep)
-                .maybeSingle();
-              clientId = c?.id ?? null;
+            leadRow = data ?? null;
+          }
+
+          let clientId: string | null =
+            leadRow?.client_id ?? dealRow?.client_id ?? null;
+          if (!clientId && leadRow?.email) {
+            const ep = String(leadRow.email).replace(/[\\%_]/g, "\\$&");
+            const { data: c } = await supabaseAdmin
+              .from("clients")
+              .select("id")
+              .ilike("email", ep)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            clientId = c?.id ?? null;
+          }
+
+          // A co-purchaser/co-seller is a client too. If they don't have a
+          // clients row yet, create one from their lead so their personal info
+          // is stored exactly like a primary client's, and link it back to the
+          // lead + deal so future lookups resolve directly.
+          if (!clientId && leadRow?.email && dealRow?.lead_id) {
+            const { data: created, error: createErr } = await supabaseAdmin
+              .from("clients")
+              .insert({
+                email: leadRow.email,
+                first_name: leadRow.first_name ?? "",
+                last_name: leadRow.last_name ?? "",
+              })
+              .select("id")
+              .single();
+            if (createErr) {
+              console.error(
+                "[PersonalInfoMirror] Failed to create client for co-person:",
+                createErr.message,
+              );
+            } else if (created?.id) {
+              clientId = created.id;
+              await supabaseAdmin
+                .from("leads")
+                .update({ client_id: clientId })
+                .eq("id", dealRow.lead_id);
+              await supabaseAdmin
+                .from("deals")
+                .update({ client_id: clientId })
+                .eq("id", task.deal_id);
             }
           }
+
           if (clientId) {
             const { error: clientUpdateError } = await supabaseAdmin
               .from("clients")

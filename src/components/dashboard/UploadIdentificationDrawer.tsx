@@ -22,6 +22,7 @@ import {
   Clock,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
+import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
 interface UploadIdentificationDrawerProps {
@@ -29,6 +30,11 @@ interface UploadIdentificationDrawerProps {
   onClose: () => void;
   leadId?: string;
   taskId?: string;
+  // "Uploading identification for …" dropdown: the people this task may be
+  // submitted for and the current selection. Empty/absent → no dropdown.
+  behalfTargets?: BehalfTarget[];
+  selectedBehalfLeadId?: string | null;
+  onSelectBehalf?: (leadId: string) => void;
   onSaved?: () => void;
 }
 
@@ -469,6 +475,9 @@ export default function UploadIdentificationDrawer({
   onClose,
   leadId,
   taskId,
+  behalfTargets,
+  selectedBehalfLeadId,
+  onSelectBehalf,
   onSaved,
 }: UploadIdentificationDrawerProps) {
   const isLargeScreen = useIsLargeScreen();
@@ -634,6 +643,27 @@ export default function UploadIdentificationDrawer({
     resetAll();
     onClose();
   }, [onClose, resetAll]);
+
+  // Clear any in-progress (unsaved) selection when the target person changes via
+  // the on-behalf dropdown — leadId switches, so files picked for one person must
+  // not be uploaded under another. The existing-docs effect below reloads the
+  // newly-selected person's saved docs.
+  const prevLeadIdRef = useRef(leadId);
+  useEffect(() => {
+    if (!open) {
+      prevLeadIdRef.current = leadId;
+      return;
+    }
+    if (prevLeadIdRef.current !== leadId) {
+      prevLeadIdRef.current = leadId;
+      setSelected((prev) => {
+        prev.forEach((s) => s.previewUrl && URL.revokeObjectURL(s.previewUrl));
+        return [];
+      });
+      setGlobalError(null);
+      setDraftSaved(false);
+    }
+  }, [open, leadId]);
 
   // Load existing docs when drawer opens
   useEffect(() => {
@@ -1625,6 +1655,14 @@ export default function UploadIdentificationDrawer({
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+          {/* Submit-on-behalf person picker (hidden unless >1 target) */}
+          <OnBehalfSelector
+            label="Uploading identification for"
+            targets={behalfTargets ?? []}
+            selectedLeadId={selectedBehalfLeadId ?? null}
+            onChange={(id) => onSelectBehalf?.(id)}
+          />
+
           {/* Acceptable Documents Section - Always visible */}
           <AcceptableDocumentsSection />
 

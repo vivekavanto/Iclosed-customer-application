@@ -132,7 +132,13 @@ export async function GET(req: Request) {
       // (submit_on_behalf IS NULL) must still answer it — otherwise reloading
       // or returning after signing would skip the decision entirely. Re-surface
       // the popup so the value can't be bypassed.
-      const primaryLead = (leads || []).find((l) => !l.parent_lead_id);
+      //
+      // A genuine primary has neither a parent_lead_id nor a co_person_role —
+      // checking both ensures a co-purchaser/co-seller is never picked here (and
+      // so never shown this primary-only popup).
+      const primaryLead = (leads || []).find(
+        (l) => !l.parent_lead_id && l.co_person_role == null
+      );
       if (primaryLead && primaryLead.submit_on_behalf == null) {
         const { count: coCount } = await supabaseAdmin
           .from("leads")
@@ -176,8 +182,10 @@ export async function GET(req: Request) {
       .join(", ");
 
     const isPS = lead?.lead_type === PURCHASE_AND_SALE;
-    const isCoPerson = Boolean(lead?.parent_lead_id);
     const coRole = (lead?.co_person_role as "purchaser" | "seller" | null) ?? null;
+    // A lead is a co-person if linked under a primary (parent_lead_id) OR it
+    // carries an explicit co_person_role — see the sign route for rationale.
+    const isCoPerson = Boolean(lead?.parent_lead_id) || coRole != null;
 
     // A P&S deal is treated as two independent transactions for its co-persons:
     // a co-purchaser retains us only for the PURCHASE side and must see only the

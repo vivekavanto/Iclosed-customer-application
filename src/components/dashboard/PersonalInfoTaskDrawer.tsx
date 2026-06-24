@@ -22,6 +22,7 @@ import {
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
+import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
 /* ─────────────────────────────────────────────
@@ -69,6 +70,15 @@ interface PersonalInfoTaskDrawerProps {
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
+  // When true, the primary is submitting this task on a co-person's behalf.
+  // Suppresses the logged-in client's reusable personal-info prefill so the
+  // primary's own phone/marital/citizenship don't leak into the co-person's form.
+  onBehalf?: boolean;
+  // "Submitting for …" dropdown: the people this task may be submitted for and
+  // the current selection. Empty/absent → no dropdown is shown.
+  behalfTargets?: BehalfTarget[];
+  selectedBehalfLeadId?: string | null;
+  onSelectBehalf?: (leadId: string) => void;
   onTaskCompleted?: (taskId: string) => void;
 }
 
@@ -670,6 +680,10 @@ export default function PersonalInfoTaskDrawer({
   leadId,
   clientFirstName,
   clientLastName,
+  onBehalf,
+  behalfTargets,
+  selectedBehalfLeadId,
+  onSelectBehalf,
   onTaskCompleted,
 }: PersonalInfoTaskDrawerProps) {
   const isLargeScreen = useIsLargeScreen();
@@ -747,7 +761,9 @@ export default function PersonalInfoTaskDrawer({
     setDraftSaved(false);
     clientInfoPrefilledRef.current = null;
 
-    fetch(`/api/task-form-fields?task_id=${taskId}`)
+    // On-behalf: don't let the co-person's lead intake data (esp. the property
+    // address) pre-fill the form — they have no personal info of their own yet.
+    fetch(`/api/task-form-fields?task_id=${taskId}${onBehalf ? "&on_behalf=1" : ""}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
@@ -795,7 +811,7 @@ export default function PersonalInfoTaskDrawer({
       })
       .catch(() => setGlobalError("Failed to load form fields."))
       .finally(() => setFieldsLoading(false));
-  }, [open, taskId]);
+  }, [open, taskId, onBehalf]);
 
   // ── Prefill reusable personal info from the `clients` record ──
   // Re-port of the autopopulate that used to live in PersonalInformationDrawer.
@@ -806,6 +822,9 @@ export default function PersonalInfoTaskDrawer({
   // ONLY empty slots — task_responses prefill and anything the user typed win.
   useEffect(() => {
     if (!open || !taskId) return;
+    // On-behalf: never seed the co-person's form with the logged-in primary's
+    // reusable personal info (/api/client-personal-info is always the primary).
+    if (onBehalf) return;
     const isPPI = taskTitle.toLowerCase().includes("provide personal information");
     if (!isPPI || fields.length === 0) return;
     if (clientInfoPrefilledRef.current === taskId) return;
@@ -867,7 +886,7 @@ export default function PersonalInfoTaskDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, taskId, taskTitle, fields]);
+  }, [open, taskId, taskTitle, fields, onBehalf]);
 
   // ── Escape key & scroll lock ──
   useEffect(() => {
@@ -1567,6 +1586,14 @@ export default function PersonalInfoTaskDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+
+          {/* ── Submit-on-behalf person picker (hidden unless >1 target) ── */}
+          <OnBehalfSelector
+            label="Providing personal information for"
+            targets={behalfTargets ?? []}
+            selectedLeadId={selectedBehalfLeadId ?? null}
+            onChange={(id) => onSelectBehalf?.(id)}
+          />
 
           {/* ── Home Insurance static sections ── */}
           {taskTitle.toLowerCase().includes("home insurance") && (

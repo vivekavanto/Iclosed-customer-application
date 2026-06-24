@@ -198,11 +198,15 @@ export async function POST(req: Request) {
       : "";
 
     const isPS = lead?.lead_type === PURCHASE_AND_SALE;
-    const isCoPerson = Boolean(lead?.parent_lead_id);
     const coRole = (lead?.co_person_role as "purchaser" | "seller" | null) ?? null;
+    // A lead is a co-person if it is linked under a primary (parent_lead_id) OR
+    // carries an explicit co_person_role. Checking both is defensive: the two
+    // are set together at intake, but some linking paths set only one — and a
+    // co-person must never be mistaken for a primary.
+    const isCoPerson = Boolean(lead?.parent_lead_id) || coRole != null;
 
     // The "Want to help with your co-purchaser(s) paperwork?" popup is shown
-    // ONLY to a primary signer (parent_lead_id IS NULL) who actually has at
+    // ONLY to a primary signer (no parent, no co-role) who actually has at
     // least one co-person lead linked to them. The client uses this flag to
     // decide whether to render the popup before the account-creation prompt.
     let showCoPersonPrompt = false;

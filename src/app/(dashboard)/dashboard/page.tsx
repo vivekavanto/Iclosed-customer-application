@@ -20,6 +20,7 @@ import {
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
+import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useToast } from "@/components/ui/Toast";
 
 
@@ -636,6 +637,14 @@ export default function DashboardPage() {
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
+  // ── Submit-on-behalf state ───────────────────────────────
+  // The people the primary may submit the open task for (themselves + linked
+  // co-persons), and which one is currently selected in the drawer dropdown.
+  // Only populated for Upload Identification / Provide Personal Information when
+  // the primary opted into submit_on_behalf and has matching co-person tasks.
+  const [behalfTargets, setBehalfTargets] = useState<BehalfTarget[]>([]);
+  const [selectedBehalfLeadId, setSelectedBehalfLeadId] = useState<string | null>(null);
+
   // ── Derived: active property + deal ──────────────────────
   const activeProperty = properties.find((p) => p.lead_id === activeLeadId) ?? null;
   const activeDealId = activeProperty?.deal_id ?? null;
@@ -643,14 +652,41 @@ export default function DashboardPage() {
 
   const leadId = activeLeadId;
 
+  // Load the "submit on behalf of …" people for a task the primary is opening.
+  // Populates the in-drawer dropdown only when the primary opted in and has a
+  // co-person with the equivalent task; otherwise the drawer shows no dropdown.
+  async function loadBehalfTargets(taskId: string) {
+    setBehalfTargets([]);
+    setSelectedBehalfLeadId(null);
+    try {
+      const res = await fetch(`/api/on-behalf-targets?task_id=${encodeURIComponent(taskId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.success && data.enabled && (data.targets?.length ?? 0) > 1) {
+        const targets = data.targets as BehalfTarget[];
+        setBehalfTargets(targets);
+        setSelectedBehalfLeadId(
+          (targets.find((t) => t.is_primary) ?? targets[0]).lead_id
+        );
+      }
+    } catch {
+      // non-blocking — drawer still works for the primary's own task
+    }
+  }
+
   function handleTaskClick(task: Task) {
     setActiveTask(task);
     const title = task.title.toLowerCase();
+    // Reset any prior on-behalf dropdown; (re)load it for the two supported tasks.
+    setBehalfTargets([]);
+    setSelectedBehalfLeadId(null);
     if (title.includes("upload identification")) {
+      void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
     } else if (title.includes("provide personal information")) {
       // Personal Information has its own dedicated drawer (PersonalInfoTaskDrawer)
       // so it can be customized independently of the generic task drawer.
+      void loadBehalfTargets(task.id);
       setPersonalInfoDrawerOpen(true);
     } else {
       // Everything else goes through the DB-driven DynamicTaskDrawer so every
@@ -856,6 +892,27 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
+  // ── Effective drawer inputs ──────────────────────────────
+  // The drawer targets whichever person is selected in its on-behalf dropdown.
+  // With no dropdown (behalfTargets empty) it falls back to the primary's own
+  // active property, exactly as before.
+  const activeBehalfTarget =
+    behalfTargets.find((t) => t.lead_id === selectedBehalfLeadId) ?? null;
+  const isOnBehalf = activeBehalfTarget != null && !activeBehalfTarget.is_primary;
+  const drawerTaskId = activeBehalfTarget?.task_id ?? activeTask?.id ?? null;
+  const drawerLeadId = activeBehalfTarget?.lead_id ?? leadId ?? undefined;
+  const drawerFirstName = activeBehalfTarget?.first_name ?? activeProperty?.first_name;
+  const drawerLastName = activeBehalfTarget?.last_name ?? activeProperty?.last_name;
+
+  // A co-person's task is already persisted + marked complete server-side by
+  // /api/task-responses (keyed off the co-person's task_id). So on-behalf
+  // submissions must NOT call markDone() (which would PATCH the primary's task
+  // and refetch the primary's list); just close.
+  function handleDrawerCompleted(id: string, closeDrawer: () => void) {
+    closeDrawer();
+    if (!isOnBehalf) markDone(id);
+  }
+
   return (
     <div className="space-y-5 pb-8">
 
@@ -878,26 +935,34 @@ export default function DashboardPage() {
       <PersonalInfoTaskDrawer
         open={personalInfoDrawerOpen}
         onClose={() => setPersonalInfoDrawerOpen(false)}
-        taskId={activeTask?.id ?? null}
+        taskId={drawerTaskId}
         taskTitle={activeTask?.title ?? "Provide Personal Information"}
-        leadId={leadId ?? undefined}
-        clientFirstName={activeProperty?.first_name}
-        clientLastName={activeProperty?.last_name}
-        onTaskCompleted={(id) => {
-          setPersonalInfoDrawerOpen(false);
-          markDone(id);
-        }}
+        leadId={drawerLeadId}
+        clientFirstName={drawerFirstName}
+        clientLastName={drawerLastName}
+        onBehalf={isOnBehalf}
+        behalfTargets={behalfTargets}
+        selectedBehalfLeadId={selectedBehalfLeadId}
+        onSelectBehalf={setSelectedBehalfLeadId}
+        onTaskCompleted={(id) =>
+          handleDrawerCompleted(id, () => setPersonalInfoDrawerOpen(false))
+        }
       />
 
       {/* ── Upload Identification Drawer (multi-file) ── */}
       <UploadIdentificationDrawer
         open={idDrawerOpen}
         onClose={() => setIdDrawerOpen(false)}
-        leadId={leadId ?? undefined}
-        taskId={activeTask?.id}
+        leadId={drawerLeadId}
+        taskId={drawerTaskId ?? undefined}
+        behalfTargets={behalfTargets}
+        selectedBehalfLeadId={selectedBehalfLeadId}
+        onSelectBehalf={setSelectedBehalfLeadId}
         onSaved={async () => {
           setIdDrawerOpen(false);
-          if (activeTask) await markDone(activeTask.id);
+          // On-behalf tasks are completed server-side; only the primary's own
+          // task needs the dashboard-side markDone refresh.
+          if (!isOnBehalf && drawerTaskId) await markDone(drawerTaskId);
         }}
       />
 
