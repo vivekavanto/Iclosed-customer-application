@@ -140,17 +140,24 @@ export async function GET(req: Request) {
         (l) => !l.parent_lead_id && l.co_person_role == null
       );
       if (primaryLead && primaryLead.submit_on_behalf == null) {
-        const { count: coCount } = await supabaseAdmin
+        const { data: coRows } = await supabaseAdmin
           .from("leads")
-          .select("id", { count: "exact", head: true })
+          .select("id, first_name, last_name, co_person_role")
           .eq("parent_lead_id", primaryLead.id);
-        if ((coCount ?? 0) > 0) {
+        if ((coRows?.length ?? 0) > 0) {
           return NextResponse.json({
             signed: true,
             co_person_prompt_pending: true,
             lead_type: formatLeadTypeLabelForRecipient(primaryLead),
             side: null,
             account_exists: await leadHasAccount(primaryLead),
+            primary_lead_id: primaryLead.id,
+            co_persons: (coRows ?? []).map((c) => ({
+              lead_id: c.id,
+              first_name: c.first_name ?? "",
+              last_name: c.last_name ?? "",
+              co_person_role: (c.co_person_role as string | null) ?? null,
+            })),
           });
         }
       }

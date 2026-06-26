@@ -7,36 +7,41 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
  * POST /api/retainer/submit-on-behalf
  *
  * Persists the primary applicant's answer to the post-retainer-sign popup
- * "Want to help with your co-purchaser(s) paperwork?".
+ * "Who will be uploading your documents?".
  *
- *   submit_on_behalf true  → "Yes, I'll upload on their behalf"
- *   submit_on_behalf false → "No, they will upload themselves"
+ *   "Me"            → the primary uploads everyone's documents.
+ *   "My co-purchaser" → the chosen co-purchaser/co-seller uploads the primary's
+ *                       documents and their own.
  *
- * The answer is written to leads.submit_on_behalf on the PRIMARY lead row
- * (parent_lead_id IS NULL). It's one decision per deal — see
- * sql/add_lead_submit_on_behalf.sql.
+ * The answer is modelled with leads.submit_on_behalf: the flag is set to TRUE on
+ * whichever family member is the designated uploader (the primary for "Me", the
+ * chosen co-person for "My co-purchaser") and FALSE on every other member —
+ * exactly one uploader per family. A "family" is the primary lead plus all leads
+ * with parent_lead_id = primary.id. See sql/add_lead_submit_on_behalf.sql.
  *
- * Signer is identified the same two ways as /api/retainer/sign and /check:
+ * The caller is always the PRIMARY (the popup is primary-only), identified the
+ * same two ways as /api/retainer/sign and /check:
  *   • token → account-free retainer link, maps to exactly one lead.
  *   • else  → the logged-in client.
  *
- * Body: { token?: string, submit_on_behalf: boolean }
+ * Body: { token?: string, uploader_lead_id: string }
+ *   uploader_lead_id must be the primary lead or one of its co-person leads.
  */
 export async function POST(req: Request) {
   try {
-    const { token, submit_on_behalf } = (await req.json()) as {
+    const { token, uploader_lead_id } = (await req.json()) as {
       token?: string;
-      submit_on_behalf?: boolean;
+      uploader_lead_id?: string;
     };
 
-    if (typeof submit_on_behalf !== "boolean") {
+    if (!uploader_lead_id || typeof uploader_lead_id !== "string") {
       return NextResponse.json(
-        { success: false, error: "submit_on_behalf must be a boolean" },
+        { success: false, error: "uploader_lead_id is required" },
         { status: 400 }
       );
     }
 
-    // Resolve the signer's lead id (mirrors /api/retainer/sign).
+    // Resolve the caller's (primary) lead id (mirrors /api/retainer/sign).
     let leadId: string | null = null;
 
     if (token) {
@@ -95,18 +100,85 @@ export async function POST(req: Request) {
       );
     }
 
-    // Only the primary lead carries this decision. The guard keeps a co-person's
-    // token from ever flipping the flag on their own (non-primary) row.
+    // The decision is primary-only. Confirm the resolved caller is a true primary
+    // (no parent) — a co-person's token must never drive this choice.
+    const { data: callerLead } = await supabaseAdmin
+      .from("leads")
+      .select("id, parent_lead_id")
+      .eq("id", leadId)
+      .maybeSingle();
+
+    if (!callerLead || callerLead.parent_lead_id != null) {
+      return NextResponse.json(
+        { success: false, error: "Only the primary applicant can set this." },
+        { status: 403 }
+      );
+    }
+
+    // Family = the primary plus every co-person linked to it. The chosen uploader
+    // must be one of them (never a client-supplied id from another transaction).
+    const { data: coRows } = await supabaseAdmin
+      .from("leads")
+      .select("id")
+      .eq("parent_lead_id", leadId);
+    const familyIds = [leadId, ...((coRows ?? []).map((c) => c.id))];
+
+    if (!familyIds.includes(uploader_lead_id)) {
+      return NextResponse.json(
+        { success: false, error: "Selected uploader is not part of this transaction." },
+        { status: 400 }
+      );
+    }
+
+    // Exactly one designated uploader: TRUE on the chosen lead, FALSE on the rest.
+    const others = familyIds.filter((id) => id !== uploader_lead_id);
+    if (others.length > 0) {
+      const { error: clearErr } = await supabaseAdmin
+        .from("leads")
+        .update({ submit_on_behalf: false })
+        .in("id", others);
+      if (clearErr) {
+        console.error("[Retainer submit-on-behalf] clear error:", clearErr);
+        return NextResponse.json(
+          { success: false, error: clearErr.message },
+          { status: 500 }
+        );
+      }
+    }
+
     const { error } = await supabaseAdmin
       .from("leads")
-      .update({ submit_on_behalf })
-      .eq("id", leadId)
-      .is("parent_lead_id", null);
+      .update({ submit_on_behalf: true })
+      .eq("id", uploader_lead_id);
 
     if (error) {
       console.error("[Retainer submit-on-behalf] update error:", error);
       return NextResponse.json(
         { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    // Consent audit: when the uploader is a co-person ("My co-purchaser" → the
+    // primary clicked "I agree"), record proof of the permission grant on the
+    // primary lead. Picking "Me" is not a delegation, so clear any prior consent.
+    const isDelegation = uploader_lead_id !== leadId;
+    const { error: consentErr } = await supabaseAdmin
+      .from("leads")
+      .update(
+        isDelegation
+          ? {
+              upload_consent_at: new Date().toISOString(),
+              upload_consent_uploader_lead_id: uploader_lead_id,
+            }
+          : { upload_consent_at: null, upload_consent_uploader_lead_id: null }
+      )
+      .eq("id", leadId);
+
+    if (consentErr) {
+      console.error("[Retainer submit-on-behalf] consent update error:", consentErr);
+      return NextResponse.json(
+        { success: false, error: consentErr.message },
         { status: 500 }
       );
     }

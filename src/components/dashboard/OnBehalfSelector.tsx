@@ -8,7 +8,10 @@ export interface BehalfTarget {
   first_name: string;
   last_name: string;
   role_label: string;
+  /** Whether this target is the transaction's primary applicant. */
   is_primary: boolean;
+  /** Whether this target is the logged-in user (the lead behind the opened task). */
+  is_self?: boolean;
 }
 
 export function behalfTargetName(t: BehalfTarget): string {

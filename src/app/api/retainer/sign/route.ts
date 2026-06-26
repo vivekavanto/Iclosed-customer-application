@@ -210,12 +210,24 @@ export async function POST(req: Request) {
     // least one co-person lead linked to them. The client uses this flag to
     // decide whether to render the popup before the account-creation prompt.
     let showCoPersonPrompt = false;
+    let coPersons: Array<{
+      lead_id: string;
+      first_name: string;
+      last_name: string;
+      co_person_role: string | null;
+    }> = [];
     if (!isCoPerson) {
-      const { count: coPersonCount } = await supabaseAdmin
+      const { data: coRows } = await supabaseAdmin
         .from("leads")
-        .select("id", { count: "exact", head: true })
+        .select("id, first_name, last_name, co_person_role")
         .eq("parent_lead_id", leadId);
-      showCoPersonPrompt = (coPersonCount ?? 0) > 0;
+      coPersons = (coRows ?? []).map((c) => ({
+        lead_id: c.id,
+        first_name: c.first_name ?? "",
+        last_name: c.last_name ?? "",
+        co_person_role: (c.co_person_role as string | null) ?? null,
+      }));
+      showCoPersonPrompt = coPersons.length > 0;
     }
 
     // Mirror /api/retainer/check: a P&S deal is two independent transactions for
@@ -380,6 +392,10 @@ export async function POST(req: Request) {
       success: true,
       show_co_person_prompt: showCoPersonPrompt,
       account_exists: accountExists,
+      // The primary's own lead id (the "Me" uploader) and the co-persons the
+      // primary may delegate uploads to. Only populated when the popup is shown.
+      primary_lead_id: showCoPersonPrompt ? leadId : null,
+      co_persons: coPersons,
     });
   } catch (err) {
     console.error("[Retainer Sign] Server error:", err);

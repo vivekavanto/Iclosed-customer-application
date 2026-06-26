@@ -665,8 +665,10 @@ export default function DashboardPage() {
       if (data?.success && data.enabled && (data.targets?.length ?? 0) > 1) {
         const targets = data.targets as BehalfTarget[];
         setBehalfTargets(targets);
+        // Default the dropdown to the logged-in user (the uploader's own task),
+        // so opening the drawer starts on "myself" before switching to others.
         setSelectedBehalfLeadId(
-          (targets.find((t) => t.is_primary) ?? targets[0]).lead_id
+          (targets.find((t) => t.is_self) ?? targets[0]).lead_id
         );
       }
     } catch {
@@ -898,7 +900,10 @@ export default function DashboardPage() {
   // active property, exactly as before.
   const activeBehalfTarget =
     behalfTargets.find((t) => t.lead_id === selectedBehalfLeadId) ?? null;
-  const isOnBehalf = activeBehalfTarget != null && !activeBehalfTarget.is_primary;
+  // On-behalf = the selected person is someone OTHER than the logged-in user, so
+  // their form must not be prefilled from the uploader's own data. Keyed off
+  // is_self (not is_primary): the uploader may itself be a co-person.
+  const isOnBehalf = activeBehalfTarget != null && !activeBehalfTarget.is_self;
   const drawerTaskId = activeBehalfTarget?.task_id ?? activeTask?.id ?? null;
   const drawerLeadId = activeBehalfTarget?.lead_id ?? leadId ?? undefined;
   const drawerFirstName = activeBehalfTarget?.first_name ?? activeProperty?.first_name;

@@ -5,20 +5,23 @@ import { getAuthClient } from "@/lib/getAuthClient";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/on-behalf-targets?task_id=<primaryTaskId>
+ * GET /api/on-behalf-targets?task_id=<taskId>
  *
- * Given a task the authenticated primary is about to act on (Upload
- * Identification / Provide Personal Information), returns the list of people the
- * primary may submit it for: themselves PLUS any linked co-purchaser/co-seller
- * whose own deal has the equivalent task (same title + same side).
+ * Given a task the authenticated user is about to act on (Upload Identification /
+ * Provide Personal Information), returns the list of people they may submit it
+ * for: themselves PLUS every other member of the same transaction "family" whose
+ * own deal has the equivalent task (same title + same side).
  *
- * Used to render the "Submitting for …" dropdown inside the drawer. Gated on the
- * primary lead's `submit_on_behalf === true`; when off (or no co-persons), a
- * single (primary-only) target is returned so the drawer shows no dropdown.
+ * The dropdown is offered only to the family's DESIGNATED UPLOADER — the member
+ * whose `submit_on_behalf === true`. That uploader may be the primary ("Me") or a
+ * co-purchaser/co-seller the primary delegated to ("My co-purchaser"). For anyone
+ * who is not the designated uploader, a single (self-only) target is returned so
+ * the drawer shows no dropdown.
  *
  * Security: the opened task must belong to a deal owned by the caller
- * (`deal.client_id === client.id`); co-persons are resolved strictly via
- * `parent_lead_id = the primary lead` — never from client-supplied ids.
+ * (`deal.client_id === client.id`); family members are resolved strictly via the
+ * shared primary id (`id = primary` OR `parent_lead_id = primary`) — never from
+ * client-supplied ids.
  */
 
 function getCoPersonLabel(role: string | null): string {
@@ -76,51 +79,62 @@ export async function GET(req: Request) {
 
     const side = (task.side ?? null) as "purchase" | "sale" | null;
 
-    // ── The primary lead behind this deal ──
-    const { data: primaryLead } = await supabaseAdmin
+    // ── The "self" lead: the lead behind the opened task (the caller's own) ──
+    const { data: selfLead } = await supabaseAdmin
       .from("leads")
-      .select("id, first_name, last_name, parent_lead_id, submit_on_behalf, lead_type")
+      .select("id, first_name, last_name, parent_lead_id, submit_on_behalf, lead_type, co_person_role")
       .eq("id", deal.lead_id)
       .maybeSingle();
 
-    const primaryTarget = {
-      lead_id: primaryLead?.id ?? deal.lead_id,
+    const selfIsPrimary = !!selfLead && selfLead.parent_lead_id == null;
+    const selfTarget = {
+      lead_id: selfLead?.id ?? deal.lead_id,
       task_id: task.id,
-      first_name: primaryLead?.first_name ?? client.first_name ?? "",
-      last_name: primaryLead?.last_name ?? client.last_name ?? "",
-      role_label: getPrimaryLabel(side, primaryLead?.lead_type ?? deal.type ?? null),
-      is_primary: true,
+      first_name: selfLead?.first_name ?? client.first_name ?? "",
+      last_name: selfLead?.last_name ?? client.last_name ?? "",
+      role_label: selfIsPrimary
+        ? getPrimaryLabel(side, selfLead?.lead_type ?? deal.type ?? null)
+        : getCoPersonLabel(selfLead?.co_person_role ?? null),
+      is_primary: selfIsPrimary,
+      is_self: true,
     };
 
-    // Only a true primary (no parent) who opted in can submit on others' behalf.
-    if (
-      !primaryLead ||
-      primaryLead.parent_lead_id != null ||
-      primaryLead.submit_on_behalf !== true
-    ) {
-      return NextResponse.json({ success: true, enabled: false, targets: [primaryTarget] });
+    // ── The family: primary lead + all its co-persons ──
+    // The designated uploader (submit_on_behalf === true) may be the primary OR a
+    // co-person. Only that person may submit on the rest of the family's behalf.
+    const primaryId = selfLead?.parent_lead_id ?? selfLead?.id ?? deal.lead_id;
+
+    const { data: familyLeads } = await supabaseAdmin
+      .from("leads")
+      .select("id, first_name, last_name, parent_lead_id, submit_on_behalf, lead_type, co_person_role")
+      .or(`id.eq.${primaryId},parent_lead_id.eq.${primaryId}`);
+
+    const uploader = (familyLeads ?? []).find((l) => l.submit_on_behalf === true);
+
+    // The dropdown is only offered to the designated uploader, and only when they
+    // are the one currently signed in (the opened task is theirs). Anyone else —
+    // including the primary when they delegated to a co-person — submits only for
+    // themselves, so no dropdown.
+    if (!uploader || uploader.id !== selfTarget.lead_id) {
+      return NextResponse.json({ success: true, enabled: false, targets: [selfTarget] });
     }
 
-    // ── Co-persons + their equivalent task ──
-    const { data: coPersonLeads } = await supabaseAdmin
-      .from("leads")
-      .select("id, first_name, last_name, co_person_role")
-      .eq("parent_lead_id", primaryLead.id);
+    // ── Every OTHER family member + their equivalent task ──
+    const otherMembers = (familyLeads ?? []).filter((l) => l.id !== selfTarget.lead_id);
+    const otherTargets: (typeof selfTarget)[] = [];
 
-    const coTargets: typeof primaryTarget[] = [];
-
-    for (const co of coPersonLeads ?? []) {
-      const { data: coDeal } = await supabaseAdmin
+    for (const member of otherMembers) {
+      const { data: memberDeal } = await supabaseAdmin
         .from("deals")
         .select("id")
-        .eq("lead_id", co.id)
+        .eq("lead_id", member.id)
         .eq("is_deleted", false)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (!coDeal) continue;
+      if (!memberDeal) continue;
 
-      // Match the equivalent task on the co-person's own deal. The authoritative
+      // Match the equivalent task on the member's own deal. The authoritative
       // cross-deal link is task_template_id (already side-specific — Purchase and
       // Sale templates are distinct rows), which is robust to any title drift.
       // Fall back to a same-side title match for legacy rows without a template
@@ -129,40 +143,44 @@ export async function GET(req: Request) {
         supabaseAdmin
           .from("tasks")
           .select("id, completed")
-          .eq("deal_id", coDeal.id)
+          .eq("deal_id", memberDeal.id)
           .eq("is_deleted", false)
           .order("completed", { ascending: true })
           .limit(1);
 
-      let coTask: { id: string; completed: boolean } | null = null;
+      let memberTask: { id: string; completed: boolean } | null = null;
       if (task.task_template_id) {
         const { data } = await baseQuery()
           .eq("task_template_id", task.task_template_id)
           .maybeSingle();
-        coTask = data ?? null;
+        memberTask = data ?? null;
       }
-      if (!coTask) {
+      if (!memberTask) {
         let q = baseQuery().ilike("title", task.title);
         q = side == null ? q.is("side", null) : q.eq("side", side);
         const { data } = await q.maybeSingle();
-        coTask = data ?? null;
+        memberTask = data ?? null;
       }
-      if (!coTask) continue;
+      if (!memberTask) continue;
 
-      coTargets.push({
-        lead_id: co.id,
-        task_id: coTask.id,
-        first_name: co.first_name ?? "",
-        last_name: co.last_name ?? "",
-        role_label: getCoPersonLabel(co.co_person_role),
-        is_primary: false,
+      const memberIsPrimary = member.parent_lead_id == null;
+      otherTargets.push({
+        lead_id: member.id,
+        task_id: memberTask.id,
+        first_name: member.first_name ?? "",
+        last_name: member.last_name ?? "",
+        role_label: memberIsPrimary
+          ? getPrimaryLabel(side, member.lead_type ?? deal.type ?? null)
+          : getCoPersonLabel(member.co_person_role ?? null),
+        is_primary: memberIsPrimary,
+        is_self: false,
       });
     }
 
     return NextResponse.json({
       success: true,
-      enabled: coTargets.length > 0,
-      targets: [primaryTarget, ...coTargets],
+      enabled: otherTargets.length > 0,
+      targets: [selfTarget, ...otherTargets],
     });
   } catch (err) {
     console.error("GET /api/on-behalf-targets error:", err);
