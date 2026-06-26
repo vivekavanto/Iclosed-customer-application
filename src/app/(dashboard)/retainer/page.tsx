@@ -823,8 +823,8 @@ export default function RetainerPage() {
             Retainer Signed
           </h1>
           <p className="text-sm text-gray-500">
-            Thank you for signing. We&apos;ll email you a link to activate your
-            account when you&apos;re ready to upload your documents.
+            Thank you for signing. We&apos;ve emailed you a link to activate your
+            account whenever you&apos;re ready to upload your documents.
           </p>
           {!postSignDismissed && (
             <div className="mt-6 flex justify-center">
