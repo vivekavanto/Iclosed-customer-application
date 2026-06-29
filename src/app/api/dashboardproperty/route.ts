@@ -115,10 +115,55 @@ export async function GET() {
       }
     }
 
+    // ── Parties per transaction (primary + co-persons) ───────────
+    // For the hero "Parties" panel. A transaction "family" is the primary lead
+    // plus every lead whose parent_lead_id points at it. Co-persons may belong to
+    // a DIFFERENT client (their own account), so we resolve the family with the
+    // service-role client by primary id rather than from this client's leads.
+    const visibleLeads = leads.filter((lead) => !!dealsByLeadId[lead.id]);
+    const primaryIdByLeadId: Record<string, string> = {};
+    for (const lead of visibleLeads) {
+      primaryIdByLeadId[lead.id] = lead.parent_lead_id ?? lead.id;
+    }
+    const primaryIds = [...new Set(Object.values(primaryIdByLeadId))];
+
+    let familyLeads: Array<{
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      parent_lead_id: string | null;
+      co_person_role: string | null;
+    }> = [];
+    if (primaryIds.length > 0) {
+      const inList = primaryIds.join(",");
+      const { data: fam } = await supabaseAdmin
+        .from("leads")
+        .select("id, first_name, last_name, parent_lead_id, co_person_role, created_at")
+        .or(`id.in.(${inList}),parent_lead_id.in.(${inList})`)
+        .order("created_at", { ascending: true });
+      familyLeads = fam ?? [];
+    }
+
+    // Primary first, then co-persons in creation order. `role` is "primary" for
+    // the primary applicant and the co-person's own role ("purchaser"/"seller")
+    // otherwise — the frontend uses it to filter by side on Purchase & Sale deals.
+    const partiesForPrimary = (primaryId: string) => {
+      const members = familyLeads.filter(
+        (l) => l.id === primaryId || l.parent_lead_id === primaryId
+      );
+      const primary = members.find((m) => m.id === primaryId);
+      const coPersons = members.filter((m) => m.id !== primaryId);
+      return [...(primary ? [primary] : []), ...coPersons].map((m) => ({
+        lead_id: m.id,
+        first_name: m.first_name ?? "",
+        last_name: m.last_name ?? "",
+        role: m.id === primaryId ? "primary" : (m.co_person_role ?? "applicant"),
+      }));
+    };
+
     // ── Build property ONLY for leads that have an active deal ─
     // Leads without an active deal are hidden from the dashboard entirely.
-    const properties = leads
-      .filter((lead) => !!dealsByLeadId[lead.id])
+    const properties = visibleLeads
       .map((lead) => {
       const deal = dealsByLeadId[lead.id] ?? null;
 
@@ -143,6 +188,8 @@ export async function GET() {
         // Sale deal. The dashboard uses this to show only that side's property,
         // tasks and milestones. NULL for a primary client (sees both sides).
         recipient_side: recipientSideForLead(lead),
+        // Everyone on this transaction (primary + co-persons) for the hero panel.
+        parties: partiesForPrimary(primaryIdByLeadId[lead.id]),
       };
     });
 

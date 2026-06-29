@@ -16,6 +16,7 @@ import {
   Loader2,
   Home,
   FileText,
+  Users,
 } from "lucide-react";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
@@ -59,6 +60,16 @@ interface Milestone {
   completed_tasks: number;
 }
 
+/** A person on the transaction, shown in the hero "Parties" panel. */
+interface Party {
+  lead_id: string;
+  first_name: string;
+  last_name: string;
+  // "primary" for the primary applicant; the co-person's role
+  // ("purchaser" | "seller" | "applicant") otherwise.
+  role: string;
+}
+
 interface PropertyData {
   lead_id: string;
   deal_id: string | null;
@@ -80,6 +91,8 @@ interface PropertyData {
   // deal (party to only that one side). null for a primary client (sees both).
   // Computed authoritatively by /api/dashboardproperty.
   recipient_side: "purchase" | "sale" | null;
+  // Everyone on this transaction (primary + co-persons).
+  parties?: Party[];
 }
 
 interface DealData {
@@ -112,6 +125,20 @@ function formatDateOnly(
   const [y, m, d] = value.slice(0, 10).split("-").map(Number);
   if (!y || !m || !d) return fallback;
   return new Date(y, m - 1, d).toLocaleDateString("en-CA", options);
+}
+
+/* ─────────────────────────────────────────────
+   PARTY HELPERS
+───────────────────────────────────────────── */
+function partyFullName(p: Party): string {
+  return [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || "Applicant";
+}
+
+function partyRoleLabel(role: string): string {
+  if (role === "primary") return "Primary";
+  if (role === "purchaser") return "Co-Purchaser";
+  if (role === "seller") return "Co-Seller";
+  return "Co-Applicant";
 }
 
 /* ─────────────────────────────────────────────
@@ -894,6 +921,18 @@ export default function DashboardPage() {
     year: "numeric",
   });
 
+  // Parties for the active property. On a Purchase & Sale deal each side has its
+  // own parties — the primary is on both; co-persons show only on their side
+  // (co-purchasers on Purchase, co-sellers on Sale). Single-type deals show all.
+  const allParties = activeProperty?.parties ?? [];
+  const visibleParties = isBothDeal
+    ? allParties.filter(
+        (p) =>
+          p.role === "primary" ||
+          p.role === (selectedSide === "purchase" ? "purchaser" : "seller")
+      )
+    : allParties;
+
   // ── Effective drawer inputs ──────────────────────────────
   // The drawer targets whichever person is selected in its on-behalf dropdown.
   // With no dropdown (behalfTargets empty) it falls back to the primary's own
@@ -1042,7 +1081,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Info chips row */}
-        <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 border-t border-gray-100">
           <div className="flex items-center gap-3 px-5 sm:px-6 py-4">
             <div className="w-9 h-9 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
               <Calendar size={15} className="text-[#C10007]" strokeWidth={2} />
@@ -1068,6 +1107,46 @@ export default function DashboardPage() {
               <p className="text-sm font-bold text-gray-900">
                 {propertyLoading ? "..." : (activeDeal?.file_number ?? "Pending")}
               </p>
+            </div>
+          </div>
+
+          {/* Parties — primary + co-persons on this transaction */}
+          <div className="flex items-start gap-3 px-5 sm:px-6 py-4">
+            <div className="w-9 h-9 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+              <Users size={15} className="text-[#C10007]" strokeWidth={2} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1.5">
+                Parties
+              </p>
+              {propertyLoading ? (
+                <p className="text-sm text-gray-400">...</p>
+              ) : visibleParties.length === 0 ? (
+                <p className="text-sm text-gray-400">—</p>
+              ) : (
+                <div className="space-y-1">
+                  {visibleParties.map((p) => {
+                    const isPrimary = p.role === "primary";
+                    return (
+                      <div key={p.lead_id} className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-gray-900 leading-tight">
+                          {partyFullName(p)}
+                        </span>
+                        <span
+                          className={[
+                            "inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                            isPrimary
+                              ? "bg-[#FEF2F2] text-[#C10007]"
+                              : "bg-gray-100 text-gray-500",
+                          ].join(" ")}
+                        >
+                          {partyRoleLabel(p.role)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
