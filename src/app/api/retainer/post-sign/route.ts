@@ -76,23 +76,36 @@ export async function POST(req: Request) {
     }
 
     // "later" — email the signer the activation link so they can activate from
-    // their inbox whenever they're ready (the ONLY branch that sends an email),
-    // and record the deferred choice with the admin app (best-effort).
-    try {
-      await fetch(`${adminBase}/api/webhooks/retainer-signed`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, choice: "later" }),
-      });
-    } catch {
-      // best-effort — admin bookkeeping must never block the email
-    }
-
+    // their inbox whenever they're ready (the ONLY branch that sends an email).
+    // The email is the important part, so we send it FIRST: the admin bookkeeping
+    // below is best-effort and must never block or delay it. (Previously the admin
+    // webhook was awaited first, so a slow/unreachable admin app could time out
+    // the whole request before the email was ever sent → "no email arrived".)
     const emailResult = await sendInviteEmail(leadId, redirectTo);
     if (!emailResult.success) {
       console.error("[Retainer post-sign] later email error:", emailResult.error);
     }
-    return NextResponse.json({ success: true, email_sent: emailResult.success });
+
+    // Record the deferred choice with the admin app — best-effort and time-boxed
+    // so a hanging admin endpoint can never stall the response.
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      await fetch(`${adminBase}/api/webhooks/retainer-signed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, choice: "later" }),
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+    } catch {
+      // best-effort — admin bookkeeping must never block the email
+    }
+
+    return NextResponse.json({
+      success: true,
+      email_sent: emailResult.success,
+      ...(emailResult.success ? {} : { error: emailResult.error }),
+    });
   } catch (err) {
     console.error("[Retainer post-sign] error:", err);
     return NextResponse.json(

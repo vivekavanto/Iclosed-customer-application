@@ -543,11 +543,20 @@ export default function RetainerPage() {
   const handleLater = async () => {
     if (token) {
       try {
-        await fetch("/api/retainer/post-sign", {
+        const res = await fetch("/api/retainer/post-sign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token, choice: "later" }),
         });
+        const data = await res.json().catch(() => ({}));
+        if (!data?.email_sent) {
+          // The signature is already saved, so we don't block the user — but log
+          // the failure so a non-arriving activation email is diagnosable.
+          console.error(
+            "[Retainer] activation email not sent:",
+            data?.error ?? "unknown error"
+          );
+        }
       } catch {
         // non-blocking — the signature is already saved
       }
