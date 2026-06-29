@@ -15,10 +15,10 @@ export interface SendInviteEmailResult {
 
 /**
  * Generates a Supabase auth link (invite for new users, recovery for existing
- * users) and emails it via Resend using the admin-managed "invite user"
- * template from the email_templates table. Replaces Supabase Auth's built-in
- * invite email so the body, subject, and styling stay editable from the admin
- * dashboard like every other email.
+ * users) and emails it via Resend using the admin-managed email templates:
+ * "Activate your iClosed account" for new users, "Log into iClosed" for existing
+ * ones. Replaces Supabase Auth's built-in invite email so the body, subject, and
+ * styling stay editable from the admin dashboard like every other email.
  *
  * The {{ confirmation_url }} placeholder in the template body is replaced
  * with the secure one-time link that Supabase generates per call.
@@ -112,7 +112,7 @@ export async function sendInviteEmail(
     const leadType = formatLeadTypeLabelForRecipient(lead);
 
     // Existing users get the "Log into iClosed" template (login + reset links);
-    // first-time users get the "invite user" template (set-password link). The
+    // first-time users get the "Activate your iClosed account" template. The
     // login button points at the portal /login page, derived from redirectTo so
     // we don't re-read the env here. The reset link is the one-time recovery
     // action link generated above.
@@ -152,16 +152,19 @@ export async function sendInviteEmail(
           lead.email,
         );
       }
-      template = await fetchTemplate("invite user%");
+      // The first-time invite/activation email. The admin-managed row is named
+      // "Activate your iClosed account" (contains-match tolerates stray leading/
+      // trailing spaces in the admin-entered name) and uses {{ confirmation_url }}.
+      template = await fetchTemplate("%Activate your iClosed account%");
       if (!template?.body) {
         return {
           success: false,
           authUserId,
           error:
-            "Invite email template not found in email_templates (name like 'invite user%', is_active=true)",
+            "Activation email template not found in email_templates (name like '%Activate your iClosed account%', is_active=true)",
         };
       }
-      fallbackSubject = "You have been invited to iClosed";
+      fallbackSubject = "Activate your iClosed account";
       variables = {
         ...baseVariables,
         "confirmation_url": actionLink ?? "",
