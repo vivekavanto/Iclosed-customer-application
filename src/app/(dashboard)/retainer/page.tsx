@@ -2,7 +2,7 @@
 
 import { useState, useEffect, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, MapPin, Tag, Shield, ArrowRight } from "lucide-react";
+import { FileText, MapPin, Tag, Shield, ArrowRight, User } from "lucide-react";
 import FAQAccordion, { FAQItem } from "@/components/retainer/FAQAccordion";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -186,6 +186,53 @@ function ResultPopup({
   );
 }
 
+/**
+ * "Set up your iClosed account" popup — shown to NEW (account-free) clients after
+ * they choose "Me" or "Both", offering immediate account creation or a later
+ * emailed link. Same modal shell as ResultPopup but with the red person icon
+ * instead of the green success check.
+ */
+function AccountSetupPopup({
+  activating,
+  onCreate,
+  onLater,
+}: {
+  activating: boolean;
+  onCreate: () => void;
+  onLater: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Set up your iClosed account"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
+        <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-red-50 flex items-center justify-center">
+          <User className="w-8 h-8 text-[#C10007]" />
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
+          Set up your iClosed account
+        </h1>
+        <p className="text-sm text-gray-500 mb-7 leading-relaxed">
+          Your iClosed account is where you&apos;ll securely upload your ID and
+          documents. You can do this now, or we&apos;ll email you a link for you to
+          do it later.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Button size="md" onClick={onCreate} loading={activating}>
+            Create account now
+          </Button>
+          <Button size="md" variant="secondary" onClick={onLater} disabled={activating}>
+            I&apos;ll do this later
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function validate(name: string, date: string, signature: string): FormErrors {
   const errors: FormErrors = {};
 
@@ -230,13 +277,16 @@ export default function RetainerPage() {
   const [coAuthAcknowledged, setCoAuthAcknowledged] = useState(false);
   // Post-sign "Want to help with your co-purchaser(s) paperwork?" popup.
   // `showCoPersonPrompt` is set from the sign response — true only when the
-  // signer is a primary applicant who has at least one co-person. `coPersonChoice`
-  // captures their Yes/No answer (persisted via /api/retainer/submit-on-behalf).
+  // signer is a primary applicant who has at least one co-person. `uploadMode`
+  // captures their answer (persisted via /api/retainer/submit-on-behalf).
   const [showCoPersonPrompt, setShowCoPersonPrompt] = useState(false);
-  // `coPersonChoice` captures the resolved answer: true = "Me" (primary uploads),
-  // false = "My co-purchaser" (a co-person uploads). Drives the "You're all set"
-  // copy and whether the account-activation step is offered.
-  const [coPersonChoice, setCoPersonChoice] = useState<boolean | null>(null);
+  // `uploadMode` captures the resolved answer:
+  //   "me"   → the primary uploads on everyone's behalf
+  //   "co"   → a co-person uploads on the primary's behalf
+  //   "both" → the primary and the co-person each upload their own documents
+  // Drives the "You're all set" copy and whether the account-activation step is
+  // offered ("me"/"both" need an account for the primary; "co" is terminal).
+  const [uploadMode, setUploadMode] = useState<"me" | "co" | "both" | null>(null);
   const [savingChoice, setSavingChoice] = useState(false);
   // The primary's own lead id ("Me" uploader) and the co-persons the primary may
   // hand uploads to — both come from the sign/check response.
@@ -402,12 +452,16 @@ export default function RetainerPage() {
 
   // ── Post-sign "who will be uploading your documents?" choice ──
   // Records the designated uploader on leads.submit_on_behalf (TRUE on whichever
-  // family member uploads), then advances to "You're all set" (which, on the "Me"
-  // branch, offers account creation for token signers). Persistence is
-  // best-effort: the signature is already durable, so a failed write never blocks.
-  //   isMe true  → uploader is the primary  → coPersonChoice = true
-  //   isMe false → uploader is a co-person  → coPersonChoice = false
-  const handleUploaderChoice = async (uploaderLeadId: string | null, isMe: boolean) => {
+  // family member uploads), then advances to "You're all set" (which, on the
+  // "me"/"both" branches, offers account creation for token signers). Persistence
+  // is best-effort: the signature is already durable, so a failed write never blocks.
+  //   "me"   → uploader is the primary (uploads for everyone)
+  //   "co"   → uploader is a co-person (uploads on the primary's behalf)
+  //   "both" → each uploads their own; record the primary as their own uploader
+  const handleUploaderChoice = async (
+    uploaderLeadId: string | null,
+    mode: "me" | "co" | "both"
+  ) => {
     if (!uploaderLeadId) return;
     setSavingChoice(true);
     try {
@@ -421,10 +475,12 @@ export default function RetainerPage() {
     } finally {
       setShowCoPicker(false);
       setShowCoConsent(false);
-      setCoPersonChoice(isMe);
+      setUploadMode(mode);
       setSavingChoice(false);
       // Logged-in signer has no account-creation step → head to the dashboard.
-      if (!token) {
+      // The "co" outcome is terminal with an explicit "Done" button, so it
+      // doesn't auto-redirect — the user dismisses it themselves.
+      if (!token && mode !== "co") {
         setTimeout(() => {
           router.push("/dashboard");
           router.refresh();
@@ -435,7 +491,13 @@ export default function RetainerPage() {
 
   // "Me" → the primary is the uploader.
   const handleChooseMe = () => {
-    void handleUploaderChoice(primaryLeadId, true);
+    void handleUploaderChoice(primaryLeadId, "me");
+  };
+
+  // "Both" → the primary and the co-person each upload their own documents.
+  // No delegation: record the primary as their own uploader and skip consent.
+  const handleChooseBoth = () => {
+    void handleUploaderChoice(primaryLeadId, "both");
   };
 
   // "My co-purchaser" → one co-person uploads. With a single co-person, go
@@ -557,7 +619,7 @@ export default function RetainerPage() {
     // documents?". The answer records the designated uploader on
     // leads.submit_on_behalf. Three sub-screens: the choice, an optional
     // "which co-person?" picker (>1 co-person), and the delegation consent.
-    if (showCoPersonPrompt && coPersonChoice === null) {
+    if (showCoPersonPrompt && uploadMode === null) {
       const coNoun = getCoPersonNoun(leadType, side);
       const coLabel = getCoPersonLabel(leadType, side).toLowerCase();
 
@@ -570,25 +632,31 @@ export default function RetainerPage() {
             aria-modal="true"
             aria-label="Confirm upload permission"
           >
-            <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3">
-                Confirm permission
+            <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-left">
+              <div className="w-12 h-12 mb-5 rounded-xl bg-red-50 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-[#C10007]" />
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">
+                Confirm upload permission
               </h1>
               <p className="text-sm text-gray-600 mb-7 leading-relaxed">
                 By selecting this option, you are giving your {coNoun} permission
                 to upload documents and personal information on your behalf.
               </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <div className="flex flex-col gap-3">
                 <Button
                   size="md"
-                  onClick={() => handleUploaderChoice(chosenUploaderLeadId, false)}
+                  fullWidth
+                  onClick={() => handleUploaderChoice(chosenUploaderLeadId, "co")}
                   loading={savingChoice}
                 >
                   I agree
                 </Button>
                 <Button
                   size="md"
-                  variant="secondary"
+                  variant="ghost"
+                  fullWidth
+                  className="border border-gray-200 text-gray-800"
                   onClick={() => {
                     setShowCoConsent(false);
                     if (coPersons.length > 1) setShowCoPicker(true);
@@ -681,43 +749,27 @@ export default function RetainerPage() {
           aria-modal="true"
           aria-label="Who will be uploading your documents?"
         >
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-xl w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 text-center mb-6">
-              Who will be uploading your documents?
-            </h1>
-            <div className="bg-gray-50 rounded-xl p-6 sm:p-8 text-left border border-gray-100">
-              <p className="text-sm font-semibold tracking-wide text-green-700 uppercase mb-4">
-                If you upload on their behalf
-              </p>
-              <ul className="space-y-3">
-                {[
-                  "Upload their ID",
-                  "Upload their verification documents",
-                  "Submit their contact information",
-                ].map((item) => (
-                  <li key={item} className="flex items-start gap-2.5 text-gray-800">
-                    <span className="text-green-600 font-bold leading-6">&#10003;</span>
-                    <span className="leading-6">{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="border-t border-gray-200 mt-5 pt-4">
-                <p className="text-sm text-gray-400">
-                  They&apos;ll still sign their own retainer.
-                </p>
-              </div>
+          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
+              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center mt-7">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Thank you for signing the retainer.
+            </h1>
+            <p className="text-sm text-gray-500 mb-6">
+              One more thing &mdash; who will be uploading your documents?
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button size="md" onClick={handleChooseMe} loading={savingChoice}>
                 Me
               </Button>
-              <Button
-                size="md"
-                variant="secondary"
-                onClick={handleChooseCoPurchaser}
-                disabled={savingChoice}
-              >
+              <Button size="md" onClick={handleChooseCoPurchaser} disabled={savingChoice}>
                 My {coLabel}
+              </Button>
+              <Button size="md" onClick={handleChooseBoth} disabled={savingChoice}>
+                Both
               </Button>
             </div>
           </div>
@@ -729,53 +781,54 @@ export default function RetainerPage() {
     if (token && postSignChoice === null) {
       // After the co-person choice the copy becomes the "You're all set" screen
       // (screens 2 & 3) — heading + choice-specific line + account-creation CTA.
-      if (coPersonChoice !== null) {
+      if (uploadMode !== null) {
         const coNoun = getCoPersonNoun(leadType, side);
-        // "My co-purchaser" (coPersonChoice === false): the co-person uploads on
-        // the primary's behalf, so the primary has nothing more to do — a terminal
+        // "My co-purchaser" (uploadMode === "co"): the co-person uploads on the
+        // primary's behalf, so the primary has nothing more to do — a terminal
         // "You're all set" with no account-activation step.
-        if (!coPersonChoice) {
+        if (uploadMode === "co") {
+          return (
+            <ResultPopup plain={postSignDismissed}>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                You&apos;re all set
+              </h1>
+              <p className="text-sm text-gray-500">
+                Your {coNoun} can now upload your documents and personal
+                information on your behalf. We&apos;ll notify you once everything
+                has been submitted.
+              </p>
+              {!postSignDismissed && (
+                <div className="mt-6 flex justify-center">
+                  <Button size="md" onClick={() => setPostSignDismissed(true)}>
+                    Done
+                  </Button>
+                </div>
+              )}
+            </ResultPopup>
+          );
+        }
+        // "Me"/"Both": the primary uploads (at least their own). Existing clients
+        // just log in; NEW clients see the "Set up your iClosed account" prompt.
+        if (accountExists) {
           return (
             <ResultPopup>
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
                 You&apos;re all set
               </h1>
               <p className="text-sm text-gray-500">
-                Your {coNoun} will upload your documents and ID along with their own.
+                {uploadMode === "both"
+                  ? `You and your ${coNoun} will each upload your own documents and ID. Log in to your account to upload yours.`
+                  : `You can now upload documents and ID for your ${coNoun}. Log in to your account to get started.`}
               </p>
             </ResultPopup>
           );
         }
-        // "Me" (coPersonChoice === true): the primary uploads, so they need an
-        // account. Offer account creation to NEW clients; existing clients log in.
         return (
-          <ResultPopup>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              You&apos;re all set
-            </h1>
-            <p className="text-sm text-gray-500 mb-6">
-              You can now upload documents and ID for your {coNoun}.
-            </p>
-            {accountExists ? (
-              <p className="text-sm text-gray-500">
-                Log in to your account to upload your documents and ID.
-              </p>
-            ) : (
-              <>
-                <p className="text-sm font-semibold text-gray-900 mb-4">
-                  Would you like to continue to account creation now?
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                  <Button size="md" onClick={handleActivate} loading={activating}>
-                    Yes, continue
-                  </Button>
-                  <Button size="md" variant="secondary" onClick={handleLater} disabled={activating}>
-                    Not now
-                  </Button>
-                </div>
-              </>
-            )}
-          </ResultPopup>
+          <AccountSetupPopup
+            activating={activating}
+            onCreate={handleActivate}
+            onLater={handleLater}
+          />
         );
       }
       // Existing clients already have an account — no "Activate your account"
@@ -864,18 +917,45 @@ export default function RetainerPage() {
     // Logged-in signer (no token) — confirmation + auto-redirect. A primary who
     // just answered the co-person popup gets the choice-specific "You're all set"
     // copy; everyone else gets the standard "Agreement Submitted".
-    if (coPersonChoice !== null) {
+    // "My co-purchaser" (co) — terminal screen with an explicit "Done" button
+    // (no auto-redirect); Done sends the logged-in signer to the dashboard.
+    if (uploadMode === "co") {
       const coNoun = getCoPersonNoun(leadType, side);
       return (
         <ResultPopup>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
             You&apos;re all set
           </h1>
-          <p className="text-sm text-gray-500">
-            {coPersonChoice
-              ? `You can now upload documents and ID for your ${coNoun}.`
-              : `Your ${coNoun} will upload your documents and ID along with their own.`}
+          <p className="text-sm text-gray-500 mb-6">
+            Your {coNoun} can now upload your documents and personal information on
+            your behalf. We&apos;ll notify you once everything has been submitted.
           </p>
+          <div className="flex justify-center">
+            <Button
+              size="md"
+              onClick={() => {
+                router.push("/dashboard");
+                router.refresh();
+              }}
+            >
+              Done
+            </Button>
+          </div>
+        </ResultPopup>
+      );
+    }
+    if (uploadMode !== null) {
+      const coNoun = getCoPersonNoun(leadType, side);
+      const allSetCopy =
+        uploadMode === "me"
+          ? `You can now upload documents and ID for your ${coNoun}.`
+          : `You and your ${coNoun} will each upload your own documents and ID.`;
+      return (
+        <ResultPopup>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+            You&apos;re all set
+          </h1>
+          <p className="text-sm text-gray-500">{allSetCopy}</p>
         </ResultPopup>
       );
     }
