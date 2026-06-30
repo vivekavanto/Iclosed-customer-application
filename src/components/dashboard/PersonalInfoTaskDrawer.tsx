@@ -1548,7 +1548,7 @@ export default function PersonalInfoTaskDrawer({
           className={[
             "fixed inset-0 z-40 transition-opacity duration-300",
             isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
-            open
+            open && !showConfirmModal
               ? "opacity-100 pointer-events-auto"
               : "opacity-0 pointer-events-none",
           ].join(" ")}
@@ -1577,7 +1577,10 @@ export default function PersonalInfoTaskDrawer({
                 isLargeScreen
                   ? "transition-all duration-200 ease-out"
                   : "transition-transform duration-300 ease-in-out",
-              ].join(" ")
+                showConfirmModal ? "opacity-0 pointer-events-none" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")
         }
         role={embedded ? undefined : "dialog"}
         aria-modal={embedded ? undefined : true}

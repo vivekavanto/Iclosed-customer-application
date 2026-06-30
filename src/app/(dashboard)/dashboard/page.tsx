@@ -350,22 +350,34 @@ function AttentionCard({
     .map(([name, n]) => `${n} awaiting ${name}`)
     .join(" · ");
 
-  // Right-side status chip text for a per-party task ("Pending Sara", "Sara 0/2").
+  // Right-side status chip for a per-party task. Counts parties completed out of
+  // the total ("Pending 0/2"); once only one party is left, names them
+  // ("Pending Pavi 1/2").
   const partyChip = (t: Task): string | null => {
     const fs = familyStatus[t.id];
     if (!fs?.is_multi_party) return null;
     const pendingMembers = fs.members.filter((m) => !m.completed);
-    const m = pendingMembers.find((x) => !x.is_self) ?? pendingMembers[0];
-    if (!m) return null;
-    if (fs.is_id_task) return `${m.first_name} ${m.doc_count ?? 0}/${m.doc_total ?? 2}`;
-    return `Pending ${m.first_name}`;
+    if (pendingMembers.length === 0) return null;
+    const name = pendingMembers.length === 1 ? pendingMembers[0].first_name : null;
+    return `Pending ${name ? `${name} ` : ""}${fs.completed_count}/${fs.total_count}`;
   };
 
-  // Subtitle under a per-party task title.
+  // Subtitle under a per-party task title. While nobody has completed it reads as a
+  // shared task ("Required from both parties"); once someone finishes, it names the
+  // party still pending ("Required from Pavi").
   const partySubtitle = (t: Task): string | null => {
     const fs = familyStatus[t.id];
     if (!fs?.is_multi_party) return null;
-    return fs.total_count === 2 ? "Required from both parties" : "Required from all parties";
+    if (fs.completed_count === 0) {
+      return fs.total_count === 2
+        ? "Required from both parties"
+        : "Required from all parties";
+    }
+    const pendingNames = fs.members
+      .filter((m) => !m.completed)
+      .map((m) => m.first_name);
+    if (pendingNames.length === 0) return null;
+    return `Required from ${pendingNames.join(", ")}`;
   };
 
   return (
@@ -503,10 +515,26 @@ function AttentionCard({
 function StatusTimeline({
   milestones,
   loading,
+  tasks,
+  familyStatus,
 }: {
   milestones: Milestone[];
   loading: boolean;
+  tasks: Task[];
+  familyStatus: Record<string, FamilyTaskStatusSummary>;
 }) {
+  // Per-party completion count ("0/2", "1/2") for a milestone that holds a
+  // multi-party task (Personal Information / Upload Identification), mirroring
+  // the task badge in the attention list.
+  const partyCount = (m: Milestone): string | null => {
+    const task = tasks.find(
+      (t) => t.milestone_id === m.id && familyStatus[t.id]?.is_multi_party
+    );
+    if (!task) return null;
+    const fs = familyStatus[task.id];
+    return `${fs.completed_count}/${fs.total_count}`;
+  };
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -610,6 +638,7 @@ function StatusTimeline({
             const isInProgress = milestone.status === "In Progress";
             const hasDescription = milestone.description;
             const isLast = idx === filtered.length - 1;
+            const count = partyCount(milestone);
             const formattedDate = formatDateOnly(
               milestone.milestone_date,
               { month: "short", day: "numeric", year: "numeric" },
@@ -656,6 +685,13 @@ function StatusTimeline({
                     <div className="flex items-center gap-2 mt-0.5">
                       {formattedDate && (
                         <p className="text-xs text-gray-400">{formattedDate}</p>
+                      )}
+                      {count && (
+                        <span
+                          className={`inline-flex items-center text-xs font-semibold tabular-nums ${isCompleted ? "text-gray-400" : "text-[#C10007]"}`}
+                        >
+                          {count}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1335,7 +1371,12 @@ export default function DashboardPage() {
 
         {/* ── Right: Status Overview + Need Assistance stacked (1/4) ── */}
         <div className="lg:col-span-5 flex flex-col gap-5">
-          <StatusTimeline milestones={visibleMilestones} loading={milestonesLoading} />
+          <StatusTimeline
+            milestones={visibleMilestones}
+            loading={milestonesLoading}
+            tasks={visibleTasks}
+            familyStatus={familyStatus}
+          />
 
           {/* ── Need Assistance ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">

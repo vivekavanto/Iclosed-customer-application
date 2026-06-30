@@ -14,14 +14,6 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const task_id = searchParams.get("task_id");
-    // When the primary is submitting this task on a co-person's behalf, the
-    // lead's intake data (notably the address, which is the transaction/property
-    // address — not the co-person's personal home address) must NOT pre-fill the
-    // form. The co-person has no personal info of their own yet, so the form
-    // should start blank for the primary to enter it. Their genuinely-saved
-    // responses (step 4) still load.
-    const onBehalf =
-      searchParams.get("on_behalf") === "1" || searchParams.get("on_behalf") === "true";
 
     if (!task_id) {
       return NextResponse.json({ success: false, error: "task_id is required" }, { status: 400 });
@@ -99,60 +91,45 @@ export async function GET(req: Request) {
 
     let finalResponses = existingResponses ?? [];
 
-    // 5. Pre-fill from lead context if the fields haven't been answered yet.
+    // 5. Pre-fill ONLY the person's identity (name + email) from their own lead.
+    //
+    // Personal information — phone, street address, city, postal code, marital
+    // status, citizenship, occupation, employer phone — must NEVER be pre-filled
+    // from the lead. The lead's `address_*` fields are the PROPERTY/transaction
+    // address (captured at intake), not the person's home address, and the rest
+    // of intake data is not their saved personal info. Those fields autofill
+    // ONLY from the `clients` table (handled client-side in the drawer via
+    // /api/client-personal-info), so a first-time user with no saved client data
+    // correctly starts with blank personal-info fields.
     if (task.deal_id && fields) {
       const { data: deal } = await supabaseAdmin
         .from("deals")
-        .select("lead_id, property_address")
+        .select("lead_id")
         .eq("id", task.deal_id)
         .single();
 
       if (deal?.lead_id) {
         const { data: lead } = await supabaseAdmin
           .from("leads")
-          .select("*")
+          .select("first_name, last_name, email")
           .eq("id", deal.lead_id)
           .single();
 
         if (lead) {
           const prefillMapping: Record<string, string | null | undefined> = {
-            "Phone Number": lead.phone,
-            "Street Address": lead.address_street || deal.property_address,
-            "City": lead.address_city,
-            "Postal Code": lead.address_postal_code,
-            "Marital Status": lead.marital_status,
-            "Occupation": lead.occupation,
-            "Citizenship Status": lead.citizenship_status,
-            "Business/Employer Phone (Optional)": lead.employer_phone,
             "First Name": lead.first_name,
             "Last Name": lead.last_name,
-            "Email": lead.email
+            "Email": lead.email,
           };
 
-          // On-behalf: the co-person's intake address is the transaction/property
-          // address (shared from intake), NOT their personal home address — so
-          // don't pre-fill it. Their name/email/phone are genuinely theirs and
-          // stay. The primary enters the co-person's real personal address.
-          const ON_BEHALF_SKIP_LABELS = new Set([
-            "street address",
-            "city",
-            "postal code",
-          ]);
-
           fields.forEach((field) => {
-            if (
-              onBehalf &&
-              ON_BEHALF_SKIP_LABELS.has(field.label.trim().toLowerCase())
-            ) {
-              return;
-            }
-            // Check if this field is already answered in existingResponses
+            // Skip fields that already have a saved response.
             const hasAnswer = finalResponses.some(r => r.field_id === field.id);
             if (!hasAnswer) {
               const labelMatched = Object.keys(prefillMapping).find(
                 key => field.label.trim().toLowerCase() === key.toLowerCase()
               );
-              
+
               if (labelMatched && prefillMapping[labelMatched]) {
                 finalResponses.push({
                   field_id: field.id,
