@@ -36,6 +36,14 @@ interface UploadIdentificationDrawerProps {
   selectedBehalfLeadId?: string | null;
   onSelectBehalf?: (leadId: string) => void;
   onSaved?: () => void;
+  // Embedded (section) mode: rendered as one party's accordion inside
+  // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown and
+  // does NOT auto-close the surrounding modal — it relies on onSaved to let the
+  // shell refresh per-party progress.
+  embedded?: boolean;
+  clientFirstName?: string | null;
+  clientLastName?: string | null;
+  onBehalf?: boolean;
 }
 
 // ── Camera slot model (used only by the guided camera flow) ───────────────────
@@ -479,6 +487,7 @@ export default function UploadIdentificationDrawer({
   selectedBehalfLeadId,
   onSelectBehalf,
   onSaved,
+  embedded = false,
 }: UploadIdentificationDrawerProps) {
   const isLargeScreen = useIsLargeScreen();
   // Manual upload state
@@ -685,22 +694,24 @@ export default function UploadIdentificationDrawer({
     };
   }, [open, leadId]);
 
-  // Close on Escape
+  // Close on Escape — the shell owns this in embedded mode.
   useEffect(() => {
+    if (embedded) return;
     const handle = (e: KeyboardEvent) => {
       if (e.key === "Escape" && open) handleClose();
     };
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
-  }, [open, handleClose]);
+  }, [open, handleClose, embedded]);
 
-  // Lock body scroll
+  // Lock body scroll — the shell owns this in embedded mode.
   useEffect(() => {
+    if (embedded) return;
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [open]);
+  }, [open, embedded]);
 
   // Cleanup object URLs on unmount
   useEffect(() => {
@@ -1353,9 +1364,10 @@ export default function UploadIdentificationDrawer({
       return;
     }
 
-    // Nothing in the picker → nothing to save. Just close gracefully.
+    // Nothing in the picker → nothing to save. Just close gracefully — but in
+    // embedded mode never close the surrounding multi-party modal.
     if (selected.length === 0) {
-      handleClose();
+      if (!embedded) handleClose();
       return;
     }
 
@@ -1413,7 +1425,12 @@ export default function UploadIdentificationDrawer({
       }
 
       setDraftSaved(true);
-      setTimeout(() => handleClose(), 1500);
+      if (embedded) {
+        // Embedded: keep the shell open and let it refresh per-party progress.
+        onSaved?.();
+      } else {
+        setTimeout(() => handleClose(), 1500);
+      }
     } catch (err: unknown) {
       setGlobalError(
         err instanceof Error ? err.message : "Failed to save draft.",
@@ -1601,40 +1618,47 @@ export default function UploadIdentificationDrawer({
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className={[
-          "fixed inset-0 z-40 transition-opacity duration-300",
-          isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
-          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
-        ].join(" ")}
-        onClick={handleClose}
-        aria-hidden="true"
-      />
+      {/* Backdrop — owned by the shell in embedded mode */}
+      {!embedded && (
+        <div
+          className={[
+            "fixed inset-0 z-40 transition-opacity duration-300",
+            isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
+            open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+          ].join(" ")}
+          onClick={handleClose}
+          aria-hidden="true"
+        />
+      )}
 
-      {/* Modal (large screens) / Drawer (mobile) */}
+      {/* Modal (large screens) / Drawer (mobile) — embedded: a plain section */}
       <div
-        className={[
-          "fixed z-50 bg-white shadow-2xl flex flex-col",
-          isLargeScreen
-            ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
-            : "top-0 right-0 h-full w-full max-w-[540px]",
-          isLargeScreen
-            ? open
-              ? "opacity-100 scale-100"
-              : "opacity-0 scale-95 pointer-events-none"
-            : open
-              ? "translate-x-0"
-              : "translate-x-full",
-          isLargeScreen
-            ? "transition-all duration-200 ease-out"
-            : "transition-transform duration-300 ease-in-out",
-        ].join(" ")}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Upload Identification Documents"
+        className={
+          embedded
+            ? "bg-white flex flex-col"
+            : [
+                "fixed z-50 bg-white shadow-2xl flex flex-col",
+                isLargeScreen
+                  ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+                  : "top-0 right-0 h-full w-full max-w-[540px]",
+                isLargeScreen
+                  ? open
+                    ? "opacity-100 scale-100"
+                    : "opacity-0 scale-95 pointer-events-none"
+                  : open
+                    ? "translate-x-0"
+                    : "translate-x-full",
+                isLargeScreen
+                  ? "transition-all duration-200 ease-out"
+                  : "transition-transform duration-300 ease-in-out",
+              ].join(" ")
+        }
+        role={embedded ? undefined : "dialog"}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : "Upload Identification Documents"}
       >
-        {/* Header */}
+        {/* Header — hidden in embedded mode (the shell renders the title) */}
+        {!embedded && (
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
@@ -1652,16 +1676,26 @@ export default function UploadIdentificationDrawer({
             <X className="h-5 w-5" />
           </button>
         </div>
+        )}
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-          {/* Submit-on-behalf person picker (hidden unless >1 target) */}
-          <OnBehalfSelector
-            label="Uploading identification for"
-            targets={behalfTargets ?? []}
-            selectedLeadId={selectedBehalfLeadId ?? null}
-            onChange={(id) => onSelectBehalf?.(id)}
-          />
+        <div
+          className={
+            embedded
+              ? "px-4 py-4 space-y-6"
+              : "flex-1 overflow-y-auto px-6 py-5 space-y-6"
+          }
+        >
+          {/* Submit-on-behalf person picker (hidden in embedded mode — the shell
+              owns party selection via accordions). */}
+          {!embedded && (
+            <OnBehalfSelector
+              label="Uploading identification for"
+              targets={behalfTargets ?? []}
+              selectedLeadId={selectedBehalfLeadId ?? null}
+              onChange={(id) => onSelectBehalf?.(id)}
+            />
+          )}
 
           {/* Acceptable Documents Section - Always visible */}
           <AcceptableDocumentsSection />

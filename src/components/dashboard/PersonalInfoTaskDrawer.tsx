@@ -80,6 +80,12 @@ interface PersonalInfoTaskDrawerProps {
   selectedBehalfLeadId?: string | null;
   onSelectBehalf?: (leadId: string) => void;
   onTaskCompleted?: (taskId: string) => void;
+  // Embedded (section) mode: rendered as one party's accordion inside
+  // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown, keeps
+  // the form body + footer, and does NOT auto-close the surrounding modal on
+  // submit — it notifies the shell via onSectionSaved instead.
+  embedded?: boolean;
+  onSectionSaved?: (taskId: string) => void;
 }
 
 /* ─────────────────────────────────────────────
@@ -685,6 +691,8 @@ export default function PersonalInfoTaskDrawer({
   selectedBehalfLeadId,
   onSelectBehalf,
   onTaskCompleted,
+  embedded = false,
+  onSectionSaved,
 }: PersonalInfoTaskDrawerProps) {
   const isLargeScreen = useIsLargeScreen();
   const [fields, setFields] = useState<FormField[]>([]);
@@ -889,20 +897,24 @@ export default function PersonalInfoTaskDrawer({
   }, [open, taskId, taskTitle, fields, onBehalf]);
 
   // ── Escape key & scroll lock ──
+  // Skipped in embedded mode — the surrounding MultiPartyTaskDrawer owns the
+  // modal chrome (Escape handling and body scroll lock) for all its sections.
   useEffect(() => {
+    if (embedded) return;
     const handle = (e: KeyboardEvent) => {
       if (e.key === "Escape" && open) handleClose();
     };
     document.addEventListener("keydown", handle);
     return () => document.removeEventListener("keydown", handle);
-  }, [open]);
+  }, [open, embedded]);
 
   useEffect(() => {
+    if (embedded) return;
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [open]);
+  }, [open, embedded]);
 
   function handleClose() {
     setSaved(false);
@@ -1221,8 +1233,14 @@ export default function PersonalInfoTaskDrawer({
       setSaved(true);
       onTaskCompleted?.(taskId);
 
-      // Auto-close after 1.5s
-      setTimeout(() => handleClose(), 1500);
+      if (embedded) {
+        // Embedded: don't close the surrounding multi-party modal — tell the
+        // shell so it can refresh per-party progress and collapse this section.
+        onSectionSaved?.(taskId);
+      } else {
+        // Auto-close after 1.5s
+        setTimeout(() => handleClose(), 1500);
+      }
       return true;
     } catch (err: unknown) {
       setGlobalError(err instanceof Error ? err.message : "An error occurred. Please try again.");
@@ -1524,42 +1542,49 @@ export default function PersonalInfoTaskDrawer({
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className={[
-          "fixed inset-0 z-40 transition-opacity duration-300",
-          isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
-          open
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none",
-        ].join(" ")}
-        onClick={handleClose}
-        aria-hidden="true"
-      />
+      {/* Backdrop — owned by the shell in embedded mode */}
+      {!embedded && (
+        <div
+          className={[
+            "fixed inset-0 z-40 transition-opacity duration-300",
+            isLargeScreen ? "bg-black/40 backdrop-blur-sm" : "bg-black/30",
+            open
+              ? "opacity-100 pointer-events-auto"
+              : "opacity-0 pointer-events-none",
+          ].join(" ")}
+          onClick={handleClose}
+          aria-hidden="true"
+        />
+      )}
 
-      {/* Modal (large screens) / Drawer (mobile) */}
+      {/* Modal (large screens) / Drawer (mobile) — embedded: a plain section */}
       <div
-        className={[
-          "fixed z-50 bg-white shadow-2xl flex flex-col",
-          isLargeScreen
-            ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
-            : "top-0 right-0 h-full w-full max-w-[520px]",
-          isLargeScreen
-            ? open
-              ? "opacity-100 scale-100"
-              : "opacity-0 scale-95 pointer-events-none"
-            : open
-              ? "translate-x-0"
-              : "translate-x-full",
-          isLargeScreen
-            ? "transition-all duration-200 ease-out"
-            : "transition-transform duration-300 ease-in-out",
-        ].join(" ")}
-        role="dialog"
-        aria-modal="true"
-        aria-label={taskTitle}
+        className={
+          embedded
+            ? "bg-white flex flex-col"
+            : [
+                "fixed z-50 bg-white shadow-2xl flex flex-col",
+                isLargeScreen
+                  ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+                  : "top-0 right-0 h-full w-full max-w-[520px]",
+                isLargeScreen
+                  ? open
+                    ? "opacity-100 scale-100"
+                    : "opacity-0 scale-95 pointer-events-none"
+                  : open
+                    ? "translate-x-0"
+                    : "translate-x-full",
+                isLargeScreen
+                  ? "transition-all duration-200 ease-out"
+                  : "transition-transform duration-300 ease-in-out",
+              ].join(" ")
+        }
+        role={embedded ? undefined : "dialog"}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : taskTitle}
       >
-        {/* Header */}
+        {/* Header — hidden in embedded mode (the shell renders the title) */}
+        {!embedded && (
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
@@ -1583,17 +1608,28 @@ export default function PersonalInfoTaskDrawer({
             <X className="h-5 w-5" />
           </button>
         </div>
+        )}
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+        <div
+          className={
+            embedded
+              ? "px-1 py-1 space-y-5"
+              : "flex-1 overflow-y-auto px-6 py-6 space-y-5"
+          }
+        >
 
-          {/* ── Submit-on-behalf person picker (hidden unless >1 target) ── */}
-          <OnBehalfSelector
-            label="Providing personal information for"
-            targets={behalfTargets ?? []}
-            selectedLeadId={selectedBehalfLeadId ?? null}
-            onChange={(id) => onSelectBehalf?.(id)}
-          />
+          {/* ── Submit-on-behalf person picker (hidden unless >1 target) ──
+              Embedded mode renders one party per accordion, so the shell owns
+              party selection and this dropdown is suppressed. */}
+          {!embedded && (
+            <OnBehalfSelector
+              label="Providing personal information for"
+              targets={behalfTargets ?? []}
+              selectedLeadId={selectedBehalfLeadId ?? null}
+              onChange={(id) => onSelectBehalf?.(id)}
+            />
+          )}
 
           {/* ── Home Insurance static sections ── */}
           {taskTitle.toLowerCase().includes("home insurance") && (

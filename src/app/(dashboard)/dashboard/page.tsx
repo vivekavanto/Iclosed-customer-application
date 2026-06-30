@@ -21,8 +21,27 @@ import {
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
+import MultiPartyTaskDrawer from "@/components/dashboard/MultiPartyTaskDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
+import { isPerPartyTask, isUploadIdTask } from "@/lib/taskKinds";
 import { useToast } from "@/components/ui/Toast";
+
+/** Per-party completion summary for a Personal Info / Upload ID task. */
+interface FamilyTaskStatusSummary {
+  is_multi_party: boolean;
+  is_id_task: boolean;
+  all_completed: boolean;
+  completed_count: number;
+  total_count: number;
+  members: Array<{
+    lead_id: string;
+    first_name: string;
+    is_self: boolean;
+    completed: boolean;
+    doc_count?: number;
+    doc_total?: number;
+  }>;
+}
 
 
 interface Task {
@@ -227,13 +246,24 @@ function AttentionCard({
   tasks,
   loading,
   onTaskClick,
+  familyStatus,
 }: {
   tasks: Task[];
   loading: boolean;
   onTaskClick: (task: Task) => void;
+  familyStatus: Record<string, FamilyTaskStatusSummary>;
 }) {
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   const prevPendingIdsRef = useRef<string>("");
+
+  // A per-party task (Personal Info / Upload ID) on a multi-party deal is only
+  // "done" once EVERY party's section is complete — not just the logged-in
+  // user's own copy. Fall back to the row's own flag for everything else.
+  const isTaskComplete = (t: Task): boolean => {
+    const fs = familyStatus[t.id];
+    if (fs?.is_multi_party) return fs.all_completed;
+    return t.completed;
+  };
 
   // Deduplicate tasks so no task title appears twice, and drop any tasks
   // that should never be surfaced to customers (e.g. "Schedule Appointment").
@@ -249,7 +279,7 @@ function AttentionCard({
   // Completed tasks naturally fall away because of the !completed filter.
   const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
   const allPending = uniqueTasks
-    .filter((t) => !t.completed)
+    .filter((t) => !isTaskComplete(t))
     .slice()
     .sort((a, b) => {
       const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
@@ -304,6 +334,40 @@ function AttentionCard({
   const allDone = !loading && uniqueTasks.length > 0 && allPending.length === 0;
   const isEmpty = !loading && uniqueTasks.length === 0;
 
+  // Header summary: how many pending sections each co-party still owes, e.g.
+  // "2 awaiting Sara" (Personal Info + Upload ID both awaiting Sara → 2).
+  const awaitingByName: Record<string, number> = {};
+  for (const t of allPending) {
+    const fs = familyStatus[t.id];
+    if (!fs?.is_multi_party) continue;
+    for (const m of fs.members) {
+      if (!m.is_self && !m.completed) {
+        awaitingByName[m.first_name] = (awaitingByName[m.first_name] ?? 0) + 1;
+      }
+    }
+  }
+  const awaitingSummary = Object.entries(awaitingByName)
+    .map(([name, n]) => `${n} awaiting ${name}`)
+    .join(" · ");
+
+  // Right-side status chip text for a per-party task ("Pending Sara", "Sara 0/2").
+  const partyChip = (t: Task): string | null => {
+    const fs = familyStatus[t.id];
+    if (!fs?.is_multi_party) return null;
+    const pendingMembers = fs.members.filter((m) => !m.completed);
+    const m = pendingMembers.find((x) => !x.is_self) ?? pendingMembers[0];
+    if (!m) return null;
+    if (fs.is_id_task) return `${m.first_name} ${m.doc_count ?? 0}/${m.doc_total ?? 2}`;
+    return `Pending ${m.first_name}`;
+  };
+
+  // Subtitle under a per-party task title.
+  const partySubtitle = (t: Task): string | null => {
+    const fs = familyStatus[t.id];
+    if (!fs?.is_multi_party) return null;
+    return fs.total_count === 2 ? "Required from both parties" : "Required from all parties";
+  };
+
   return (
     <div
       className={`rounded-2xl border overflow-hidden shadow-sm transition-all duration-300 ${allDone ? "bg-[#f0fdf4] border-[#bbf7d0]" : "bg-white border-gray-100"}`}
@@ -321,9 +385,17 @@ function AttentionCard({
             <AlertTriangle size={18} className="text-white" strokeWidth={2} />
           )}
         </div>
-        <h2 className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-[#7a0004]"}`}>
-          Needs Your Attention
-        </h2>
+        <div className="min-w-0">
+          <h2 className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-[#7a0004]"}`}>
+            Needs Your Attention
+          </h2>
+          {!allDone && !isEmpty && allPending.length > 0 && (
+            <p className="text-xs text-[#7a0004]/70 mt-0.5">
+              {allPending.length} {allPending.length === 1 ? "task" : "tasks"}
+              {awaitingSummary ? ` · ${awaitingSummary}` : ""}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Body */}
@@ -370,6 +442,8 @@ function AttentionCard({
               : null;
 
             const isNew = newTaskIds.has(task.id);
+            const chip = partyChip(task);
+            const subtitle = partySubtitle(task);
 
             return (
               <div
@@ -394,12 +468,21 @@ function AttentionCard({
                         </span>
                       )}
                     </div>
-                    {formattedDate && (
+                    {subtitle ? (
+                      <p className="text-xs sm:text-sm text-gray-400 mt-0.5">{subtitle}</p>
+                    ) : formattedDate ? (
                       <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
                         {`Due by ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ""}`}
                       </p>
-                    )}
+                    ) : null}
                   </div>
+                  {/* Per-party status chip */}
+                  {chip && (
+                    <span className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-[#C10007]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#C10007]" />
+                      {chip}
+                    </span>
+                  )}
                   {/* Arrow */}
                   <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FEF2F2] transition-colors">
                     <ChevronRight size={16} className="text-gray-400 group-hover:text-[#C10007]" strokeWidth={2} />
@@ -664,6 +747,18 @@ export default function DashboardPage() {
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
+  // ── Multi-party drawer (the unified accordion modal) ──────
+  // Used for Personal Info / Upload ID on deals with co-persons.
+  const [multiPartyDrawer, setMultiPartyDrawer] = useState<{
+    open: boolean;
+    kind: "personal-info" | "upload-id";
+    task: Task | null;
+  }>({ open: false, kind: "personal-info", task: null });
+
+  // Per-party completion summaries keyed by task id — drives the dashboard
+  // badges and the decision to open the multi-party modal.
+  const [familyStatus, setFamilyStatus] = useState<Record<string, FamilyTaskStatusSummary>>({});
+
   // ── Submit-on-behalf state ───────────────────────────────
   // The people the primary may submit the open task for (themselves + linked
   // co-persons), and which one is currently selected in the drawer dropdown.
@@ -703,12 +798,57 @@ export default function DashboardPage() {
     }
   }
 
+  // Fetch per-party completion summaries for every Personal Info / Upload ID task
+  // in the given list. Powers the dashboard badges and the open-the-shell choice.
+  async function loadFamilyStatus(taskList: Task[]) {
+    const perParty = taskList.filter((t) => isPerPartyTask(t.title));
+    if (perParty.length === 0) {
+      setFamilyStatus({});
+      return;
+    }
+    try {
+      const entries = await Promise.all(
+        perParty.map(async (t) => {
+          try {
+            const res = await fetch(
+              `/api/family-task-status?task_id=${encodeURIComponent(t.id)}`,
+              { cache: "no-store" },
+            );
+            if (!res.ok) return null;
+            const data = await res.json();
+            if (!data?.success) return null;
+            return [t.id, data as FamilyTaskStatusSummary] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      const map: Record<string, FamilyTaskStatusSummary> = {};
+      for (const e of entries) if (e) map[e[0]] = e[1];
+      setFamilyStatus(map);
+    } catch {
+      setFamilyStatus({});
+    }
+  }
+
   function handleTaskClick(task: Task) {
     setActiveTask(task);
     const title = task.title.toLowerCase();
     // Reset any prior on-behalf dropdown; (re)load it for the two supported tasks.
     setBehalfTargets([]);
     setSelectedBehalfLeadId(null);
+
+    // On a deal with co-persons, Personal Info / Upload ID open the unified
+    // multi-party accordion modal instead of the single-party drawer.
+    if (isPerPartyTask(task.title) && familyStatus[task.id]?.is_multi_party) {
+      setMultiPartyDrawer({
+        open: true,
+        kind: isUploadIdTask(task.title) ? "upload-id" : "personal-info",
+        task,
+      });
+      return;
+    }
+
     if (title.includes("upload identification")) {
       void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
@@ -792,6 +932,7 @@ export default function DashboardPage() {
           const d = await tasksRes.json();
           if (d.success) {
             setTasks(d.tasks);
+            void loadFamilyStatus(d.tasks as Task[]);
             // Land the user on the side that actually has content (e.g. the
             // Sale side where the admin pre-filled a co-seller's Personal
             // Information). Runs once per property; manual tab clicks afterward
@@ -835,10 +976,26 @@ export default function DashboardPage() {
           fetch(`/api/tasks?deal_id=${activeDealId}`),
         ]);
         if (msRes.ok) { const d = await msRes.json(); if (d.success) setMilestones(d.milestones); }
-        if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) setTasks(d.tasks); }
+        if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) { setTasks(d.tasks); void loadFamilyStatus(d.tasks as Task[]); } }
       }
     } catch {
       toastError(`Failed to complete "${taskTitle}". Please try again.`);
+    }
+  }
+
+  // Re-pull tasks, milestones and per-party status for the active deal. Used by
+  // the multi-party modal after a party submits their section.
+  async function refreshActiveDeal() {
+    if (!activeDealId) return;
+    try {
+      const [msRes, tasksRes] = await Promise.all([
+        fetch(`/api/milestones?deal_id=${activeDealId}`),
+        fetch(`/api/tasks?deal_id=${activeDealId}`),
+      ]);
+      if (msRes.ok) { const d = await msRes.json(); if (d.success) setMilestones(d.milestones); }
+      if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) { setTasks(d.tasks); void loadFamilyStatus(d.tasks as Task[]); } }
+    } catch {
+      /* non-fatal */
     }
   }
 
@@ -973,6 +1130,16 @@ export default function DashboardPage() {
           setDynamicDrawerOpen(false);
           markDone(id);
         }}
+      />
+
+      {/* ── Multi-party accordion modal (Personal Info / Upload ID with co-persons) ── */}
+      <MultiPartyTaskDrawer
+        open={multiPartyDrawer.open}
+        onClose={() => setMultiPartyDrawer((s) => ({ ...s, open: false }))}
+        taskTitle={multiPartyDrawer.task?.title ?? ""}
+        taskId={multiPartyDrawer.task?.id ?? null}
+        kind={multiPartyDrawer.kind}
+        onAnyCompleted={() => void refreshActiveDeal()}
       />
 
       {/* ── Personal Information Drawer (dedicated, standalone) ── */}
@@ -1162,6 +1329,7 @@ export default function DashboardPage() {
             tasks={visibleTasks}
             loading={tasksLoading}
             onTaskClick={handleTaskClick}
+            familyStatus={familyStatus}
           />
         </div>
 

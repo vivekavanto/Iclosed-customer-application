@@ -174,16 +174,28 @@ export async function POST(req: Request) {
     // Consent audit: when the uploader is a co-person ("My co-purchaser" → the
     // primary clicked "I agree"), record proof of the permission grant on the
     // primary lead. Picking "Me" is not a delegation, so clear any prior consent.
+    //
+    // upload_mode is persisted on the primary alongside the consent so downstream
+    // routes can tell "me" from "both" (both leave submit_on_behalf on the
+    // primary) — see sql/add_lead_upload_mode.sql. Fall back to deriving the mode
+    // from the uploader when the client didn't send one.
     const isDelegation = uploader_lead_id !== leadId;
+    const resolvedMode: "me" | "co" | "both" =
+      mode ?? (isDelegation ? "co" : "me");
     const { error: consentErr } = await supabaseAdmin
       .from("leads")
       .update(
         isDelegation
           ? {
+              upload_mode: resolvedMode,
               upload_consent_at: new Date().toISOString(),
               upload_consent_uploader_lead_id: uploader_lead_id,
             }
-          : { upload_consent_at: null, upload_consent_uploader_lead_id: null }
+          : {
+              upload_mode: resolvedMode,
+              upload_consent_at: null,
+              upload_consent_uploader_lead_id: null,
+            }
       )
       .eq("id", leadId);
 
