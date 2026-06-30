@@ -26,8 +26,17 @@ export async function convertSingleLead(params: {
   parentClientId?: string | null;
   closingDate?: string | null;
   fileNumber?: string | null;
+  /**
+   * Whether to send the account-activation (invite) email during conversion.
+   * Defaults to true (the primary applicant). Co-person leads pass false: their
+   * activation email is deferred until the PRIMARY answers the post-sign "who
+   * will upload your documents?" popup, which decides who gets invited (see
+   * /api/retainer/submit-on-behalf). The deal/client/tasks are still created
+   * either way — only the email is held back.
+   */
+  sendInvite?: boolean;
 }): Promise<ConvertLeadResult> {
-  const { lead, parentClientId, closingDate, fileNumber } = params;
+  const { lead, parentClientId, closingDate, fileNumber, sendInvite = true } = params;
 
   // ── 1. Create or find client ────────────────────────────────────────
   let clientId: string;
@@ -352,28 +361,36 @@ export async function convertSingleLead(params: {
   // via Resend using the admin-managed "invite user" template from the
   // email_templates table — see sendInviteEmail.ts. Supabase's built-in
   // invite email is not used (would bypass admin-controlled wording).
+  //
+  // Co-person leads are converted with sendInvite=false, so they are NOT
+  // emailed here. Their activation email is sent later, gated by the primary's
+  // post-sign "who will upload your documents?" choice (see submit-on-behalf):
+  // "Me" invites nobody, "My co-purchaser" invites the chosen co-person, "Both"
+  // invites every co-person. The primary is always invited at conversion.
   const customerPortalUrl = (process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ?? "https://iclosed-customer-application-rosy.vercel.app").replace(/\/+$/, "");
   let inviteSent = false;
   let authError: string | null = null;
 
-  try {
-    const inviteResult = await sendInviteEmail(
-      lead.id,
-      `${customerPortalUrl}/api/auth/callback?next=/set-password`,
-    );
+  if (sendInvite) {
+    try {
+      const inviteResult = await sendInviteEmail(
+        lead.id,
+        `${customerPortalUrl}/api/auth/callback?next=/set-password`,
+      );
 
-    if (inviteResult.authUserId) {
-      await supabaseAdmin
-        .from("clients")
-        .update({ auth_user_id: inviteResult.authUserId })
-        .eq("id", clientId);
+      if (inviteResult.authUserId) {
+        await supabaseAdmin
+          .from("clients")
+          .update({ auth_user_id: inviteResult.authUserId })
+          .eq("id", clientId);
+      }
+
+      inviteSent = inviteResult.success;
+      if (!inviteResult.success) authError = inviteResult.error;
+    } catch (err: any) {
+      authError = err.message || "Unknown auth error";
+      console.error(`[convertLead] Auth invite failed for ${lead.email}:`, err);
     }
-
-    inviteSent = inviteResult.success;
-    if (!inviteResult.success) authError = inviteResult.error;
-  } catch (err: any) {
-    authError = err.message || "Unknown auth error";
-    console.error(`[convertLead] Auth invite failed for ${lead.email}:`, err);
   }
 
   // ── 8. Mark lead as Converted ───────────────────────────────────────

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
+import { sendInviteEmail } from "@/lib/sendInviteEmail";
 
 /**
  * POST /api/retainer/submit-on-behalf
@@ -12,6 +13,7 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
  *   "Me"            → the primary uploads everyone's documents.
  *   "My co-purchaser" → the chosen co-purchaser/co-seller uploads the primary's
  *                       documents and their own.
+ *   "Both"          → the primary and the co-person(s) each upload their own.
  *
  * The answer is modelled with leads.submit_on_behalf: the flag is set to TRUE on
  * whichever family member is the designated uploader (the primary for "Me", the
@@ -19,19 +21,29 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
  * exactly one uploader per family. A "family" is the primary lead plus all leads
  * with parent_lead_id = primary.id. See sql/add_lead_submit_on_behalf.sql.
  *
+ * The choice ALSO decides which co-persons receive an account-activation email.
+ * Co-persons are not invited at conversion (see convertLead.ts) — they are
+ * invited here based on `mode`:
+ *   "me"   → no co-person is invited (the primary uploads for everyone).
+ *   "co"   → only the chosen co-person (the designated uploader) is invited.
+ *   "both" → every co-person is invited (each uploads their own documents).
+ * The primary always already has portal access (invited at conversion).
+ *
  * The caller is always the PRIMARY (the popup is primary-only), identified the
  * same two ways as /api/retainer/sign and /check:
  *   • token → account-free retainer link, maps to exactly one lead.
  *   • else  → the logged-in client.
  *
- * Body: { token?: string, uploader_lead_id: string }
+ * Body: { token?: string, uploader_lead_id: string, mode?: "me" | "co" | "both" }
  *   uploader_lead_id must be the primary lead or one of its co-person leads.
+ *   mode drives which co-persons are emailed an activation link (see above).
  */
 export async function POST(req: Request) {
   try {
-    const { token, uploader_lead_id } = (await req.json()) as {
+    const { token, uploader_lead_id, mode } = (await req.json()) as {
       token?: string;
       uploader_lead_id?: string;
+      mode?: "me" | "co" | "both";
     };
 
     if (!uploader_lead_id || typeof uploader_lead_id !== "string") {
@@ -180,6 +192,68 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { success: false, error: consentErr.message },
         { status: 500 }
+      );
+    }
+
+    // ── Co-person account-activation emails, gated by the primary's choice ──
+    // The primary already has portal access (invited at conversion). Co-persons
+    // were intentionally NOT invited then, so we send their activation email now
+    // based on who will upload documents:
+    //   "me"   → invite nobody else (the primary uploads for everyone).
+    //   "co"   → invite only the chosen co-person (the designated uploader).
+    //   "both" → invite every co-person (each uploads their own).
+    // Best-effort and non-blocking: the uploader choice is already persisted, so
+    // a failed/slow email must never fail the request.
+    const coPersonIds = familyIds.filter((id) => id !== leadId);
+    let inviteLeadIds: string[] = [];
+    if (mode === "both") {
+      inviteLeadIds = coPersonIds;
+    } else if (mode === "co") {
+      // Invite the selected uploader, but only when it's an actual co-person.
+      inviteLeadIds = uploader_lead_id !== leadId ? [uploader_lead_id] : [];
+    }
+
+    if (inviteLeadIds.length > 0) {
+      const portalBase = (
+        process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ??
+        "https://iclosed-customer-application-rosy.vercel.app"
+      ).replace(/\/+$/, "");
+      const redirectTo = `${portalBase}/api/auth/callback?next=/set-password`;
+
+      await Promise.all(
+        inviteLeadIds.map(async (coLeadId) => {
+          try {
+            const invite = await sendInviteEmail(coLeadId, redirectTo);
+            // Link the new auth user to the co-person's client so leadHasAccount
+            // (account_exists) reports true once they've been invited.
+            if (invite.authUserId) {
+              const { data: coLead } = await supabaseAdmin
+                .from("leads")
+                .select("client_id")
+                .eq("id", coLeadId)
+                .maybeSingle();
+              if (coLead?.client_id) {
+                await supabaseAdmin
+                  .from("clients")
+                  .update({ auth_user_id: invite.authUserId })
+                  .eq("id", coLead.client_id);
+              }
+            }
+            if (!invite.success) {
+              console.error(
+                "[Retainer submit-on-behalf] co-person invite failed for",
+                coLeadId,
+                invite.error
+              );
+            }
+          } catch (inviteErr) {
+            console.error(
+              "[Retainer submit-on-behalf] co-person invite error for",
+              coLeadId,
+              inviteErr
+            );
+          }
+        })
       );
     }
 

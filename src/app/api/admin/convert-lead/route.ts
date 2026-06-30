@@ -85,6 +85,10 @@ export async function POST(req: Request) {
               lead: coLead,
               parentClientId: result.client_id,
               closingDate: closing_date,
+              // Co-persons are NOT emailed at conversion. Their activation email
+              // is sent later, gated by the primary's post-sign upload-mode
+              // choice (Me / My co-purchaser / Both) — see submit-on-behalf.
+              sendInvite: false,
             });
 
             coResults.push({

@@ -468,7 +468,9 @@ export default function RetainerPage() {
       await fetch("/api/retainer/submit-on-behalf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uploader_lead_id: uploaderLeadId, ...(token ? { token } : {}) }),
+        // `mode` decides which co-persons receive an activation email:
+        //   "me"   → none, "co" → the chosen co-person, "both" → every co-person.
+        body: JSON.stringify({ uploader_lead_id: uploaderLeadId, mode, ...(token ? { token } : {}) }),
       });
     } catch {
       // non-blocking
