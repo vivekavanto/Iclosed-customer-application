@@ -857,6 +857,26 @@ export default function RetainerPage() {
           </ResultPopup>
         );
       }
+      // A co-person (co-purchaser/co-seller) with no account never sees the
+      // "Activate your account" popup. They reach here only when the primary
+      // chose "Me" — the primary uploads everything on their behalf, so the
+      // co-person has no account to set up and nothing more to do. (Co-persons
+      // who DO need their own account — "Both" / "My co-purchaser" — were invited
+      // by email and hit the `accountExists` branch above instead.)
+      if (isCoPerson) {
+        return (
+          <ResultPopup>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Retainer Signed
+            </h1>
+            <p className="text-sm text-gray-500">
+              Thank you for signing, {name.split(" ")[0] || "there"}. There&apos;s
+              nothing more you need to do — your co-applicant is handling the
+              document uploads, and our team will be in touch.
+            </p>
+          </ResultPopup>
+        );
+      }
       return (
         <ResultPopup>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
