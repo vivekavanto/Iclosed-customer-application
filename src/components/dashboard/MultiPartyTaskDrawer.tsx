@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { X, ChevronDown, CheckCircle2, Loader2, AlertTriangle } from "lucide-react";
+import { X, ChevronDown, CheckCircle2, Loader2, AlertTriangle, UserCog, IdCard } from "lucide-react";
 import Button from "@/components/ui/Button";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
@@ -205,10 +205,19 @@ export default function MultiPartyTaskDrawer({
         aria-label={taskTitle}
       >
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
-          <div className="flex-1 min-w-0 pr-4">
-            <h2 className="text-base font-bold text-gray-900 leading-snug">{taskTitle}</h2>
-            <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
+        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-3 min-w-0 pr-4">
+            <div className="w-9 h-9 rounded-full bg-[#FEF2F2] flex items-center justify-center text-[#C10007] flex-shrink-0">
+              {kind === "upload-id" ? (
+                <IdCard size={17} strokeWidth={2} />
+              ) : (
+                <UserCog size={17} strokeWidth={2} />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-gray-900 leading-snug truncate">{taskTitle}</h2>
+              <p className="text-xs text-gray-400 mt-0.5">{subtitle}</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -273,7 +282,9 @@ export default function MultiPartyTaskDrawer({
                           </span>
                         )}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">{m.role_label}</p>
+                      <span className="inline-flex mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold border bg-blue-100 text-blue-700 border-blue-200">
+                        {m.role_label}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {statusChip(m)}
