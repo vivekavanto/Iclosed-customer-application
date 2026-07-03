@@ -75,7 +75,11 @@ export async function GET(req: Request) {
       role_label: m.role_label,
       is_primary: m.is_primary,
       is_self: m.is_self,
-      can_edit: m.is_self || callerMayActForOthers,
+      // Only the designated uploader (or "both" mode) may edit/submit
+      // per-party sections. Previously the caller could always edit their
+      // own row; restrict that so non-uploaders see a status instead of a
+      // an actionable "Provide/Upload" button.
+      can_edit: callerMayActForOthers,
       completed: m.completed,
       ...(isIdTask
         ? { doc_count: docCounts[m.lead_id] ?? 0, doc_total: REQUIRED_ID_DOCS }

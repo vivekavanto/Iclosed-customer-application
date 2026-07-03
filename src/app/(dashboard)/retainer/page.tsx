@@ -410,6 +410,17 @@ export default function RetainerPage() {
     setPostSignChoice("later");
   };
 
+  // Auto-redirect account-holders (accountExists) who arrived via a token
+  // after signing to the login page. The effect is declared unconditionally
+  // at the component level and only triggers when the state matches.
+  useEffect(() => {
+    if (token && postSignChoice === null && accountExists) {
+      const id = setTimeout(() => router.push("/login"), 2200);
+      return () => clearTimeout(id);
+    }
+    return;
+  }, [token, postSignChoice, accountExists, router]);
+
   /* Loading State — checking whether anything still needs signing */
   if (checking) {
     return (
@@ -550,6 +561,9 @@ export default function RetainerPage() {
                 </>
               )}
             </p>
+            <div className="mt-6 flex justify-center">
+              <Button size="md" onClick={() => router.push("/")}>Return to Home</Button>
+            </div>
           </ResultPopup>
         );
       }
@@ -565,6 +579,9 @@ export default function RetainerPage() {
               Thanks, {name.split(" ")[0] || "there"}. Log in to your account to
               upload your documents and ID.
             </p>
+            <div className="mt-6 flex justify-center">
+              <Button size="md" onClick={() => router.push("/login")}>Log in</Button>
+            </div>
           </ResultPopup>
         );
       }
