@@ -570,11 +570,6 @@ function AttentionCard({
                                   </span>
                                 )}
                               </p>
-                              {kindUpload && !m.completed && (
-                                <p className="text-[11px] text-gray-400 mt-0.5 tabular-nums">
-                                  {m.doc_count ?? 0}/{m.doc_total ?? 2} uploaded
-                                </p>
-                              )}
                             </div>
                             {m.completed ? (
                               <span
@@ -589,7 +584,7 @@ function AttentionCard({
                                 onClick={() => onMemberClick(task, m)}
                                 className="flex-shrink-0 inline-flex items-center rounded-lg bg-[#C10007] px-4 py-2 text-xs font-semibold text-white hover:bg-[#a30006] transition-colors cursor-pointer"
                               >
-                                {kindUpload ? "Upload" : "Provide"}
+                                Upload
                               </button>
                             ) : (
                               <span className="flex-shrink-0 text-xs font-semibold text-gray-400">
