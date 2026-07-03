@@ -32,6 +32,8 @@ export async function POST(req: Request) {
       aps_signed_purchase,
       aps_signed_sale,
       co_persons,
+      document_upload_mode,
+      document_uploader_co_person_id,
       referral_source,
     } = body;
 
@@ -66,6 +68,32 @@ export async function POST(req: Request) {
       sub_service === "both" && selling_price
         ? String(selling_price).replace(/[^0-9.]/g, "")
         : null;
+    const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
+    const uploadMode =
+      document_upload_mode === "me" ||
+      document_upload_mode === "co" ||
+      document_upload_mode === "both"
+        ? document_upload_mode
+        : null;
+
+    if (hasCoPersons && !uploadMode) {
+      return NextResponse.json(
+        { success: false, error: "Please choose who will upload documents." },
+        { status: 400 }
+      );
+    }
+
+    if (uploadMode === "co") {
+      const selectedUploaderExists = (co_persons as Array<{ id?: string }>).some(
+        (cp) => cp?.id === document_uploader_co_person_id
+      );
+      if (!document_uploader_co_person_id || !selectedUploaderExists) {
+        return NextResponse.json(
+          { success: false, error: "Selected document uploader is not valid." },
+          { status: 400 }
+        );
+      }
+    }
 
     // ── Purchase & Sale: buying and selling address can't be the same ──
     if (sub_service === "both" && address_street && selling_address_street) {
@@ -306,6 +334,9 @@ export async function POST(req: Request) {
         aps_signed_purchase: apsPurchase,
         aps_signed_sale: apsSale,
         co_persons: co_persons ?? [],
+        upload_mode: uploadMode,
+        upload_consent_at: null,
+        upload_consent_uploader_lead_id: null,
         referral_source: referral_source || null,
         client_id: clientId,
       })
@@ -323,8 +354,9 @@ export async function POST(req: Request) {
 
     // ── 3. Create co-person leads ─────────────────────────────
     const coPersonLeadIds: string[] = [];
+    const coPersonLeadIdByFormId = new Map<string, string>();
 
-    if (Array.isArray(co_persons) && co_persons.length > 0) {
+    if (hasCoPersons) {
       for (const cp of co_persons) {
         try {
           const [cpFirst, ...cpRest] = (cp.fullName ?? "").split(" ");
@@ -373,6 +405,7 @@ export async function POST(req: Request) {
             console.warn(`[Intake] Co-person lead insert failed for ${cp.email}:`, cpError.message);
           } else if (cpLead) {
             coPersonLeadIds.push(cpLead.id);
+            if (cp.id) coPersonLeadIdByFormId.set(cp.id, cpLead.id);
             notifyLeadIds.push(cpLead.id);
           }
         } catch (cpErr) {
@@ -388,6 +421,32 @@ export async function POST(req: Request) {
     // converted deal are rejected earlier (before the lead is created), so we
     // never auto-link or auto-convert a co-purchaser/co-seller here — that can
     // only be done by an admin.
+    if (uploadMode === "co") {
+      const uploaderLeadId = coPersonLeadIdByFormId.get(document_uploader_co_person_id);
+      if (!uploaderLeadId) {
+        return NextResponse.json(
+          { success: false, error: "Could not save the selected document uploader." },
+          { status: 500 }
+        );
+      }
+
+      const { error: uploadChoiceErr } = await supabaseAdmin
+        .from("leads")
+        .update({
+          upload_consent_at: new Date().toISOString(),
+          upload_consent_uploader_lead_id: uploaderLeadId,
+        })
+        .eq("id", lead.id);
+
+      if (uploadChoiceErr) {
+        console.error("[Intake] Document uploader update failed:", uploadChoiceErr);
+        return NextResponse.json(
+          { success: false, error: uploadChoiceErr.message },
+          { status: 500 }
+        );
+      }
+    }
+
     let addressMatch = false;
     const autoConverted = false;
 

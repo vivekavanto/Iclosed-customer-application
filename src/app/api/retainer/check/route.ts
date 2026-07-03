@@ -83,7 +83,7 @@ export async function GET(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, submit_on_behalf, client_id, email"
+        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, upload_mode, client_id, email"
       )
       .in("id", leadIds);
 
@@ -129,7 +129,7 @@ export async function GET(req: Request) {
     if (!nextSlot) {
       // Everything required is signed. But a PRIMARY who has co-person(s) and
       // hasn't yet answered the "Want to help with their paperwork?" popup
-      // (submit_on_behalf IS NULL) must still answer it — otherwise reloading
+      // (`upload_mode` IS NULL) must still answer it — otherwise reloading
       // or returning after signing would skip the decision entirely. Re-surface
       // the popup so the value can't be bypassed.
       //
@@ -139,7 +139,7 @@ export async function GET(req: Request) {
       const primaryLead = (leads || []).find(
         (l) => !l.parent_lead_id && l.co_person_role == null
       );
-      if (primaryLead && primaryLead.submit_on_behalf == null) {
+      if (primaryLead && primaryLead.upload_mode == null) {
         const { data: coRows } = await supabaseAdmin
           .from("leads")
           .select("id, first_name, last_name, co_person_role")

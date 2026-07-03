@@ -15,8 +15,9 @@ export const dynamic = "force-dynamic";
  *
  * WHO gets the full roster (and therefore the multi-party drawer) depends on the
  * primary's "Who will be uploading your documents?" answer (leads.upload_mode):
- *   • "me" / "co" → only the family's DESIGNATED UPLOADER (submit_on_behalf ===
- *     true) — the primary for "Me", the chosen co-person for "My co-purchaser".
+ *   • "me" / "co" → only the family's DESIGNATED UPLOADER (determined by
+ *     `leads.upload_mode` and `leads.upload_consent_uploader_lead_id`) — the
+ *     primary for "Me", the chosen co-person for "My co-purchaser".
  *   • "both"      → EVERY family member (anyone can act for anyone).
  * Anyone not entitled gets a single (self-only) target so the drawer shows just
  * their own section.

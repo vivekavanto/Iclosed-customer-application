@@ -58,7 +58,7 @@ export interface FamilyTaskRoster {
     completed: boolean;
   };
   deal: { id: string; client_id: string | null; lead_id: string; type: string | null };
-  /** Designated uploader for the family (submit_on_behalf === true), or null. */
+  /** Designated uploader for "me"/"co" modes. Null when everyone may upload. */
   uploaderLeadId: string | null;
   /** The lead behind the opened task (deal.lead_id) — the caller's own. */
   selfLeadId: string;
@@ -93,7 +93,7 @@ export async function getFamilyTaskRoster(
   // The "self" lead: the lead behind the opened task (the caller's own).
   const { data: selfLead } = await supabaseAdmin
     .from("leads")
-    .select("id, first_name, last_name, parent_lead_id, submit_on_behalf, lead_type, co_person_role")
+    .select("id, first_name, last_name, parent_lead_id, lead_type, co_person_role")
     .eq("id", deal.lead_id)
     .maybeSingle();
 
@@ -115,10 +115,17 @@ export async function getFamilyTaskRoster(
   const primaryId = selfLead?.parent_lead_id ?? selfLead?.id ?? deal.lead_id;
   const { data: familyLeads } = await supabaseAdmin
     .from("leads")
-    .select("id, first_name, last_name, parent_lead_id, submit_on_behalf, lead_type, co_person_role")
+    .select("id, first_name, last_name, parent_lead_id, lead_type, co_person_role, upload_mode, upload_consent_uploader_lead_id")
     .or(`id.eq.${primaryId},parent_lead_id.eq.${primaryId}`);
 
-  const uploader = (familyLeads ?? []).find((l) => l.submit_on_behalf === true);
+  const primaryLead = (familyLeads ?? []).find((l) => l.id === primaryId);
+  const uploadMode = primaryLead?.upload_mode;
+  const uploaderLeadId =
+    uploadMode === "both"
+      ? null
+      : uploadMode === "co"
+        ? primaryLead?.upload_consent_uploader_lead_id ?? null
+        : primaryId;
 
   // Every OTHER family member + their equivalent task.
   const otherMembers = (familyLeads ?? []).filter((l) => l.id !== selfMember.lead_id);
@@ -188,7 +195,7 @@ export async function getFamilyTaskRoster(
       completed: !!task.completed,
     },
     deal,
-    uploaderLeadId: uploader?.id ?? null,
+    uploaderLeadId,
     selfLeadId: selfMember.lead_id,
     members: [selfMember, ...others],
   };

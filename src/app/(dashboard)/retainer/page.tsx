@@ -451,13 +451,14 @@ export default function RetainerPage() {
   };
 
   // ── Post-sign "who will be uploading your documents?" choice ──
-  // Records the designated uploader on leads.submit_on_behalf (TRUE on whichever
-  // family member uploads), then advances to "You're all set" (which, on the
-  // "me"/"both" branches, offers account creation for token signers). Persistence
-  // is best-effort: the signature is already durable, so a failed write never blocks.
-  //   "me"   → uploader is the primary (uploads for everyone)
-  //   "co"   → uploader is a co-person (uploads on the primary's behalf)
-  //   "both" → each uploads their own; record the primary as their own uploader
+  // Persists the primary's choice to the new `leads.upload_mode` fields on the
+  // primary lead (and `upload_consent_uploader_lead_id` when a co-person is
+  // selected), then advances to "You're all set" (which, on the "me"/"both"
+  // branches, offers account creation for token signers). Persistence is
+  // best-effort: the signature is already durable, so a failed write never blocks.
+  //   "me"   → primary uploads for everyone (upload_mode='me')
+  //   "co"   → selected co-person uploads on the primary's behalf (upload_mode='co')
+  //   "both" → each uploads their own (upload_mode='both')
   const handleUploaderChoice = async (
     uploaderLeadId: string | null,
     mode: "me" | "co" | "both"
@@ -627,9 +628,10 @@ export default function RetainerPage() {
   /* Success State */
   if (submitted) {
     // Step 1 — primary applicant with co-person(s): "Who will be uploading your
-    // documents?". The answer records the designated uploader on
-    // leads.submit_on_behalf. Three sub-screens: the choice, an optional
-    // "which co-person?" picker (>1 co-person), and the delegation consent.
+    // documents?". The answer records the designated uploader via the primary
+    // lead's `upload_mode` (and `upload_consent_uploader_lead_id` when a co-person
+    // is chosen). Three sub-screens: the choice, an optional "which co-person?"
+    // picker (>1 co-person), and the delegation consent.
     if (showCoPersonPrompt && uploadMode === null) {
       const coNoun = getCoPersonNoun(leadType, side);
       const coLabel = getCoPersonLabel(leadType, side).toLowerCase();

@@ -13,6 +13,7 @@ import {
   Clock,
   AlertTriangle,
   ChevronRight,
+  ChevronDown,
   Loader2,
   Home,
   FileText,
@@ -21,7 +22,6 @@ import {
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
-import MultiPartyTaskDrawer from "@/components/dashboard/MultiPartyTaskDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { isPerPartyTask, isUploadIdTask } from "@/lib/taskKinds";
 import { useToast } from "@/components/ui/Toast";
@@ -35,13 +35,20 @@ interface FamilyTaskStatusSummary {
   total_count: number;
   members: Array<{
     lead_id: string;
+    task_id: string | null;
+    name: string;
     first_name: string;
+    last_name: string;
     is_self: boolean;
+    can_edit: boolean;
     completed: boolean;
     doc_count?: number;
     doc_total?: number;
   }>;
 }
+
+/** A single party inside a multi-party task's inline accordion. */
+type FamilyMemberRow = FamilyTaskStatusSummary["members"][number];
 
 
 interface Task {
@@ -242,18 +249,26 @@ function saveSeenTaskIds(ids: Set<string>): void {
   }
 }
 
+function initials(first: string, last: string): string {
+  return `${(first[0] ?? "").toUpperCase()}${(last[0] ?? "").toUpperCase()}` || "?";
+}
+
 function AttentionCard({
   tasks,
   loading,
   onTaskClick,
+  onMemberClick,
   familyStatus,
 }: {
   tasks: Task[];
   loading: boolean;
   onTaskClick: (task: Task) => void;
+  onMemberClick: (task: Task, member: FamilyMemberRow) => void;
   familyStatus: Record<string, FamilyTaskStatusSummary>;
 }) {
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
+  // Which multi-party task rows are expanded to show their per-party breakdown.
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const prevPendingIdsRef = useRef<string>("");
 
   // A per-party task (Personal Info / Upload ID) on a multi-party deal is only
@@ -456,6 +471,139 @@ function AttentionCard({
             const isNew = newTaskIds.has(task.id);
             const chip = partyChip(task);
             const subtitle = partySubtitle(task);
+            const fs = familyStatus[task.id];
+
+            // ── Multi-party task → inline accordion of per-party rows ──
+            if (fs?.is_multi_party) {
+              const isExpanded = expandedTaskIds.has(task.id);
+              const kindUpload = isUploadIdTask(task.title);
+              return (
+                <div
+                  key={task.id}
+                  className={[
+                    "rounded-xl border bg-white overflow-hidden transition-all duration-200",
+                    isExpanded
+                      ? "border-[#C10007]/30 shadow-md"
+                      : "border-gray-200 hover:border-[#C10007]/30 hover:shadow-md",
+                  ].join(" ")}
+                >
+                  {/* Accordion header — toggles the per-party breakdown */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedTaskIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(task.id)) next.delete(task.id);
+                        else next.add(task.id);
+                        return next;
+                      })
+                    }
+                    className="w-full text-left px-4 sm:px-5 py-4 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-medium text-gray-400 tabular-nums">{idx + 1}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
+                            {task.title}
+                          </p>
+                          {isNew && (
+                            <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
+                              New
+                            </span>
+                          )}
+                        </div>
+                        {subtitle && (
+                          <p className="text-xs sm:text-sm text-gray-400 mt-0.5">{subtitle}</p>
+                        )}
+                      </div>
+                      {/* Progress count (e.g. 1/2) */}
+                      <span
+                        className={[
+                          "flex-shrink-0 text-xs sm:text-sm font-semibold tabular-nums",
+                          fs.all_completed ? "text-green-600" : "text-[#C10007]",
+                        ].join(" ")}
+                      >
+                        {fs.completed_count}/{fs.total_count}
+                      </span>
+                      <ChevronDown
+                        size={18}
+                        strokeWidth={2}
+                        className={[
+                          "text-gray-400 transition-transform flex-shrink-0",
+                          isExpanded ? "rotate-180" : "",
+                        ].join(" ")}
+                      />
+                    </div>
+                  </button>
+
+                  {/* Accordion body — one row per involved party */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 divide-y divide-gray-100">
+                      {fs.members.map((m) => {
+                        const displayName =
+                          m.name ||
+                          `${m.first_name} ${m.last_name}`.trim() ||
+                          m.first_name ||
+                          "Party";
+                        return (
+                          <div
+                            key={m.lead_id}
+                            className="flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-gray-50/50"
+                          >
+                            <div
+                              className={[
+                                "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0",
+                                m.completed ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500",
+                              ].join(" ")}
+                            >
+                              {initials(m.first_name, m.last_name)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
+                                <span className="truncate">{displayName}</span>
+                                {m.is_self && (
+                                  <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#C10007] text-white flex-shrink-0">
+                                    You
+                                  </span>
+                                )}
+                              </p>
+                              {kindUpload && !m.completed && (
+                                <p className="text-[11px] text-gray-400 mt-0.5 tabular-nums">
+                                  {m.doc_count ?? 0}/{m.doc_total ?? 2} uploaded
+                                </p>
+                              )}
+                            </div>
+                            {m.completed ? (
+                              <span
+                                className="flex-shrink-0 w-7 h-7 rounded-full bg-green-100 flex items-center justify-center"
+                                aria-label="Completed"
+                              >
+                                <Check size={15} className="text-green-600" strokeWidth={2.5} />
+                              </span>
+                            ) : m.can_edit && m.task_id ? (
+                              <button
+                                type="button"
+                                onClick={() => onMemberClick(task, m)}
+                                className="flex-shrink-0 inline-flex items-center rounded-lg bg-[#C10007] px-4 py-2 text-xs font-semibold text-white hover:bg-[#a30006] transition-colors cursor-pointer"
+                              >
+                                {kindUpload ? "Upload" : "Provide"}
+                              </button>
+                            ) : (
+                              <span className="flex-shrink-0 text-xs font-semibold text-gray-400">
+                                Pending
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
 
             return (
               <div
@@ -783,23 +931,30 @@ export default function DashboardPage() {
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  // ── Multi-party drawer (the unified accordion modal) ──────
-  // Used for Personal Info / Upload ID on deals with co-persons.
-  const [multiPartyDrawer, setMultiPartyDrawer] = useState<{
-    open: boolean;
-    kind: "personal-info" | "upload-id";
-    task: Task | null;
-  }>({ open: false, kind: "personal-info", task: null });
+  // ── Direct per-party target (inline multi-party accordion) ──
+  // When a specific party's "Upload"/"Provide" button is clicked inside the
+  // Needs-Your-Attention accordion, we open the existing single-party drawer
+  // pointed straight at that person's own task/lead — bypassing the on-behalf
+  // dropdown. Cleared whenever a normal (single-party) task is opened.
+  const [directTarget, setDirectTarget] = useState<{
+    task_id: string;
+    lead_id: string;
+    first_name: string;
+    last_name: string;
+    is_self: boolean;
+  } | null>(null);
 
   // Per-party completion summaries keyed by task id — drives the dashboard
   // badges and the decision to open the multi-party modal.
   const [familyStatus, setFamilyStatus] = useState<Record<string, FamilyTaskStatusSummary>>({});
 
-  // ── Submit-on-behalf state ───────────────────────────────
+  // ── Upload-choice state ───────────────────────────────
   // The people the primary may submit the open task for (themselves + linked
   // co-persons), and which one is currently selected in the drawer dropdown.
   // Only populated for Upload Identification / Provide Personal Information when
-  // the primary opted into submit_on_behalf and has matching co-person tasks.
+  // the primary has answered the "Who will be uploading your documents?" popup
+  // (stored on the primary as `upload_mode` / `upload_consent_uploader_lead_id`) and
+  // there are co-persons with equivalent tasks.
   const [behalfTargets, setBehalfTargets] = useState<BehalfTarget[]>([]);
   const [selectedBehalfLeadId, setSelectedBehalfLeadId] = useState<string | null>(null);
 
@@ -870,20 +1025,11 @@ export default function DashboardPage() {
   function handleTaskClick(task: Task) {
     setActiveTask(task);
     const title = task.title.toLowerCase();
-    // Reset any prior on-behalf dropdown; (re)load it for the two supported tasks.
+    // Reset any prior on-behalf dropdown / direct per-party target; (re)load the
+    // dropdown for the two supported tasks.
     setBehalfTargets([]);
     setSelectedBehalfLeadId(null);
-
-    // On a deal with co-persons, Personal Info / Upload ID open the unified
-    // multi-party accordion modal instead of the single-party drawer.
-    if (isPerPartyTask(task.title) && familyStatus[task.id]?.is_multi_party) {
-      setMultiPartyDrawer({
-        open: true,
-        kind: isUploadIdTask(task.title) ? "upload-id" : "personal-info",
-        task,
-      });
-      return;
-    }
+    setDirectTarget(null);
 
     if (title.includes("upload identification")) {
       void loadBehalfTargets(task.id);
@@ -900,6 +1046,26 @@ export default function DashboardPage() {
       // silently drops fields like the Sale-side "New Home Address".
       setDynamicDrawerOpen(true);
     }
+  }
+
+  // Open the single-party drawer aimed straight at one party's task, from the
+  // inline multi-party accordion. We set a directTarget (which overrides the
+  // derived drawer inputs) instead of routing through the on-behalf dropdown, so
+  // the right person's task/lead is loaded whether or not on-behalf is enabled.
+  function handleMemberClick(task: Task, member: FamilyMemberRow) {
+    if (!member.task_id) return;
+    setActiveTask(task);
+    setBehalfTargets([]);
+    setSelectedBehalfLeadId(null);
+    setDirectTarget({
+      task_id: member.task_id,
+      lead_id: member.lead_id,
+      first_name: member.first_name,
+      last_name: member.last_name,
+      is_self: member.is_self,
+    });
+    if (isUploadIdTask(task.title)) setIdDrawerOpen(true);
+    else setPersonalInfoDrawerOpen(true);
   }
 
   // ── On mount: fetch all properties + deals ────────────────
@@ -1135,11 +1301,16 @@ export default function DashboardPage() {
   // On-behalf = the selected person is someone OTHER than the logged-in user, so
   // their form must not be prefilled from the uploader's own data. Keyed off
   // is_self (not is_primary): the uploader may itself be a co-person.
-  const isOnBehalf = activeBehalfTarget != null && !activeBehalfTarget.is_self;
-  const drawerTaskId = activeBehalfTarget?.task_id ?? activeTask?.id ?? null;
-  const drawerLeadId = activeBehalfTarget?.lead_id ?? leadId ?? undefined;
-  const drawerFirstName = activeBehalfTarget?.first_name ?? activeProperty?.first_name;
-  const drawerLastName = activeBehalfTarget?.last_name ?? activeProperty?.last_name;
+  // A directTarget (set from the inline per-party accordion) wins over the
+  // on-behalf dropdown and the primary's own defaults, so the drawer loads
+  // exactly the party whose button was clicked.
+  const isOnBehalf = directTarget
+    ? !directTarget.is_self
+    : activeBehalfTarget != null && !activeBehalfTarget.is_self;
+  const drawerTaskId = directTarget?.task_id ?? activeBehalfTarget?.task_id ?? activeTask?.id ?? null;
+  const drawerLeadId = directTarget?.lead_id ?? activeBehalfTarget?.lead_id ?? leadId ?? undefined;
+  const drawerFirstName = directTarget?.first_name ?? activeBehalfTarget?.first_name ?? activeProperty?.first_name;
+  const drawerLastName = directTarget?.last_name ?? activeBehalfTarget?.last_name ?? activeProperty?.last_name;
 
   // A co-person's task is already persisted + marked complete server-side by
   // /api/task-responses (keyed off the co-person's task_id). So on-behalf
@@ -1147,7 +1318,13 @@ export default function DashboardPage() {
   // and refetch the primary's list); just close.
   function handleDrawerCompleted(id: string, closeDrawer: () => void) {
     closeDrawer();
-    if (!isOnBehalf) markDone(id);
+    const wasOnBehalf = isOnBehalf;
+    setDirectTarget(null);
+    // Own task: markDone() PATCHes it and refetches (incl. family status). An
+    // on-behalf co-person task is already completed server-side — just refresh
+    // so the inline per-party accordion reflects the new completion.
+    if (!wasOnBehalf) markDone(id);
+    else void refreshActiveDeal();
   }
 
   return (
@@ -1168,20 +1345,13 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* ── Multi-party accordion modal (Personal Info / Upload ID with co-persons) ── */}
-      <MultiPartyTaskDrawer
-        open={multiPartyDrawer.open}
-        onClose={() => setMultiPartyDrawer((s) => ({ ...s, open: false }))}
-        taskTitle={multiPartyDrawer.task?.title ?? ""}
-        taskId={multiPartyDrawer.task?.id ?? null}
-        kind={multiPartyDrawer.kind}
-        onAnyCompleted={() => void refreshActiveDeal()}
-      />
-
       {/* ── Personal Information Drawer (dedicated, standalone) ── */}
       <PersonalInfoTaskDrawer
         open={personalInfoDrawerOpen}
-        onClose={() => setPersonalInfoDrawerOpen(false)}
+        onClose={() => {
+          setPersonalInfoDrawerOpen(false);
+          setDirectTarget(null);
+        }}
         taskId={drawerTaskId}
         taskTitle={activeTask?.title ?? "Provide Personal Information"}
         leadId={drawerLeadId}
@@ -1199,7 +1369,10 @@ export default function DashboardPage() {
       {/* ── Upload Identification Drawer (multi-file) ── */}
       <UploadIdentificationDrawer
         open={idDrawerOpen}
-        onClose={() => setIdDrawerOpen(false)}
+        onClose={() => {
+          setIdDrawerOpen(false);
+          setDirectTarget(null);
+        }}
         leadId={drawerLeadId}
         taskId={drawerTaskId ?? undefined}
         behalfTargets={behalfTargets}
@@ -1207,9 +1380,14 @@ export default function DashboardPage() {
         onSelectBehalf={setSelectedBehalfLeadId}
         onSaved={async () => {
           setIdDrawerOpen(false);
+          const wasOnBehalf = isOnBehalf;
+          const tid = drawerTaskId;
+          setDirectTarget(null);
           // On-behalf tasks are completed server-side; only the primary's own
-          // task needs the dashboard-side markDone refresh.
-          if (!isOnBehalf && drawerTaskId) await markDone(drawerTaskId);
+          // task needs the dashboard-side markDone refresh. Either way refresh
+          // so the inline per-party accordion reflects the new completion.
+          if (!wasOnBehalf && tid) await markDone(tid);
+          else await refreshActiveDeal();
         }}
       />
 
@@ -1365,6 +1543,7 @@ export default function DashboardPage() {
             tasks={visibleTasks}
             loading={tasksLoading}
             onTaskClick={handleTaskClick}
+            onMemberClick={handleMemberClick}
             familyStatus={familyStatus}
           />
         </div>

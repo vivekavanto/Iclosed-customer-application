@@ -11,7 +11,7 @@ export type UploadMode = "me" | "co" | "both";
  *
  * Returns null when the popup hasn't been answered yet (or there are no
  * co-persons, so it never showed). Callers treat null like "me" — a single
- * uploader, no cross-party access beyond the existing submit_on_behalf rules.
+ * uploader, no cross-party access beyond the existing `upload_mode` rules.
  */
 export async function getFamilyUploadMode(
   anyFamilyLeadId: string

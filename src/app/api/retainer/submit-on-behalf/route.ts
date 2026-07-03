@@ -15,11 +15,14 @@ import { sendInviteEmail } from "@/lib/sendInviteEmail";
  *                       documents and their own.
  *   "Both"          → the primary and the co-person(s) each upload their own.
  *
- * The answer is modelled with leads.submit_on_behalf: the flag is set to TRUE on
- * whichever family member is the designated uploader (the primary for "Me", the
- * chosen co-person for "My co-purchaser") and FALSE on every other member —
- * exactly one uploader per family. A "family" is the primary lead plus all leads
- * with parent_lead_id = primary.id. See sql/add_lead_submit_on_behalf.sql.
+ * The answer is modelled with `leads.upload_mode` and
+ * `leads.upload_consent_uploader_lead_id`:
+ *   - `upload_mode` = 'me' | 'co' | 'both'
+ *   - when `upload_mode = 'co'`, the selected co-person's id is stored in
+ *     `upload_consent_uploader_lead_id` on the primary lead.
+ * A "family" is the primary lead plus all leads with parent_lead_id = primary.id.
+ * See sql/replace_submit_on_behalf_with_document_upload_choice.sql for the
+ * migration replacing the legacy boolean.
  *
  * The choice ALSO decides which co-persons receive an account-activation email.
  * Co-persons are not invited at conversion (see convertLead.ts) — they are
@@ -143,42 +146,13 @@ export async function POST(req: Request) {
     }
 
     // Exactly one designated uploader: TRUE on the chosen lead, FALSE on the rest.
-    const others = familyIds.filter((id) => id !== uploader_lead_id);
-    if (others.length > 0) {
-      const { error: clearErr } = await supabaseAdmin
-        .from("leads")
-        .update({ submit_on_behalf: false })
-        .in("id", others);
-      if (clearErr) {
-        console.error("[Retainer submit-on-behalf] clear error:", clearErr);
-        return NextResponse.json(
-          { success: false, error: clearErr.message },
-          { status: 500 }
-        );
-      }
-    }
-
-    const { error } = await supabaseAdmin
-      .from("leads")
-      .update({ submit_on_behalf: true })
-      .eq("id", uploader_lead_id);
-
-    if (error) {
-      console.error("[Retainer submit-on-behalf] update error:", error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
-    }
-
     // Consent audit: when the uploader is a co-person ("My co-purchaser" → the
     // primary clicked "I agree"), record proof of the permission grant on the
     // primary lead. Picking "Me" is not a delegation, so clear any prior consent.
     //
-    // upload_mode is persisted on the primary alongside the consent so downstream
-    // routes can tell "me" from "both" (both leave submit_on_behalf on the
-    // primary) — see sql/add_lead_upload_mode.sql. Fall back to deriving the mode
-    // from the uploader when the client didn't send one.
+    // `upload_mode` is persisted on the primary alongside the consent so
+    // downstream routes can tell "me" from "both". Fall back to deriving the
+    // mode from the chosen uploader when the client didn't send one.
     const isDelegation = uploader_lead_id !== leadId;
     const resolvedMode: "me" | "co" | "both" =
       mode ?? (isDelegation ? "co" : "me");

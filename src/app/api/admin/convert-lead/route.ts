@@ -81,14 +81,19 @@ export async function POST(req: Request) {
       if (coLeads && coLeads.length > 0) {
         for (const coLead of coLeads) {
           try {
+            const shouldInviteCoPerson =
+              lead.upload_mode === "both" ||
+              (lead.upload_mode === "co" &&
+                lead.upload_consent_uploader_lead_id === coLead.id);
+
             const coResult = await convertSingleLead({
               lead: coLead,
               parentClientId: result.client_id,
               closingDate: closing_date,
-              // Co-persons are NOT emailed at conversion. Their activation email
-              // is sent later, gated by the primary's post-sign upload-mode
+              // Co-person invites are gated by the primary's document-upload
+              // choice. Legacy rows without upload_mode still defer to retainer.
               // choice (Me / My co-purchaser / Both) — see submit-on-behalf.
-              sendInvite: false,
+              sendInvite: shouldInviteCoPerson,
             });
 
             coResults.push({

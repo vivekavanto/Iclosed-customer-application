@@ -67,6 +67,7 @@ export default function ServiceSelection() {
   const [coSellerCards, setCoSellerCards] = useState<CoPersonCard[]>([]);
   const [referralSource, setReferralSource] = useState("");
   const [referralOther, setReferralOther] = useState("");
+  const [documentUploadChoice, setDocumentUploadChoice] = useState("");
   const authPrefillAppliedRef = useRef(false);
 
   const router = useRouter();
@@ -196,6 +197,7 @@ export default function ServiceSelection() {
     setCoSellerCards([]);
     setReferralSource("");
     setReferralOther("");
+    setDocumentUploadChoice("");
     authPrefillAppliedRef.current = false;
   };
 
@@ -275,6 +277,8 @@ export default function ServiceSelection() {
             setReferralSource={setReferralSource}
             referralOther={referralOther}
             setReferralOther={setReferralOther}
+            documentUploadChoice={documentUploadChoice}
+            setDocumentUploadChoice={setDocumentUploadChoice}
             onComplete={async (contactData) => {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
@@ -316,6 +320,8 @@ export default function ServiceSelection() {
                     aps_signed_sale:
                       apsSaleSigned === null ? null : apsSaleSigned === "yes",
                     co_persons: contactData.coPersons ?? [],
+                    document_upload_mode: contactData.documentUploadMode,
+                    document_uploader_co_person_id: contactData.documentUploaderCoPersonId,
                     referral_source: contactData.referralSource || "",
                   }),
                 });

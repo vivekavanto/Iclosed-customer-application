@@ -13,6 +13,8 @@ interface ContactData {
     meetingDate: Date | null;
     meetingTime: string | null;
     coPersons: CoPerson[];
+    documentUploadMode: "me" | "co" | "both" | null;
+    documentUploaderCoPersonId: string | null;
     referralSource: string;
 }
 
@@ -73,6 +75,8 @@ interface Step5ContactProps {
     setReferralSource: React.Dispatch<React.SetStateAction<string>>;
     referralOther: string;
     setReferralOther: React.Dispatch<React.SetStateAction<string>>;
+    documentUploadChoice: string;
+    setDocumentUploadChoice: React.Dispatch<React.SetStateAction<string>>;
 }
 
 export default function Step5Contact({
@@ -94,6 +98,8 @@ export default function Step5Contact({
     setReferralSource,
     referralOther,
     setReferralOther,
+    documentUploadChoice,
+    setDocumentUploadChoice,
 }: Step5ContactProps) {
     const isBoth = selectedClosingOption === "both";
     const isSelling = selectedClosingOption === "selling";
@@ -199,6 +205,27 @@ export default function Step5Contact({
         email?: boolean;
         phone?: boolean;
     }>({});
+
+    const activeCoCards = React.useMemo(
+        () => [
+            ...(showPurchaserStack ? coPurchaserCards.filter(c => !isCardEmpty(c)).map(c => ({ ...c, role: "purchaser" as const })) : []),
+            ...(showSellerStack ? coSellerCards.filter(c => !isCardEmpty(c)).map(c => ({ ...c, role: "seller" as const })) : []),
+        ],
+        [coPurchaserCards, coSellerCards, showPurchaserStack, showSellerStack]
+    );
+
+    React.useEffect(() => {
+        if (activeCoCards.length === 0 && documentUploadChoice) {
+            setDocumentUploadChoice("");
+            return;
+        }
+        if (
+            documentUploadChoice.startsWith("co:") &&
+            !activeCoCards.some((card) => `co:${card.id}` === documentUploadChoice)
+        ) {
+            setDocumentUploadChoice("");
+        }
+    }, [activeCoCards, documentUploadChoice, setDocumentUploadChoice]);
 
     const isCompleteEnabled = isValid;
 
@@ -327,10 +354,43 @@ export default function Step5Contact({
             ...(showSellerStack ? coSellerCards.filter(c => !isCardEmpty(c)).map(cardToCoPerson("seller")) : []),
         ];
 
+        let documentUploadMode: ContactData["documentUploadMode"] = null;
+        let documentUploaderCoPersonId: string | null = null;
+        if (coPersons.length > 0) {
+            if (!documentUploadChoice) {
+                toastError("Please choose who will upload documents.");
+                return;
+            }
+            if (documentUploadChoice === "me") {
+                documentUploadMode = "me";
+            } else if (documentUploadChoice === "both") {
+                documentUploadMode = "both";
+            } else if (documentUploadChoice.startsWith("co:")) {
+                const coPersonId = documentUploadChoice.slice(3);
+                if (!coPersons.some((cp) => cp.id === coPersonId)) {
+                    toastError("Please choose a valid document uploader.");
+                    return;
+                }
+                documentUploadMode = "co";
+                documentUploaderCoPersonId = coPersonId;
+            } else {
+                toastError("Please choose who will upload documents.");
+                return;
+            }
+        }
+
         const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;
         setSubmitting(true);
         try {
-            await onComplete({ ...formData, meetingDate: null, meetingTime: null, coPersons, referralSource: finalReferral });
+            await onComplete({
+                ...formData,
+                meetingDate: null,
+                meetingTime: null,
+                coPersons,
+                documentUploadMode,
+                documentUploaderCoPersonId,
+                referralSource: finalReferral,
+            });
         } finally {
             setSubmitting(false);
         }
@@ -632,6 +692,28 @@ export default function Step5Contact({
                             renderCoSection("seller")
                         ) : (
                             renderCoSection("purchaser")
+                        )}
+
+                        {activeCoCards.length > 0 && (
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-sm font-medium text-gray-900">
+                                    Who will upload documents? <span className="text-[#C10007]">*</span>
+                                </label>
+                                <select
+                                    value={documentUploadChoice}
+                                    onChange={(e) => setDocumentUploadChoice(e.target.value)}
+                                    className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
+                                >
+                                    <option value="">Select an option</option>
+                                    <option value="me">{formData.fullName || "You"} (you)</option>
+                                    {activeCoCards.map((card) => (
+                                        <option key={card.id} value={`co:${card.id}`}>
+                                            {card.fullName || (card.role === "purchaser" ? "Co-purchaser" : "Co-seller")}
+                                        </option>
+                                    ))}
+                                    <option value="both">We&apos;ll each upload our own</option>
+                                </select>
+                            </div>
                         )}
 
                         {/* How did you hear about us? (optional) */}
