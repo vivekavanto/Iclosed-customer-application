@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
 import { findFamilySharedTaskPeers, isApsTemplate } from "@/lib/findFamilySharedTaskPeers";
+import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 
 /**
  * Helper: resolves the source task's title + APS-ness so the peer lookup can
@@ -183,63 +184,123 @@ export async function syncSharedTaskPatch(params: {
 }
 
 /**
- * Check milestone completion and advance to next milestone if all tasks done.
+ * Family-aware milestone advancement.
+ *
+ * A milestone completes ONLY when every party on the file has finished their
+ * copy of every task in it. Each family member (primary + co-persons) has their
+ * own deal with its own milestone rows, but the copies share a stable identity:
+ * `stage_template_id` + `side`. So we resolve the equivalent milestone on every
+ * family deal and only mark the whole set Completed once ALL of their tasks are
+ * done — then advance each deal's next milestone in lockstep. This prevents one
+ * person's milestone flipping to "done" while a co-person still owes an upload.
+ *
+ * Not-yet-complete calls still reflect local progress: if any of THIS deal's own
+ * tasks in the milestone are done, it moves to "In Progress" (never Completed).
+ *
+ * Idempotent: an already-Completed milestone is skipped, so the milestone email
+ * fires at most once per family milestone.
  */
 export async function advanceMilestone(dealId: string, milestoneId: string) {
-  const { data: siblings } = await supabaseAdmin
+  const { data: ms } = await supabaseAdmin
+    .from("milestones")
+    .select("id, deal_id, stage_template_id, side, order_index")
+    .eq("id", milestoneId)
+    .maybeSingle();
+  if (!ms) return;
+
+  const side = (ms.side ?? null) as "purchase" | "sale" | null;
+
+  // The equivalent milestone on every family deal (same stage_template_id +
+  // side). Legacy rows with no stage_template_id fall back to per-deal.
+  const familyDealIds = [dealId, ...(await getLinkedDealIds(dealId))];
+  let equivalents: Array<{ id: string; deal_id: string; order_index: number }> = [];
+  if (ms.stage_template_id) {
+    let q = supabaseAdmin
+      .from("milestones")
+      .select("id, deal_id, order_index")
+      .in("deal_id", familyDealIds)
+      .eq("stage_template_id", ms.stage_template_id)
+      .eq("is_deleted", false);
+    q = side === null ? q.is("side", null) : q.eq("side", side);
+    const { data } = await q;
+    equivalents = data ?? [];
+  }
+  if (equivalents.length === 0) {
+    equivalents = [{ id: ms.id, deal_id: ms.deal_id, order_index: ms.order_index }];
+  }
+
+  // Family-wide completion: every task under ANY equivalent milestone (i.e.
+  // every party's copy of every task in this milestone) must be complete.
+  const { data: tasksData } = await supabaseAdmin
     .from("tasks")
-    .select("id, completed")
-    .eq("milestone_id", milestoneId)
+    .select("id, completed, milestone_id")
+    .in("milestone_id", equivalents.map((m) => m.id))
     .eq("is_deleted", false);
+  const tasks = tasksData ?? [];
+  const familyAllDone = tasks.length > 0 && tasks.every((t) => t.completed);
 
-  const allDone = (siblings ?? []).length > 0 && (siblings ?? []).every((t) => t.completed);
-  const anyDone = (siblings ?? []).some((t) => t.completed);
-
-  if (allDone) {
-    await supabaseAdmin
-      .from("milestones")
-      .update({ status: "Completed", completed_at: new Date().toISOString() })
-      .eq("id", milestoneId);
-
-    // Trigger milestone email for co-purchaser's milestone
-    triggerMilestoneEmail(milestoneId).catch((err) =>
-      console.error("[MilestoneEmail] Co-purchaser trigger failed:", err)
-    );
-
-    // Find and advance next milestone — must stay on the same side for
-    // Purchase & Sale deals so the two timelines progress independently.
-    const { data: currentMs } = await supabaseAdmin
-      .from("milestones")
-      .select("order_index, side")
-      .eq("id", milestoneId)
-      .single();
-
-    if (currentMs) {
-      const nextQuery = supabaseAdmin
+  if (familyAllDone) {
+    for (const em of equivalents) {
+      // Only NEWLY-completing rows fire the email + advance the next milestone.
+      const { data: completed } = await supabaseAdmin
         .from("milestones")
-        .select("id")
-        .eq("deal_id", dealId)
-        .eq("is_deleted", false)
-        .gt("order_index", currentMs.order_index)
+        .update({ status: "Completed", completed_at: new Date().toISOString() })
+        .eq("id", em.id)
         .neq("status", "Completed")
-        .order("order_index", { ascending: true })
-        .limit(1);
-      const { data: nextMs } = currentMs.side === null
-        ? await nextQuery.is("side", null).maybeSingle()
-        : await nextQuery.eq("side", currentMs.side).maybeSingle();
+        .select("id");
+      if (!completed || completed.length === 0) continue;
 
-      if (nextMs) {
-        await supabaseAdmin
-          .from("milestones")
-          .update({ status: "In Progress" })
-          .eq("id", nextMs.id);
-      }
+      triggerMilestoneEmail(em.id).catch((err) =>
+        console.error("[MilestoneEmail] Trigger failed:", err)
+      );
+
+      await advanceToNextMilestone(em.deal_id, side, em.order_index);
     }
-  } else if (anyDone) {
+    return;
+  }
+
+  // Not family-complete yet — reflect local progress only. If any of THIS deal's
+  // own tasks are done, the milestone is In Progress (but never Completed).
+  const anyLocalDone = tasks.some(
+    (t) => t.completed && t.milestone_id === milestoneId
+  );
+  if (anyLocalDone) {
     await supabaseAdmin
       .from("milestones")
       .update({ status: "In Progress" })
       .eq("id", milestoneId)
+      .neq("status", "Completed");
+  }
+}
+
+/**
+ * Move the given deal's next milestone (same side) to "In Progress". Kept in a
+ * helper so family-aware completion can advance every party's timeline.
+ */
+async function advanceToNextMilestone(
+  dealId: string,
+  side: "purchase" | "sale" | null,
+  fromOrderIndex: number
+) {
+  const nextQuery = supabaseAdmin
+    .from("milestones")
+    .select("id")
+    .eq("deal_id", dealId)
+    .eq("is_deleted", false)
+    .gt("order_index", fromOrderIndex)
+    .neq("status", "Completed")
+    .order("order_index", { ascending: true })
+    .limit(1);
+  const { data: nextMs } =
+    side === null
+      ? await nextQuery.is("side", null).maybeSingle()
+      : await nextQuery.eq("side", side).maybeSingle();
+
+  if (nextMs) {
+    await supabaseAdmin
+      .from("milestones")
+      .update({ status: "In Progress" })
+      .eq("id", nextMs.id)
       .neq("status", "Completed");
   }
 }

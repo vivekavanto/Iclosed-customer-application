@@ -1,7 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
-import { syncSharedTaskCompletion, syncSharedTaskPatch } from "@/lib/syncSharedTask";
-import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
+import { syncSharedTaskCompletion, syncSharedTaskPatch, advanceMilestone } from "@/lib/syncSharedTask";
 
 export async function PATCH(
   req: Request,
@@ -80,90 +79,11 @@ export async function PATCH(
     }
 
     // 2️⃣ If task belongs to a milestone → update milestone status
+    // Family-aware milestone advancement — completes only when EVERY party on
+    // the file has finished this milestone's tasks, and advances each party's
+    // timeline in lockstep. See advanceMilestone in syncSharedTask.
     if (task?.milestone_id && patch.completed) {
-      const { data: siblingsData } = await supabaseAdmin
-        .from("tasks")
-        .select("id, completed")
-        .eq("milestone_id", task.milestone_id)
-        .eq("is_deleted", false);
-
-      const siblings = siblingsData ?? [];
-      const allDone = siblings.length > 0 && siblings.every((t) => t.completed);
-      const anyDone = siblings.some((t) => t.completed);
-
-      if (allDone) {
-        // 3️⃣ All tasks done → mark milestone Completed
-        await supabaseAdmin
-          .from("milestones")
-          .update({ status: "Completed", completed_at: new Date().toISOString() })
-          .eq("id", task.milestone_id);
-
-        // 3b. Trigger milestone email if it has an email_template_id
-        triggerMilestoneEmail(task.milestone_id).catch((err) =>
-          console.error("[MilestoneEmail] Trigger failed:", err)
-        );
-
-        // 4️⃣ Find next milestone → mark it In Progress
-        // Stay on the same side for Purchase & Sale deals so each timeline
-        // progresses independently.
-        const { data: currentMilestone } = await supabaseAdmin
-          .from("milestones")
-          .select("order_index, side")
-          .eq("id", task.milestone_id)
-          .single();
-
-        if (currentMilestone) {
-          const nextQ = supabaseAdmin
-            .from("milestones")
-            .select("id")
-            .eq("deal_id", task.deal_id)
-            .eq("is_deleted", false)
-            .gt("order_index", currentMilestone.order_index)
-            .neq("status", "Completed")
-            .order("order_index", { ascending: true })
-            .limit(1);
-          const { data: nextMilestone } = currentMilestone.side === null
-            ? await nextQ.is("side", null).maybeSingle()
-            : await nextQ.eq("side", currentMilestone.side).maybeSingle();
-
-          if (nextMilestone) {
-            await supabaseAdmin
-              .from("milestones")
-              .update({ status: "In Progress" })
-              .eq("id", nextMilestone.id);
-
-            // 5️⃣ Find the milestone after the next one → mark it "Waiting"
-            const waitQ = supabaseAdmin
-              .from("milestones")
-              .select("id")
-              .eq("deal_id", task.deal_id)
-              .eq("is_deleted", false)
-              .neq("id", nextMilestone.id)
-              .neq("status", "Completed")
-              .neq("status", "In Progress")
-              .gt("order_index", currentMilestone.order_index)
-              .order("order_index", { ascending: true })
-              .limit(1);
-            const { data: waitingMilestone } = currentMilestone.side === null
-              ? await waitQ.is("side", null).maybeSingle()
-              : await waitQ.eq("side", currentMilestone.side).maybeSingle();
-
-            if (waitingMilestone) {
-              await supabaseAdmin
-                .from("milestones")
-                .update({ status: "Waiting" })
-                .eq("id", waitingMilestone.id);
-            }
-          }
-        }
-      } else if (anyDone) {
-        // 3️⃣ Some tasks done → mark milestone In Progress
-        await supabaseAdmin
-          .from("milestones")
-          .update({ status: "In Progress" })
-          .eq("id", task.milestone_id)
-          .neq("status", "Completed");
-      }
+      await advanceMilestone(task.deal_id, task.milestone_id);
     }
 
     return NextResponse.json({ success: true });

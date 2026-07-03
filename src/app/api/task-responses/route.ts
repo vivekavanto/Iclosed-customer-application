@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { syncSharedTaskCompletion, syncSharedTaskResponses } from "@/lib/syncSharedTask";
-import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
+import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
@@ -278,66 +277,10 @@ export async function POST(req: Request) {
         }
       }
 
-      // Check if all tasks in the milestone are now completed
+      // Family-aware milestone advancement — completes only when EVERY party on
+      // the file has finished this milestone's tasks. See advanceMilestone.
       if (task.milestone_id) {
-        const { data: siblings } = await supabaseAdmin
-          .from("tasks")
-          .select("id, completed")
-          .eq("milestone_id", task.milestone_id)
-          .eq("is_deleted", false);
-
-        // Re-fetch to get updated state after marking this task done
-        const { data: updatedSiblings } = await supabaseAdmin
-          .from("tasks")
-          .select("id, completed")
-          .eq("milestone_id", task.milestone_id)
-          .eq("is_deleted", false);
-
-        const allDone =
-          (updatedSiblings ?? []).length > 0 &&
-          (updatedSiblings ?? []).every((t: any) => t.completed || t.id === task_id);
-
-        if (allDone) {
-          await supabaseAdmin
-            .from("milestones")
-            .update({ status: "Completed", completed_at: new Date().toISOString() })
-            .eq("id", task.milestone_id);
-
-          // Trigger milestone email if it has an email_template_id
-          triggerMilestoneEmail(task.milestone_id).catch((err) =>
-            console.error("[MilestoneEmail] Trigger failed:", err)
-          );
-
-          // Advance next milestone to In Progress — stay on the same side for
-          // Purchase & Sale deals.
-          const { data: currentMs } = await supabaseAdmin
-            .from("milestones")
-            .select("order_index, side")
-            .eq("id", task.milestone_id)
-            .single();
-
-          if (currentMs) {
-            const nextQ = supabaseAdmin
-              .from("milestones")
-              .select("id")
-              .eq("deal_id", task.deal_id)
-              .eq("is_deleted", false)
-              .gt("order_index", currentMs.order_index)
-              .neq("status", "Completed")
-              .order("order_index", { ascending: true })
-              .limit(1);
-            const { data: nextMs } = currentMs.side === null
-              ? await nextQ.is("side", null).maybeSingle()
-              : await nextQ.eq("side", currentMs.side).maybeSingle();
-
-            if (nextMs) {
-              await supabaseAdmin
-                .from("milestones")
-                .update({ status: "In Progress" })
-                .eq("id", nextMs.id);
-            }
-          }
-        }
+        await advanceMilestone(task.deal_id, task.milestone_id);
       }
     }
 

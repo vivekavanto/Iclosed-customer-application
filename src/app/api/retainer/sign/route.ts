@@ -388,6 +388,61 @@ export async function POST(req: Request) {
     // account" popup is for NEW clients only — existing clients just log in.
     const accountExists = await leadHasAccount(lead);
 
+    // ── Document-upload responsibility (drives the post-sign "you're set up to
+    // manage documents" screen). The choice is made at intake and stored on the
+    // PRIMARY lead's `upload_mode`:
+    //   "me"   → the primary uploads for the whole family.
+    //   "co"   → one designated co-person (upload_consent_uploader_lead_id) does.
+    //   "both" → everyone uploads their own (anyone can act for anyone).
+    // `isDocumentUploader` = this signer has upload responsibility in the portal.
+    // `managedNames` = the OTHER people an uploader uploads for; only populated
+    // for the delegated modes ("me"/"co") — in "both" each handles their own.
+    // `uploaderName` = the person handling uploads on a SECONDARY signer's
+    // behalf (the "someone else is handling it" screen). ──
+    const primaryLeadId = isCoPerson ? (lead?.parent_lead_id ?? null) : leadId;
+    let uploadMode: "me" | "co" | "both" | null = null;
+    let isDocumentUploader = false;
+    let managedNames: string[] = [];
+    let uploaderName: string | null = null;
+    if (primaryLeadId) {
+      const { data: primaryRow } = await supabaseAdmin
+        .from("leads")
+        .select("id, upload_mode, upload_consent_uploader_lead_id")
+        .eq("id", primaryLeadId)
+        .maybeSingle();
+      uploadMode =
+        (primaryRow?.upload_mode as "me" | "co" | "both" | null) ?? null;
+      const consentUploaderId =
+        (primaryRow?.upload_consent_uploader_lead_id as string | null) ?? null;
+      if (uploadMode === "both") {
+        isDocumentUploader = true;
+      } else if (uploadMode === "me" || uploadMode === "co") {
+        const resolvedUploaderId =
+          uploadMode === "co" ? consentUploaderId : primaryLeadId;
+        isDocumentUploader = resolvedUploaderId === leadId;
+        if (isDocumentUploader) {
+          const { data: familyRows } = await supabaseAdmin
+            .from("leads")
+            .select("id, first_name, last_name")
+            .or(`id.eq.${primaryLeadId},parent_lead_id.eq.${primaryLeadId}`);
+          managedNames = (familyRows ?? [])
+            .filter((m) => m.id !== leadId)
+            .map((m) => `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim())
+            .filter(Boolean);
+        } else if (resolvedUploaderId) {
+          // Secondary signer — name the person handling their documents.
+          const { data: uploaderRow } = await supabaseAdmin
+            .from("leads")
+            .select("first_name, last_name")
+            .eq("id", resolvedUploaderId)
+            .maybeSingle();
+          uploaderName =
+            `${uploaderRow?.first_name ?? ""} ${uploaderRow?.last_name ?? ""}`.trim() ||
+            null;
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       show_co_person_prompt: showCoPersonPrompt,
@@ -396,6 +451,11 @@ export async function POST(req: Request) {
       // primary may delegate uploads to. Only populated when the popup is shown.
       primary_lead_id: showCoPersonPrompt ? leadId : null,
       co_persons: coPersons,
+      // Post-sign "you're set up to manage documents" screen.
+      upload_mode: uploadMode,
+      uploader_name: uploaderName,
+      is_document_uploader: isDocumentUploader,
+      managed_names: managedNames,
     });
   } catch (err) {
     console.error("[Retainer Sign] Server error:", err);

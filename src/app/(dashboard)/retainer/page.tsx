@@ -2,7 +2,7 @@
 
 import { useState, useEffect, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, MapPin, Tag, Shield, ArrowRight, User } from "lucide-react";
+import { FileText, MapPin, Tag, ArrowRight } from "lucide-react";
 import FAQAccordion, { FAQItem } from "@/components/retainer/FAQAccordion";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -77,25 +77,6 @@ interface FormErrors {
   signature?: string;
 }
 
-/** A co-purchaser/co-seller the primary may delegate uploads to. */
-interface CoPerson {
-  lead_id: string;
-  first_name: string;
-  last_name: string;
-  co_person_role: string | null;
-}
-
-/** Per-co-person role label for the "which co-person?" picker. */
-function coPersonRoleLabel(role: string | null): string {
-  if (role === "purchaser") return "Co-purchaser";
-  if (role === "seller") return "Co-seller";
-  return "Co-applicant";
-}
-
-function coPersonFullName(c: CoPerson): string {
-  return [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || "Co-applicant";
-}
-
 function getTodayDateString(): string {
   const now = new Date();
   const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
@@ -122,17 +103,6 @@ function getCoPersonLabel(
   if (leadType === "Purchase") return "Co-purchaser";
   if (side === "sale") return "Co-seller";
   return "Co-purchaser";
-}
-
-/**
- * Lower-cased, pluralised co-person noun for the post-sign popup copy, e.g.
- * "co-purchaser(s)" / "co-seller(s)".
- */
-function getCoPersonNoun(
-  leadType: string,
-  side: "purchase" | "sale" | null
-): string {
-  return `${getCoPersonLabel(leadType, side).toLowerCase()}(s)`;
 }
 
 /**
@@ -186,53 +156,6 @@ function ResultPopup({
   );
 }
 
-/**
- * "Set up your iClosed account" popup — shown to NEW (account-free) clients after
- * they choose "Me" or "Both", offering immediate account creation or a later
- * emailed link. Same modal shell as ResultPopup but with the red person icon
- * instead of the green success check.
- */
-function AccountSetupPopup({
-  activating,
-  onCreate,
-  onLater,
-}: {
-  activating: boolean;
-  onCreate: () => void;
-  onLater: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Set up your iClosed account"
-    >
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
-        <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-red-50 flex items-center justify-center">
-          <User className="w-8 h-8 text-[#C10007]" />
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-          Set up your iClosed account
-        </h1>
-        <p className="text-sm text-gray-500 mb-7 leading-relaxed">
-          Your iClosed account is where you&apos;ll securely upload your ID and
-          documents. You can do this now, or we&apos;ll email you a link for you to
-          do it later.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <Button size="md" onClick={onCreate} loading={activating}>
-            Create account now
-          </Button>
-          <Button size="md" variant="secondary" onClick={onLater} disabled={activating}>
-            I&apos;ll do this later
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function validate(name: string, date: string, signature: string): FormErrors {
   const errors: FormErrors = {};
 
@@ -275,29 +198,6 @@ export default function RetainerPage() {
   );
   // Local-only acknowledgement — not yet sent to the backend.
   const [coAuthAcknowledged, setCoAuthAcknowledged] = useState(false);
-  // Post-sign "Want to help with your co-purchaser(s) paperwork?" popup.
-  // `showCoPersonPrompt` is set from the sign response — true only when the
-  // signer is a primary applicant who has at least one co-person. `uploadMode`
-  // captures their answer (persisted via /api/retainer/submit-on-behalf).
-  const [showCoPersonPrompt, setShowCoPersonPrompt] = useState(false);
-  // `uploadMode` captures the resolved answer:
-  //   "me"   → the primary uploads on everyone's behalf
-  //   "co"   → a co-person uploads on the primary's behalf
-  //   "both" → the primary and the co-person each upload their own documents
-  // Drives the "You're all set" copy and whether the account-activation step is
-  // offered ("me"/"both" need an account for the primary; "co" is terminal).
-  const [uploadMode, setUploadMode] = useState<"me" | "co" | "both" | null>(null);
-  const [savingChoice, setSavingChoice] = useState(false);
-  // The primary's own lead id ("Me" uploader) and the co-persons the primary may
-  // hand uploads to — both come from the sign/check response.
-  const [primaryLeadId, setPrimaryLeadId] = useState<string | null>(null);
-  const [coPersons, setCoPersons] = useState<CoPerson[]>([]);
-  // "My co-purchaser" sub-flow: an optional picker (when >1 co-person) followed
-  // by a consent confirmation. `chosenUploaderLeadId` is the co-person who will
-  // upload once the primary agrees.
-  const [showCoPicker, setShowCoPicker] = useState(false);
-  const [showCoConsent, setShowCoConsent] = useState(false);
-  const [chosenUploaderLeadId, setChosenUploaderLeadId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -316,6 +216,20 @@ export default function RetainerPage() {
   // Whether the signer already has a portal account. The "Activate your
   // account" prompt is shown only to NEW clients; existing clients just log in.
   const [accountExists, setAccountExists] = useState(false);
+  // Document-upload responsibility, resolved from the intake "who will upload
+  // documents" choice (stored on the primary lead's upload_mode) and returned by
+  // /api/retainer/sign. `isDocumentUploader` → this signer uploads in the portal
+  // (the primary in "me", the chosen co-person in "co", everyone in "both").
+  // `managedNames` are the OTHER people they upload for — populated only for the
+  // delegated modes; empty in "both" (each handles their own documents).
+  const [isDocumentUploader, setIsDocumentUploader] = useState(false);
+  const [managedNames, setManagedNames] = useState<string[]>([]);
+  // The family's document-upload mode (from the primary lead). Used to detect a
+  // "secondary" signer — a delegated mode ("me"/"co") where this signer is NOT
+  // the uploader, so someone else handles their documents and they're done.
+  const [uploadMode, setUploadMode] = useState<"me" | "co" | "both" | null>(null);
+  // For a secondary signer, the name of the person handling their documents.
+  const [uploaderName, setUploaderName] = useState<string | null>(null);
   // Whether the user dismissed (clicked OK on) a terminal post-sign popup, so
   // we drop the modal backdrop and leave a plain confirmation behind.
   const [postSignDismissed, setPostSignDismissed] = useState(false);
@@ -348,21 +262,6 @@ export default function RetainerPage() {
         // every required retainer is already on file (or no converted deal
         // needs one yet), and in that case carries no address/name/type.
         if (data.signed === true && !data.error) {
-          // A primary who signed but never answered the "help with their
-          // paperwork?" popup is re-prompted here — the decision can't be
-          // skipped by reloading or returning after signing.
-          if (data.co_person_prompt_pending) {
-            setLeadType(data.lead_type ?? "");
-            setSide(
-              data.side === "purchase" || data.side === "sale" ? data.side : null
-            );
-            setAccountExists(Boolean(data.account_exists));
-            setPrimaryLeadId(data.primary_lead_id ?? null);
-            setCoPersons(Array.isArray(data.co_persons) ? data.co_persons : []);
-            setShowCoPersonPrompt(true);
-            setSubmitted(true);
-            return;
-          }
           setAllSigned(true);
           return;
         }
@@ -427,17 +326,27 @@ export default function RetainerPage() {
         return;
       }
 
-      const promptCoPerson = Boolean(data.show_co_person_prompt);
-      setShowCoPersonPrompt(promptCoPerson);
       setAccountExists(Boolean(data.account_exists));
-      setPrimaryLeadId(data.primary_lead_id ?? null);
-      setCoPersons(Array.isArray(data.co_persons) ? data.co_persons : []);
+      setIsDocumentUploader(Boolean(data.is_document_uploader));
+      setManagedNames(
+        Array.isArray(data.managed_names) ? data.managed_names : []
+      );
+      setUploadMode(
+        data.upload_mode === "me" ||
+          data.upload_mode === "co" ||
+          data.upload_mode === "both"
+          ? data.upload_mode
+          : null
+      );
+      setUploaderName(
+        typeof data.uploader_name === "string" && data.uploader_name
+          ? data.uploader_name
+          : null
+      );
       setSubmitted(true);
       // Logged-in signer → back to the dashboard. Account-free (token) signer →
       // stay on the success screen, which offers "Activate account / later".
-      // BUT a primary with co-persons first sees the "help with paperwork?"
-      // popup, so we must NOT auto-redirect past it.
-      if (!token && !promptCoPerson) {
+      if (!token) {
         setTimeout(() => {
           router.push("/dashboard");
           router.refresh();
@@ -447,72 +356,6 @@ export default function RetainerPage() {
       setErrors({ name: "Something went wrong. Please try again." });
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── Post-sign "who will be uploading your documents?" choice ──
-  // Persists the primary's choice to the new `leads.upload_mode` fields on the
-  // primary lead (and `upload_consent_uploader_lead_id` when a co-person is
-  // selected), then advances to "You're all set" (which, on the "me"/"both"
-  // branches, offers account creation for token signers). Persistence is
-  // best-effort: the signature is already durable, so a failed write never blocks.
-  //   "me"   → primary uploads for everyone (upload_mode='me')
-  //   "co"   → selected co-person uploads on the primary's behalf (upload_mode='co')
-  //   "both" → each uploads their own (upload_mode='both')
-  const handleUploaderChoice = async (
-    uploaderLeadId: string | null,
-    mode: "me" | "co" | "both"
-  ) => {
-    if (!uploaderLeadId) return;
-    setSavingChoice(true);
-    try {
-      await fetch("/api/retainer/submit-on-behalf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // `mode` decides which co-persons receive an activation email:
-        //   "me"   → none, "co" → the chosen co-person, "both" → every co-person.
-        body: JSON.stringify({ uploader_lead_id: uploaderLeadId, mode, ...(token ? { token } : {}) }),
-      });
-    } catch {
-      // non-blocking
-    } finally {
-      setShowCoPicker(false);
-      setShowCoConsent(false);
-      setUploadMode(mode);
-      setSavingChoice(false);
-      // Logged-in signer has no account-creation step → head to the dashboard.
-      // The "co" outcome is terminal with an explicit "Done" button, so it
-      // doesn't auto-redirect — the user dismisses it themselves.
-      if (!token && mode !== "co") {
-        setTimeout(() => {
-          router.push("/dashboard");
-          router.refresh();
-        }, 2000);
-      }
-    }
-  };
-
-  // "Me" → the primary is the uploader.
-  const handleChooseMe = () => {
-    void handleUploaderChoice(primaryLeadId, "me");
-  };
-
-  // "Both" → the primary and the co-person each upload their own documents.
-  // No delegation: record the primary as their own uploader and skip consent.
-  const handleChooseBoth = () => {
-    void handleUploaderChoice(primaryLeadId, "both");
-  };
-
-  // "My co-purchaser" → one co-person uploads. With a single co-person, go
-  // straight to the consent step; with several, ask which one first.
-  const handleChooseCoPurchaser = () => {
-    if (coPersons.length === 0) return;
-    if (coPersons.length === 1) {
-      setChosenUploaderLeadId(coPersons[0].lead_id);
-      setShowCoConsent(true);
-    } else {
-      setChosenUploaderLeadId(coPersons[0].lead_id);
-      setShowCoPicker(true);
     }
   };
 
@@ -627,221 +470,87 @@ export default function RetainerPage() {
 
   /* Success State */
   if (submitted) {
-    // Step 1 — primary applicant with co-person(s): "Who will be uploading your
-    // documents?". The answer records the designated uploader via the primary
-    // lead's `upload_mode` (and `upload_consent_uploader_lead_id` when a co-person
-    // is chosen). Three sub-screens: the choice, an optional "which co-person?"
-    // picker (>1 co-person), and the delegation consent.
-    if (showCoPersonPrompt && uploadMode === null) {
-      const coNoun = getCoPersonNoun(leadType, side);
-      const coLabel = getCoPersonLabel(leadType, side).toLowerCase();
-
-      // ── Consent — "My co-purchaser will upload" delegation acknowledgement ──
-      if (showCoConsent) {
-        return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Confirm upload permission"
-          >
-            <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-left">
-              <div className="w-12 h-12 mb-5 rounded-xl bg-red-50 flex items-center justify-center">
-                <Shield className="w-6 h-6 text-[#C10007]" />
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3">
-                Confirm upload permission
-              </h1>
-              <p className="text-sm text-gray-600 mb-7 leading-relaxed">
-                By selecting this option, you are giving your {coNoun} permission
-                to upload documents and personal information on your behalf.
-              </p>
-              <div className="flex flex-col gap-3">
-                <Button
-                  size="md"
-                  fullWidth
-                  onClick={() => handleUploaderChoice(chosenUploaderLeadId, "co")}
-                  loading={savingChoice}
-                >
-                  I agree
-                </Button>
-                <Button
-                  size="md"
-                  variant="ghost"
-                  fullWidth
-                  className="border border-gray-200 text-gray-800"
-                  onClick={() => {
-                    setShowCoConsent(false);
-                    if (coPersons.length > 1) setShowCoPicker(true);
-                  }}
-                  disabled={savingChoice}
-                >
-                  Go back
-                </Button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ── Picker — shown only when there is more than one co-person ──
-      if (showCoPicker) {
-        return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Choose who will upload"
-          >
-            <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2">
-                Who will upload your documents?
-              </h1>
-              <p className="text-sm text-gray-500 text-center mb-6">
-                Choose the {coLabel} who will upload on your behalf.
-              </p>
-              <div className="space-y-2.5">
-                {coPersons.map((c) => (
-                  <label
-                    key={c.lead_id}
-                    className={[
-                      "flex items-center gap-3 rounded-xl border px-4 py-3.5 cursor-pointer transition-colors",
-                      chosenUploaderLeadId === c.lead_id
-                        ? "border-[#C10007] bg-red-50/40"
-                        : "border-gray-200 hover:bg-gray-50",
-                    ].join(" ")}
-                  >
-                    <input
-                      type="radio"
-                      name="co-uploader"
-                      value={c.lead_id}
-                      checked={chosenUploaderLeadId === c.lead_id}
-                      onChange={() => setChosenUploaderLeadId(c.lead_id)}
-                      className="h-4 w-4 text-[#C10007] focus:ring-2 focus:ring-[#C10007]/40"
-                    />
-                    <span className="flex flex-col">
-                      <span className="text-sm font-semibold text-gray-900">
-                        {coPersonFullName(c)}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {coPersonRoleLabel(c.co_person_role)}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center mt-7">
-                <Button
-                  size="md"
-                  onClick={() => {
-                    setShowCoPicker(false);
-                    setShowCoConsent(true);
-                  }}
-                  disabled={!chosenUploaderLeadId}
-                >
-                  Continue
-                </Button>
-                <Button
-                  size="md"
-                  variant="secondary"
-                  onClick={() => setShowCoPicker(false)}
-                >
-                  Go back
-                </Button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      // ── The main choice ──
-      return (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/40 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Who will be uploading your documents?"
-        >
-          <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 max-w-md w-full p-6 sm:p-8 text-center">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-green-50 flex items-center justify-center">
-              <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-              Thank you for signing the retainer.
-            </h1>
-            <p className="text-sm text-gray-500 mb-6">
-              One more thing &mdash; who will be uploading your documents?
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button size="md" onClick={handleChooseMe} loading={savingChoice}>
-                Me
-              </Button>
-              <Button size="md" onClick={handleChooseCoPurchaser} disabled={savingChoice}>
-                My {coLabel}
-              </Button>
-              <Button size="md" onClick={handleChooseBoth} disabled={savingChoice}>
-                Both
-              </Button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     // Account-free (token) signer: offer immediate account activation.
     if (token && postSignChoice === null) {
-      // After the co-person choice the copy becomes the "You're all set" screen
-      // (screens 2 & 3) — heading + choice-specific line + account-creation CTA.
-      if (uploadMode !== null) {
-        const coNoun = getCoPersonNoun(leadType, side);
-        // "My co-purchaser" (uploadMode === "co"): the co-person uploads on the
-        // primary's behalf, so the primary has nothing more to do — a terminal
-        // "You're all set" with no account-activation step.
-        if (uploadMode === "co") {
-          return (
-            <ResultPopup plain={postSignDismissed}>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                You&apos;re all set
-              </h1>
-              <p className="text-sm text-gray-500">
-                Your {coNoun} can now upload your documents and personal
-                information on your behalf. We&apos;ll notify you once everything
-                has been submitted.
-              </p>
-              {!postSignDismissed && (
-                <div className="mt-6 flex justify-center">
-                  <Button size="md" onClick={() => setPostSignDismissed(true)}>
-                    Done
-                  </Button>
-                </div>
-              )}
-            </ResultPopup>
-          );
-        }
-        // "Me"/"Both": the primary uploads (at least their own). Existing clients
-        // just log in; NEW clients see the "Set up your iClosed account" prompt.
-        if (accountExists) {
-          return (
-            <ResultPopup>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-                You&apos;re all set
-              </h1>
-              <p className="text-sm text-gray-500">
-                {uploadMode === "both"
-                  ? `You and your ${coNoun} will each upload your own documents and ID. Log in to your account to upload yours.`
-                  : `You can now upload documents and ID for your ${coNoun}. Log in to your account to get started.`}
-              </p>
-            </ResultPopup>
-          );
-        }
+      // Document uploader (new account) — the person responsible for uploads for
+      // this file (primary in "me", chosen co-person in "co", everyone in
+      // "both"). They must activate their account to manage documents. In the
+      // delegated modes we name the people they upload for; in "both" each
+      // handles their own, so no names are listed.
+      if (isDocumentUploader && !accountExists) {
         return (
-          <AccountSetupPopup
-            activating={activating}
-            onCreate={handleActivate}
-            onLater={handleLater}
-          />
+          <ResultPopup>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              You&apos;re all set &mdash; your retainer is signed
+            </h1>
+            <p className="text-sm text-gray-500 mb-6">
+              {managedNames.length > 0 ? (
+                <>
+                  You&apos;re set up to manage documents for this file, including
+                  uploads for{" "}
+                  {managedNames.map((n, i) => (
+                    <span key={`${n}-${i}`}>
+                      {i > 0 &&
+                        (i === managedNames.length - 1 ? " and " : ", ")}
+                      <span className="font-semibold text-gray-700">{n}</span>
+                    </span>
+                  ))}
+                  .
+                </>
+              ) : (
+                <>You&apos;re set up to manage documents for this file.</>
+              )}
+            </p>
+            <div className="flex flex-col items-center gap-4">
+              <Button size="md" onClick={handleActivate} loading={activating}>
+                Activate your account
+              </Button>
+              <button
+                type="button"
+                onClick={handleLater}
+                disabled={activating}
+                className="text-sm text-gray-500 underline underline-offset-2 hover:text-gray-700 disabled:opacity-50"
+              >
+                I&apos;ll do this later &mdash; email me an activation link
+              </button>
+            </div>
+          </ResultPopup>
+        );
+      }
+      // Secondary signer in a delegated mode — "me"/"co" where this signer is
+      // NOT the uploader. Someone else (the primary in "me", the chosen
+      // co-person in "co") handles their documents, so there's no account to set
+      // up and nothing more to do. This covers the co-person in "me" mode AND
+      // the passive primary in "co" mode. (If they later want their own access,
+      // the admin invites them out-of-band.)
+      if (
+        (uploadMode === "me" || uploadMode === "co") &&
+        !isDocumentUploader
+      ) {
+        const firstName = name.split(" ")[0] || "there";
+        return (
+          <ResultPopup>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+              Thanks, {firstName} &mdash; your retainer is signed
+            </h1>
+            <p className="text-sm text-gray-500">
+              A copy is on its way to your inbox.{" "}
+              {uploaderName ? (
+                <>
+                  <span className="font-semibold text-gray-700">
+                    {uploaderName}
+                  </span>{" "}
+                  is handling document submission for this file, so there&apos;s
+                  nothing else you need to do right now.
+                </>
+              ) : (
+                <>
+                  The documents for this file are being handled for you, so
+                  there&apos;s nothing else you need to do right now.
+                </>
+              )}
+            </p>
+          </ResultPopup>
         );
       }
       // Existing clients already have an account — no "Activate your account"
@@ -947,52 +656,7 @@ export default function RetainerPage() {
       );
     }
 
-    // Logged-in signer (no token) — confirmation + auto-redirect. A primary who
-    // just answered the co-person popup gets the choice-specific "You're all set"
-    // copy; everyone else gets the standard "Agreement Submitted".
-    // "My co-purchaser" (co) — terminal screen with an explicit "Done" button
-    // (no auto-redirect); Done sends the logged-in signer to the dashboard.
-    if (uploadMode === "co") {
-      const coNoun = getCoPersonNoun(leadType, side);
-      return (
-        <ResultPopup>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-            You&apos;re all set
-          </h1>
-          <p className="text-sm text-gray-500 mb-6">
-            Your {coNoun} can now upload your documents and personal information on
-            your behalf. We&apos;ll notify you once everything has been submitted.
-          </p>
-          <div className="flex justify-center">
-            <Button
-              size="md"
-              onClick={() => {
-                router.push("/dashboard");
-                router.refresh();
-              }}
-            >
-              Done
-            </Button>
-          </div>
-        </ResultPopup>
-      );
-    }
-    if (uploadMode !== null) {
-      const coNoun = getCoPersonNoun(leadType, side);
-      const allSetCopy =
-        uploadMode === "me"
-          ? `You can now upload documents and ID for your ${coNoun}.`
-          : `You and your ${coNoun} will each upload your own documents and ID.`;
-      return (
-        <ResultPopup>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-            You&apos;re all set
-          </h1>
-          <p className="text-sm text-gray-500">{allSetCopy}</p>
-        </ResultPopup>
-      );
-    }
-
+    // Logged-in signer (no token) — confirmation + auto-redirect to the dashboard.
     return (
       <ResultPopup>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">

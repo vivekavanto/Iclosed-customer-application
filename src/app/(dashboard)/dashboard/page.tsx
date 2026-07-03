@@ -663,25 +663,10 @@ function AttentionCard({
 function StatusTimeline({
   milestones,
   loading,
-  tasks,
-  familyStatus,
 }: {
   milestones: Milestone[];
   loading: boolean;
-  tasks: Task[];
-  familyStatus: Record<string, FamilyTaskStatusSummary>;
 }) {
-  // Per-party completion count ("0/2", "1/2") for a milestone that holds a
-  // multi-party task (Personal Information / Upload Identification), mirroring
-  // the task badge in the attention list.
-  const partyCount = (m: Milestone): string | null => {
-    const task = tasks.find(
-      (t) => t.milestone_id === m.id && familyStatus[t.id]?.is_multi_party
-    );
-    if (!task) return null;
-    const fs = familyStatus[task.id];
-    return `${fs.completed_count}/${fs.total_count}`;
-  };
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
@@ -786,7 +771,6 @@ function StatusTimeline({
             const isInProgress = milestone.status === "In Progress";
             const hasDescription = milestone.description;
             const isLast = idx === filtered.length - 1;
-            const count = partyCount(milestone);
             const formattedDate = formatDateOnly(
               milestone.milestone_date,
               { month: "short", day: "numeric", year: "numeric" },
@@ -830,18 +814,9 @@ function StatusTimeline({
                     >
                       {milestone.title}
                     </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {formattedDate && (
-                        <p className="text-xs text-gray-400">{formattedDate}</p>
-                      )}
-                      {count && (
-                        <span
-                          className={`inline-flex items-center text-xs font-semibold tabular-nums ${isCompleted ? "text-gray-400" : "text-[#C10007]"}`}
-                        >
-                          {count}
-                        </span>
-                      )}
-                    </div>
+                    {formattedDate && (
+                      <p className="text-xs text-gray-400 mt-0.5">{formattedDate}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1553,8 +1528,6 @@ export default function DashboardPage() {
           <StatusTimeline
             milestones={visibleMilestones}
             loading={milestonesLoading}
-            tasks={visibleTasks}
-            familyStatus={familyStatus}
           />
 
           {/* ── Need Assistance ── */}

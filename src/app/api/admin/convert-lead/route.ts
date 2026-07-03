@@ -58,10 +58,15 @@ export async function POST(req: Request) {
     }
 
     // ── 2. Convert the primary lead ───────────────────────────────────────────
+    // In "co" mode a co-person uploads on the primary's behalf, so the primary
+    // is a passive party — they get no account-activation invite (the admin can
+    // still invite them out-of-band later). Every other mode ("me"/"both"/none)
+    // invites the primary as usual.
     const result = await convertSingleLead({
       lead,
       closingDate: closing_date,
       fileNumber: file_number,
+      sendInvite: lead.upload_mode !== "co",
     });
 
     if (!result.success) {
