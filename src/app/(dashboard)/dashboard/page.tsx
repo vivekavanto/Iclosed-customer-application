@@ -160,13 +160,6 @@ function partyFullName(p: Party): string {
   return [p.first_name, p.last_name].filter(Boolean).join(" ").trim() || "Applicant";
 }
 
-function partyRoleLabel(role: string): string {
-  if (role === "primary") return "Primary";
-  if (role === "purchaser") return "Co-Purchaser";
-  if (role === "seller") return "Co-Seller";
-  return "Co-Applicant";
-}
-
 /* ─────────────────────────────────────────────
    STATUS CONFIG
 ───────────────────────────────────────────── */
@@ -271,6 +264,17 @@ function AttentionCard({
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const prevPendingIdsRef = useRef<string>("");
 
+  // Multi-party tasks that just flipped to fully-complete THIS session. We keep
+  // them in the list briefly, rendered green, as a "done" confirmation, then
+  // drop them (see effect below). Tasks that were already complete on load are
+  // never added here, so they don't flash on a fresh visit.
+  const [justCompletedIds, setJustCompletedIds] = useState<Set<string>>(new Set());
+  // Previous all-completed state per multi-party task id, to detect the flip.
+  const prevCompleteRef = useRef<Map<string, boolean> | null>(null);
+  const completionTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // How long the green confirmation stays before the card disappears.
+  const COMPLETION_FLASH_MS = 3000;
+
   // A per-party task (Personal Info / Upload ID) on a multi-party deal is only
   // "done" once EVERY party's section is complete — not just the logged-in
   // user's own copy. Fall back to the row's own flag for everything else.
@@ -293,18 +297,71 @@ function AttentionCard({
   // configured workflow. Stable sort preserves the API's due-date tiebreaker.
   // Completed tasks naturally fall away because of the !completed filter.
   const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
-  const allPending = uniqueTasks
-    .filter((t) => !isTaskComplete(t))
-    .slice()
-    .sort((a, b) => {
-      const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
-      const bo = b.order_index ?? b.template_order_index ?? ORDER_FALLBACK;
-      return ao - bo;
-    });
+  const sortByOrder = (a: Task, b: Task) => {
+    const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
+    const bo = b.order_index ?? b.template_order_index ?? ORDER_FALLBACK;
+    return ao - bo;
+  };
 
-  // Previously we capped the visible list at TASK_BATCH_SIZE (3). We now
-  // render every pending task the backend returns.
-  const pending = allPending;
+  // Tasks the user still has to action — drives the header count and the
+  // "all done" state.
+  const trulyPending = uniqueTasks.filter((t) => !isTaskComplete(t));
+
+  // What we actually render: every incomplete task PLUS any multi-party task
+  // that just became fully complete (still inside its green-confirmation window),
+  // so the card flashes "done" before it disappears rather than vanishing
+  // silently.
+  const pending = uniqueTasks
+    .filter((t) => !isTaskComplete(t) || justCompletedIds.has(t.id))
+    .slice()
+    .sort(sortByOrder);
+
+  // Detect a multi-party task flipping to fully-complete this session: flash it
+  // green for COMPLETION_FLASH_MS, then remove it from the list.
+  const completionKey = uniqueTasks
+    .map((t) => {
+      const fs = familyStatus[t.id];
+      if (!fs?.is_multi_party) return `${t.id}:-`;
+      return `${t.id}:${fs.all_completed ? 1 : 0}`;
+    })
+    .join(",");
+
+  useEffect(() => {
+    const current = new Map<string, boolean>();
+    for (const t of uniqueTasks) {
+      const fs = familyStatus[t.id];
+      if (fs?.is_multi_party) current.set(t.id, fs.all_completed);
+    }
+    const prev = prevCompleteRef.current;
+    // First time we see completion state (or after a remount) just record it —
+    // don't flash tasks that were already complete on load.
+    if (prev) {
+      for (const [id, done] of current) {
+        if (done && !prev.get(id)) {
+          setJustCompletedIds((s) => new Set(s).add(id));
+          if (completionTimersRef.current[id]) clearTimeout(completionTimersRef.current[id]);
+          completionTimersRef.current[id] = setTimeout(() => {
+            setJustCompletedIds((s) => {
+              const next = new Set(s);
+              next.delete(id);
+              return next;
+            });
+            delete completionTimersRef.current[id];
+          }, COMPLETION_FLASH_MS);
+        }
+      }
+    }
+    prevCompleteRef.current = current;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completionKey]);
+
+  // Clear any pending timers on unmount.
+  useEffect(() => {
+    const timers = completionTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
 
   // Create a stable key from pending task IDs to use as dependency
   const pendingIdsKey = pending.map((t) => t.id).join(",");
@@ -346,24 +403,8 @@ function AttentionCard({
     }
   }, [loading, pendingIdsKey]);
 
-  const allDone = !loading && uniqueTasks.length > 0 && allPending.length === 0;
+  const allDone = !loading && uniqueTasks.length > 0 && trulyPending.length === 0;
   const isEmpty = !loading && uniqueTasks.length === 0;
-
-  // Header summary: how many pending sections each co-party still owes, e.g.
-  // "2 awaiting Sara" (Personal Info + Upload ID both awaiting Sara → 2).
-  const awaitingByName: Record<string, number> = {};
-  for (const t of allPending) {
-    const fs = familyStatus[t.id];
-    if (!fs?.is_multi_party) continue;
-    for (const m of fs.members) {
-      if (!m.is_self && !m.completed) {
-        awaitingByName[m.first_name] = (awaitingByName[m.first_name] ?? 0) + 1;
-      }
-    }
-  }
-  const awaitingSummary = Object.entries(awaitingByName)
-    .map(([name, n]) => `${n} awaiting ${name}`)
-    .join(" · ");
 
   // Right-side status chip for a per-party task. Counts parties completed out of
   // the total ("Pending 0/2"); once only one party is left, names them
@@ -377,22 +418,15 @@ function AttentionCard({
     return `Pending ${name ? `${name} ` : ""}${fs.completed_count}/${fs.total_count}`;
   };
 
-  // Subtitle under a per-party task title. While nobody has completed it reads as a
-  // shared task ("Required from both parties"); once someone finishes, it names the
-  // party still pending ("Required from Pavi").
+  // Subtitle under a per-party task title. Always reads as a shared task
+  // ("Required from both parties") — we no longer name the individual party still
+  // pending, so the copy stays stable as each person completes their section.
   const partySubtitle = (t: Task): string | null => {
     const fs = familyStatus[t.id];
     if (!fs?.is_multi_party) return null;
-    if (fs.completed_count === 0) {
-      return fs.total_count === 2
-        ? "Required from both parties"
-        : "Required from all parties";
-    }
-    const pendingNames = fs.members
-      .filter((m) => !m.completed)
-      .map((m) => m.first_name);
-    if (pendingNames.length === 0) return null;
-    return `Required from ${pendingNames.join(", ")}`;
+    return fs.total_count === 2
+      ? "Required from both parties"
+      : "Required from all parties";
   };
 
   return (
@@ -414,12 +448,11 @@ function AttentionCard({
         </div>
         <div className="min-w-0">
           <h2 className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-[#7a0004]"}`}>
-            Needs Your Attention
+            Please Complete
           </h2>
-          {!allDone && !isEmpty && allPending.length > 0 && (
+          {!allDone && !isEmpty && trulyPending.length > 0 && (
             <p className="text-xs text-[#7a0004]/70 mt-0.5">
-              {allPending.length} {allPending.length === 1 ? "task" : "tasks"}
-              {awaitingSummary ? ` · ${awaitingSummary}` : ""}
+              {trulyPending.length} {trulyPending.length === 1 ? "task" : "tasks"}
             </p>
           )}
         </div>
@@ -481,10 +514,12 @@ function AttentionCard({
                 <div
                   key={task.id}
                   className={[
-                    "rounded-xl border bg-white overflow-hidden transition-all duration-200",
-                    isExpanded
-                      ? "border-[#C10007]/30 shadow-md"
-                      : "border-gray-200 hover:border-[#C10007]/30 hover:shadow-md",
+                    "rounded-xl border overflow-hidden transition-all duration-200",
+                    fs.all_completed
+                      ? "border-[#bbf7d0] bg-[#f0fdf4]"
+                      : isExpanded
+                        ? "border-[#C10007]/30 shadow-md bg-white"
+                        : "border-gray-200 hover:border-[#C10007]/30 hover:shadow-md bg-white",
                   ].join(" ")}
                 >
                   {/* Accordion header — toggles the per-party breakdown */}
@@ -506,14 +541,18 @@ function AttentionCard({
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
+                          <p className={`text-sm sm:text-base font-bold leading-snug transition-colors ${fs.all_completed ? "text-[#15803d]" : "text-gray-900 group-hover:text-[#C10007]"}`}>
                             {task.title}
                           </p>
-                          {isNew && (
+                          {fs.all_completed ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#dcfce7] text-[#15803d]">
+                              <Check size={11} strokeWidth={3} /> Completed
+                            </span>
+                          ) : isNew ? (
                             <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
                               New
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         {subtitle && (
                           <p className="text-xs sm:text-sm text-gray-400 mt-0.5">{subtitle}</p>
@@ -553,22 +592,12 @@ function AttentionCard({
                             key={m.lead_id}
                             className="flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-gray-50/50"
                           >
-                            <div
-                              className={[
-                                "w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0",
-                                m.completed ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500",
-                              ].join(" ")}
-                            >
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 bg-gray-200 text-gray-500">
                               {initials(m.first_name, m.last_name)}
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
                                 <span className="truncate">{displayName}</span>
-                                {m.is_self && (
-                                  <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#C10007] text-white flex-shrink-0">
-                                    You
-                                  </span>
-                                )}
                               </p>
                             </div>
                             {m.completed ? (
@@ -582,7 +611,7 @@ function AttentionCard({
                               <button
                                 type="button"
                                 onClick={() => onMemberClick(task, m)}
-                                className="flex-shrink-0 inline-flex items-center rounded-lg bg-[#C10007] px-4 py-2 text-xs font-semibold text-white hover:bg-[#a30006] transition-colors cursor-pointer"
+                                className="flex-shrink-0 inline-flex items-center rounded-lg border border-gray-300 bg-transparent px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
                               >
                                 Upload
                               </button>
@@ -762,8 +791,12 @@ function StatusTimeline({
       <div className="max-h-[350px] overflow-y-auto">
         <div>
           {filtered.map((milestone, idx) => {
-            const isCompleted = milestone.status === "Completed";
-            const isInProgress = milestone.status === "In Progress";
+            // A milestone is only ever shown as done (green check) or pending
+            // (grey). We deliberately drop the "In Progress" ring — it lit up as
+            // soon as one sub-task completed, which read as distracting. Use the
+            // same done-detection as the progress bar so a milestone flips to the
+            // check only once ALL of its tasks are complete.
+            const isCompleted = isMilestoneDone(milestone);
             const hasDescription = milestone.description;
             const isLast = idx === filtered.length - 1;
             const formattedDate = formatDateOnly(
@@ -793,10 +826,6 @@ function StatusTimeline({
                       <div className="w-[28px] h-[28px] rounded-full bg-gray-400 flex items-center justify-center">
                         <Check size={18} className="text-white" strokeWidth={3} />
                       </div>
-                    ) : isInProgress ? (
-                      <div className="w-[28px] h-[28px] rounded-full border-2 border-gray-800 bg-white flex items-center justify-center">
-                        <div className="w-2.5 h-2.5 rounded-full bg-gray-800" />
-                      </div>
                     ) : (
                       <div className="w-[28px] h-[28px] rounded-full bg-gray-200" />
                     )}
@@ -805,7 +834,7 @@ function StatusTimeline({
                   {/* Label + meta */}
                   <div className="flex-1 min-w-0">
                     <p
-                      className={`text-sm leading-snug ${isCompleted ? "text-gray-400 font-semibold" : isInProgress ? "text-gray-900 font-bold" : "text-gray-500 font-medium"}`}
+                      className={`text-sm leading-snug ${isCompleted ? "text-gray-400 font-semibold" : "text-gray-500 font-medium"}`}
                     >
                       {milestone.title}
                     </p>
@@ -1476,26 +1505,13 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-400">—</p>
               ) : (
                 <div className="space-y-1">
-                  {visibleParties.map((p) => {
-                    const isPrimary = p.role === "primary";
-                    return (
-                      <div key={p.lead_id} className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-gray-900 leading-tight">
-                          {partyFullName(p)}
-                        </span>
-                        <span
-                          className={[
-                            "inline-flex items-center text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded",
-                            isPrimary
-                              ? "bg-[#FEF2F2] text-[#C10007]"
-                              : "bg-gray-100 text-gray-500",
-                          ].join(" ")}
-                        >
-                          {partyRoleLabel(p.role)}
-                        </span>
-                      </div>
-                    );
-                  })}
+                  {visibleParties.map((p) => (
+                    <div key={p.lead_id} className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-gray-900 leading-tight">
+                        {partyFullName(p)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

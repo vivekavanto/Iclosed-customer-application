@@ -562,7 +562,7 @@ export default function RetainerPage() {
               )}
             </p>
             <div className="mt-6 flex justify-center">
-              <Button size="md" onClick={() => router.push("/")}>Return to Home</Button>
+              <Button size="md" onClick={() => window.close()}>Close tab</Button>
             </div>
           </ResultPopup>
         );

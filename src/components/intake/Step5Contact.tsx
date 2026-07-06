@@ -697,7 +697,7 @@ export default function Step5Contact({
                         {activeCoCards.length > 0 && (
                             <div className="flex flex-col gap-1.5 w-full">
                                 <label className="text-sm font-medium text-gray-900">
-                                    Who will upload documents? <span className="text-[#C10007]">*</span>
+                                    Who will upload documents for this file? <span className="text-[#C10007]">*</span>
                                 </label>
                                 <select
                                     value={documentUploadChoice}
@@ -705,7 +705,7 @@ export default function Step5Contact({
                                     className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
                                 >
                                     <option value="">Select an option</option>
-                                    <option value="me">{formData.fullName || "You"} (you)</option>
+                                    <option value="me">{formData.fullName || "You"}</option>
                                     {activeCoCards.map((card) => (
                                         <option key={card.id} value={`co:${card.id}`}>
                                             {card.fullName || (card.role === "purchaser" ? "Co-purchaser" : "Co-seller")}
