@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
@@ -2218,8 +2218,16 @@ export default function PersonalInfoTaskDrawer({
               }
 
               // text / phone / email / date
+              const isMailForwardingStart =
+                field.label.trim().toLowerCase() === "street address";
               return (
-                <div key={field.id} id={`field-${field.id}`}>
+                <Fragment key={field.id}>
+                  {isMailForwardingStart && (
+                    <p className="text-sm font-bold text-gray-900">
+                      Mail forwarding address
+                    </p>
+                  )}
+                  <div id={`field-${field.id}`}>
                   <label className="text-sm font-semibold text-gray-800 mb-2 block">
                     {field.label}
                     {fieldRequired(field) ? (
@@ -2249,7 +2257,8 @@ export default function PersonalInfoTaskDrawer({
                       {errors[field.id]}
                     </p>
                   )}
-                </div>
+                  </div>
+                </Fragment>
               );
             })}
 
