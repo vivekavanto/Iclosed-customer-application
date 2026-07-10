@@ -14,6 +14,8 @@ import Step4 from "@/components/intake/Step4";
 import Step5Contact, {
   CoPersonCard,
   ContactInfo,
+  AppliedReferral,
+  ReferralAgentInfo,
 } from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
@@ -67,6 +69,14 @@ export default function ServiceSelection() {
   const [coSellerCards, setCoSellerCards] = useState<CoPersonCard[]>([]);
   const [referralSource, setReferralSource] = useState("");
   const [referralOther, setReferralOther] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [appliedReferral, setAppliedReferral] = useState<AppliedReferral | null>(null);
+  const [referralNoCode, setReferralNoCode] = useState(false);
+  const [referralAgent, setReferralAgent] = useState<ReferralAgentInfo>({
+    name: "",
+    company: "",
+    email: "",
+  });
   const [documentUploadChoice, setDocumentUploadChoice] = useState("");
   const authPrefillAppliedRef = useRef(false);
 
@@ -277,6 +287,14 @@ export default function ServiceSelection() {
             setReferralSource={setReferralSource}
             referralOther={referralOther}
             setReferralOther={setReferralOther}
+            referralCode={referralCode}
+            setReferralCode={setReferralCode}
+            appliedReferral={appliedReferral}
+            setAppliedReferral={setAppliedReferral}
+            referralNoCode={referralNoCode}
+            setReferralNoCode={setReferralNoCode}
+            referralAgent={referralAgent}
+            setReferralAgent={setReferralAgent}
             documentUploadChoice={documentUploadChoice}
             setDocumentUploadChoice={setDocumentUploadChoice}
             onComplete={async (contactData) => {
@@ -323,6 +341,11 @@ export default function ServiceSelection() {
                     document_upload_mode: contactData.documentUploadMode,
                     document_uploader_co_person_id: contactData.documentUploaderCoPersonId,
                     referral_source: contactData.referralSource || "",
+                    broker_id: contactData.brokerId,
+                    coupon_id: contactData.couponId,
+                    referral_agent_name: contactData.referralAgentName || "",
+                    referral_agent_company: contactData.referralAgentCompany || "",
+                    referral_agent_email: contactData.referralAgentEmail || "",
                   }),
                 });
 

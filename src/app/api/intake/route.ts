@@ -35,6 +35,11 @@ export async function POST(req: Request) {
       document_upload_mode,
       document_uploader_co_person_id,
       referral_source,
+      broker_id,
+      coupon_id,
+      referral_agent_name,
+      referral_agent_company,
+      referral_agent_email,
     } = body;
 
     // Per-side APS flags drive Buy & Sell. For single-side flows the legacy
@@ -338,6 +343,17 @@ export async function POST(req: Request) {
         upload_consent_at: null,
         upload_consent_uploader_lead_id: null,
         referral_source: referral_source || null,
+        // Referral attribution — the broker/coupon resolved from the applied
+        // referral code. Only spread these keys when a code was applied so a
+        // non-referred intake never references the columns (keeps intake working
+        // even before the broker_id/coupon_id migration is applied).
+        // convertLead() copies these onto the deal on conversion.
+        ...(broker_id ? { broker_id } : {}),
+        ...(coupon_id ? { coupon_id } : {}),
+        // Manual "no code" referral — an off-system agent/broker the client named.
+        ...(referral_agent_name ? { referral_agent_name } : {}),
+        ...(referral_agent_company ? { referral_agent_company } : {}),
+        ...(referral_agent_email ? { referral_agent_email } : {}),
         client_id: clientId,
       })
       .select()

@@ -119,18 +119,20 @@ export default function ClientNameReadOnlySection({
             "border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed select-none",
           ].join(" ")}
         />
-        <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
-          Please contact the law clerk if you would like to edit your name.
-        </p>
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          onClick={openNameChangeModal}
-          className="mt-3 bg-[#C10007] hover:bg-[#a30006]"
-        >
-          Request name change
-        </Button>
+        <div className="mt-1.5 flex items-center justify-between gap-4">
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Please contact the law clerk if you would like to edit your name.
+          </p>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={openNameChangeModal}
+            className="bg-[#C10007] hover:bg-[#a30006] flex-shrink-0"
+          >
+            Request name change
+          </Button>
+        </div>
       </div>
 
       {nameChangeModalOpen && (

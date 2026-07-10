@@ -16,6 +16,41 @@ interface ContactData {
     documentUploadMode: "me" | "co" | "both" | null;
     documentUploaderCoPersonId: string | null;
     referralSource: string;
+    // Referral attribution — set only when a valid referral (coupon) code was
+    // applied. Both null otherwise (e.g. the manual "no code" path below).
+    brokerId: string | null;
+    couponId: string | null;
+    // Manual referral — captured on the "I don't have a code" path when the
+    // source is an agent/broker, so staff can credit an off-system referrer.
+    referralAgentName: string;
+    referralAgentCompany: string;
+    referralAgentEmail: string;
+}
+
+// The manual agent/broker details entered when the client has no referral code.
+export interface ReferralAgentInfo {
+    name: string;
+    company: string;
+    email: string;
+}
+
+// A broker resolved from an applied referral code (subset of the brokers master).
+export interface ReferralBroker {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    type: "Mortgage Broker" | "Real Estate Agent" | null;
+    company: string | null;
+}
+
+// The outcome of applying a referral code, persisted on the intake page so it
+// survives Back/Next navigation.
+export interface AppliedReferral {
+    couponId: string;
+    couponCode: string;
+    brokerId: string | null;
+    broker: ReferralBroker | null;
 }
 
 interface CoPerson {
@@ -75,6 +110,15 @@ interface Step5ContactProps {
     setReferralSource: React.Dispatch<React.SetStateAction<string>>;
     referralOther: string;
     setReferralOther: React.Dispatch<React.SetStateAction<string>>;
+    referralCode: string;
+    setReferralCode: React.Dispatch<React.SetStateAction<string>>;
+    appliedReferral: AppliedReferral | null;
+    setAppliedReferral: React.Dispatch<React.SetStateAction<AppliedReferral | null>>;
+    // "I don't have a code" toggle → reveals the "How did you hear about us?" flow.
+    referralNoCode: boolean;
+    setReferralNoCode: React.Dispatch<React.SetStateAction<boolean>>;
+    referralAgent: ReferralAgentInfo;
+    setReferralAgent: React.Dispatch<React.SetStateAction<ReferralAgentInfo>>;
     documentUploadChoice: string;
     setDocumentUploadChoice: React.Dispatch<React.SetStateAction<string>>;
 }
@@ -98,6 +142,14 @@ export default function Step5Contact({
     setReferralSource,
     referralOther,
     setReferralOther,
+    referralCode,
+    setReferralCode,
+    appliedReferral,
+    setAppliedReferral,
+    referralNoCode,
+    setReferralNoCode,
+    referralAgent,
+    setReferralAgent,
     documentUploadChoice,
     setDocumentUploadChoice,
 }: Step5ContactProps) {
@@ -112,6 +164,78 @@ export default function Step5Contact({
     const setFormData = setContactInfo;
 
     const [submitting, setSubmitting] = React.useState(false);
+
+    // Referral code flow — shown only when the referral source is an agent/broker.
+    const isReferralPartner =
+        referralSource === "Real estate agent" || referralSource === "Mortgage broker";
+    const [applyingCode, setApplyingCode] = React.useState(false);
+    const [referralError, setReferralError] = React.useState<string | null>(null);
+    // When one coupon is shared by several brokers, let the client pick who
+    // referred them before we lock in the attribution.
+    const [brokerChoices, setBrokerChoices] = React.useState<ReferralBroker[] | null>(null);
+    const [pendingCoupon, setPendingCoupon] = React.useState<{ id: string; code: string } | null>(null);
+
+    const handleApplyReferral = async () => {
+        const code = referralCode.trim();
+        if (!code) {
+            setReferralError("Enter a referral code.");
+            return;
+        }
+        setApplyingCode(true);
+        setReferralError(null);
+        setBrokerChoices(null);
+        setPendingCoupon(null);
+        try {
+            const res = await fetch(`/api/referral/validate?code=${encodeURIComponent(code)}`);
+            const data = await res.json();
+            if (!data.valid) {
+                setReferralError(data.error || "That referral code isn't valid.");
+                return;
+            }
+            const brokers: ReferralBroker[] = data.brokers ?? [];
+            if (brokers.length > 1) {
+                setPendingCoupon({ id: data.coupon.id, code: data.coupon.code });
+                setBrokerChoices(brokers);
+                return;
+            }
+            const broker = brokers[0] ?? null;
+            setAppliedReferral({
+                couponId: data.coupon.id,
+                couponCode: data.coupon.code,
+                brokerId: broker?.id ?? null,
+                broker,
+            });
+        } catch {
+            setReferralError("Couldn't verify the code. Please try again.");
+        } finally {
+            setApplyingCode(false);
+        }
+    };
+
+    const handlePickBroker = (broker: ReferralBroker) => {
+        if (!pendingCoupon) return;
+        setAppliedReferral({
+            couponId: pendingCoupon.id,
+            couponCode: pendingCoupon.code,
+            brokerId: broker.id,
+            broker,
+        });
+        setBrokerChoices(null);
+        setPendingCoupon(null);
+    };
+
+    const handleChangeReferral = () => {
+        setAppliedReferral(null);
+        setBrokerChoices(null);
+        setPendingCoupon(null);
+        setReferralError(null);
+        setReferralNoCode(false);
+    };
+
+    // "Agent" vs "Broker" wording for the manual (no-code) fields.
+    const partnerNoun = referralSource === "Mortgage broker" ? "Broker" : "Agent";
+    const updateAgent = (field: keyof ReferralAgentInfo, value: string) =>
+        setReferralAgent((prev) => ({ ...prev, [field]: value }));
 
     const formatCoPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -379,7 +503,15 @@ export default function Step5Contact({
             }
         }
 
-        const finalReferral = referralSource === "Other" ? referralOther.trim() : referralSource;
+        // Referral source: a resolved code wins (record the broker's type, or a
+        // generic label); otherwise the manual "how did you hear" value.
+        const finalReferral = appliedReferral
+            ? appliedReferral.broker?.type ?? "Referral code"
+            : referralSource === "Other"
+                ? referralOther.trim()
+                : referralSource;
+        // Manual agent details only apply on the no-code + agent/broker path.
+        const useManualAgent = !appliedReferral && isReferralPartner;
         setSubmitting(true);
         try {
             await onComplete({
@@ -390,6 +522,11 @@ export default function Step5Contact({
                 documentUploadMode,
                 documentUploaderCoPersonId,
                 referralSource: finalReferral,
+                brokerId: appliedReferral ? appliedReferral.brokerId : null,
+                couponId: appliedReferral ? appliedReferral.couponId : null,
+                referralAgentName: useManualAgent ? referralAgent.name.trim() : "",
+                referralAgentCompany: useManualAgent ? referralAgent.company.trim() : "",
+                referralAgentEmail: useManualAgent ? referralAgent.email.trim() : "",
             });
         } finally {
             setSubmitting(false);
@@ -716,35 +853,228 @@ export default function Step5Contact({
                             </div>
                         )}
 
-                        {/* How did you hear about us? (optional) */}
-                        <div className="flex flex-col gap-1.5 w-full">
-                            <label className="text-sm font-medium text-gray-900">
-                                How did you hear about us?{" "}
-                                <span className="text-gray-400 font-normal">(optional)</span>
-                            </label>
-                            <select
-                                value={referralSource}
-                                onChange={(e) => {
-                                    setReferralSource(e.target.value);
-                                    if (e.target.value !== "Other") setReferralOther("");
-                                }}
-                                className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
-                            >
-                                <option value="">Select an option</option>
-                                {REFERRAL_OPTIONS.map((opt) => (
-                                    <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                            </select>
-                            {referralSource === "Other" && (
-                                <input
-                                    type="text"
-                                    placeholder="Please specify..."
-                                    value={referralOther}
-                                    onChange={(e) => setReferralOther(e.target.value)}
-                                    className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
-                                />
-                            )}
-                        </div>
+                        {/* Referral / "How did you hear about us?" — code-first flow.
+                            Enter a code (resolves the referring broker), or click
+                            "I don't have a code" to pick a source and optionally
+                            credit an agent/broker manually. */}
+                        {appliedReferral ? (
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-sm font-medium text-gray-900">
+                                    Referral code{" "}
+                                    <span className="text-gray-400 font-normal">(optional)</span>
+                                </label>
+                                <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-start gap-3">
+                                            <CheckCircle2 size={20} className="text-green-600 mt-0.5 flex-shrink-0" />
+                                            <div className="text-sm">
+                                                {appliedReferral.broker ? (
+                                                    <>
+                                                        <p className="font-semibold text-gray-900">{appliedReferral.broker.name}</p>
+                                                        <p className="text-gray-500">
+                                                            {[appliedReferral.broker.type, appliedReferral.broker.company]
+                                                                .filter(Boolean)
+                                                                .join(" · ")}
+                                                        </p>
+                                                        {appliedReferral.broker.email && (
+                                                            <p className="text-gray-500">{appliedReferral.broker.email}</p>
+                                                        )}
+                                                        <p className="mt-2 text-gray-500">
+                                                            We&apos;ll keep them updated on your file&apos;s progress.
+                                                        </p>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <p className="font-semibold text-gray-900">
+                                                            Code &ldquo;{appliedReferral.couponCode}&rdquo; applied
+                                                        </p>
+                                                        <p className="mt-1 text-gray-500">
+                                                            Your file will be linked to this referral.
+                                                        </p>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleChangeReferral}
+                                            className="text-sm font-semibold text-[#C10007] underline cursor-pointer flex-shrink-0"
+                                        >
+                                            Change
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : brokerChoices ? (
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-sm font-medium text-gray-900">
+                                    Referral code{" "}
+                                    <span className="text-gray-400 font-normal">(optional)</span>
+                                </label>
+                                <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-2">
+                                    <p className="text-sm text-gray-600">Who referred you?</p>
+                                    {brokerChoices.map((b) => (
+                                        <button
+                                            key={b.id}
+                                            type="button"
+                                            onClick={() => handlePickBroker(b)}
+                                            className="w-full text-left rounded-lg border border-gray-200 px-3 py-2.5 hover:border-[#C10007] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
+                                        >
+                                            <p className="text-sm font-semibold text-gray-900">{b.name}</p>
+                                            <p className="text-xs text-gray-500">
+                                                {[b.type, b.company].filter(Boolean).join(" · ")}
+                                            </p>
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={handleChangeReferral}
+                                        className="text-sm font-semibold text-[#C10007] underline cursor-pointer"
+                                    >
+                                        Use a different code
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-sm font-medium text-gray-900">
+                                    Referral code{" "}
+                                    <span className="text-gray-400 font-normal">(optional)</span>
+                                </label>
+                                <div className="flex items-stretch gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="E.G. JANE2024"
+                                        value={referralCode}
+                                        onChange={(e) => {
+                                            setReferralCode(e.target.value);
+                                            if (referralError) setReferralError(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                handleApplyReferral();
+                                            }
+                                        }}
+                                        className={`flex-1 px-4 py-2.5 rounded-sm border text-sm bg-white text-gray-900 outline-none transition-colors ${referralError ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
+                                    />
+                                    <Button
+                                        variant="secondary"
+                                        size="md"
+                                        onClick={handleApplyReferral}
+                                        loading={applyingCode}
+                                        disabled={!referralCode.trim()}
+                                    >
+                                        Apply
+                                    </Button>
+                                </div>
+                                {referralError && <p className="text-xs text-[#C10007]">{referralError}</p>}
+                                <p className="text-xs text-gray-500">
+                                    If your agent or broker gave you a code, it links your file to them automatically.
+                                </p>
+                                {/* Reveals the "How did you hear about us?" section below —
+                                    the Referral code field above stays visible. */}
+                                {!referralNoCode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setReferralNoCode(true);
+                                            setReferralError(null);
+                                        }}
+                                        className="self-start text-sm font-semibold text-[#C10007] cursor-pointer"
+                                    >
+                                        I don&apos;t have a code
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* How did you hear about us? — revealed once the client says
+                            they have no code. The Referral code field above stays visible. */}
+                        {referralNoCode && !appliedReferral && !brokerChoices && (
+                            <div className="flex flex-col gap-1.5 w-full">
+                                <label className="text-sm font-medium text-gray-900">
+                                    How did you hear about us?{" "}
+                                    <span className="text-gray-400 font-normal">(optional)</span>
+                                </label>
+                                <select
+                                    value={referralSource}
+                                    onChange={(e) => {
+                                        const next = e.target.value;
+                                        setReferralSource(next);
+                                        if (next !== "Other") setReferralOther("");
+                                        const nextIsPartner =
+                                            next === "Real estate agent" || next === "Mortgage broker";
+                                        // Clear the manual agent fields when the source isn't an
+                                        // agent/broker so stale details aren't submitted.
+                                        if (!nextIsPartner) {
+                                            setReferralAgent({ name: "", company: "", email: "" });
+                                        }
+                                    }}
+                                    className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
+                                >
+                                    <option value="">Select an option</option>
+                                    {REFERRAL_OPTIONS.map((opt) => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                </select>
+                                {referralSource === "Other" && (
+                                    <input
+                                        type="text"
+                                        placeholder="Please specify..."
+                                        value={referralOther}
+                                        onChange={(e) => setReferralOther(e.target.value)}
+                                        className="mt-2 w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                    />
+                                )}
+
+                                {/* Manual agent/broker details — so staff can credit an
+                                    off-system referrer the client heard about us through. */}
+                                {isReferralPartner && (
+                                    <div className="mt-3 border-l-2 border-[#C10007] pl-4 space-y-4">
+                                        <p className="text-sm text-gray-500">
+                                            So we can thank them and keep them posted on your file:
+                                        </p>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-sm font-semibold text-gray-800">
+                                                {partnerNoun} name
+                                            </label>
+                                            <input
+                                                type="text"
+                                                placeholder="Jane Smith"
+                                                value={referralAgent.name}
+                                                onChange={(e) => updateAgent("name", e.target.value)}
+                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-sm font-semibold text-gray-800">
+                                                Company / brokerage
+                                            </label>
+                                            <input
+                                                type="text"
+                                                placeholder="RE/MAX Realtron"
+                                                value={referralAgent.company}
+                                                onChange={(e) => updateAgent("company", e.target.value)}
+                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                            />
+                                        </div>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-sm font-semibold text-gray-800">
+                                                {partnerNoun} email
+                                            </label>
+                                            <input
+                                                type="email"
+                                                placeholder="jane@remax.ca"
+                                                value={referralAgent.email}
+                                                onChange={(e) => updateAgent("email", e.target.value)}
+                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
