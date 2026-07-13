@@ -137,7 +137,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, set
         <div>
           <div className="flex items-center gap-2 mb-2">
             <p className="text-xs font-medium text-gray-700 uppercase tracking-wide">
-              Upload signed agreement
+              Upload signed agreement & supporting documents
             </p>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 uppercase tracking-wide">
               Optional
@@ -161,6 +161,9 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, set
             <UploadCloud size={20} className="text-gray-400 mb-1.5" />
             <p className="text-gray-600 text-sm text-center">
               <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
+            </p>
+            <p className="text-gray-500 text-xs mt-0.5 text-center">
+              Upload the APS together with any amendments or supporting documents
             </p>
             <p className="text-gray-400 text-xs mt-0.5">
               {files.length > 0 ? "Add more files · " : ""}PDF, JPG, PNG — max 10 MB each
