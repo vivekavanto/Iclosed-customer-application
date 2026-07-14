@@ -23,7 +23,7 @@ import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
-import { isPerPartyTask, isUploadIdTask } from "@/lib/taskKinds";
+import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
 import { useToast } from "@/components/ui/Toast";
 
 /** Per-party completion summary for a Personal Info / Upload ID task. */
@@ -1036,9 +1036,11 @@ export default function DashboardPage() {
     if (isUploadIdTask(task.title)) {
       void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
-    } else if (title.includes("provide personal information")) {
+    } else if (isPersonalInfoTask(task.title)) {
       // Personal Information has its own dedicated drawer (PersonalInfoTaskDrawer)
-      // so it can be customized independently of the generic task drawer.
+      // so it can be customized independently of the generic task drawer. Uses the
+      // shared helper so "Personal Information" / "Provide Personal Information"
+      // both route here (and get the per-party family status), matching admin.
       void loadBehalfTargets(task.id);
       setPersonalInfoDrawerOpen(true);
     } else {

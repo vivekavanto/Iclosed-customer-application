@@ -833,7 +833,7 @@ export default function PersonalInfoTaskDrawer({
     // On-behalf: never seed the co-person's form with the logged-in primary's
     // reusable personal info (/api/client-personal-info is always the primary).
     if (onBehalf) return;
-    const isPPI = taskTitle.toLowerCase().includes("provide personal information");
+    const isPPI = taskTitle.toLowerCase().includes("personal info");
     if (!isPPI || fields.length === 0) return;
     if (clientInfoPrefilledRef.current === taskId) return;
     clientInfoPrefilledRef.current = taskId;
@@ -1439,7 +1439,7 @@ export default function PersonalInfoTaskDrawer({
   const currentCameraField = idCameraFields[cameraStepIndex] ?? null;
   const cameraReadyToFinish =
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
-  const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
+  const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
   const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
 
   function openCameraFlow() {
