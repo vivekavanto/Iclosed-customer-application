@@ -3,6 +3,7 @@ import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
+import { findOrCreateBroker, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -312,6 +313,28 @@ export async function POST(req: Request) {
       }
     }
 
+    // Resolve/attach a partner for the keyed-in ("no code") agent/broker path so
+    // they land in the Partners table and accrue client counts. A resolved code
+    // (broker_id) always wins; only fall back to find-or-create for manual entries.
+    let resolvedBrokerId: string | null = broker_id || null;
+    if (!resolvedBrokerId && referral_agent_email?.trim()) {
+      const partnerType = partnerTypeFromSource(referral_source);
+      if (partnerType) {
+        try {
+          const partner = await findOrCreateBroker(supabaseAdmin, {
+            name: referral_agent_name,
+            company: referral_agent_company,
+            email: referral_agent_email,
+            type: partnerType,
+          });
+          resolvedBrokerId = partner?.id ?? null;
+        } catch (e) {
+          // Never block intake on partner resolution — fall back to free-text only.
+          console.error("Partner find-or-create failed:", e);
+        }
+      }
+    }
+
     // ── 2. Insert Lead ────────────────────────────────────────
     const { data: lead, error } = await supabaseAdmin
       .from("leads")
@@ -348,7 +371,7 @@ export async function POST(req: Request) {
         // non-referred intake never references the columns (keeps intake working
         // even before the broker_id/coupon_id migration is applied).
         // convertLead() copies these onto the deal on conversion.
-        ...(broker_id ? { broker_id } : {}),
+        ...(resolvedBrokerId ? { broker_id: resolvedBrokerId } : {}),
         ...(coupon_id ? { coupon_id } : {}),
         // Manual "no code" referral — an off-system agent/broker the client named.
         ...(referral_agent_name ? { referral_agent_name } : {}),

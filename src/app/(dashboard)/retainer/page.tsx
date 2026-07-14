@@ -509,7 +509,10 @@ export default function RetainerPage() {
                   .
                 </>
               ) : (
-                <>You&apos;re set up to manage documents for this file.</>
+                <>
+                  Activate your iClosed account to upload your documents and
+                  track your transaction.
+                </>
               )}
             </p>
             <div className="flex flex-col items-center gap-4">
@@ -632,7 +635,7 @@ export default function RetainerPage() {
       return (
         <ResultPopup plain={postSignDismissed}>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-            Retainer Signed
+            Activation email sent
           </h1>
           <p className="text-sm text-gray-500">
             Thank you for signing. We&apos;ve emailed you a link to activate your

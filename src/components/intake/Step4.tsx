@@ -43,9 +43,13 @@ interface ApsBlockProps {
   setSigned: (v: "yes" | "no") => void;
   files: File[];
   setFiles: (f: File[]) => void;
+  // Show the per-side "APS for Purchasing/Sale Property" label beside the
+  // toggle. Only needed in "both" mode to tell the two blocks apart — in a
+  // single-side flow it just repeats the page heading, so it's hidden.
+  showHeading: boolean;
 }
 
-const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, setFiles }) => {
+const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, setFiles, showHeading }) => {
   const [isDragging, setIsDragging] = useState(false);
   const { error: toastError } = useToast();
 
@@ -102,11 +106,13 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, set
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-base font-semibold text-gray-900">{heading}</h3>
-          <p className="mt-0.5 text-gray-500 text-xs">{helper}</p>
-        </div>
+      <div className={`flex items-center gap-4 ${showHeading ? "justify-between" : ""}`}>
+        {showHeading && (
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">{heading}</h3>
+            <p className="mt-0.5 text-gray-500 text-xs">{helper}</p>
+          </div>
+        )}
         <div
           role="radiogroup"
           aria-label={heading}
@@ -161,9 +167,6 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, set
             <UploadCloud size={20} className="text-gray-400 mb-1.5" />
             <p className="text-gray-600 text-sm text-center">
               <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
-            </p>
-            <p className="text-gray-500 text-xs mt-0.5 text-center">
-              Upload the APS together with any amendments or supporting documents
             </p>
             <p className="text-gray-400 text-xs mt-0.5">
               {files.length > 0 ? "Add more files · " : ""}PDF, JPG, PNG — max 10 MB each
@@ -337,7 +340,7 @@ const Step4: React.FC<Step4Props> = ({
                 {sideHeading}
               </h2>
               <p className="mt-3 text-gray-500 text-sm leading-relaxed">
-                Let us know which Agreements of Purchase and Sale (APS) you've already signed so we can prepare your file accordingly.
+                Let us know which Agreements of Purchase and Sale (APS), amendments and schedules you've signed so we can prepare your file accordingly.
               </p>
             </div>
 
@@ -350,6 +353,7 @@ const Step4: React.FC<Step4Props> = ({
                     setSigned={setApsPurchaseSigned}
                     files={purchaseFiles}
                     setFiles={setPurchaseFiles}
+                    showHeading={showPurchase && showSale}
                   />
                 </div>
               )}
@@ -361,6 +365,7 @@ const Step4: React.FC<Step4Props> = ({
                     setSigned={setApsSaleSigned}
                     files={saleFiles}
                     setFiles={setSaleFiles}
+                    showHeading={showPurchase && showSale}
                   />
                 </div>
               )}
