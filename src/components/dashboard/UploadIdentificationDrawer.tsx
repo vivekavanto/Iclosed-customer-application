@@ -486,85 +486,6 @@ function WhyIdentificationRequiredDropdown() {
   );
 }
 
-// ── Per-party completion status (read-only) ──────────────────────────────────
-
-function initials(first: string, last: string): string {
-  return `${(first || "").charAt(0)}${(last || "").charAt(0)}`.toUpperCase() || "?";
-}
-
-/**
- * Read-only summary of every party's identification progress, shown at the top
- * of the drawer in place of the on-behalf picker. Renders nothing unless there
- * are 2+ parties.
- */
-function PartyCompletionList({ statuses }: { statuses: PartyStatus[] }) {
-  const [isOpen, setIsOpen] = useState(true);
-
-  if (!statuses || statuses.length <= 1) return null;
-
-  const completedCount = statuses.filter((s) => s.completed).length;
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50/70 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-100/70 transition-colors cursor-pointer"
-      >
-        <span className="text-sm font-semibold text-gray-900">
-          Identification status
-        </span>
-        <span className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-xs font-semibold tabular-nums text-[#C10007]">
-            {completedCount}/{statuses.length} complete
-          </span>
-          <ChevronDown
-            size={18}
-            className={`text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-          />
-        </span>
-      </button>
-      {isOpen && (
-      <div className="divide-y divide-gray-100 border-t border-gray-200">
-        {statuses.map((s) => {
-          const displayName =
-            s.name || `${s.first_name} ${s.last_name}`.trim() || s.first_name || "Party";
-          return (
-            <div
-              key={s.lead_id}
-              className="flex items-center gap-3 px-4 py-3 bg-white"
-            >
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 bg-gray-200 text-gray-500">
-                {initials(s.first_name, s.last_name)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">
-                  {displayName}
-                </p>
-                {typeof s.doc_count === "number" && (
-                  <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
-                    {s.doc_count} document{s.doc_count === 1 ? "" : "s"}
-                  </p>
-                )}
-              </div>
-              {s.completed ? (
-                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-green-600">
-                  <CheckCircle2 size={16} strokeWidth={2.5} /> Completed
-                </span>
-              ) : (
-                <span className="flex-shrink-0 text-xs font-semibold text-gray-400">
-                  Pending
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      )}
-    </div>
-  );
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function UploadIdentificationDrawer({
@@ -572,7 +493,6 @@ export default function UploadIdentificationDrawer({
   onClose,
   leadId,
   taskId,
-  partyStatuses,
   onSaved,
   embedded = false,
 }: UploadIdentificationDrawerProps) {
@@ -1773,13 +1693,6 @@ export default function UploadIdentificationDrawer({
               : "flex-1 overflow-y-auto px-6 py-5 space-y-6"
           }
         >
-          {/* Read-only per-party completion status (hidden in embedded mode — the
-              shell owns party selection/status via accordions). The party being
-              uploaded for is set by the dashboard accordion's Upload button. */}
-          {!embedded && (
-            <PartyCompletionList statuses={partyStatuses ?? []} />
-          )}
-
           {/* Acceptable Documents Section - Always visible */}
           <AcceptableDocumentsSection />
 
