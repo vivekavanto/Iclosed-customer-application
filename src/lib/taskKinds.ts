@@ -9,7 +9,14 @@
  */
 
 export function isPersonalInfoTask(title: string | null | undefined): boolean {
-  return (title ?? "").toLowerCase().includes("provide personal information");
+  // Match any personal-information task title — "Personal Information", "Provide
+  // Personal Information", "Personal Info", … — via the "personal info" substring
+  // (it's contained in "personal information"), mirroring the admin panel
+  // (DealDetail.tsx gates on `includes("personal info")`). Prod deals titled just
+  // "Personal Information" (no "Provide") were previously dropped from per-party
+  // detection, so their co-party status accordion never showed. See the parallel
+  // fix for identification tasks below.
+  return (title ?? "").toLowerCase().includes("personal info");
 }
 
 export function isUploadIdTask(title: string | null | undefined): boolean {

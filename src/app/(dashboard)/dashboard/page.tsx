@@ -23,7 +23,7 @@ import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
-import { isPerPartyTask, isUploadIdTask } from "@/lib/taskKinds";
+import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
 import { useToast } from "@/components/ui/Toast";
 
 /** Per-party completion summary for a Personal Info / Upload ID task. */
@@ -686,9 +686,11 @@ function AttentionCard({
 ───────────────────────────────────────────── */
 function StatusTimeline({
   milestones,
+  blockedMilestoneIds,
   loading,
 }: {
   milestones: Milestone[];
+  blockedMilestoneIds: Set<string>;
   loading: boolean;
 }) {
 
@@ -748,8 +750,12 @@ function StatusTimeline({
     return null;
   }
 
+  // A per-party milestone stays "not done" until every co-party's section is
+  // complete, even if the primary's own linked task (and hence the milestone's
+  // task count / server status) already reads done.
   const isMilestoneDone = (m: Milestone) =>
-    m.status === "Completed" || (m.total_tasks > 0 && m.completed_tasks === m.total_tasks);
+    !blockedMilestoneIds.has(m.id) &&
+    (m.status === "Completed" || (m.total_tasks > 0 && m.completed_tasks === m.total_tasks));
   const completedCount = milestones.filter(isMilestoneDone).length;
   const progressPercent =
     milestones.length === 0
@@ -1036,9 +1042,11 @@ export default function DashboardPage() {
     if (isUploadIdTask(task.title)) {
       void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
-    } else if (title.includes("provide personal information")) {
+    } else if (isPersonalInfoTask(task.title)) {
       // Personal Information has its own dedicated drawer (PersonalInfoTaskDrawer)
-      // so it can be customized independently of the generic task drawer.
+      // so it can be customized independently of the generic task drawer. Uses the
+      // shared helper so "Personal Information" / "Provide Personal Information"
+      // both route here (and get the per-party family status), matching admin.
       void loadBehalfTargets(task.id);
       setPersonalInfoDrawerOpen(true);
     } else {
@@ -1275,6 +1283,20 @@ export default function DashboardPage() {
   const visibleTasks = isBothDeal
     ? tasks.filter((t) => (t.side ?? null) === selectedSide)
     : tasks;
+
+  // Milestones linked to a per-party task (Personal Info / Upload ID) must NOT
+  // show complete until EVERY party's copy is done. The milestone's own task
+  // count only reflects the primary's task, so it flips to "complete" the moment
+  // the primary finishes their own section — even while a co-purchaser/co-seller
+  // is still pending. Gate those milestones on the family roster's all_completed.
+  const blockedMilestoneIds = new Set<string>();
+  for (const t of visibleTasks) {
+    if (!t.milestone_id || !isPerPartyTask(t.title)) continue;
+    const fs = familyStatus[t.id];
+    if (fs?.is_multi_party && !fs.all_completed) {
+      blockedMilestoneIds.add(t.milestone_id);
+    }
+  }
 
   const closingFormatted = formatDateOnly(activeDeal?.closing_date ?? null, {
     month: "long",
@@ -1541,6 +1563,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-5 flex flex-col gap-5">
           <StatusTimeline
             milestones={visibleMilestones}
+            blockedMilestoneIds={blockedMilestoneIds}
             loading={milestonesLoading}
           />
 

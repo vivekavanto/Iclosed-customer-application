@@ -806,7 +806,7 @@ export default function DynamicTaskDrawer({
   // ONLY empty slots — task_responses prefill and anything the user typed win.
   useEffect(() => {
     if (!open || !taskId) return;
-    const isPPI = taskTitle.toLowerCase().includes("provide personal information");
+    const isPPI = taskTitle.toLowerCase().includes("personal info");
     if (!isPPI || fields.length === 0) return;
     if (clientInfoPrefilledRef.current === taskId) return;
     clientInfoPrefilledRef.current = taskId;
@@ -1402,7 +1402,7 @@ export default function DynamicTaskDrawer({
   const currentCameraField = idCameraFields[cameraStepIndex] ?? null;
   const cameraReadyToFinish =
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
-  const isPersonalInfoTask = taskTitle.toLowerCase().includes("provide personal information");
+  const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
   const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
 
   function openCameraFlow() {
