@@ -13,7 +13,14 @@ export function isPersonalInfoTask(title: string | null | undefined): boolean {
 }
 
 export function isUploadIdTask(title: string | null | undefined): boolean {
-  return (title ?? "").toLowerCase().includes("upload identification");
+  // Match any identification task title — "Identification", "Upload
+  // Identification", … — via the "identif" substring, mirroring the admin panel
+  // (DealDetail.tsx / clone-from-previous both gate on `includes("identif")`).
+  // The task was renamed from "Upload Identification" to "Identification", which
+  // silently dropped it out of per-party detection here: the dashboard stopped
+  // fetching family-task-status for it (so the co-party "others" status vanished)
+  // and it fell through to the generic drawer instead of UploadIdentificationDrawer.
+  return (title ?? "").toLowerCase().includes("identif");
 }
 
 export function isPerPartyTask(title: string | null | undefined): boolean {
