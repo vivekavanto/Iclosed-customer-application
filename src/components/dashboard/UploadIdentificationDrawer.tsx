@@ -22,19 +22,29 @@ import {
   Clock,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
-import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
+
+// Read-only completion status of one party on a multi-party identification task.
+export interface PartyStatus {
+  lead_id: string;
+  first_name: string;
+  last_name: string;
+  name?: string;
+  completed: boolean;
+  doc_count?: number;
+  doc_total?: number;
+}
 
 interface UploadIdentificationDrawerProps {
   open: boolean;
   onClose: () => void;
   leadId?: string;
   taskId?: string;
-  // "Uploading identification for …" dropdown: the people this task may be
-  // submitted for and the current selection. Empty/absent → no dropdown.
-  behalfTargets?: BehalfTarget[];
-  selectedBehalfLeadId?: string | null;
-  onSelectBehalf?: (leadId: string) => void;
+  // Per-party completion status shown at the top of the drawer (read-only).
+  // Replaces the old "Uploading identification for …" picker: the party is now
+  // chosen from the dashboard accordion's per-person Upload button, so the drawer
+  // just reports who has / hasn't completed. Absent or <2 parties → nothing shown.
+  partyStatuses?: PartyStatus[];
   onSaved?: () => void;
   // Embedded (section) mode: rendered as one party's accordion inside
   // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown and
@@ -476,6 +486,85 @@ function WhyIdentificationRequiredDropdown() {
   );
 }
 
+// ── Per-party completion status (read-only) ──────────────────────────────────
+
+function initials(first: string, last: string): string {
+  return `${(first || "").charAt(0)}${(last || "").charAt(0)}`.toUpperCase() || "?";
+}
+
+/**
+ * Read-only summary of every party's identification progress, shown at the top
+ * of the drawer in place of the on-behalf picker. Renders nothing unless there
+ * are 2+ parties.
+ */
+function PartyCompletionList({ statuses }: { statuses: PartyStatus[] }) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  if (!statuses || statuses.length <= 1) return null;
+
+  const completedCount = statuses.filter((s) => s.completed).length;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50/70 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-100/70 transition-colors cursor-pointer"
+      >
+        <span className="text-sm font-semibold text-gray-900">
+          Identification status
+        </span>
+        <span className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-xs font-semibold tabular-nums text-[#C10007]">
+            {completedCount}/{statuses.length} complete
+          </span>
+          <ChevronDown
+            size={18}
+            className={`text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+          />
+        </span>
+      </button>
+      {isOpen && (
+      <div className="divide-y divide-gray-100 border-t border-gray-200">
+        {statuses.map((s) => {
+          const displayName =
+            s.name || `${s.first_name} ${s.last_name}`.trim() || s.first_name || "Party";
+          return (
+            <div
+              key={s.lead_id}
+              className="flex items-center gap-3 px-4 py-3 bg-white"
+            >
+              <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 bg-gray-200 text-gray-500">
+                {initials(s.first_name, s.last_name)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {displayName}
+                </p>
+                {typeof s.doc_count === "number" && (
+                  <p className="text-xs text-gray-400 mt-0.5 tabular-nums">
+                    {s.doc_count} document{s.doc_count === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+              {s.completed ? (
+                <span className="flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold text-green-600">
+                  <CheckCircle2 size={16} strokeWidth={2.5} /> Completed
+                </span>
+              ) : (
+                <span className="flex-shrink-0 text-xs font-semibold text-gray-400">
+                  Pending
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function UploadIdentificationDrawer({
@@ -483,9 +572,7 @@ export default function UploadIdentificationDrawer({
   onClose,
   leadId,
   taskId,
-  behalfTargets,
-  selectedBehalfLeadId,
-  onSelectBehalf,
+  partyStatuses,
   onSaved,
   embedded = false,
 }: UploadIdentificationDrawerProps) {
@@ -1686,15 +1773,11 @@ export default function UploadIdentificationDrawer({
               : "flex-1 overflow-y-auto px-6 py-5 space-y-6"
           }
         >
-          {/* Submit-on-behalf person picker (hidden in embedded mode — the shell
-              owns party selection via accordions). */}
+          {/* Read-only per-party completion status (hidden in embedded mode — the
+              shell owns party selection/status via accordions). The party being
+              uploaded for is set by the dashboard accordion's Upload button. */}
           {!embedded && (
-            <OnBehalfSelector
-              label="Uploading identification for"
-              targets={behalfTargets ?? []}
-              selectedLeadId={selectedBehalfLeadId ?? null}
-              onChange={(id) => onSelectBehalf?.(id)}
-            />
+            <PartyCompletionList statuses={partyStatuses ?? []} />
           )}
 
           {/* Acceptable Documents Section - Always visible */}

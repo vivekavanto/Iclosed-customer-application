@@ -1030,7 +1030,10 @@ export default function DashboardPage() {
     setSelectedBehalfLeadId(null);
     setDirectTarget(null);
 
-    if (title.includes("upload identification")) {
+    // Open the dedicated UploadIdentificationDrawer for any identification task.
+    // Uses the shared isUploadIdTask() helper so routing, per-party family status
+    // and the drawer's ID-doc counting all agree on what counts as an ID task.
+    if (isUploadIdTask(task.title)) {
       void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
     } else if (title.includes("provide personal information")) {
@@ -1374,9 +1377,9 @@ export default function DashboardPage() {
         }}
         leadId={drawerLeadId}
         taskId={drawerTaskId ?? undefined}
-        behalfTargets={behalfTargets}
-        selectedBehalfLeadId={selectedBehalfLeadId}
-        onSelectBehalf={setSelectedBehalfLeadId}
+        partyStatuses={
+          activeTask ? familyStatus[activeTask.id]?.members : undefined
+        }
         onSaved={async () => {
           setIdDrawerOpen(false);
           const wasOnBehalf = isOnBehalf;
