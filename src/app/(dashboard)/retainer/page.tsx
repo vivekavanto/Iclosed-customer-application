@@ -220,10 +220,7 @@ export default function RetainerPage() {
   // documents" choice (stored on the primary lead's upload_mode) and returned by
   // /api/retainer/sign. `isDocumentUploader` → this signer uploads in the portal
   // (the primary in "me", the chosen co-person in "co", everyone in "both").
-  // `managedNames` are the OTHER people they upload for — populated only for the
-  // delegated modes; empty in "both" (each handles their own documents).
   const [isDocumentUploader, setIsDocumentUploader] = useState(false);
-  const [managedNames, setManagedNames] = useState<string[]>([]);
   // The family's document-upload mode (from the primary lead). Used to detect a
   // "secondary" signer — a delegated mode ("me"/"co") where this signer is NOT
   // the uploader, so someone else handles their documents and they're done.
@@ -328,9 +325,6 @@ export default function RetainerPage() {
 
       setAccountExists(Boolean(data.account_exists));
       setIsDocumentUploader(Boolean(data.is_document_uploader));
-      setManagedNames(
-        Array.isArray(data.managed_names) ? data.managed_names : []
-      );
       setUploadMode(
         data.upload_mode === "me" ||
           data.upload_mode === "co" ||
@@ -495,22 +489,8 @@ export default function RetainerPage() {
               You&apos;re all set &mdash; your retainer is signed
             </h1>
             <p className="text-sm text-gray-500 mb-6">
-              {managedNames.length > 0 ? (
-                <>
-                  You&apos;re set up to manage documents for this file, including
-                  uploads for{" "}
-                  {managedNames.map((n, i) => (
-                    <span key={`${n}-${i}`}>
-                      {i > 0 &&
-                        (i === managedNames.length - 1 ? " and " : ", ")}
-                      <span className="font-semibold text-gray-700">{n}</span>
-                    </span>
-                  ))}
-                  .
-                </>
-              ) : (
-                <>You&apos;re set up to manage documents for this file.</>
-              )}
+              Activate your iClosed account to upload your documents and track
+              your transaction.
             </p>
             <div className="flex flex-col items-center gap-4">
               <Button size="md" onClick={handleActivate} loading={activating}>
