@@ -3,7 +3,7 @@ import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
-import { findOrCreateBroker, partnerTypeFromSource } from "@/lib/resolvePartner";
+import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -36,11 +36,11 @@ export async function POST(req: Request) {
       document_upload_mode,
       document_uploader_co_person_id,
       referral_source,
-      broker_id,
-      coupon_id,
+      partner_id,
       referral_agent_name,
       referral_agent_company,
       referral_agent_email,
+      referral_agent_phone,
     } = body;
 
     // Per-side APS flags drive Buy & Sell. For single-side flows the legacy
@@ -314,20 +314,22 @@ export async function POST(req: Request) {
     }
 
     // Resolve/attach a partner for the keyed-in ("no code") agent/broker path so
-    // they land in the Partners table and accrue client counts. A resolved code
-    // (broker_id) always wins; only fall back to find-or-create for manual entries.
-    let resolvedBrokerId: string | null = broker_id || null;
-    if (!resolvedBrokerId && referral_agent_email?.trim()) {
+    // they land in the Partners table and accrue client counts. A partner
+    // resolved from an applied code always wins; only fall back to
+    // find-or-create for manual entries.
+    let resolvedPartnerId: string | null = partner_id || null;
+    if (!resolvedPartnerId && referral_agent_email?.trim()) {
       const partnerType = partnerTypeFromSource(referral_source);
       if (partnerType) {
         try {
-          const partner = await findOrCreateBroker(supabaseAdmin, {
+          const partner = await findOrCreatePartner(supabaseAdmin, {
             name: referral_agent_name,
             company: referral_agent_company,
             email: referral_agent_email,
+            phone: referral_agent_phone,
             type: partnerType,
           });
-          resolvedBrokerId = partner?.id ?? null;
+          resolvedPartnerId = partner?.id ?? null;
         } catch (e) {
           // Never block intake on partner resolution — fall back to free-text only.
           console.error("Partner find-or-create failed:", e);
@@ -366,13 +368,13 @@ export async function POST(req: Request) {
         upload_consent_at: null,
         upload_consent_uploader_lead_id: null,
         referral_source: referral_source || null,
-        // Referral attribution — the broker/coupon resolved from the applied
-        // referral code. Only spread these keys when a code was applied so a
-        // non-referred intake never references the columns (keeps intake working
-        // even before the broker_id/coupon_id migration is applied).
+        // Referral attribution — the partner resolved from the applied referral
+        // code, or find-or-created from a keyed-in agent. Only spread the key
+        // when the intake actually carries a referral so a non-referred intake
+        // never references the column (keeps intake working even before the
+        // partner_id migration is applied).
         // convertLead() copies these onto the deal on conversion.
-        ...(resolvedBrokerId ? { broker_id: resolvedBrokerId } : {}),
-        ...(coupon_id ? { coupon_id } : {}),
+        ...(resolvedPartnerId ? { partner_id: resolvedPartnerId } : {}),
         // Manual "no code" referral — an off-system agent/broker the client named.
         ...(referral_agent_name ? { referral_agent_name } : {}),
         ...(referral_agent_company ? { referral_agent_company } : {}),

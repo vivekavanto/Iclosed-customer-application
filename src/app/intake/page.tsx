@@ -76,6 +76,7 @@ export default function ServiceSelection() {
     name: "",
     company: "",
     email: "",
+    phone: "",
   });
   const [documentUploadChoice, setDocumentUploadChoice] = useState("");
   const authPrefillAppliedRef = useRef(false);
@@ -341,11 +342,11 @@ export default function ServiceSelection() {
                     document_upload_mode: contactData.documentUploadMode,
                     document_uploader_co_person_id: contactData.documentUploaderCoPersonId,
                     referral_source: contactData.referralSource || "",
-                    broker_id: contactData.brokerId,
-                    coupon_id: contactData.couponId,
+                    partner_id: contactData.partnerId,
                     referral_agent_name: contactData.referralAgentName || "",
                     referral_agent_company: contactData.referralAgentCompany || "",
                     referral_agent_email: contactData.referralAgentEmail || "",
+                    referral_agent_phone: contactData.referralAgentPhone || "",
                   }),
                 });
 

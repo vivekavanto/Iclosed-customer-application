@@ -16,15 +16,15 @@ interface ContactData {
     documentUploadMode: "me" | "co" | "both" | null;
     documentUploaderCoPersonId: string | null;
     referralSource: string;
-    // Referral attribution — set only when a valid referral (coupon) code was
-    // applied. Both null otherwise (e.g. the manual "no code" path below).
-    brokerId: string | null;
-    couponId: string | null;
+    // Referral attribution — set only when a valid referral code was applied.
+    // Null otherwise (e.g. the manual "no code" path below).
+    partnerId: string | null;
     // Manual referral — captured on the "I don't have a code" path when the
     // source is an agent/broker, so staff can credit an off-system referrer.
     referralAgentName: string;
     referralAgentCompany: string;
     referralAgentEmail: string;
+    referralAgentPhone: string;
 }
 
 // The manual agent/broker details entered when the client has no referral code.
@@ -32,25 +32,27 @@ export interface ReferralAgentInfo {
     name: string;
     company: string;
     email: string;
+    phone: string;
 }
 
-// A broker resolved from an applied referral code (subset of the brokers master).
-export interface ReferralBroker {
+// A partner resolved from an applied referral code (subset of the partners
+// master).
+export interface ReferralPartner {
     id: string;
-    name: string;
-    email: string | null;
-    phone: string | null;
-    type: "Mortgage Broker" | "Real Estate Agent" | null;
-    company: string | null;
+    agent_name: string | null;
+    agent_email: string | null;
+    agent_phone: string | null;
+    brokerage_type: "Mortgage Broker" | "Real Estate Agent" | null;
+    brokerage_name: string | null;
 }
 
 // The outcome of applying a referral code, persisted on the intake page so it
-// survives Back/Next navigation.
+// survives Back/Next navigation. A code maps to exactly one partner
+// (partners_referral_code_unique_idx), so there is never a choice to resolve.
 export interface AppliedReferral {
-    couponId: string;
-    couponCode: string;
-    brokerId: string | null;
-    broker: ReferralBroker | null;
+    code: string;
+    partnerId: string;
+    partner: ReferralPartner;
 }
 
 interface CoPerson {
@@ -170,10 +172,6 @@ export default function Step5Contact({
         referralSource === "Real estate agent" || referralSource === "Mortgage broker";
     const [applyingCode, setApplyingCode] = React.useState(false);
     const [referralError, setReferralError] = React.useState<string | null>(null);
-    // When one coupon is shared by several brokers, let the client pick who
-    // referred them before we lock in the attribution.
-    const [brokerChoices, setBrokerChoices] = React.useState<ReferralBroker[] | null>(null);
-    const [pendingCoupon, setPendingCoupon] = React.useState<{ id: string; code: string } | null>(null);
 
     const handleApplyReferral = async () => {
         const code = referralCode.trim();
@@ -183,8 +181,6 @@ export default function Step5Contact({
         }
         setApplyingCode(true);
         setReferralError(null);
-        setBrokerChoices(null);
-        setPendingCoupon(null);
         try {
             const res = await fetch(`/api/referral/validate?code=${encodeURIComponent(code)}`);
             const data = await res.json();
@@ -192,18 +188,11 @@ export default function Step5Contact({
                 setReferralError(data.error || "That referral code isn't valid.");
                 return;
             }
-            const brokers: ReferralBroker[] = data.brokers ?? [];
-            if (brokers.length > 1) {
-                setPendingCoupon({ id: data.coupon.id, code: data.coupon.code });
-                setBrokerChoices(brokers);
-                return;
-            }
-            const broker = brokers[0] ?? null;
+            const partner: ReferralPartner = data.partner;
             setAppliedReferral({
-                couponId: data.coupon.id,
-                couponCode: data.coupon.code,
-                brokerId: broker?.id ?? null,
-                broker,
+                code: data.code,
+                partnerId: partner.id,
+                partner,
             });
         } catch {
             setReferralError("Couldn't verify the code. Please try again.");
@@ -212,22 +201,8 @@ export default function Step5Contact({
         }
     };
 
-    const handlePickBroker = (broker: ReferralBroker) => {
-        if (!pendingCoupon) return;
-        setAppliedReferral({
-            couponId: pendingCoupon.id,
-            couponCode: pendingCoupon.code,
-            brokerId: broker.id,
-            broker,
-        });
-        setBrokerChoices(null);
-        setPendingCoupon(null);
-    };
-
     const handleChangeReferral = () => {
         setAppliedReferral(null);
-        setBrokerChoices(null);
-        setPendingCoupon(null);
         setReferralError(null);
         setReferralNoCode(false);
     };
@@ -236,6 +211,30 @@ export default function Step5Contact({
     const partnerNoun = referralSource === "Mortgage broker" ? "Broker" : "Agent";
     const updateAgent = (field: keyof ReferralAgentInfo, value: string) =>
         setReferralAgent((prev) => ({ ...prev, [field]: value }));
+
+    // Name and email identify the referrer (email is also the dedup key used to
+    // find-or-create their Partner record), so both are required. Company and
+    // phone are nice-to-have and stay optional.
+    const validateReferralAgent = (
+        agent: ReferralAgentInfo,
+    ): { name?: string; email?: string; phone?: string } => {
+        const errs: { name?: string; email?: string; phone?: string } = {};
+        if (!agent.name.trim()) errs.name = `${partnerNoun} name is required.`;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!agent.email.trim()) errs.email = `${partnerNoun} email is required.`;
+        else if (!emailRegex.test(agent.email.trim())) errs.email = "Enter a valid email address.";
+        // Optional — but if they typed something, it must be a full number.
+        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+        if (agent.phone.trim() && !phoneRegex.test(agent.phone.trim()))
+            errs.phone = "Enter phone in (416) 555-1234 format.";
+        return errs;
+    };
+
+    const [referralAgentErrors, setReferralAgentErrors] = React.useState<{
+        name?: string;
+        email?: string;
+        phone?: string;
+    }>({});
 
     const formatCoPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -503,15 +502,23 @@ export default function Step5Contact({
             }
         }
 
-        // Referral source: a resolved code wins (record the broker's type, or a
+        // Referral source: a resolved code wins (record the partner's type, or a
         // generic label); otherwise the manual "how did you hear" value.
         const finalReferral = appliedReferral
-            ? appliedReferral.broker?.type ?? "Referral code"
+            ? appliedReferral.partner.brokerage_type ?? "Referral code"
             : referralSource === "Other"
                 ? referralOther.trim()
                 : referralSource;
         // Manual agent details only apply on the no-code + agent/broker path.
         const useManualAgent = !appliedReferral && isReferralPartner;
+        if (useManualAgent) {
+            const agentErrs = validateReferralAgent(referralAgent);
+            setReferralAgentErrors(agentErrs);
+            if (Object.keys(agentErrs).length > 0) {
+                toastError(`Please complete the ${partnerNoun.toLowerCase()} details.`);
+                return;
+            }
+        }
         setSubmitting(true);
         try {
             await onComplete({
@@ -522,11 +529,11 @@ export default function Step5Contact({
                 documentUploadMode,
                 documentUploaderCoPersonId,
                 referralSource: finalReferral,
-                brokerId: appliedReferral ? appliedReferral.brokerId : null,
-                couponId: appliedReferral ? appliedReferral.couponId : null,
+                partnerId: appliedReferral ? appliedReferral.partnerId : null,
                 referralAgentName: useManualAgent ? referralAgent.name.trim() : "",
                 referralAgentCompany: useManualAgent ? referralAgent.company.trim() : "",
                 referralAgentEmail: useManualAgent ? referralAgent.email.trim() : "",
+                referralAgentPhone: useManualAgent ? referralAgent.phone.trim() : "",
             });
         } finally {
             setSubmitting(false);
@@ -868,31 +875,23 @@ export default function Step5Contact({
                                         <div className="flex items-start gap-3">
                                             <CheckCircle2 size={20} className="text-green-600 mt-0.5 flex-shrink-0" />
                                             <div className="text-sm">
-                                                {appliedReferral.broker ? (
-                                                    <>
-                                                        <p className="font-semibold text-gray-900">{appliedReferral.broker.name}</p>
-                                                        <p className="text-gray-500">
-                                                            {[appliedReferral.broker.type, appliedReferral.broker.company]
-                                                                .filter(Boolean)
-                                                                .join(" · ")}
-                                                        </p>
-                                                        {appliedReferral.broker.email && (
-                                                            <p className="text-gray-500">{appliedReferral.broker.email}</p>
-                                                        )}
-                                                        <p className="mt-2 text-gray-500">
-                                                            We&apos;ll keep them updated on your file&apos;s progress.
-                                                        </p>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <p className="font-semibold text-gray-900">
-                                                            Code &ldquo;{appliedReferral.couponCode}&rdquo; applied
-                                                        </p>
-                                                        <p className="mt-1 text-gray-500">
-                                                            Your file will be linked to this referral.
-                                                        </p>
-                                                    </>
+                                                <p className="font-semibold text-gray-900">
+                                                    {appliedReferral.partner.agent_name ?? `Code "${appliedReferral.code}" applied`}
+                                                </p>
+                                                <p className="text-gray-500">
+                                                    {[
+                                                        appliedReferral.partner.brokerage_type,
+                                                        appliedReferral.partner.brokerage_name,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" · ")}
+                                                </p>
+                                                {appliedReferral.partner.agent_email && (
+                                                    <p className="text-gray-500">{appliedReferral.partner.agent_email}</p>
                                                 )}
+                                                <p className="mt-2 text-gray-500">
+                                                    We&apos;ll keep them updated on your file&apos;s progress.
+                                                </p>
                                             </div>
                                         </div>
                                         <button
@@ -903,36 +902,6 @@ export default function Step5Contact({
                                             Change
                                         </button>
                                     </div>
-                                </div>
-                            </div>
-                        ) : brokerChoices ? (
-                            <div className="flex flex-col gap-1.5 w-full">
-                                <label className="text-sm font-medium text-gray-900">
-                                    Referral code{" "}
-                                    <span className="text-gray-400 font-normal">(optional)</span>
-                                </label>
-                                <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-2">
-                                    <p className="text-sm text-gray-600">Who referred you?</p>
-                                    {brokerChoices.map((b) => (
-                                        <button
-                                            key={b.id}
-                                            type="button"
-                                            onClick={() => handlePickBroker(b)}
-                                            className="w-full text-left rounded-lg border border-gray-200 px-3 py-2.5 hover:border-[#C10007] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
-                                        >
-                                            <p className="text-sm font-semibold text-gray-900">{b.name}</p>
-                                            <p className="text-xs text-gray-500">
-                                                {[b.type, b.company].filter(Boolean).join(" · ")}
-                                            </p>
-                                        </button>
-                                    ))}
-                                    <button
-                                        type="button"
-                                        onClick={handleChangeReferral}
-                                        className="text-sm font-semibold text-[#C10007] underline cursor-pointer"
-                                    >
-                                        Use a different code
-                                    </button>
                                 </div>
                             </div>
                         ) : (
@@ -991,7 +960,7 @@ export default function Step5Contact({
 
                         {/* How did you hear about us? — revealed once the client says
                             they have no code. The Referral code field above stays visible. */}
-                        {referralNoCode && !appliedReferral && !brokerChoices && (
+                        {referralNoCode && !appliedReferral && (
                             <div className="flex flex-col gap-1.5 w-full">
                                 <label className="text-sm font-medium text-gray-900">
                                     How did you hear about us?{" "}
@@ -1008,7 +977,8 @@ export default function Step5Contact({
                                         // Clear the manual agent fields when the source isn't an
                                         // agent/broker so stale details aren't submitted.
                                         if (!nextIsPartner) {
-                                            setReferralAgent({ name: "", company: "", email: "" });
+                                            setReferralAgent({ name: "", company: "", email: "", phone: "" });
+                                            setReferralAgentErrors({});
                                         }
                                     }}
                                     className="w-full px-4 py-2.5 rounded-sm border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors cursor-pointer"
@@ -1038,6 +1008,7 @@ export default function Step5Contact({
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-sm font-semibold text-gray-800">
                                                 {partnerNoun} name
+                                                <span className="text-red-600 ml-1">*</span>
                                             </label>
                                             <input
                                                 type="text"
@@ -1046,10 +1017,14 @@ export default function Step5Contact({
                                                 onChange={(e) => updateAgent("name", e.target.value)}
                                                 className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
                                             />
+                                            {referralAgentErrors.name && (
+                                                <p className="text-red-600 text-sm mt-1">{referralAgentErrors.name}</p>
+                                            )}
                                         </div>
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-sm font-semibold text-gray-800">
-                                                Company / brokerage
+                                                Company / brokerage{" "}
+                                                <span className="text-gray-400 font-normal">(optional)</span>
                                             </label>
                                             <input
                                                 type="text"
@@ -1062,6 +1037,7 @@ export default function Step5Contact({
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-sm font-semibold text-gray-800">
                                                 {partnerNoun} email
+                                                <span className="text-red-600 ml-1">*</span>
                                             </label>
                                             <input
                                                 type="email"
@@ -1070,6 +1046,25 @@ export default function Step5Contact({
                                                 onChange={(e) => updateAgent("email", e.target.value)}
                                                 className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
                                             />
+                                            {referralAgentErrors.email && (
+                                                <p className="text-red-600 text-sm mt-1">{referralAgentErrors.email}</p>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col gap-1.5">
+                                            <label className="text-sm font-semibold text-gray-800">
+                                                {partnerNoun} phone{" "}
+                                                <span className="text-gray-400 font-normal">(optional)</span>
+                                            </label>
+                                            <input
+                                                type="tel"
+                                                placeholder="(416) 555-1234"
+                                                value={referralAgent.phone}
+                                                onChange={(e) => updateAgent("phone", formatCoPhone(e.target.value))}
+                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                            />
+                                            {referralAgentErrors.phone && (
+                                                <p className="text-red-600 text-sm mt-1">{referralAgentErrors.phone}</p>
+                                            )}
                                         </div>
                                     </div>
                                 )}

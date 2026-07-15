@@ -1,10 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Partners (referral sources) live in the shared `brokers` table. When a client
+// Partners (referral sources) live in the shared `partners` table. When a client
 // keys in an agent/broker at intake instead of using a referral code, we resolve
 // them here: link to an existing partner by email, or create a new one with an
 // auto-generated referral code so they appear on the admin Partners page, accrue
-// client counts (leads.broker_id), and their new code validates for future
+// client counts (leads.partner_id), and their new code validates for future
 // clients.
 //
 // The referral-code generation MUST stay in lockstep with the admin panel, which
@@ -12,9 +12,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //   D:\iclosed_dev_admin\src\app\api\admin\partners\route.ts (derivePrefix + the
 //   globally-sequential number + 23505 retry). Keep both in sync.
 
-// Map the intake "How did you hear about us?" value onto the brokers.type CHECK
-// constraint ('Real Estate Agent' | 'Mortgage Broker'). Returns null for any
-// non-partner source, signalling the caller to skip partner creation.
+// Map the intake "How did you hear about us?" value onto the partners
+// .brokerage_type CHECK constraint ('Real Estate Agent' | 'Mortgage Broker').
+// Returns null for any non-partner source, signalling the caller to skip partner
+// creation.
 export function partnerTypeFromSource(
   source?: string | null,
 ): "Real Estate Agent" | "Mortgage Broker" | null {
@@ -38,16 +39,17 @@ interface PartnerInput {
   name?: string | null;
   company?: string | null;
   email?: string | null;
+  phone?: string | null;
   type: "Real Estate Agent" | "Mortgage Broker";
 }
 
-// Find-or-create a partner (broker) for a keyed-in agent/broker. Returns the
-// partner's id, or null when there's no email to dedup on (caller keeps the
-// free-text referral_agent_* fields only). Throws on unexpected DB errors — the
-// intake caller wraps this so a failure never blocks the submission.
-export async function findOrCreateBroker(
+// Find-or-create a partner for a keyed-in agent/broker. Returns the partner's
+// id, or null when there's no email to dedup on (caller keeps the free-text
+// referral_agent_* fields only). Throws on unexpected DB errors — the intake
+// caller wraps this so a failure never blocks the submission.
+export async function findOrCreatePartner(
   supabase: SupabaseClient,
-  { name, company, email, type }: PartnerInput,
+  { name, company, email, phone, type }: PartnerInput,
 ): Promise<{ id: string } | null> {
   const normalizedEmail = (email ?? "").trim();
   // No email → no reliable dedup key; skip creation to avoid duplicate partners.
@@ -58,20 +60,22 @@ export async function findOrCreateBroker(
   // 1. Link to an existing partner if one already uses this email (case-
   //    insensitive, non-deleted). Never mutate their stored name/company/type.
   const { data: existing, error: lookupError } = await supabase
-    .from("brokers")
-    .select("id, email")
+    .from("partners")
+    .select("id, agent_email")
     .eq("is_deleted", false);
   if (lookupError) throw lookupError;
 
   const match = (existing ?? []).find(
-    (r) => (r.email ?? "").trim().toLowerCase() === emailLower,
+    (r) => (r.agent_email ?? "").trim().toLowerCase() === emailLower,
   );
   if (match) return { id: match.id };
 
-  // 2. Create a new partner with a globally-sequential referral code.
+  // 2. Create a new partner with a globally-sequential referral code. The
+  //    sequence spans soft-deleted rows too, so a retired code is never
+  //    reissued — matching the admin panel's nextSequenceBase().
   const prefix = derivePrefix(name, normalizedEmail);
   const { data: codes, error: codesError } = await supabase
-    .from("brokers")
+    .from("partners")
     .select("referral_code");
   if (codesError) throw codesError;
 
@@ -83,19 +87,20 @@ export async function findOrCreateBroker(
     if (!isNaN(n) && n > maxNum) maxNum = n;
   }
 
-  // brokers.name is NOT NULL — fall back to the email local-part if blank.
+  // Fall back to the email local-part if the name is blank.
   const partnerName = (name ?? "").trim() || normalizedEmail.split("@")[0] || "Partner";
 
   for (let attempt = 1; attempt <= 10; attempt++) {
     const referral_code = `${prefix}${String(maxNum + attempt).padStart(4, "0")}`;
     const { data, error } = await supabase
-      .from("brokers")
+      .from("partners")
       .insert([
         {
-          name: partnerName,
-          email: normalizedEmail,
-          company: (company ?? "").trim() || null,
-          type,
+          agent_name: partnerName,
+          agent_email: normalizedEmail,
+          agent_phone: (phone ?? "").trim() || null,
+          brokerage_name: (company ?? "").trim() || null,
+          brokerage_type: type,
           referral_code,
         },
       ])
