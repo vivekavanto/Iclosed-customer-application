@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, ChevronLeft, CheckCircle2, Trash2, User, Users } from "lucide-react";
+import { Plus, ChevronLeft, CheckCircle2, Trash2, User, Users, Search, Loader2 } from "lucide-react";
 import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -33,6 +33,21 @@ export interface ReferralAgentInfo {
     company: string;
     email: string;
     phone: string;
+    // Set when the client picked an EXISTING partner from the "Agent name"
+    // search. Threaded through to the intake as partner_id so we link straight
+    // to that partner instead of find-or-create'ing a duplicate. Null when the
+    // client is describing a brand-new agent by hand.
+    partnerId: string | null;
+}
+
+// A partner surfaced by the "Agent name" search on the no-code path.
+export interface PartnerSearchResult {
+    id: string;
+    agent_name: string | null;
+    agent_email: string | null;
+    agent_phone: string | null;
+    brokerage_type: "Mortgage Broker" | "Real Estate Agent" | null;
+    brokerage_name: string | null;
 }
 
 // A partner resolved from an applied referral code (subset of the partners
@@ -88,6 +103,168 @@ const makeEmptyCard = (): CoPersonCard => ({
     errors: {},
     touched: {},
 });
+
+// Initials for a partner's avatar chip in the search results.
+const initialsOf = (name: string): string =>
+    name
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((p) => p[0]?.toUpperCase() ?? "")
+        .join("") || "?";
+
+// Searchable "Agent name" field for the no-code path. As the client types we
+// query existing partners; picking one links the intake to that partner (via
+// onSelect) so no duplicate is created. Typing after a pick clears the link and
+// treats the entry as a new agent again.
+function AgentNameSearch({
+    value,
+    partnerType,
+    hasError,
+    placeholder,
+    onNameChange,
+    onSelect,
+}: {
+    value: string;
+    partnerType: "Real Estate Agent" | "Mortgage Broker";
+    hasError: boolean;
+    placeholder: string;
+    onNameChange: (name: string) => void;
+    onSelect: (partner: PartnerSearchResult) => void;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const [results, setResults] = React.useState<PartnerSearchResult[]>([]);
+    const [loading, setLoading] = React.useState(false);
+    const [query, setQuery] = React.useState(value);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    // Suppresses the fetch that would otherwise fire right after a selection
+    // sets the input value programmatically.
+    const skipNextFetch = React.useRef(false);
+
+    // Debounced search whenever the typed query changes.
+    React.useEffect(() => {
+        if (skipNextFetch.current) {
+            skipNextFetch.current = false;
+            return;
+        }
+        if (!open) return;
+        let cancelled = false;
+        const t = setTimeout(async () => {
+            if (cancelled) return;
+            setLoading(true);
+            try {
+                const params = new URLSearchParams({ q: query.trim(), type: partnerType });
+                const res = await fetch(`/api/referral/search?${params.toString()}`);
+                const data = await res.json();
+                if (!cancelled) setResults(data.partners ?? []);
+            } catch {
+                if (!cancelled) setResults([]);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        }, 250);
+        return () => {
+            cancelled = true;
+            clearTimeout(t);
+        };
+    }, [query, partnerType, open]);
+
+    // Close the dropdown on an outside click.
+    React.useEffect(() => {
+        if (!open) return;
+        const onDocClick = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", onDocClick);
+        return () => document.removeEventListener("mousedown", onDocClick);
+    }, [open]);
+
+    const handleSelect = (partner: PartnerSearchResult) => {
+        skipNextFetch.current = true;
+        setQuery(partner.agent_name ?? "");
+        setOpen(false);
+        onSelect(partner);
+    };
+
+    return (
+        <div className="relative" ref={containerRef}>
+            <div
+                className={`flex items-center rounded-lg border bg-white transition-colors ${hasError ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus-within:border-[#C10007] focus-within:ring-2 focus-within:ring-[#C10007]/10"}`}
+            >
+                <input
+                    type="text"
+                    placeholder={placeholder}
+                    value={query}
+                    onChange={(e) => {
+                        const val = e.target.value;
+                        setQuery(val);
+                        setOpen(true);
+                        // Typing a new name breaks any existing-partner link.
+                        onNameChange(val);
+                    }}
+                    onFocus={() => setOpen(true)}
+                    className="flex-1 px-4 py-2.5 text-sm bg-transparent text-gray-900 outline-none"
+                />
+                <Search size={16} className="mr-3 text-gray-400 flex-shrink-0" />
+            </div>
+
+            {open && (
+                <div className="absolute z-30 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden">
+                    <div className="max-h-72 overflow-y-auto py-1">
+                        {loading && results.length === 0 ? (
+                            <div className="flex items-center gap-2.5 px-4 py-3.5 text-sm text-gray-500">
+                                <Loader2 size={15} className="animate-spin text-[#C10007]" />
+                                Searching {partnerType === "Mortgage Broker" ? "brokers" : "agents"}…
+                            </div>
+                        ) : results.length === 0 ? (
+                            <div className="px-4 py-3.5 text-sm text-gray-500">
+                                No matching {partnerType === "Mortgage Broker" ? "brokers" : "agents"} found.{" "}
+                                <span className="text-gray-400">Keep typing to add a new one.</span>
+                            </div>
+                        ) : (
+                            results.map((partner) => {
+                                // Never render a blank primary line — fall back to the
+                                // brokerage, then a generic label, when there's no name.
+                                const primary =
+                                    partner.agent_name?.trim() ||
+                                    partner.brokerage_name?.trim() ||
+                                    "Unnamed partner";
+                                const secondary =
+                                    partner.agent_name?.trim() && partner.brokerage_name?.trim()
+                                        ? partner.brokerage_name.trim()
+                                        : null;
+                                return (
+                                    <button
+                                        key={partner.id}
+                                        type="button"
+                                        onClick={() => handleSelect(partner)}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                    >
+                                        <span className="w-9 h-9 rounded-full bg-[#FEF2F2] text-[#C10007] text-xs font-bold flex items-center justify-center flex-shrink-0 ring-1 ring-[#C10007]/10">
+                                            {initialsOf(primary)}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block text-sm font-semibold text-gray-900 truncate">
+                                                {primary}
+                                            </span>
+                                            {secondary && (
+                                                <span className="block text-xs text-gray-500 truncate">
+                                                    {secondary}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 interface Step5ContactProps {
     setStep: (step: number) => void;
@@ -209,8 +386,29 @@ export default function Step5Contact({
 
     // "Agent" vs "Broker" wording for the manual (no-code) fields.
     const partnerNoun = referralSource === "Mortgage broker" ? "Broker" : "Agent";
+    // partners.brokerage_type value the "Agent name" search scopes to.
+    const partnerType: "Real Estate Agent" | "Mortgage Broker" =
+        referralSource === "Mortgage broker" ? "Mortgage Broker" : "Real Estate Agent";
     const updateAgent = (field: keyof ReferralAgentInfo, value: string) =>
         setReferralAgent((prev) => ({ ...prev, [field]: value }));
+
+    // Client typed in the name box — keep the text but break any existing-partner
+    // link so we don't credit the wrong record.
+    const handleAgentNameChange = (name: string) =>
+        setReferralAgent((prev) => ({ ...prev, name, partnerId: null }));
+
+    // Client picked an existing partner from the search — prefill every field
+    // and record the id so the intake links straight to it (no duplicate).
+    const handleSelectPartner = (partner: PartnerSearchResult) => {
+        setReferralAgent({
+            name: partner.agent_name ?? "",
+            company: partner.brokerage_name ?? "",
+            email: partner.agent_email ?? "",
+            phone: partner.agent_phone ?? "",
+            partnerId: partner.id,
+        });
+        setReferralAgentErrors({});
+    };
 
     // Name and email identify the referrer (email is also the dedup key used to
     // find-or-create their Partner record), so both are required. Company and
@@ -219,12 +417,19 @@ export default function Step5Contact({
         agent: ReferralAgentInfo,
     ): { name?: string; email?: string; phone?: string } => {
         const errs: { name?: string; email?: string; phone?: string } = {};
+        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+        // Linked to an existing partner: identity comes from that record (which
+        // may legitimately have no email), so we only sanity-check the phone.
+        if (agent.partnerId) {
+            if (agent.phone.trim() && !phoneRegex.test(agent.phone.trim()))
+                errs.phone = "Enter phone in (416) 555-1234 format.";
+            return errs;
+        }
         if (!agent.name.trim()) errs.name = `${partnerNoun} name is required.`;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!agent.email.trim()) errs.email = `${partnerNoun} email is required.`;
         else if (!emailRegex.test(agent.email.trim())) errs.email = "Enter a valid email address.";
         // Optional — but if they typed something, it must be a full number.
-        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
         if (agent.phone.trim() && !phoneRegex.test(agent.phone.trim()))
             errs.phone = "Enter phone in (416) 555-1234 format.";
         return errs;
@@ -529,7 +734,14 @@ export default function Step5Contact({
                 documentUploadMode,
                 documentUploaderCoPersonId,
                 referralSource: finalReferral,
-                partnerId: appliedReferral ? appliedReferral.partnerId : null,
+                // A resolved referral code wins; otherwise the partner the client
+                // picked from the "Agent name" search (links, no duplicate). Falls
+                // back to null so a hand-typed new agent still find-or-creates.
+                partnerId: appliedReferral
+                    ? appliedReferral.partnerId
+                    : useManualAgent
+                        ? referralAgent.partnerId
+                        : null,
                 referralAgentName: useManualAgent ? referralAgent.name.trim() : "",
                 referralAgentCompany: useManualAgent ? referralAgent.company.trim() : "",
                 referralAgentEmail: useManualAgent ? referralAgent.email.trim() : "",
@@ -977,7 +1189,7 @@ export default function Step5Contact({
                                         // Clear the manual agent fields when the source isn't an
                                         // agent/broker so stale details aren't submitted.
                                         if (!nextIsPartner) {
-                                            setReferralAgent({ name: "", company: "", email: "", phone: "" });
+                                            setReferralAgent({ name: "", company: "", email: "", phone: "", partnerId: null });
                                             setReferralAgentErrors({});
                                         }
                                     }}
@@ -1003,20 +1215,29 @@ export default function Step5Contact({
                                 {isReferralPartner && (
                                     <div className="mt-3 border-l-2 border-[#C10007] pl-4 space-y-4">
                                         <p className="text-sm text-gray-500">
-                                            So we can thank them and keep them posted on your file:
+                                            Start typing their name — pick them from our list, or add a new
+                                            one. We&apos;ll keep them posted on your file.
                                         </p>
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-sm font-semibold text-gray-800">
                                                 {partnerNoun} name
                                                 <span className="text-red-600 ml-1">*</span>
                                             </label>
-                                            <input
-                                                type="text"
-                                                placeholder="Jane Smith"
+                                            <AgentNameSearch
                                                 value={referralAgent.name}
-                                                onChange={(e) => updateAgent("name", e.target.value)}
-                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                                partnerType={partnerType}
+                                                hasError={!!referralAgentErrors.name}
+                                                placeholder={`Search ${partnerNoun.toLowerCase()}s, e.g. Jane Smith`}
+                                                onNameChange={handleAgentNameChange}
+                                                onSelect={handleSelectPartner}
                                             />
+                                            {referralAgent.partnerId && (
+                                                <p className="mt-1 flex items-center gap-1.5 text-xs text-green-600">
+                                                    <CheckCircle2 size={13} strokeWidth={2} />
+                                                    Linked to an existing {partnerNoun.toLowerCase()} on file — no
+                                                    duplicate will be created.
+                                                </p>
+                                            )}
                                             {referralAgentErrors.name && (
                                                 <p className="text-red-600 text-sm mt-1">{referralAgentErrors.name}</p>
                                             )}

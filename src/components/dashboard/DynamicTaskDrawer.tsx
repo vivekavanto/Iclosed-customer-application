@@ -9,6 +9,7 @@ import {
   Upload,
   Trash2,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   RefreshCw,
   Loader2,
@@ -160,8 +161,14 @@ function fileFieldAllowsMultiple(field: FormField): boolean {
   if (field.field_type !== "file") return false;
   const cfg = getFileConfig(field.options);
   if (cfg.multiple) return true;
-  if (cfg.doc_type === "aps") return true;
-  return (field.label ?? "").toLowerCase().includes("agreement of purchase");
+  if (cfg.doc_type === "aps" || cfg.doc_type === "void_cheque") return true;
+  const label = (field.label ?? "").toLowerCase();
+  // Void cheque / direct deposit form: seller may need to upload one per
+  // account (e.g. a joint account, or one each for spouses on a matrimonial
+  // home sale). Detected by label so it works for the current "Provide Void
+  // Cheque" wording and the newer "Upload Void Cheque / Direct Deposit Form".
+  if (label.includes("void cheque")) return true;
+  return label.includes("agreement of purchase");
 }
 
 async function computeImageSharpnessScore(dataUrl: string): Promise<number> {
@@ -1403,6 +1410,7 @@ export default function DynamicTaskDrawer({
   const cameraReadyToFinish =
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
+  const isVoidChequeTask = taskTitle.toLowerCase().includes("void cheque");
   const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
 
   function openCameraFlow() {
@@ -1590,6 +1598,28 @@ export default function DynamicTaskDrawer({
                     </li>
                   ))}
                 </ul>
+              </div>
+            </>
+          )}
+
+          {/* ── Void Cheque / Direct Deposit static sections ── */}
+          {isVoidChequeTask && (
+            <>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Please upload a void cheque / direct deposit form for the account
+                where you would like the sale proceeds deposited.
+              </p>
+              <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <AlertTriangle
+                  size={15}
+                  className="text-amber-500 flex-shrink-0 mt-0.5"
+                  strokeWidth={2}
+                />
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  If this is a sale of a matrimonial home, please upload a void
+                  cheque / direct deposit form for a joint account, or one for you
+                  and your spouse.
+                </p>
               </div>
             </>
           )}

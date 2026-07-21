@@ -77,6 +77,7 @@ export default function ServiceSelection() {
     company: "",
     email: "",
     phone: "",
+    partnerId: null,
   });
   const [documentUploadChoice, setDocumentUploadChoice] = useState("");
   const authPrefillAppliedRef = useRef(false);
