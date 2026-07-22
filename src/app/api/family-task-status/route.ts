@@ -45,12 +45,11 @@ export async function GET(req: Request) {
 
     const isIdTask = isUploadIdTask(roster.task.title);
 
-    // Who may the caller (self) edit? Their own section always; everyone else only
-    // when they're the family's designated uploader (me/co) or the family chose
-    // "both" (anyone acts for anyone). Mirrors /api/on-behalf-targets.
+    // Who may the caller (self) edit? The family's designated uploader (me/co)
+    // may edit every party's section. In "both" mode each party uploads only
+    // their own — no one acts for the others. Mirrors /api/on-behalf-targets.
     const mode = await getFamilyUploadMode(roster.selfLeadId);
-    const callerMayActForOthers =
-      mode === "both" || roster.uploaderLeadId === roster.selfLeadId;
+    const callerIsUploader = roster.uploaderLeadId === roster.selfLeadId;
 
     // For Upload ID, count each party's uploaded identification documents.
     const docCounts: Record<string, number> = {};
@@ -75,11 +74,10 @@ export async function GET(req: Request) {
       role_label: m.role_label,
       is_primary: m.is_primary,
       is_self: m.is_self,
-      // Only the designated uploader (or "both" mode) may edit/submit
-      // per-party sections. Previously the caller could always edit their
-      // own row; restrict that so non-uploaders see a status instead of a
-      // an actionable "Provide/Upload" button.
-      can_edit: callerMayActForOthers,
+      // The designated uploader may edit every party's section. In "both" mode
+      // each party may edit only their own row. Non-uploaders in me/co mode see
+      // a status instead of an actionable "Provide/Upload" button.
+      can_edit: callerIsUploader || (mode === "both" && m.is_self),
       completed: m.completed,
       ...(isIdTask
         ? { doc_count: docCounts[m.lead_id] ?? 0, doc_total: REQUIRED_ID_DOCS }

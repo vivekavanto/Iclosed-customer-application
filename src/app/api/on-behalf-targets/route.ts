@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthClient } from "@/lib/getAuthClient";
 import { getFamilyTaskRoster, FamilyTaskMember } from "@/lib/familyTaskTargets";
-import { getFamilyUploadMode } from "@/lib/getFamilyUploadMode";
 
 export const dynamic = "force-dynamic";
 
@@ -66,14 +65,12 @@ export async function GET(req: Request) {
       .filter((m) => !m.is_self && m.task_id != null)
       .map(toTarget);
 
-    // "both" → anyone in the family may act for anyone, so every member gets the
-    // full roster. Otherwise only the designated uploader does; everyone else
-    // (including the primary when they delegated) submits only for themselves.
-    const mode = await getFamilyUploadMode(roster.selfLeadId);
-    const callerMayActForOthers =
-      mode === "both" || roster.uploaderLeadId === roster.selfLeadId;
+    // Only the family's designated uploader may act for the others. In "both"
+    // mode each party uploads only their own (uploaderLeadId is null), so every
+    // member — including the primary — submits only for themselves.
+    const callerIsUploader = roster.uploaderLeadId === roster.selfLeadId;
 
-    if (!callerMayActForOthers) {
+    if (!callerIsUploader) {
       return NextResponse.json({ success: true, enabled: false, targets: [selfTarget] });
     }
 
