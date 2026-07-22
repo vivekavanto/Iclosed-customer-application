@@ -87,6 +87,30 @@ export async function POST(request: Request) {
 
     // If client exists, link leads and send welcome email
     if (client) {
+      // Notify the admin app that this client has activated (successful login).
+      // The admin activate-deal webhook flips their Inactive deals to Active AND
+      // sends the one-off "your client just signed up" email to the referral
+      // agent/broker. Best-effort and time-boxed so a slow/unreachable admin app
+      // can never stall or fail the login; idempotent on the admin side.
+      try {
+        const adminBase = (
+          process.env.ADMIN_APP_URL ?? "https://devadmin.iclosed.ca"
+        ).replace(/\/+$/, "");
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        await fetch(`${adminBase}/api/webhooks/activate-deal`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timer));
+      } catch (webhookErr) {
+        console.warn(
+          "[LOGIN] activate-deal webhook failed (non-blocking):",
+          webhookErr,
+        );
+      }
+
       // Link unlinked leads by email
       await supabaseAdmin
         .from("leads")
