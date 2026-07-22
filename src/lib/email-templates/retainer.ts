@@ -67,6 +67,12 @@ export async function buildRetainerEmailHtml(params: {
     "first_name": firstName || "there",
     "user.first_name": firstName || "there",
     "property_address": renderedPropertyAddress,
+    // The DB templates reference {{ lead_address }} (notably in the subject line);
+    // provide it as a plain-text address. renderedPropertyAddress may contain HTML
+    // for combined P&S retainers, so build a plain string here instead.
+    "lead_address": isCombined
+      ? [purchaseAddress, saleAddress].filter(Boolean).join(" / ")
+      : propertyAddress || "",
     "purchase_address": purchaseAddress || "",
     "sale_address": saleAddress || "",
     "lead_type": leadType || "N/A",
