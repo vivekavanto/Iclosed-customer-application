@@ -7,6 +7,7 @@ import HorizontalProgress, {
   StepStatus,
 } from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
+import { PRIVACY_POLICY_VERSION } from "@/lib/privacyPolicy";
 import Modal from "@/components/ui/Modal";
 import { Step1 } from "@/components/intake/Step1";
 import Step2 from "@/components/intake/Step2";
@@ -19,6 +20,7 @@ import Step5Contact, {
 } from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
+import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { useToast } from "@/components/ui/Toast";
 
 export default function ServiceSelection() {
@@ -315,6 +317,10 @@ export default function ServiceSelection() {
                     email: contactData.email,
                     phone: contactData.phone,
 
+                    // CMP-002: reaching submit means the client ticked the
+                    // required privacy-consent box; record which policy version.
+                    privacy_consent_version: PRIVACY_POLICY_VERSION,
+
                     service: selected,
                     sub_service: selectedClosingOption,
                     price: purchasePrice,
@@ -378,7 +384,7 @@ export default function ServiceSelection() {
                       `corporate-docs/${leadId}/${Date.now()}-${u.file.name}`,
                       u.file,
                       {
-                        access: "public",
+                        access: BLOB_ACCESS,
                         handleUploadUrl: "/api/blob/aps-upload",
                         clientPayload: JSON.stringify({
                           lead_id: leadId,

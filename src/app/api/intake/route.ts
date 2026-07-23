@@ -41,6 +41,7 @@ export async function POST(req: Request) {
       referral_agent_company,
       referral_agent_email,
       referral_agent_phone,
+      privacy_consent_version,
     } = body;
 
     // Per-side APS flags drive Buy & Sell. For single-side flows the legacy
@@ -367,6 +368,16 @@ export async function POST(req: Request) {
         upload_mode: uploadMode,
         upload_consent_at: null,
         upload_consent_uploader_lead_id: null,
+        // CMP-002: store the client's explicit privacy consent — which policy
+        // version they agreed to and when. Spread-when-present so an intake that
+        // predates the migration still inserts. (Run the migration before
+        // deploying the consent UI so this is always populated.)
+        ...(privacy_consent_version
+          ? {
+              privacy_consent_version,
+              privacy_consent_at: new Date().toISOString(),
+            }
+          : {}),
         referral_source: referral_source || null,
         // Referral attribution — the partner resolved from the applied referral
         // code, or find-or-created from a keyed-in agent. Only spread the key

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
+import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import {
   X,
   Upload,
@@ -1056,7 +1057,7 @@ export default function DynamicTaskDrawer({
           `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
           file,
           {
-            access: "public",
+            access: BLOB_ACCESS,
             handleUploadUrl: "/api/blob/upload",
             clientPayload: JSON.stringify({
               lead_id: safeLeadId,
@@ -1103,7 +1104,7 @@ export default function DynamicTaskDrawer({
             `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
             file,
             {
-              access: "public",
+              access: BLOB_ACCESS,
               handleUploadUrl: "/api/blob/upload",
               clientPayload: JSON.stringify({
                 lead_id: safeLeadId,
@@ -1252,7 +1253,7 @@ export default function DynamicTaskDrawer({
           `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
           file,
           {
-            access: "public",
+            access: BLOB_ACCESS,
             handleUploadUrl: "/api/blob/upload",
             clientPayload: JSON.stringify({
               lead_id: safeLeadId,
@@ -1299,7 +1300,7 @@ export default function DynamicTaskDrawer({
             `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
             file,
             {
-              access: "public",
+              access: BLOB_ACCESS,
               handleUploadUrl: "/api/blob/upload",
               clientPayload: JSON.stringify({
                 lead_id: safeLeadId,

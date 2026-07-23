@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
+import { signedServiceHeaders } from '@/lib/signServiceRequest';
 
 export async function POST(request: Request) {
   try {
@@ -98,10 +99,13 @@ export async function POST(request: Request) {
         ).replace(/\/+$/, "");
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 4000);
+        // Sign the request so the admin can verify it came from us (SEC-002).
+        // Build the body string once and reuse it for signing AND the fetch body.
+        const activateBody = JSON.stringify({ email });
         await fetch(`${adminBase}/api/webhooks/activate-deal`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
+          headers: signedServiceHeaders(activateBody),
+          body: activateBody,
           signal: controller.signal,
         }).finally(() => clearTimeout(timer));
       } catch (webhookErr) {
