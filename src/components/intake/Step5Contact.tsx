@@ -5,7 +5,6 @@ import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
-import { PRIVACY_POLICY_URL } from "@/lib/privacyPolicy";
 
 interface ContactData {
     fullName: string;
@@ -373,9 +372,6 @@ export default function Step5Contact({
     const setFormData = setContactInfo;
 
     const [submitting, setSubmitting] = React.useState(false);
-    // CMP-002: explicit privacy consent — the client must tick this before they
-    // can submit their personal information.
-    const [consentChecked, setConsentChecked] = React.useState(false);
 
     // Referral code flow — shown only when the referral source is an agent/broker.
     const isReferralPartner =
@@ -630,16 +626,13 @@ export default function Step5Contact({
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
 
+    const isCompleteEnabled = isValid;
+
     const handleComplete = async () => {
-        if (!isValid) {
+        if (!isCompleteEnabled) {
             setTouched({ fullName: true, email: true, phone: true });
             const firstError = errors.fullName || errors.email || errors.phone;
             toastError(firstError || "Please fill in all required fields.");
-            return;
-        }
-        // CMP-002: block submission until the client agrees to the privacy policy.
-        if (!consentChecked) {
-            toastError("Please agree to the Privacy Policy to continue.");
             return;
         }
 
@@ -1342,32 +1335,6 @@ export default function Step5Contact({
                                 )}
                             </div>
                         )}
-
-                        {/* CMP-002: privacy consent — required before submit */}
-                        <div className="pt-6 mt-2 border-t border-gray-100">
-                            <label className="flex items-start gap-3 cursor-pointer select-none">
-                                <input
-                                    type="checkbox"
-                                    checked={consentChecked}
-                                    onChange={(e) => setConsentChecked(e.target.checked)}
-                                    className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#C10007]"
-                                />
-                                <span className="text-sm text-gray-600 leading-relaxed">
-                                    I consent to iClosed collecting and using the personal
-                                    information I&apos;ve provided to process my real-estate
-                                    transaction, as described in the{" "}
-                                    <a
-                                        href={PRIVACY_POLICY_URL}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[#C10007] font-medium hover:underline"
-                                    >
-                                        Privacy Policy
-                                    </a>
-                                    .
-                                </span>
-                            </label>
-                        </div>
 
                         {/* Desktop button row — right below the form */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">

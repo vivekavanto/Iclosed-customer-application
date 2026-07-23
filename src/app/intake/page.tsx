@@ -7,7 +7,6 @@ import HorizontalProgress, {
   StepStatus,
 } from "@/components/intake/HorizontalProgress";
 import Button from "@/components/ui/Button";
-import { PRIVACY_POLICY_VERSION } from "@/lib/privacyPolicy";
 import Modal from "@/components/ui/Modal";
 import { Step1 } from "@/components/intake/Step1";
 import Step2 from "@/components/intake/Step2";
@@ -316,10 +315,6 @@ export default function ServiceSelection() {
                     last_name: lastName || "",
                     email: contactData.email,
                     phone: contactData.phone,
-
-                    // CMP-002: reaching submit means the client ticked the
-                    // required privacy-consent box; record which policy version.
-                    privacy_consent_version: PRIVACY_POLICY_VERSION,
 
                     service: selected,
                     sub_service: selectedClosingOption,
