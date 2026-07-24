@@ -4,7 +4,7 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
-import { BLOB_ACCESS } from "@/lib/blobPrivacy";
+import { BLOB_ACCESS, blobToken } from "@/lib/blobPrivacy";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
@@ -304,7 +304,7 @@ export async function POST(req: Request) {
       const blob = await put(
         `corporate-docs/${leadId}/${sideSegment}/${Date.now()}-retainer-agreement.pdf`,
         Buffer.from(pdfBytes),
-        { access: BLOB_ACCESS, token: process.env.BLOB_READ_WRITE_TOKEN! }
+        { access: BLOB_ACCESS, token: blobToken()! }
       );
 
       // 3. Save to lead_corporate_docs (one row per signed retainer).

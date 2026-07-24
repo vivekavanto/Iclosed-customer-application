@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeals } from "@/lib/getAuthClient";
-import { isBlobUrl } from "@/lib/blobPrivacy";
+import { isBlobUrl, blobTokenForUrl } from "@/lib/blobPrivacy";
 
 /**
  * GET /api/documents/download?u=<private-blob-url>
@@ -97,7 +97,9 @@ export async function GET(req: Request) {
   try {
     const result = await get(u, {
       access: "private",
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      // Private blobs live in the private store — pick the token by the URL so
+      // this keeps working even if the flag is later rolled back (SEC-003).
+      token: blobTokenForUrl(u),
     });
     if (!result || !result.stream) {
       return NextResponse.json({ error: "Document not found" }, { status: 404 });
