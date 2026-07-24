@@ -1278,8 +1278,7 @@ export default function Step5Contact({
                                             {referralAgent.partnerId && (
                                                 <p className="mt-1 flex items-center gap-1.5 text-xs text-green-600">
                                                     <CheckCircle2 size={13} strokeWidth={2} />
-                                                    Linked to an existing {partnerNoun.toLowerCase()} on file — no
-                                                    duplicate will be created.
+                                                    Linked to an existing {partnerNoun.toLowerCase()} on file.
                                                 </p>
                                             )}
                                             {referralAgentErrors.name && (

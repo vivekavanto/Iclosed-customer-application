@@ -1,0 +1,24 @@
+# Files uploaded to Vercel on `vercel deploy` but NOT needed to build/run the app.
+# Trimming these shrinks the upload + "analyzing" phase. gitignore syntax.
+
+# Docs / review artifacts
+*.pdf
+*.docx
+REVIEW.html
+REVIEW.md
+TESTS.md
+PRIVATE_BLOB_ROLLOUT.md
+
+# Build/test/tooling leftovers
+tsconfig.tsbuildinfo
+coverage
+**/*.test.ts
+**/*.test.tsx
+
+# Standalone folders not imported by the app at build/runtime
+sql
+scripts
+
+# Local tooling / notes
+.claude
+memory
