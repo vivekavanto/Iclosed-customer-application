@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
+import { BLOB_ACCESS, blobToken } from "@/lib/blobPrivacy";
 
 /**
  * POST /api/admin/backfill-retainer-pdfs
@@ -201,7 +202,7 @@ export async function POST(req: Request) {
         const blob = await put(
           `corporate-docs/${sig.lead_id}/${sideSegment}/${Date.now()}-retainer-agreement.pdf`,
           Buffer.from(pdfBytes),
-          { access: "public", token: process.env.BLOB_READ_WRITE_TOKEN! },
+          { access: BLOB_ACCESS, token: blobToken()! },
         );
 
         // Insert into lead_corporate_docs

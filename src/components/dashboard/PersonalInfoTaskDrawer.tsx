@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
+import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import {
   X,
   Upload,
@@ -1080,7 +1081,7 @@ export default function PersonalInfoTaskDrawer({
           `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
           file,
           {
-            access: "public",
+            access: BLOB_ACCESS,
             handleUploadUrl: "/api/blob/upload",
             clientPayload: JSON.stringify({
               lead_id: safeLeadId,
@@ -1127,7 +1128,7 @@ export default function PersonalInfoTaskDrawer({
             `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
             file,
             {
-              access: "public",
+              access: BLOB_ACCESS,
               handleUploadUrl: "/api/blob/upload",
               clientPayload: JSON.stringify({
                 lead_id: safeLeadId,
@@ -1282,7 +1283,7 @@ export default function PersonalInfoTaskDrawer({
           `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
           file,
           {
-            access: "public",
+            access: BLOB_ACCESS,
             handleUploadUrl: "/api/blob/upload",
             clientPayload: JSON.stringify({
               lead_id: safeLeadId,
@@ -1329,7 +1330,7 @@ export default function PersonalInfoTaskDrawer({
             `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
             file,
             {
-              access: "public",
+              access: BLOB_ACCESS,
               handleUploadUrl: "/api/blob/upload",
               clientPayload: JSON.stringify({
                 lead_id: safeLeadId,

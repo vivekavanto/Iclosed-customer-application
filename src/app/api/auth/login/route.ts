@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
+import { signedServiceHeaders } from '@/lib/signServiceRequest';
 
 export async function POST(request: Request) {
   try {
@@ -87,6 +88,33 @@ export async function POST(request: Request) {
 
     // If client exists, link leads and send welcome email
     if (client) {
+      // Notify the admin app that this client has activated (successful login).
+      // The admin activate-deal webhook flips their Inactive deals to Active AND
+      // sends the one-off "your client just signed up" email to the referral
+      // agent/broker. Best-effort and time-boxed so a slow/unreachable admin app
+      // can never stall or fail the login; idempotent on the admin side.
+      try {
+        const adminBase = (
+          process.env.ADMIN_APP_URL ?? "https://devadmin.iclosed.ca"
+        ).replace(/\/+$/, "");
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        // Sign the request so the admin can verify it came from us (SEC-002).
+        // Build the body string once and reuse it for signing AND the fetch body.
+        const activateBody = JSON.stringify({ email });
+        await fetch(`${adminBase}/api/webhooks/activate-deal`, {
+          method: "POST",
+          headers: signedServiceHeaders(activateBody),
+          body: activateBody,
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timer));
+      } catch (webhookErr) {
+        console.warn(
+          "[LOGIN] activate-deal webhook failed (non-blocking):",
+          webhookErr,
+        );
+      }
+
       // Link unlinked leads by email
       await supabaseAdmin
         .from("leads")

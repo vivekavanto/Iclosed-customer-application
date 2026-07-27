@@ -1,7 +1,21 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
+/** The set-password page stamps `password_set: true` on user_metadata once the
+ *  user actually saves a password. generateLink returns the full user record, so
+ *  we can read that flag off whichever call (invite/recovery) returned the user. */
+function isPasswordSet(user: { user_metadata?: Record<string, unknown> | null } | null | undefined): boolean {
+  return user?.user_metadata?.password_set === true;
+}
+
 export interface ActivationLinkResult {
   action_link: string | null;
+  /**
+   * True when this user has already completed activation (their password is set).
+   * Set on the auth user's user_metadata by the set-password page. Lets the
+   * activate route send a returning click to reset-password instead of
+   * set-password. False for brand-new / not-yet-activated users.
+   */
+  passwordSet: boolean;
   error: string | null;
 }
 
@@ -30,7 +44,7 @@ export async function generateActivationLink(
       .single();
 
     if (!lead?.email) {
-      return { action_link: null, error: "Lead has no email" };
+      return { action_link: null, passwordSet: false, error: "Lead has no email" };
     }
 
     const invite = await supabaseAdmin.auth.admin.generateLink({
@@ -43,7 +57,11 @@ export async function generateActivationLink(
     });
 
     if (invite.data?.properties?.action_link) {
-      return { action_link: invite.data.properties.action_link, error: null };
+      return {
+        action_link: invite.data.properties.action_link,
+        passwordSet: isPasswordSet(invite.data.user),
+        error: null,
+      };
     }
 
     // Email already has an account → recovery link instead of invite.
@@ -54,11 +72,16 @@ export async function generateActivationLink(
     });
 
     if (recovery.data?.properties?.action_link) {
-      return { action_link: recovery.data.properties.action_link, error: null };
+      return {
+        action_link: recovery.data.properties.action_link,
+        passwordSet: isPasswordSet(recovery.data.user),
+        error: null,
+      };
     }
 
     return {
       action_link: null,
+      passwordSet: false,
       error:
         recovery.error?.message ??
         invite.error?.message ??
@@ -67,6 +90,6 @@ export async function generateActivationLink(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown error generating activation link";
-    return { action_link: null, error: message };
+    return { action_link: null, passwordSet: false, error: message };
   }
 }

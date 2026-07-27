@@ -6,6 +6,7 @@ import {
   formatLeadTypeLabelForRecipient,
 } from "@/lib/leadEmailAddress";
 import { splitCombinedAddressPhrase } from "@/lib/email-templates/splitCombinedAddressPhrase";
+import { signActivationToken } from "@/lib/activationToken";
 
 export interface SendInviteEmailResult {
   success: boolean;
@@ -165,10 +166,21 @@ export async function sendInviteEmail(
         };
       }
       fallbackSubject = "Activate your iClosed account";
+      // Point the activation button at our STABLE re-minting endpoint rather than
+      // the raw one-time Supabase link. Supabase burns its link on the first click
+      // (even before a password is set), so a raw link that's clicked twice lands
+      // on "your reset link has expired". /api/auth/activate mints a fresh link on
+      // every click until the password is actually set. The token is signed and
+      // un-enumerable (see activationToken.ts). Falls back to the raw link only if
+      // signing somehow yields nothing, so an email always goes out.
+      const activationToken = signActivationToken(leadId);
+      const activationUrl = activationToken
+        ? `${new URL(redirectTo).origin}/api/auth/activate?token=${activationToken}`
+        : actionLink ?? "";
       variables = {
         ...baseVariables,
-        "confirmation_url": actionLink ?? "",
-        "invite_link": actionLink ?? "",
+        "confirmation_url": activationUrl,
+        "invite_link": activationUrl,
       };
     }
 
