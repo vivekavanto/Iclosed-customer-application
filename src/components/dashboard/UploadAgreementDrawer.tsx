@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Upload, FileText, Trash2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { upload } from "@vercel/blob/client";
+import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import Button from "@/components/ui/Button";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 
@@ -105,7 +106,7 @@ export default function UploadAgreementDrawer({
         `corporate-docs/${leadId ?? "unknown"}/${Date.now()}-${file.name}`,
         file,
         {
-          access: "public",
+          access: BLOB_ACCESS,
           handleUploadUrl: "/api/blob/aps-upload",
           clientPayload: JSON.stringify({
             lead_id: leadId ?? "unknown",

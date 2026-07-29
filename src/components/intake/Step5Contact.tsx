@@ -124,6 +124,7 @@ function AgentNameSearch({
     placeholder,
     onNameChange,
     onSelect,
+    onAddNew,
 }: {
     value: string;
     partnerType: "Real Estate Agent" | "Mortgage Broker";
@@ -131,6 +132,7 @@ function AgentNameSearch({
     placeholder: string;
     onNameChange: (name: string) => void;
     onSelect: (partner: PartnerSearchResult) => void;
+    onAddNew: (name: string) => void;
 }) {
     const [open, setOpen] = React.useState(false);
     const [results, setResults] = React.useState<PartnerSearchResult[]>([]);
@@ -188,6 +190,18 @@ function AgentNameSearch({
         onSelect(partner);
     };
 
+    // No existing match — confirm the typed name as a brand-new agent/broker.
+    const handleAddNew = () => {
+        const name = query.trim();
+        if (!name) return;
+        skipNextFetch.current = true;
+        setOpen(false);
+        onAddNew(name);
+    };
+
+    // Singular noun for the "add new" affordance ("agent" / "broker").
+    const partnerNoun = partnerType === "Mortgage Broker" ? "broker" : "agent";
+
     return (
         <div className="relative" ref={containerRef}>
             <div
@@ -219,9 +233,24 @@ function AgentNameSearch({
                                 Searching {partnerType === "Mortgage Broker" ? "brokers" : "agents"}…
                             </div>
                         ) : results.length === 0 ? (
-                            <div className="px-4 py-3.5 text-sm text-gray-500">
-                                No matching {partnerType === "Mortgage Broker" ? "brokers" : "agents"} found.{" "}
-                                <span className="text-gray-400">Keep typing to add a new one.</span>
+                            <div>
+                                {query.trim() && (
+                                    <button
+                                        type="button"
+                                        onClick={handleAddNew}
+                                        className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                    >
+                                        <span className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center flex-shrink-0">
+                                            <Plus size={16} />
+                                        </span>
+                                        <span className="text-sm font-bold text-[#C10007] truncate">
+                                            Add &quot;{query.trim()}&quot; as a new {partnerNoun}
+                                        </span>
+                                    </button>
+                                )}
+                                <div className="px-4 py-2.5 text-xs text-gray-400">
+                                    No matches — keep typing to add a new {partnerNoun}.
+                                </div>
                             </div>
                         ) : (
                             results.map((partner) => {
@@ -393,9 +422,22 @@ export default function Step5Contact({
         setReferralAgent((prev) => ({ ...prev, [field]: value }));
 
     // Client typed in the name box — keep the text but break any existing-partner
-    // link so we don't credit the wrong record.
+    // link so we don't credit the wrong record. When a partner WAS linked, the
+    // email/phone/company were auto-filled from that record, so wipe them too;
+    // otherwise a new agent inherits the previous agent's stale contact details.
     const handleAgentNameChange = (name: string) =>
-        setReferralAgent((prev) => ({ ...prev, name, partnerId: null }));
+        setReferralAgent((prev) =>
+            prev.partnerId
+                ? { name, company: "", email: "", phone: "", partnerId: null }
+                : { ...prev, name, partnerId: null },
+        );
+
+    // Client confirmed the typed name as a brand-new agent via the "Add … as a
+    // new agent" option — start a clean record (no stale details, no link).
+    const handleAddNewAgent = (name: string) => {
+        setReferralAgent({ name, company: "", email: "", phone: "", partnerId: null });
+        setReferralAgentErrors({});
+    };
 
     // Client picked an existing partner from the search — prefill every field
     // and record the id so the intake links straight to it (no duplicate).
@@ -555,7 +597,6 @@ export default function Step5Contact({
         }
     }, [activeCoCards, documentUploadChoice, setDocumentUploadChoice]);
 
-    const isCompleteEnabled = isValid;
 
     React.useEffect(() => {
         const newErrors: typeof errors = {};
@@ -584,6 +625,8 @@ export default function Step5Contact({
         setErrors(newErrors);
         setIsValid(Object.keys(newErrors).length === 0);
     }, [formData]);
+
+    const isCompleteEnabled = isValid;
 
     const handleComplete = async () => {
         if (!isCompleteEnabled) {
@@ -1230,12 +1273,12 @@ export default function Step5Contact({
                                                 placeholder={`Search ${partnerNoun.toLowerCase()}s, e.g. Jane Smith`}
                                                 onNameChange={handleAgentNameChange}
                                                 onSelect={handleSelectPartner}
+                                                onAddNew={handleAddNewAgent}
                                             />
                                             {referralAgent.partnerId && (
                                                 <p className="mt-1 flex items-center gap-1.5 text-xs text-green-600">
                                                     <CheckCircle2 size={13} strokeWidth={2} />
-                                                    Linked to an existing {partnerNoun.toLowerCase()} on file — no
-                                                    duplicate will be created.
+                                                    Linked to an existing {partnerNoun.toLowerCase()} on file.
                                                 </p>
                                             )}
                                             {referralAgentErrors.name && (

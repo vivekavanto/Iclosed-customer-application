@@ -19,6 +19,7 @@ import Step5Contact, {
 } from "@/components/intake/Step5Contact";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
+import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { useToast } from "@/components/ui/Toast";
 
 export default function ServiceSelection() {
@@ -378,7 +379,7 @@ export default function ServiceSelection() {
                       `corporate-docs/${leadId}/${Date.now()}-${u.file.name}`,
                       u.file,
                       {
-                        access: "public",
+                        access: BLOB_ACCESS,
                         handleUploadUrl: "/api/blob/aps-upload",
                         clientPayload: JSON.stringify({
                           lead_id: leadId,

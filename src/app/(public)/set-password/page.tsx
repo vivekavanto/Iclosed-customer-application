@@ -168,6 +168,9 @@ export default function SetPasswordPage() {
     try {
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
+        // Mark activation complete so a later click on the activation email routes
+        // to reset-password instead of set-password (read in generateActivationLink).
+        data: { password_set: true },
       });
 
       if (updateError) throw updateError;

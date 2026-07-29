@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Check, X } from "lucide-react";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
-
 const brands = [
   "RE/MAX",
   "HomeLife",
@@ -254,7 +253,6 @@ function Hero() {
           Top 10 Law firm in Ontario for the past decade
         </p>
 
-        {/* Hero dashboard cards */}
         {/* <div className="mx-auto mt-12 sm:mt-20 max-w-4xl">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4"> */}
 

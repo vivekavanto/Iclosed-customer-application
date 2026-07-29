@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
 import { generateActivationLink } from "@/lib/generateActivationLink";
+import { signedServiceHeaders } from "@/lib/signServiceRequest";
 
 /**
  * POST /api/retainer/post-sign
@@ -91,10 +92,13 @@ export async function POST(req: Request) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);
+      // Sign the request so the admin can verify it came from us (SEC-002).
+      // Build the body string once and reuse it for signing AND the fetch body.
+      const retainerBody = JSON.stringify({ token, choice: "later" });
       await fetch(`${adminBase}/api/webhooks/retainer-signed`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, choice: "later" }),
+        headers: signedServiceHeaders(retainerBody),
+        body: retainerBody,
         signal: controller.signal,
       }).finally(() => clearTimeout(timer));
     } catch {
