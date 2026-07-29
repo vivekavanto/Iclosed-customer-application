@@ -24,6 +24,7 @@ import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawe
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
+import { dealTypeToSide } from "@/lib/taskDescriptions";
 import { useToast } from "@/components/ui/Toast";
 
 /** Per-party completion summary for a Personal Info / Upload ID task. */
@@ -1363,6 +1364,7 @@ export default function DashboardPage() {
         leadId={leadId ?? undefined}
         clientFirstName={activeProperty?.first_name}
         clientLastName={activeProperty?.last_name}
+        side={activeTask?.side ?? dealTypeToSide(activeDeal?.type)}
         onTaskCompleted={(id) => {
           setDynamicDrawerOpen(false);
           markDone(id);
