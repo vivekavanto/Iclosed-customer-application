@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { resetUser } from "@/lib/analytics";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const IDLE_TIMEOUT_MS =
@@ -81,6 +82,7 @@ export default function IdleLogoutGuard() {
       try {
         localStorage.removeItem(STORAGE_KEY);
       } catch {}
+      resetUser();
       window.setTimeout(() => {
         window.location.href = "/login";
       }, MODAL_VISIBLE_MS);

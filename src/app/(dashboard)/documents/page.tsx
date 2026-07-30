@@ -141,7 +141,7 @@ function DocCard({
       {/* Info */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-[#1a1a1a]">
-          {doc.name}
+          <span className="ph-mask">{doc.name}</span>
         </p>
         <p className="mt-0.5 text-xs text-gray-400">Uploaded On: {doc.date}</p>
       </div>
