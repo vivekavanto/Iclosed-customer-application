@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { createBrowserClient } from "@supabase/ssr";
+import { resetUser } from "@/lib/analytics";
 
 export interface ProfileUser {
   first_name?: string;
@@ -32,6 +33,7 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
       );
       await supabase.auth.signOut();
     } catch {}
+    resetUser();
     window.location.href = "/login";
   };
 
@@ -49,7 +51,7 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
         <div className="w-7 h-7 rounded-full bg-[#C10007] flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
           {initial}
         </div>
-        <span className="hidden sm:block truncate max-w-[120px]">{displayName}</span>
+        <span className="ph-mask hidden sm:block truncate max-w-[120px]">{displayName}</span>
         <ChevronDown
           size={14}
           className={`hidden sm:block transition-transform duration-200 ${open ? "rotate-180" : ""}`}
@@ -61,7 +63,7 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
         <div className="absolute right-0 mt-2 w-44 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg z-50 overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--color-border)]">
             <p className="text-xs text-[var(--color-text-muted)]">Signed in as</p>
-            <p className="text-sm font-semibold text-[var(--color-text-heading)] truncate">
+            <p className="ph-mask text-sm font-semibold text-[var(--color-text-heading)] truncate">
               {signedInAs}
             </p>
           </div>
