@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
+import { notifyAdminTasksComplete } from "@/lib/notifyAdminTasksComplete";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
 // the admin panel expects: canadian_citizen | permanent_resident | visa | refugee_status | non_citizen_unsure.
@@ -109,8 +110,12 @@ export async function POST(req: Request) {
         .eq("id", task_id);
 
       // Sync shared task to linked deals (co-purchaser)
+      // Captured so the admin "all tasks complete" ping at the end of this
+      // handler can wait for the mirror to land — pinging first would let the
+      // admin read a family whose peer tasks are still Pending.
+      let sharedSync: Promise<unknown> = Promise.resolve();
       if (task.is_shared && task.task_template_id) {
-        syncSharedTaskCompletion({
+        sharedSync = syncSharedTaskCompletion({
           taskId: task.id,
           dealId: task.deal_id,
           taskTemplateId: task.task_template_id,
@@ -282,6 +287,14 @@ export async function POST(req: Request) {
       if (task.milestone_id) {
         await advanceMilestone(task.deal_id, task.milestone_id);
       }
+
+      // Tell the admin app a client just finished a task, so it can alert the
+      // back office if this client AND their co-party are now completely done.
+      // Sent on every submit — the admin owns the "is it actually all done?"
+      // decision and is idempotent. Time-boxed inside, so it can't stall the
+      // response beyond a few seconds.
+      await sharedSync;
+      await notifyAdminTasksComplete(task.deal_id);
     }
 
     return NextResponse.json({ success: true });
