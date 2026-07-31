@@ -7,6 +7,7 @@ import { Menu, X, LogOut, LogIn, LayoutDashboard } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import { identifyUser, resetUser } from "@/lib/analytics";
 // import Footer from "@/components/layout/Footer";
 
 const navLinks = [
@@ -80,6 +81,7 @@ export default function DashboardLayout({
       .then((data) => {
         if (data.success && data.user) {
           setUser(data.user);
+          identifyUser(data.user.id);
         }
       })
       .catch((err) => console.error("Failed to fetch user:", err));
@@ -104,6 +106,7 @@ export default function DashboardLayout({
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
+    resetUser();
     window.location.href = "/login";
   };
 
