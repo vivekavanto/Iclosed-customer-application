@@ -2,6 +2,11 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import {
+  recipientSideForLead,
+  resolveMilestoneSide,
+  shouldEmailForSide,
+} from "@/lib/recipientSide";
 
 /**
  * When a milestone completes, check if it has an email_template_id.
@@ -14,12 +19,17 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
     // Fetch the milestone with its email_template_id and deal info
     const { data: milestone } = await supabaseAdmin
       .from("milestones")
-      .select("id, email_template_id, deal_id, title, status")
+      .select("id, email_template_id, deal_id, title, status, side, stage_template_id")
       .eq("id", milestoneId)
       .single();
 
     if (!milestone || !milestone.email_template_id) return;
     if (milestone.status !== "Completed") return;
+
+    // Which side of a Purchase & Sale file this stage belongs to. Every family
+    // deal carries BOTH sides' milestones, so without this a purchase-side stage
+    // emails the co-sellers too. Null = not side-specific, send to everyone.
+    const milestoneSide = await resolveMilestoneSide(milestone);
 
     // Get the deal → lead → client email for sending
     const { data: deal } = await supabaseAdmin
@@ -64,7 +74,9 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
 
     const { data: leads } = await supabaseAdmin
       .from("leads")
-      .select("email, first_name, last_name, lead_type, address_street, address_city")
+      .select(
+        "email, first_name, last_name, lead_type, address_street, address_city, parent_lead_id, co_person_role",
+      )
       .in("id", leadIds);
 
     if (!leads || leads.length === 0) return;
@@ -72,6 +84,17 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
     // Send email to each lead (primary + co-purchasers)
     for (const lead of leads) {
       if (!lead.email) continue;
+
+      // Skip the other side of a Purchase & Sale file. The primary is both
+      // purchaser and seller so they always receive it; only co-people whose
+      // recorded side disagrees with the milestone are skipped.
+      const leadSide = recipientSideForLead(lead);
+      if (!shouldEmailForSide(milestoneSide, leadSide)) {
+        console.log(
+          `[MilestoneEmail] Skipped ${lead.email} — ${leadSide}-side co-person, ${milestoneSide}-side milestone "${milestone.title}"`,
+        );
+        continue;
+      }
 
       const fullName = [lead.first_name, lead.last_name].filter(Boolean).join(" ");
       const leadAddress = [lead.address_street, lead.address_city].filter(Boolean).join(", ");
