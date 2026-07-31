@@ -30,9 +30,11 @@ import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
  *     must hold the alert back.
  *   - Shared tasks live once on the primary deal, personal tasks one-per-person,
  *     so both are pooled.
- *   - Only tasks the CLIENT can see. `hidden_from_client` rows are internal
- *     back-office steps a client has no way to complete, so counting them would
- *     mean the alert never fires on any file that has one.
+ *   - Every non-deleted task, which is exactly the set we serve the client in
+ *     /api/tasks. There is a `hidden_from_client` flag in the admin repo's
+ *     2026-06-04 migration, but it was never applied and nothing reads it —
+ *     including us. Filtering on it would ignore tasks still on the client's
+ *     screen and fire this alert early, so we deliberately don't.
  *
  * Best-effort by contract: never throws, so it can't fail a task submission.
  */
@@ -153,15 +155,13 @@ export async function notifyAllTasksComplete(
         .select("id, status")
         .eq("deal_id", primaryDealId)
         .eq("is_shared", true)
-        .eq("is_deleted", false)
-        .eq("hidden_from_client", false),
+        .eq("is_deleted", false),
       supabaseAdmin
         .from("tasks")
         .select("id, status")
         .in("deal_id", familyDealIds)
         .or("is_shared.is.null,is_shared.eq.false")
-        .eq("is_deleted", false)
-        .eq("hidden_from_client", false),
+        .eq("is_deleted", false),
     ]);
 
     const pooled = [...(sharedTasks ?? []), ...(personalTasks ?? [])];
