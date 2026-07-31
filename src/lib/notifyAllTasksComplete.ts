@@ -129,6 +129,48 @@ function formatLeadTypeLabel(raw: string | null | undefined): string {
   return (raw ?? "").trim();
 }
 
+/**
+ * Who gets the alert email.
+ *
+ * Defaults to the firm's alert inbox rather than fanning out to every admin —
+ * one place to watch, and no risk of blasting the whole team while the feature
+ * is being tuned. Override with ALL_TASKS_ALERT_TO:
+ *
+ *   ALL_TASKS_ALERT_TO="ops@example.com,clerk@example.com"  → those addresses
+ *   ALL_TASKS_ALERT_TO="admins"                             → every active
+ *                                                             admin_users row
+ *
+ * Keep this in step with the admin repo's copy in
+ * src/lib/notifyAllTasksComplete.ts — either app may be the one that sends.
+ *
+ * The in-app notification is unaffected either way — it's a broadcast row, so
+ * every admin still sees it in the sidebar bell regardless of who is emailed.
+ */
+const DEFAULT_ALERT_TO = "testing@navawilson.law";
+
+async function resolveRecipients(): Promise<string[]> {
+  const configured = (process.env.ALL_TASKS_ALERT_TO ?? DEFAULT_ALERT_TO).trim();
+
+  if (configured.toLowerCase() === "admins") {
+    const { data: admins } = await supabaseAdmin
+      .from("admin_users")
+      .select("email")
+      .eq("is_active", true);
+    return Array.from(
+      new Set((admins ?? []).map((a) => (a.email ?? "").trim()).filter(Boolean)),
+    );
+  }
+
+  return Array.from(
+    new Set(
+      configured
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 async function releaseClaim(primaryDealId: string): Promise<void> {
   await supabaseAdmin
     .from("deals")
@@ -299,17 +341,10 @@ async function dispatchAlert(
     console.error("[AllTasksComplete] failed to write in-app notification:", notifErr.message);
   }
 
-  // 2. Email every active admin.
-  const { data: admins } = await supabaseAdmin
-    .from("admin_users")
-    .select("email")
-    .eq("is_active", true);
-
-  const recipients = Array.from(
-    new Set((admins ?? []).map((a) => (a.email ?? "").trim()).filter(Boolean)),
-  );
+  // 2. Email the alert inbox.
+  const recipients = await resolveRecipients();
   if (recipients.length === 0) {
-    console.warn("[AllTasksComplete] no active admin_users with an email — in-app only");
+    console.warn("[AllTasksComplete] no alert recipients resolved — in-app only");
     return;
   }
 
