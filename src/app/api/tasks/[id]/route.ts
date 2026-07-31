@@ -1,7 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
 import { syncSharedTaskCompletion, syncSharedTaskPatch, advanceMilestone } from "@/lib/syncSharedTask";
-import { notifyAdminTasksComplete } from "@/lib/notifyAdminTasksComplete";
+import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
 
 export async function PATCH(
   req: Request,
@@ -91,14 +91,18 @@ export async function PATCH(
       await advanceMilestone(task.deal_id, task.milestone_id);
     }
 
-    // 3️⃣ Tell the admin app a client just finished a task, so it can alert the
-    // back office if this client AND their co-party are now completely done.
-    // Sent on every completion — the admin owns the "is it actually all done?"
-    // decision and is idempotent. Time-boxed inside, so it can't stall the
-    // response beyond a few seconds.
+    // 3️⃣ If this client AND their co-party have now finished everything on the
+    // file, alert the back office (email to every admin + in-app notification).
+    // Runs on every completion; the helper decides whether the family is
+    // genuinely done and holds a shared idempotency claim, so it's a cheap
+    // no-op otherwise and can never double-send. Never throws.
+    //
+    // sharedSync is awaited first: it mirrors this completion onto the family's
+    // peer tasks, and checking before it lands would read peers as still
+    // Pending and conclude nothing had finished.
     if (patch.completed && task?.deal_id) {
       await sharedSync;
-      await notifyAdminTasksComplete(task.deal_id);
+      await notifyAllTasksComplete(task.deal_id);
     }
 
     return NextResponse.json({ success: true });

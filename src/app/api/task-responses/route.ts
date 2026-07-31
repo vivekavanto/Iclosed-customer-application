@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
-import { notifyAdminTasksComplete } from "@/lib/notifyAdminTasksComplete";
+import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
 // the admin panel expects: canadian_citizen | permanent_resident | visa | refugee_status | non_citizen_unsure.
@@ -288,13 +288,17 @@ export async function POST(req: Request) {
         await advanceMilestone(task.deal_id, task.milestone_id);
       }
 
-      // Tell the admin app a client just finished a task, so it can alert the
-      // back office if this client AND their co-party are now completely done.
-      // Sent on every submit — the admin owns the "is it actually all done?"
-      // decision and is idempotent. Time-boxed inside, so it can't stall the
-      // response beyond a few seconds.
+      // If this client AND their co-party have now finished everything on the
+      // file, alert the back office (email to every admin + in-app
+      // notification). Runs on every submit; the helper decides whether the
+      // family is genuinely done and holds a shared idempotency claim, so it's
+      // a cheap no-op otherwise and can never double-send. Never throws.
+      //
+      // sharedSync is awaited first: it mirrors this completion onto the
+      // family's peer tasks, and checking before it lands would read peers as
+      // still Pending and conclude nothing had finished.
       await sharedSync;
-      await notifyAdminTasksComplete(task.deal_id);
+      await notifyAllTasksComplete(task.deal_id);
     }
 
     return NextResponse.json({ success: true });
