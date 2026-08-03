@@ -1,4 +1,4 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend, EMAIL_FROM, EMAIL_REPLY_TO, INTERNAL_ALERT_TO } from "@/lib/resend";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
 export interface NameChangeRequestPayload {
@@ -87,7 +87,7 @@ export async function sendNameChangeRequestEmail(
     const { error } = await resend.emails.send({
       from: EMAIL_FROM,
       replyTo: lead.email || EMAIL_REPLY_TO,
-      to: EMAIL_REPLY_TO,
+      to: INTERNAL_ALERT_TO,
       subject,
       html,
     });

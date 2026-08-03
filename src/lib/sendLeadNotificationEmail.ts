@@ -1,4 +1,4 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend, EMAIL_FROM, EMAIL_REPLY_TO, INTERNAL_ALERT_TO } from "@/lib/resend";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 
@@ -150,7 +150,7 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
     const { error } = await resend.emails.send({
       from: EMAIL_FROM,
       replyTo: EMAIL_REPLY_TO,
-      to: EMAIL_REPLY_TO, // iclosed@navawilson.law
+      to: INTERNAL_ALERT_TO,
       subject,
       html,
     });
