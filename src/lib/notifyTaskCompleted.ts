@@ -1,5 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { interpolateTokens, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getAuthUser } from "@/lib/getAuthClient";
 import { adminAppUrl } from "@/lib/adminAppUrl";
 
@@ -27,10 +28,23 @@ import { adminAppUrl } from "@/lib/adminAppUrl";
  * a client re-opening a finished task and re-submitting is silent. It does fire
  * again if a task is genuinely reopened and re-done.
  *
+ * The wording comes from the "Client Task Completed" row in `email_templates`,
+ * editable in the admin app. If that row is missing or inactive the built-in
+ * copy below is used instead — this alert exists precisely so nobody has to
+ * watch a file by hand, so it must not go quiet on a template mistake. Use
+ * TASK_COMPLETED_ALERT_TO=off to actually turn the email off.
+ *
  * Best-effort by contract: never throws, so it can't fail a task submission.
  */
 
 const NOTIFICATION_TYPE = "task.client_completed";
+
+/**
+ * Row in `email_templates` that owns the wording. Matched with ILIKE, and
+ * deliberately NOT "%Task Completed%" — that would also match a future "All
+ * Tasks Completed"-style name.
+ */
+const TEMPLATE_NAME = "Client Task Completed";
 
 /**
  * Who gets the alert. Override with TASK_COMPLETED_ALERT_TO (comma-separated);
@@ -105,6 +119,44 @@ async function isAdminSession(): Promise<{ isAdmin: boolean; email: string | nul
     // this decide anything but "not a known admin".
     return { isAdmin: false, email: null };
   }
+}
+
+/**
+ * Wording used only until the "Client Task Completed" template exists in the
+ * admin app. Identical markup and tokens to the seed template, so swapping to
+ * the DB row changes nothing until someone edits it there.
+ *
+ * Takes ALREADY-ESCAPED values, exactly like the template path does.
+ */
+function builtInHtml(v: Record<string, string>): string {
+  const row = (label: string, value: string) => `
+      <tr>
+        <td style="padding: 6px 16px 6px 0; color:#555; white-space:nowrap; vertical-align:top;"><strong>${label}</strong></td>
+        <td style="padding: 6px 0; vertical-align:top;">${value || "—"}</td>
+      </tr>`;
+
+  return `
+      <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
+        <h2 style="margin: 0 0 16px; font-size: 18px;">Task Completed</h2>
+        <p style="margin: 0 0 16px;">
+          Your client <strong>${v.client_name}</strong> completed
+          <strong>${v.task_title}</strong> on iClosed.
+        </p>
+        <table style="border-collapse: collapse; width: 100%; max-width: 560px;">
+          ${row("Client", v.client_name)}
+          ${row("Client email", v.client_email)}
+          ${row("Task", v.task_title)}
+          ${row("Side", v.side)}
+          ${row("Submitted by", v.submitted_by)}
+          ${row("File number", v.file_number)}
+          ${row("Property", v.property_address)}
+          ${row("Closing date", v.closing_date)}
+          ${row("Completed at", v.completed_at)}
+        </table>
+        <p style="margin: 20px 0 0;">
+          <a href="${v.deal_url}" style="color:#1a4fd6;">Open the file in iClosed</a>
+        </p>
+      </div>`;
 }
 
 export interface ClientTaskCompletedParams {
@@ -248,37 +300,56 @@ export async function notifyClientTaskCompleted(
     const recipients = resolveRecipients();
     if (recipients.length === 0) return; // in-app only, by configuration
 
-    const row = (label: string, value: string) => `
-      <tr>
-        <td style="padding: 6px 16px 6px 0; color:#555; white-space:nowrap; vertical-align:top;"><strong>${label}</strong></td>
-        <td style="padding: 6px 0; vertical-align:top;">${escapeHtml(value) || "—"}</td>
-      </tr>`;
+    // Wording lives in the admin app's Email Templates, so the office can edit
+    // it without a deploy. Every value except the system-generated link is
+    // client-supplied, so escape it — interpolateTokens splices values in
+    // verbatim.
+    const variables: Record<string, string> = {
+      client_name: escapeHtml(displayName),
+      client_email: escapeHtml(leadEmail || "—"),
+      task_title: escapeHtml(taskTitle),
+      side: escapeHtml(sideLabel || "—"),
+      submitted_by: escapeHtml(submittedByOther || leadEmail || "—"),
+      file_number: escapeHtml(fileNumber || "—"),
+      property_address: escapeHtml(propertyAddress || "—"),
+      closing_date: escapeHtml(closingDate),
+      completed_at: escapeHtml(new Date().toLocaleString("en-CA")),
+      deal_url: dealUrl,
+    };
 
-    const html = `
-      <div style="font-family: Arial, sans-serif; color: #111; line-height: 1.5;">
-        <h2 style="margin: 0 0 16px; font-size: 18px;">Task Completed</h2>
-        <p style="margin: 0 0 16px;">
-          Your client <strong>${escapeHtml(displayName)}</strong> completed
-          <strong>${escapeHtml(taskTitle)}</strong> on iClosed.
-        </p>
-        <table style="border-collapse: collapse; width: 100%; max-width: 560px;">
-          ${row("Client", clientName)}
-          ${row("Client email", leadEmail)}
-          ${row("Task", taskTitle)}
-          ${sideLabel ? row("Side", sideLabel) : ""}
-          ${submittedByOther ? row("Submitted by", submittedByOther) : ""}
-          ${row("File number", fileNumber)}
-          ${row("Property", propertyAddress)}
-          ${row("Closing date", closingDate)}
-          ${row("Completed at", new Date().toLocaleString("en-CA"))}
-        </table>
-        <p style="margin: 20px 0 0;">
-          <a href="${dealUrl}" style="color:#1a4fd6;">Open the file in iClosed</a>
-        </p>
-      </div>
-    `;
+    const { data: template } = await supabaseAdmin
+      .from("email_templates")
+      .select("name, subject, body")
+      .ilike("name", `%${TEMPLATE_NAME}%`)
+      .eq("is_active", true)
+      .or("is_deleted.eq.false,is_deleted.is.null")
+      .limit(1)
+      .maybeSingle();
 
-    const subject = `${displayName} completed "${taskTitle}"${fileNumber ? ` — file ${fileNumber}` : ""}`;
+    const fallbackSubject = `${displayName} completed "${taskTitle}"${fileNumber ? ` — file ${fileNumber}` : ""}`;
+
+    if (!template?.body) {
+      // Unlike the other template-backed emails, a missing template does NOT
+      // silence this one — the whole point is that nobody has to watch for a
+      // task landing. Fall back to the built-in wording and say so in the logs.
+      // The real off-switch is TASK_COMPLETED_ALERT_TO=off.
+      console.warn(
+        `[TaskCompleted] no active "${TEMPLATE_NAME}" template — using built-in wording. Add it under Email Templates in the admin app.`,
+      );
+    }
+
+    const html = template?.body
+      ? interpolateTokens(template.body, variables)
+      : builtInHtml(variables);
+
+    // Only the template's own Subject field, never its name: "Client Task
+    // Completed" as a subject line hides the one thing the office needs to see
+    // at a glance — who did what.
+    const subject = resolveTemplateSubject(
+      { subject: template?.subject ?? null, name: null },
+      { ...variables, client_name: displayName, task_title: taskTitle, file_number: fileNumber },
+      fallbackSubject,
+    );
 
     const { error } = await resend.emails.send({
       from: EMAIL_FROM,
