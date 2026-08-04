@@ -7,6 +7,14 @@ import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { getTaskDescription, type TaskSide } from "@/lib/taskDescriptions";
 import {
+  isCityField,
+  isPostalCodeField,
+  isUnitField,
+  validateCity,
+  validatePostalCode,
+  validateUnit,
+} from "@/lib/addressValidation";
+import {
   X,
   Upload,
   Trash2,
@@ -1015,6 +1023,15 @@ export default function DynamicTaskDrawer({
       } else {
         if (required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
+        } else if (val && isCityField(field.label)) {
+          const cityError = validateCity(val);
+          if (cityError) newErrors[field.id] = cityError;
+        } else if (val && isPostalCodeField(field.label)) {
+          const postalError = validatePostalCode(val);
+          if (postalError) newErrors[field.id] = postalError;
+        } else if (val && isUnitField(field.label)) {
+          const unitError = validateUnit(val);
+          if (unitError) newErrors[field.id] = unitError;
         }
       }
     }
