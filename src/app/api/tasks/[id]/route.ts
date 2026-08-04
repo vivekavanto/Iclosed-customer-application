@@ -1,6 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
 import { syncSharedTaskCompletion, syncSharedTaskPatch, advanceMilestone } from "@/lib/syncSharedTask";
+import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
 
 export async function PATCH(
   req: Request,
@@ -49,6 +50,10 @@ export async function PATCH(
     }
 
     // 1b. Sync shared task to linked deals (co-purchaser)
+    // The promise is captured so the admin "all tasks complete" ping below can
+    // wait for the mirror to land — pinging first would let the admin read a
+    // family whose peer tasks are still Pending and conclude nothing's finished.
+    let sharedSync: Promise<unknown> = Promise.resolve();
     if (task?.is_shared && task.task_template_id) {
       if (patch.completed) {
         // When completing: use syncSharedTaskCompletion which handles
@@ -56,7 +61,7 @@ export async function PATCH(
         // Do NOT also call syncSharedTaskPatch — it would race and mark
         // linked tasks as completed before syncSharedTaskCompletion can
         // find them (queries WHERE completed=false).
-        syncSharedTaskCompletion({
+        sharedSync = syncSharedTaskCompletion({
           taskId: task.id,
           dealId: task.deal_id,
           taskTemplateId: task.task_template_id,
@@ -84,6 +89,20 @@ export async function PATCH(
     // timeline in lockstep. See advanceMilestone in syncSharedTask.
     if (task?.milestone_id && patch.completed) {
       await advanceMilestone(task.deal_id, task.milestone_id);
+    }
+
+    // 3️⃣ If this client AND their co-party have now finished everything on the
+    // file, alert the back office (email to every admin + in-app notification).
+    // Runs on every completion; the helper decides whether the family is
+    // genuinely done and holds a shared idempotency claim, so it's a cheap
+    // no-op otherwise and can never double-send. Never throws.
+    //
+    // sharedSync is awaited first: it mirrors this completion onto the family's
+    // peer tasks, and checking before it lands would read peers as still
+    // Pending and conclude nothing had finished.
+    if (patch.completed && task?.deal_id) {
+      await sharedSync;
+      await notifyAllTasksComplete(task.deal_id);
     }
 
     return NextResponse.json({ success: true });

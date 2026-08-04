@@ -1,6 +1,11 @@
 allowBuilds:
+  core-js: set this to true or false
   sharp: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@posthog/browser-common@0.2.5'
+  - '@posthog/core@1.45.3'
+  - posthog-js@1.408.3
 onlyBuiltDependencies:
   - sharp
   - unrs-resolver
