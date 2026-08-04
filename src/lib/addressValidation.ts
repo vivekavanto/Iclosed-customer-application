@@ -17,9 +17,21 @@ const CITY_REGEX = /^(?=.*[A-Za-zÀ-ÖØ-öø-ÿ])[A-Za-zÀ-ÖØ-öø-ÿ\s.'’-
 export function validateCity(raw: string): string | null {
   const city = raw.trim();
   if (!city) return "City is required.";
-  if (!CITY_REGEX.test(city)) return "City name is not valid.";
+  if (!CITY_REGEX.test(city)) return "Enter a valid city name.";
   if (city.length < 2) return "City name is too short.";
   return null;
+}
+
+export function isCityField(label: string | null | undefined): boolean {
+  return /\bcity\b/i.test(label ?? "");
+}
+
+export function isPostalCodeField(label: string | null | undefined): boolean {
+  return /postal/i.test(label ?? "");
+}
+
+export function isUnitField(label: string | null | undefined): boolean {
+  return /\b(unit|apartment|apt|suite)\b/i.test(label ?? "");
 }
 
 // Canadian postal code: a full "A1A 1A1" (the space/hyphen is optional) or the
@@ -33,7 +45,7 @@ export function validatePostalCode(raw: string): string | null {
   const postal = raw.trim();
   if (!postal) return "Postal code is required.";
   if (!POSTAL_REGEX.test(postal))
-    return "Enter a valid postal code (e.g. M5V 3A8 or M5V).";
+    return "Enter a valid postal code (e.g. M5V 3A8).";
   return null;
 }
 

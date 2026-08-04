@@ -25,6 +25,14 @@ import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
 import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
+import {
+  isCityField,
+  isPostalCodeField,
+  isUnitField,
+  validateCity,
+  validatePostalCode,
+  validateUnit,
+} from "@/lib/addressValidation";
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -1036,6 +1044,15 @@ export default function PersonalInfoTaskDrawer({
       } else {
         if (required && !val) {
           newErrors[field.id] = `${field.label} is required.`;
+        } else if (val && isCityField(field.label)) {
+          const cityError = validateCity(val);
+          if (cityError) newErrors[field.id] = cityError;
+        } else if (val && isPostalCodeField(field.label)) {
+          const postalError = validatePostalCode(val);
+          if (postalError) newErrors[field.id] = postalError;
+        } else if (val && isUnitField(field.label)) {
+          const unitError = validateUnit(val);
+          if (unitError) newErrors[field.id] = unitError;
         }
       }
     }
