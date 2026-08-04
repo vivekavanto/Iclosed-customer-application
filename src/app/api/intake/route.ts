@@ -5,6 +5,7 @@ import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { NextResponse } from "next/server";
+import { validateCity, validatePostalCode } from "@/lib/addressValidation";
 
 export async function POST(req: Request) {
   try {
@@ -96,6 +97,24 @@ export async function POST(req: Request) {
       if (!document_uploader_co_person_id || !selectedUploaderExists) {
         return NextResponse.json(
           { success: false, error: "Selected document uploader is not valid." },
+          { status: 400 }
+        );
+      }
+    }
+
+    const addressChecks: Array<[string, unknown, (v: string) => string | null]> = [
+      ["City", address_city, validateCity],
+      ["Selling city", selling_address_city, validateCity],
+      ["Postal code", address_postal_code, validatePostalCode],
+      ["Selling postal code", selling_address_postal_code, validatePostalCode],
+    ];
+    for (const [label, value, validator] of addressChecks) {
+      const trimmed = typeof value === "string" ? value.trim() : "";
+      if (!trimmed) continue;
+      const fieldError = validator(trimmed);
+      if (fieldError) {
+        return NextResponse.json(
+          { success: false, error: `${label}: ${fieldError}` },
           { status: 400 }
         );
       }
