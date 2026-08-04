@@ -175,6 +175,25 @@ export default function SetPasswordPage() {
 
       if (updateError) throw updateError;
 
+      // The account is now activated — tell our server, which notifies the
+      // admin app (it promotes the deal and emails the referring agent "your
+      // client just signed up"). MUST run before signOut, while we still hold
+      // a session to authenticate with. Best-effort: a failure here never
+      // blocks the user, whose password is already set.
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        await fetch("/api/auth/activated", {
+          method: "POST",
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
+        });
+      } catch (notifyErr) {
+        console.warn("[SetPassword] activation notification failed:", notifyErr);
+      }
+
       setSuccess(true);
       // Sign out so user logs in with new password; countdown handles redirect
       await supabase.auth.signOut();

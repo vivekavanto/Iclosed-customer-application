@@ -3,6 +3,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
 import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
+import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
 // the admin panel expects: canadian_citizen | permanent_resident | visa | refugee_status | non_citizen_unsure.
@@ -85,9 +86,14 @@ export async function POST(req: Request) {
     // Fetch task context for shared-task syncing
     const { data: task, error: taskFetchError } = await supabaseAdmin
       .from("tasks")
-      .select("id, title, deal_id, milestone_id, is_shared, task_template_id")
+      .select("id, title, deal_id, milestone_id, is_shared, task_template_id, completed, status")
       .eq("id", task_id)
       .single();
+
+    // Captured before the update below: the "client completed a task" alert
+    // fires on the Pending → Completed transition only, so re-submitting a
+    // finished task doesn't email the office a second time.
+    const wasCompleted = task?.completed === true || task?.status === "Completed";
 
     // If draft, save responses only — do NOT mark task as completed
     if (draft) {
@@ -298,6 +304,17 @@ export async function POST(req: Request) {
       // family's peer tasks, and checking before it lands would read peers as
       // still Pending and conclude nothing had finished.
       await sharedSync;
+
+      // Per-task alert first: the office wants to know THIS task landed even on
+      // a file that still has outstanding work.
+      await notifyClientTaskCompleted({
+        taskId: task.id,
+        dealId: task.deal_id,
+        taskTitle: task.title,
+        wasCompleted,
+        source: "task-responses",
+      });
+
       await notifyAllTasksComplete(task.deal_id);
     }
 

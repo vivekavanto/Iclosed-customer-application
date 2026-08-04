@@ -1,4 +1,4 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend, EMAIL_FROM, EMAIL_REPLY_TO, INTERNAL_ALERT_TO } from "@/lib/resend";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate } from "@/lib/email-templates/milestone";
 
@@ -103,7 +103,7 @@ export async function sendCitizenshipFlagEmail(
     const { error } = await resend.emails.send({
       from: EMAIL_FROM,
       replyTo: EMAIL_REPLY_TO,
-      to: EMAIL_REPLY_TO,
+      to: INTERNAL_ALERT_TO,
       subject,
       html,
     });

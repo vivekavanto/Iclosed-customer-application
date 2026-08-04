@@ -2,6 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { interpolateTokens, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { adminAppUrl } from "@/lib/adminAppUrl";
 
 /**
  * Tell the back office when a client AND their co-party have completed every
@@ -44,8 +45,7 @@ const NOTIFICATION_TYPE = "deal.all_tasks_complete";
 
 /** Admin portal base, used for the "Review file" link in the email. */
 function adminBaseUrl(): string {
-  const explicit = process.env.ADMIN_APP_URL;
-  return (explicit || "https://devadmin.iclosed.ca").replace(/\/+$/, "");
+  return adminAppUrl();
 }
 
 /** deal -> lead -> root lead (parent_lead_id or self) -> that lead's deal. */

@@ -3,6 +3,7 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
 import { generateActivationLink } from "@/lib/generateActivationLink";
 import { signedServiceHeaders } from "@/lib/signServiceRequest";
+import { adminAppUrl } from "@/lib/adminAppUrl";
 
 /**
  * POST /api/retainer/post-sign
@@ -42,9 +43,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const adminBase = (
-      process.env.ADMIN_APP_URL ?? "https://devadmin.iclosed.ca"
-    ).replace(/\/+$/, "");
+    const adminBase = adminAppUrl();
 
     // Where the set-password link lands — the portal's auth callback forwards to
     // /set-password once Supabase verifies the one-time link (mirrors convertLead).

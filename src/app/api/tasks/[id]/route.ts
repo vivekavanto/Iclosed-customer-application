@@ -2,6 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
 import { syncSharedTaskCompletion, syncSharedTaskPatch, advanceMilestone } from "@/lib/syncSharedTask";
 import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
+import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
 export async function PATCH(
   req: Request,
@@ -36,6 +37,16 @@ export async function PATCH(
     }
     if (incomingDocUrl !== null) patch.document_url = incomingDocUrl;
     if (incomingDocName !== null) patch.document_name = incomingDocName;
+
+    // Read the task's state BEFORE the update: the "client completed a task"
+    // alert must fire on the Pending → Completed transition only, so re-opening
+    // a finished task and re-saving it doesn't email the office again.
+    const { data: prior } = await supabaseAdmin
+      .from("tasks")
+      .select("completed, status, title")
+      .eq("id", id)
+      .maybeSingle();
+    const wasCompleted = prior?.completed === true || prior?.status === "Completed";
 
     // 1️⃣ Update the task
     const { data: task, error: taskError } = await supabaseAdmin
@@ -102,6 +113,18 @@ export async function PATCH(
     // Pending and conclude nothing had finished.
     if (patch.completed && task?.deal_id) {
       await sharedSync;
+
+      // Per-task alert first: the office wants to know THIS task landed even on
+      // a file that still has outstanding work. Silent when the task was
+      // already complete, so a re-save doesn't re-notify.
+      await notifyClientTaskCompleted({
+        taskId: task.id,
+        dealId: task.deal_id,
+        taskTitle: prior?.title ?? null,
+        wasCompleted,
+        source: "tasks-patch",
+      });
+
       await notifyAllTasksComplete(task.deal_id);
     }
 

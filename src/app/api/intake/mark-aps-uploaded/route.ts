@@ -2,6 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
 export async function POST(req: Request) {
   try {
@@ -41,7 +42,19 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (deal) {
-      await completeApsTaskForDeal(deal.id, side ?? null);
+      const completed = await completeApsTaskForDeal(deal.id, side ?? null);
+
+      // Alert the office that the client uploaded their agreement. Only for the
+      // uploader's own deal: completeApsTaskForDeal mirrors the completion onto
+      // every co-person deal below, and that's one client action, not several.
+      if (completed) {
+        await notifyClientTaskCompleted({
+          taskId: completed.id,
+          dealId: deal.id,
+          taskTitle: completed.title,
+          source: "mark-aps-uploaded",
+        });
+      }
     }
 
     // 4. Also check co-person deals (they may have been auto-converted too)
@@ -77,14 +90,17 @@ export async function POST(req: Request) {
  * side has its own APS task tagged with side='purchase' or side='sale', so
  * the caller must pass the side it just uploaded so we don't accidentally
  * complete the wrong side's task.
+ *
+ * Returns the task it completed (so the caller can alert the office), or null
+ * when there was nothing outstanding to complete.
  */
 async function completeApsTaskForDeal(
   dealId: string,
   side: "purchase" | "sale" | null,
-) {
+): Promise<{ id: string; title: string | null } | null> {
   const baseTaskQuery = supabaseAdmin
     .from("tasks")
-    .select("id, milestone_id, task_template_id, is_shared")
+    .select("id, title, milestone_id, task_template_id, is_shared")
     .eq("deal_id", dealId)
     .ilike("title", "%agreement of purchase and sale%")
     .eq("completed", false)
@@ -93,7 +109,7 @@ async function completeApsTaskForDeal(
     ? await baseTaskQuery.is("side", null).maybeSingle()
     : await baseTaskQuery.eq("side", side).maybeSingle();
 
-  if (!apsTask) return;
+  if (!apsTask) return null;
 
   await supabaseAdmin
     .from("tasks")
@@ -132,4 +148,6 @@ async function completeApsTaskForDeal(
       }
     }
   }
+
+  return { id: apsTask.id, title: apsTask.title ?? null };
 }
