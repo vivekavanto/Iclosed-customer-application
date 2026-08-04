@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
+import { getTaskDescription, type TaskSide } from "@/lib/taskDescriptions";
 import {
   X,
   Upload,
@@ -71,6 +72,7 @@ interface DynamicTaskDrawerProps {
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
+  side?: TaskSide;
   onTaskCompleted?: (taskId: string) => void;
 }
 
@@ -678,6 +680,7 @@ export default function DynamicTaskDrawer({
   leadId,
   clientFirstName,
   clientLastName,
+  side = null,
   onTaskCompleted,
 }: DynamicTaskDrawerProps) {
   const isLargeScreen = useIsLargeScreen();
@@ -1413,6 +1416,7 @@ export default function DynamicTaskDrawer({
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
   const isVoidChequeTask = taskTitle.toLowerCase().includes("void cheque");
   const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
+  const taskDescription = getTaskDescription(taskTitle, side);
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {
@@ -1579,6 +1583,12 @@ export default function DynamicTaskDrawer({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+
+          {taskDescription && (
+            <p className="text-sm text-gray-600 leading-relaxed">
+              {taskDescription}
+            </p>
+          )}
 
           {/* ── Home Insurance static sections ── */}
           {taskTitle.toLowerCase().includes("home insurance") && (
