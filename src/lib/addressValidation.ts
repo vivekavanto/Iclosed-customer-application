@@ -34,6 +34,13 @@ export function isUnitField(label: string | null | undefined): boolean {
   return /\b(unit|apartment|apt|suite)\b/i.test(label ?? "");
 }
 
+// Matches "Street Address" / "Mailing street address". Anchored on "street" so
+// it can't match "Email Address".
+export function isStreetAddressField(label: string | null | undefined): boolean {
+  const l = (label ?? "").trim().toLowerCase();
+  return /\bstreet\s*address\b/.test(l) || l === "street";
+}
+
 // Canadian postal code: a full "A1A 1A1" (the space/hyphen is optional) or the
 // 3-character FSA on its own ("A1A"). Uses Canada Post's valid letter sets —
 // the first letter never uses D, F, I, O, Q, U, W or Z; the remaining letters

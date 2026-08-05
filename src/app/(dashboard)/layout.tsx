@@ -89,7 +89,7 @@ export default function DashboardLayout({
       .then((data) => {
         if (data.success && data.user) {
           setUser(data.user);
-          identifyUser(data.user.id);
+          identifyUser(data.user.id, data.user.email);
         }
       })
       .catch((err) => console.error("Failed to fetch user:", err));
