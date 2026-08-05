@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, Fragment } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, Fragment } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
@@ -25,9 +25,11 @@ import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
 import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
+import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import {
   isCityField,
   isPostalCodeField,
+  isStreetAddressField,
   isUnitField,
   validateCity,
   validatePostalCode,
@@ -253,6 +255,10 @@ async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
 
 const inputBase =
   "w-full px-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs";
+// inputBase with pl-9 for AddressAutocomplete's pin. Spelled out, not appended:
+// Tailwind resolves padding conflicts by stylesheet order, not class order.
+const inputWithIcon =
+  "w-full pl-9 pr-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs";
 const inputNormal =
   "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10";
 const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
@@ -944,6 +950,40 @@ export default function PersonalInfoTaskDrawer({
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
+
+  // Address autocomplete wiring for City and Postal Code fields.
+  const addressSiblingIds = useMemo(() => {
+    const findId = (match: (label: string) => boolean) =>
+      fields.find((f) => f.field_type === "text" && match(f.label))?.id ?? null;
+    return {
+      city: findId(isCityField),
+      postal: findId(isPostalCodeField),
+    };
+  }, [fields]);
+
+  const handleAddressSelect = useCallback(
+    (
+      streetFieldId: string,
+      address: { street: string; city: string; postalCode: string }
+    ) => {
+      const filled: Record<string, string> = { [streetFieldId]: address.street };
+      // Google omits missing components — don't blank what the user typed.
+      if (addressSiblingIds.city && address.city) {
+        filled[addressSiblingIds.city] = address.city;
+      }
+      if (addressSiblingIds.postal && address.postalCode) {
+        filled[addressSiblingIds.postal] = address.postalCode;
+      }
+
+      setValues((prev) => ({ ...prev, ...filled }));
+      setErrors((prev) => {
+        const next = { ...prev };
+        for (const id of Object.keys(filled)) next[id] = "";
+        return next;
+      });
+    },
+    [addressSiblingIds]
+  );
 
   function setFile(fieldId: string, file: File) {
     setFiles((prev) => ({ ...prev, [fieldId]: file }));
@@ -2254,6 +2294,23 @@ export default function PersonalInfoTaskDrawer({
                       <span className="text-gray-400 font-normal text-xs ml-2">(Optional)</span>
                     )}
                   </label>
+                  {isStreetAddressField(field.label) &&
+                  field.field_type === "text" ? (
+                    <AddressAutocomplete
+                      value={values[field.id] ?? ""}
+                      onChange={(v) => setValue(field.id, v)}
+                      onSelect={(address) =>
+                        handleAddressSelect(field.id, address)
+                      }
+                      placeholder={field.placeholder ?? "123 Main Street"}
+                      // Mailing address, not the property — allow all of Canada.
+                      restrictToOntario={false}
+                      inputClassName={[
+                        inputWithIcon,
+                        errors[field.id] ? inputError : inputNormal,
+                      ].join(" ")}
+                    />
+                  ) : (
                   <input
                     type={
                       field.field_type === "phone" ? "tel" : field.field_type
@@ -2270,6 +2327,7 @@ export default function PersonalInfoTaskDrawer({
                       errors[field.id] ? inputError : inputNormal,
                     ].join(" ")}
                   />
+                  )}
                   {errors[field.id] && (
                     <p className="mt-1.5 text-xs text-[#C10007]">
                       {errors[field.id]}
