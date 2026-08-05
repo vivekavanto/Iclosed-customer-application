@@ -410,7 +410,18 @@ export async function GET(req: Request) {
     // sort "Needs Your Attention" by the per-task order configured in the
     // task_templates table.
     // ─────────────────────────────────────────
-    const enriched = (tasks ?? []).map((t: any) => {
+    // Admin-role rows are the office's own working records — the client's
+    // closing-cost estimate mirror among them — and are not work the client is
+    // being asked to do. Dropping them here covers every consumer of this
+    // endpoint at once (task list, "Needs Your Attention", progress counts).
+    // Template-seeded tasks are only ever role_type client/both, so nothing the
+    // client is meant to see is filtered out.
+    const clientVisible = (tasks ?? []).filter(
+      (t: { role_type?: string | null }) =>
+        (t.role_type ?? "").toLowerCase() !== "admin",
+    );
+
+    const enriched = clientVisible.map((t: any) => {
       const tpl = Array.isArray(t.task_template) ? t.task_template[0] : t.task_template;
       const { task_template, ...rest } = t;
       return {

@@ -330,23 +330,78 @@ const ClosingCostCalculator: React.FC = () => {
     return JSON.stringify(form) !== JSON.stringify(initialForm);
   }, [form, initialForm]);
 
-  /** The exact body the PDF and email routes both receive. */
-  const buildBody = () => ({
-    firm_key: form.firmKey || null,
-    statement_type: form.statementType || null,
-    file_no_display: form.fileNo || null,
-    purchasers: form.purchasers || null,
-    property_address: form.propertyAddress || null,
-    closing_date: form.closingDate || null,
-    purchase_price: inputs.price,
-    deposit_paid: inputs.deposit,
-    mortgage_amount: inputs.mortgage,
-    is_toronto: inputs.isToronto,
-    is_first_time_buyer: inputs.isFirstTimeBuyer,
-    title_premium_override: inputs.titlePremiumOverride,
-    property_tax_adjustment: inputs.propertyTaxAdjustment,
-    adjustments: form.adjustments,
-  });
+  /**
+   * The exact body the PDF, email and save routes all receive. Memoised so the
+   * auto-save effect below can key off it instead of re-firing every render.
+   */
+  const requestBody = useMemo(
+    () => ({
+      firm_key: form.firmKey || null,
+      statement_type: form.statementType || null,
+      file_no_display: form.fileNo || null,
+      purchasers: form.purchasers || null,
+      property_address: form.propertyAddress || null,
+      closing_date: form.closingDate || null,
+      purchase_price: inputs.price,
+      deposit_paid: inputs.deposit,
+      mortgage_amount: inputs.mortgage,
+      is_toronto: inputs.isToronto,
+      is_first_time_buyer: inputs.isFirstTimeBuyer,
+      title_premium_override: inputs.titlePremiumOverride,
+      property_tax_adjustment: inputs.propertyTaxAdjustment,
+      adjustments: form.adjustments,
+    }),
+    [form, inputs],
+  );
+
+  const buildBody = () => requestBody;
+
+  // ── Mirror the client's own numbers onto their file ──
+  //
+  // The back office wants to see what the client is actually planning around —
+  // the price they have in mind and the closing costs they are expecting — so
+  // the latest calculation is saved to their deal as an admin-only task. It is
+  // NOT written to the firm's issued-estimate records; see the save route.
+  //
+  // Debounced and deduplicated, because this runs while the client is still
+  // typing: only a settled set of figures, different from the last set sent, is
+  // worth a write. Silent in both directions — the client did not ask for this,
+  // so neither success nor failure interrupts them. The route itself no-ops
+  // when there is no price yet or no file to attach to.
+  const savedSignature = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loading || loadError || !initialForm) return;
+    // `changed` is the gate that makes these the CLIENT's figures. Untouched,
+    // the form still shows the file's own prefill, and mirroring that back
+    // would tell the office nothing it did not already have.
+    if (!changed) return;
+    if (requestBody.purchase_price <= 0) return;
+
+    const signature = JSON.stringify(requestBody);
+    if (signature === savedSignature.current) return;
+
+    const timer = setTimeout(() => {
+      // Claimed before the request so a slow round trip can't let the next
+      // keystroke queue a duplicate write of the same figures.
+      savedSignature.current = signature;
+      fetch("/api/closing-estimate/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      })
+        .then((res) => {
+          if (!res.ok) savedSignature.current = null;
+        })
+        .catch(() => {
+          // Release the claim so the next edit retries rather than assuming
+          // the office already has these numbers.
+          savedSignature.current = null;
+        });
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [loading, loadError, initialForm, changed, requestBody]);
 
   const saveBlob = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob);
