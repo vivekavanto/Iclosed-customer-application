@@ -72,6 +72,48 @@ interface ExistingResponse {
   file_name: string | null;
 }
 
+const MORTGAGEE_ADDRESSES: { lender: string; address: string }[] = [
+  {
+    lender: "Royal Bank of Canada",
+    address: "Royal Bank of Canada, 10 York Mills Road, 3rd Floor, Toronto, ON M2P 0A2",
+  },
+  {
+    lender: "Scotiabank",
+    address:
+      "The Bank of Nova Scotia, c/o Property Insurance Tracking Centre, 4715 Tahoe Blvd, Mississauga, ON L4W 0B4",
+  },
+  {
+    lender: "TD Bank",
+    address: "The Toronto-Dominion Bank, 4720 Tahoe Boulevard, Mississauga, ON L4W 5P2",
+  },
+  {
+    lender: "CIBC",
+    address:
+      "Canadian Imperial Bank of Commerce, National Servicing Centre, P.O. Box 115, Commerce Court, Postal Station, Toronto, ON M5L 1E5",
+  },
+  {
+    lender: "BMO",
+    address: "Bank of Montreal, 2465 Argentia Road, 8th Floor, Mississauga, ON L5N 0B4",
+  },
+  {
+    lender: "Equitable Bank",
+    address: "Equitable Bank, 25 Ontario Street, Suite 2200, Toronto, ON M5A 0Y9",
+  },
+  {
+    lender: "Highclere Capital",
+    address: "Highclere Capital, 16 York St, Toronto, ON M5J 0E6",
+  },
+  {
+    lender: "Home Trust",
+    address: "Home Trust Company, 145 King Street West, Suite 2300, Toronto, ON M5H 1J8",
+  },
+  {
+    lender: "Computershare c/o Home Trust",
+    address:
+      "Computershare Trust Company of Canada, c/o Home Trust Company, 145 King Street West, Suite 2300, Toronto, ON M5H 1J8",
+  },
+];
+
 interface DynamicTaskDrawerProps {
   open: boolean;
   onClose: () => void;
@@ -731,6 +773,7 @@ export default function DynamicTaskDrawer({
   const [sharpnessOk, setSharpnessOk] = useState(false);
   const [cameraValidating, setCameraValidating] = useState(false);
   const [acceptableDocsOpen, setAcceptableDocsOpen] = useState(false);
+  const [mortgageeAddressesOpen, setMortgageeAddressesOpen] = useState(false);
   const [manualUploadOpen, setManualUploadOpen] = useState(false);
   const [manualUploadStep, setManualUploadStep] = useState(0);
   // Guards the one-time clients-table prefill per open/taskId (see effect below).
@@ -1615,17 +1658,78 @@ export default function DynamicTaskDrawer({
                 <p className="text-sm font-bold text-gray-900 mb-3">Policy Requirements Checklist</p>
                 <ul className="space-y-2">
                   {[
-                    "Policy effective date matches or precedes closing date",
-                    "Coverage amount meets lender requirements",
-                    "Property address matches purchase agreement",
-                    "Lender listed as mortgagee (if applicable)",
+                    { key: "effective-date", label: <>Policy effective date matches the closing date</> },
+                    { key: "coverage", label: <>Coverage amount meets lender requirements</> },
+                    { key: "address", label: <>Property address matches the purchase agreement</> },
+                    {
+                      key: "clause",
+                      label: (
+                        <>
+                          Policy contains a clause stating{" "}
+                          <span className="font-semibold text-gray-900">&ldquo;cost guaranteed insurance&rdquo;</span>
+                        </>
+                      ),
+                    },
+                    {
+                      key: "mortgagee-rank",
+                      label: (
+                        <>
+                          Your lender is noted as the{" "}
+                          <span className="font-semibold text-gray-900">1st mortgagee</span>
+                        </>
+                      ),
+                    },
+                    {
+                      key: "mortgagee-address",
+                      label: (
+                        <>
+                          Your lender&rsquo;s{" "}
+                          <span className="font-semibold text-gray-900">mortgagee address</span> appears on the policy
+                        </>
+                      ),
+                    },
                   ].map((item) => (
-                    <li key={item} className="flex items-start gap-2 text-xs text-gray-600">
+                    <li key={item.key} className="flex items-start gap-2 text-xs text-gray-600">
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0 mt-1.5" />
-                      {item}
+                      <span>{item.label}</span>
                     </li>
                   ))}
                 </ul>
+
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setMortgageeAddressesOpen(!mortgageeAddressesOpen)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-[#C10007] hover:opacity-80 transition-opacity cursor-pointer"
+                    aria-expanded={mortgageeAddressesOpen}
+                  >
+                    <ChevronDown
+                      size={15}
+                      className={`transition-transform duration-200 ${mortgageeAddressesOpen ? "" : "-rotate-90"}`}
+                      strokeWidth={2.5}
+                    />
+                    See mortgagee addresses for common lenders
+                  </button>
+
+                  {mortgageeAddressesOpen && (
+                    <>
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {MORTGAGEE_ADDRESSES.map((m) => (
+                          <div key={m.lender} className="rounded-lg bg-gray-50 px-3 py-2.5">
+                            <p className="text-xs font-bold text-gray-900">{m.lender}</p>
+                            <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">
+                              {m.address}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
+                        This is not an exhaustive list. If your lender is not shown, use the
+                        mortgagee address given by your lender.
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
             </>
           )}
