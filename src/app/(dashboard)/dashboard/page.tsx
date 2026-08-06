@@ -19,6 +19,8 @@ import {
   FileText,
   Users,
 } from "lucide-react";
+import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
+import ClosingCostEstimateModal from "@/components/dashboard/ClosingCostEstimateModal";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
@@ -1171,6 +1173,9 @@ export default function DashboardPage() {
   // ── Toast ────────────────────────────────────────────────
   const { success: toastSuccess, error: toastError } = useToast();
 
+  // ── Closing cost estimate modal ──────────────────────────
+  const [estimateOpen, setEstimateOpen] = useState(false);
+
   // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string) {
     const taskTitle = tasks.find((t) => t.id === id)?.title ?? "Task";
@@ -1417,6 +1422,11 @@ export default function DashboardPage() {
         }}
       />
 
+      {/* ── Closing Cost Estimate Modal ── */}
+      {estimateOpen && (
+        <ClosingCostEstimateModal onClose={() => setEstimateOpen(false)} />
+      )}
+
       {/* ── 1. Property Selector Tabs (one per lead; Purchase & Sale deals split into 2 tabs) ── */}
       <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-hide">
         {propertyLoading ? (
@@ -1567,6 +1577,11 @@ export default function DashboardPage() {
             milestones={visibleMilestones}
             blockedMilestoneIds={blockedMilestoneIds}
             loading={milestonesLoading}
+          />
+
+          {/* ── Estimate your closing cost ── */}
+          <ClosingCostEstimateCard
+            onEstimate={() => setEstimateOpen(true)}
           />
 
           {/* ── Need Assistance ── */}

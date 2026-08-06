@@ -38,6 +38,10 @@ import {
 const SHARED_RATE_COLUMNS = [
   "reg_transfer",
   "reg_mortgage",
+  // Not a rate — the firm's planning figure for the Statement of Adjustments,
+  // carried through so the portal's calculator starts from the same number the
+  // admin app does.
+  "property_tax_default",
   "hst_rate",
   "rebate_ontario_max",
   "rebate_toronto_max",

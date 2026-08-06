@@ -88,6 +88,7 @@ export function toStatementTypeKey(
 export const SHARED_RATE_COLUMNS = [
   "reg_transfer",
   "reg_mortgage",
+  "property_tax_default",
   "hst_rate",
   "rebate_ontario_max",
   "rebate_toronto_max",
@@ -100,8 +101,7 @@ export const SHARED_RATE_COLUMNS = [
 
 /** The firm's own charges — every one of them HST-taxable. */
 export const FIRM_FEE_COLUMNS = [
-  "legal_transfer",
-  "legal_mortgage",
+  "legal_fees",
   "legal_title_submission",
   "admin_fee",
   "teraview",
@@ -196,8 +196,7 @@ export function defaultFirmRow(firmKey: FirmKey): Record<string, unknown> {
     firm_badge: identity.firm_badge,
     brand_color: identity.brand_color,
     sort_order: identity.sort_order,
-    legal_transfer: d.legalTransfer,
-    legal_mortgage: d.legalMortgage,
+    legal_fees: d.legalFees,
     legal_title_submission: d.legalTitleSubmission,
     admin_fee: d.adminFee,
     teraview: d.teraview,

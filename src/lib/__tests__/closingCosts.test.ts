@@ -229,22 +229,86 @@ test("computeStatement: printed lines sum to the printed total", () => {
 });
 
 // ── Cash purchase behaviour ────────────────────────────────────────────
-test("computeStatement: cash purchase drops both mortgage items", () => {
+test("computeStatement: cash purchase drops the mortgage registration only", () => {
   const s = computeStatement({ ...REFERENCE, mortgage: 0 });
   const l = lines(s);
 
   // "Registration of Mortgage" is gone entirely, not zeroed
   expect(lineKeys(s)).not.toContain("reg_mortgage");
-  // Legal fees fall to the transfer alone
-  expect(l.legal_fees).toBe(650);
+  // The legal fee does NOT fall — it is one flat fee since CALC_VERSION 4.
+  // It was 650 here (the transfer portion alone) under version 3.
+  expect(l.legal_fees).toBe(1200);
+  // The sublabel still narrows: it says what the fee covers, not what it cost
   expect(findLine(s, "legal_fees")?.sublabel).toBe("purchase");
   // Title submission is unaffected by there being no mortgage
   expect(l.title_submission).toBe(150);
-  // HST base = 650 + 150 + 250 + 54.80 + 133.60 = 1,238.40 → 13% = 160.992
-  expect(s.detail.taxableBase).toBe(1238.4);
-  expect(s.hst.amount).toBe(160.99);
-  expect(s.total).toBe(20_657.19);
-  expect(s.balance.balanceDue).toBe(1_050_657.19);
+  // HST base = 1,200 + 150 + 250 + 54.80 + 133.60 = 1,788.40 → 13% = 232.492
+  expect(s.detail.taxableBase).toBe(1788.4);
+  expect(s.hst.amount).toBe(232.49);
+  // 18,075 + 1,097.80 + 85 + 54.80 + 133.60 + 1,350 + 250 + 232.49
+  expect(s.total).toBe(21_278.69);
+  // 1,080,000 − 50,000 − 0 + 21,278.69
+  expect(s.balance.balanceDue).toBe(1_051_278.69);
+});
+
+test("computeStatement: the legal fee is identical with and without a mortgage", () => {
+  const financed = computeStatement(REFERENCE);
+  const cash = computeStatement({ ...REFERENCE, mortgage: 0 });
+  expect(lines(cash).legal_fees).toBe(lines(financed).legal_fees);
+  // The two statements now differ by the mortgage registration alone — and it
+  // carries no HST, so the gap is exactly that fee
+  expect(round2(financed.total - cash.total)).toBe(DEFAULT_RATES.regMortgage);
+});
+
+// ── Land transfer tax overrides (CALC_VERSION 5) ───────────────────────
+test("computeStatement: a provincial LTT override replaces the bracket figure", () => {
+  const s = computeStatement({ ...REFERENCE, provincialLttOverride: 12_000 });
+  expect(lines(s).ltt_provincial).toBe(12_000);
+  expect(s.detail.provincialLTT).toBe(12_000);
+  // 21,363.69 with the bracket figure of 18,075 → 6,075 less
+  expect(s.total).toBe(15_288.69);
+});
+
+test("computeStatement: an LTT override of 0 is honoured, not treated as blank", () => {
+  // An exempt transfer. Falling back to the brackets here would silently bill
+  // the client $18,075 of tax the file does not owe.
+  const s = computeStatement({ ...REFERENCE, provincialLttOverride: 0 });
+  expect(lines(s).ltt_provincial).toBe(0);
+  expect(s.total).toBe(3288.69);
+});
+
+test("computeStatement: the first-time buyer rebate caps against the override", () => {
+  const s = computeStatement({
+    ...REFERENCE,
+    isFirstTimeBuyer: true,
+    provincialLttOverride: 2500,
+  });
+  expect(s.detail.ontarioRebate).toBe(2500);
+  expect(s.detail.netLTT).toBe(0);
+});
+
+test("computeStatement: a municipal LTT override applies only inside Toronto", () => {
+  const inToronto = computeStatement({
+    ...REFERENCE,
+    isToronto: true,
+    municipalLttOverride: 9000,
+  });
+  expect(lines(inToronto).ltt_municipal).toBe(9000);
+
+  const outside = computeStatement({ ...REFERENCE, municipalLttOverride: 9000 });
+  expect(lineKeys(outside)).not.toContain("ltt_municipal");
+  expect(outside.detail.municipalLTT).toBe(0);
+  expect(outside.total).toBe(computeStatement(REFERENCE).total);
+});
+
+test("computeStatement: no override supplied is identical to CALC_VERSION 4", () => {
+  expect(
+    computeStatement({
+      ...REFERENCE,
+      provincialLttOverride: null,
+      municipalLttOverride: null,
+    }),
+  ).toEqual(computeStatement(REFERENCE));
 });
 
 // ── Toronto toggle ─────────────────────────────────────────────────────
@@ -360,11 +424,43 @@ test("ratesFromConfigRow: falls back per-field and coerces numeric strings", () 
   expect(mapped.adminFee).toBe(275);
   expect(mapped.hstRate).toBe(0.13);
   // Untouched fields keep the defaults.
-  expect(mapped.legalTransfer).toBe(DEFAULT_RATES.legalTransfer);
+  expect(mapped.legalFees).toBe(DEFAULT_RATES.legalFees);
 
   // A malformed bracket table falls back rather than producing nonsense tax.
   expect(ratesFromConfigRow({ ltt_tiers: "not-an-array" }).lttTiers).toEqual(
     DEFAULT_RATES.lttTiers,
+  );
+});
+
+// ── Pre-merge legal fee rows (CALC_VERSION ≤ 3) ────────────────────────
+// The portal reads a database the ADMIN app migrates, so it must handle a row
+// written under the old shape: a frozen rates_used snapshot on an estimate
+// issued before the merge, or a config row read before the columns are dropped.
+test("ratesFromConfigRow: sums a legacy legal fee pair when legal_fees is absent", () => {
+  expect(
+    ratesFromConfigRow({ legal_transfer: 700, legal_mortgage: 500 }).legalFees,
+  ).toBe(1200);
+  // Half the pair present — the other half falls back to its old default
+  expect(ratesFromConfigRow({ legal_transfer: 700 }).legalFees).toBe(1250);
+  expect(ratesFromConfigRow({ legal_mortgage: 500 }).legalFees).toBe(1150);
+});
+
+test("ratesFromConfigRow: legal_fees wins over a pair still on the same row", () => {
+  // The window between the two admin migrations, when both shapes sit on the
+  // row. Preferring the pair here would freeze the portal on a stale fee while
+  // the admin settings page reported the change as saved.
+  expect(
+    ratesFromConfigRow({
+      legal_fees: 1400,
+      legal_transfer: 650,
+      legal_mortgage: 550,
+    }).legalFees,
+  ).toBe(1400);
+});
+
+test("ratesFromConfigRow: neither shape present falls back to the default", () => {
+  expect(ratesFromConfigRow({ admin_fee: 250 }).legalFees).toBe(
+    DEFAULT_RATES.legalFees,
   );
 });
 

@@ -5,7 +5,12 @@ import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { readStatementTypeOption, resolveClientRates } from "@/lib/closingCostRates";
 import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
 import { applyAdjustments } from "@/lib/closingCostAdjustments";
-import { closingCostPdfFileName, generateClosingCostPdf } from "@/lib/closingCostPdf";
+import { generateClosingCostPdf } from "@/lib/closingCostPdf";
+import {
+  estimateEmailHtml,
+  estimateEmailSubject,
+  estimatePdfFileName,
+} from "@/lib/closingEstimateEmail";
 
 // POST /api/closing-estimate/email
 //
@@ -28,24 +33,8 @@ export const dynamic = "force-dynamic";
 const MAX_AMOUNT = 1_000_000_000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** "$21,363.69" */
-function money(n: number): string {
-  const neg = n < 0;
-  const abs = Math.abs(n)
-    .toFixed(2)
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${neg ? "-" : ""}$${abs}`;
-}
-
-/** Minimal HTML escape — every interpolated value below is user-supplied. */
-function esc(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// money() and esc() now live in src/lib/closingEstimateEmail.ts, alongside the
+// body they format — the preview needs them too.
 
 function amount(raw: unknown, label: string): number | { error: string } {
   const value = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
@@ -148,8 +137,6 @@ export async function POST(req: Request) {
   };
   const statement = computeStatement(inputs, rates);
 
-  const firstName = (auth.client.first_name ?? "").trim() || "there";
-
   // ── The attachment ──
   // Same generator, same inputs and the same statement type as the on-screen
   // preview, so the PDF in the client's inbox can never disagree with what they
@@ -189,7 +176,10 @@ export async function POST(req: Request) {
       draft: true,
     });
     attachment = {
-      filename: closingCostPdfFileName(fileNo),
+      filename: estimatePdfFileName({
+        fileNo,
+        propertyAddress: str(body.property_address),
+      }),
       content: Buffer.from(bytes),
     };
   } catch (err) {
@@ -198,75 +188,25 @@ export async function POST(req: Request) {
     console.error("[closing-estimate email] pdf generation failed:", err);
   }
 
-  const rowsHtml = statement.groups
-    .flatMap((g) => g.lines)
-    .map(
-      (l) => `
-      <tr>
-        <td style="padding:5px 12px 5px 0;font-size:13px;color:#475569;">${esc(l.label)}</td>
-        <td style="padding:5px 0;font-size:13px;color:#1e293b;text-align:right;white-space:nowrap;">${esc(money(l.amount))}</td>
-      </tr>`,
-    )
-    .join("");
-
-  const html = `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#1e293b;max-width:560px;margin:0 auto;">
-      <p style="font-size:15px;">Hi ${esc(firstName)},</p>
-      <p style="font-size:15px;line-height:1.6;">
-        Here is the closing-cost estimate you put together on your iClosed portal,
-        based on a purchase price of <strong>${esc(money(price))}</strong>.
-      </p>
-
-      <table style="width:100%;margin:20px 0;border-collapse:collapse;">
-        ${rowsHtml}
-        <tr>
-          <td style="padding:5px 12px 5px 0;font-size:13px;color:#475569;">${esc(statement.hst.label)}</td>
-          <td style="padding:5px 0;font-size:13px;color:#1e293b;text-align:right;white-space:nowrap;">${esc(money(statement.hst.amount))}</td>
-        </tr>
-        <tr>
-          <td style="padding:10px 12px 0 0;font-size:13px;font-weight:bold;border-top:1px solid #e2e8f0;">Total closing costs</td>
-          <td style="padding:10px 0 0;font-size:13px;font-weight:bold;text-align:right;border-top:1px solid #e2e8f0;white-space:nowrap;">${esc(money(statement.total))}</td>
-        </tr>
-      </table>
-
-      <div style="margin:24px 0;border:1px solid #FECACA;background:#FEF2F2;border-radius:10px;padding:18px 20px;">
-        <p style="margin:0 0 6px;font-size:12px;font-weight:bold;letter-spacing:0.5px;color:#C10007;">
-          FUNDS REQUIRED ON CLOSING
-        </p>
-        <p style="margin:0;font-size:26px;font-weight:bold;color:#C10007;">
-          ${esc(money(statement.balance.balanceDue))}
-        </p>
-      </div>
-
-      ${
-        attachment
-          ? `<p style="font-size:13px;line-height:1.6;color:#475569;">The full breakdown is attached as a PDF.</p>`
-          : ""
-      }
-
-      <p style="font-size:13px;line-height:1.6;color:#475569;">
-        <strong>This is your own planning estimate, not a statement of account.</strong>
-        It was calculated from the figures you entered.
-      </p>
-      <p style="font-size:13px;line-height:1.6;color:#475569;">
-        ${esc(statementType.disclaimer_intro)}
-      </p>
-      ${
-        statementType.footer_note
-          ? `<p style="font-size:12px;line-height:1.6;color:#64748b;">${esc(statementType.footer_note)}</p>`
-          : ""
-      }
-
-      <p style="font-size:14px;color:#475569;">&mdash; The iClosed Team</p>
-    </div>
-  `;
+  // Built from the SAME module the client previewed on screen, so the message
+  // that lands in their inbox is the one they approved. See
+  // src/lib/closingEstimateEmail.ts.
+  const html = estimateEmailHtml({
+    firstName: auth.client.first_name ?? null,
+    propertyAddress: str(body.property_address),
+    fileNo,
+    price,
+    totalClosingCosts: statement.total,
+    balanceDue: statement.balance.balanceDue,
+    hasAttachment: Boolean(attachment),
+  });
 
   try {
     await resend.emails.send({
       from: EMAIL_FROM,
       replyTo: EMAIL_REPLY_TO,
       to: [to],
-      subject: "Your closing cost estimate",
+      subject: estimateEmailSubject(fileNo),
       html,
       attachments: attachment ? [attachment] : undefined,
     });

@@ -6,6 +6,7 @@ import {
   readStatementTypeOptions,
   resolveClientRates,
 } from "@/lib/closingCostRates";
+import { EMAIL_FROM_LABEL } from "@/lib/closingEstimateEmail";
 
 // GET /api/closing-estimate
 //
@@ -51,6 +52,12 @@ export async function GET() {
       rates: firms[0]?.rates ?? null,
       firms,
       statement_types: statementTypes,
+      // The addresses the "email it to me" preview shows before the client
+      // sends. Read-only: the route decides the real recipient itself.
+      email_envelope: {
+        to: auth.client.email ?? "",
+        from: EMAIL_FROM_LABEL,
+      },
       prefill: {
         purchase_price: 0,
         deposit_paid: 0,
@@ -122,6 +129,12 @@ export async function GET() {
     rates_from_issued_estimate: fromIssuedEstimate,
     firms,
     statement_types: statementTypes,
+    // The addresses the "email it to me" preview shows before the client
+    // sends. Read-only: the route decides the real recipient itself.
+    email_envelope: {
+      to: auth.client.email ?? "",
+      from: EMAIL_FROM_LABEL,
+    },
     prefill: {
       // The issued figures seed the calculator so the client starts from what
       // the firm quoted and edits away from it, rather than from a blank form.
