@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import supabaseAdmin from "@/lib/supabaseAdmin";
-import { getAuthClientDeals } from "@/lib/getAuthClient";
-import {
-  readStatementTypeOption,
-  resolveClientRates,
-} from "@/lib/closingCostRates";
 import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { applyAdjustments, MAX_AMOUNT } from "@/lib/closingCostAdjustments";
 import { closingCostPdfFileName, generateClosingCostPdf } from "@/lib/closingCostPdf";
+import {
+  parseClientMortgage,
+  parseFileId,
+  rejectLockedInputs,
+  resolveClientEstimateContext,
+} from "@/lib/clientEstimateContext";
 
 // POST /api/closing-estimate/my-pdf
 //
@@ -17,29 +16,21 @@ import { closingCostPdfFileName, generateClosingCostPdf } from "@/lib/closingCos
 // firm issued. That one is the firm's document; this one is the client's own
 // planning copy, and nothing here is written to `deal_closing_estimates`.
 //
-// The server recomputes the whole statement from the raw inputs — a client-sent
-// total is never read, let alone printed.
+// ── What the caller may decide ──────────────────────────────────────────
+// The mortgage amount and the first-time-buyer flag. That is the whole list.
+// The price, the deposit, the purchasers, the property, the file number, the
+// firm whose letterhead this carries and the fee schedule behind it all come
+// from the client's own file, resolved server-side.
+//
+// This matters more here than anywhere else in the portal: the output is a
+// document on the firm's letterhead. Reading any of it from the request body
+// would let a client print whatever figures and whatever name they liked under
+// the firm's name.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function amount(raw: unknown, label: string): number | { error: string } {
-  const value = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
-  if (!Number.isFinite(value)) return { error: `${label} must be a number` };
-  if (value < 0) return { error: `${label} cannot be negative` };
-  if (value > MAX_AMOUNT) return { error: `${label} is unrealistically large` };
-  return value;
-}
-
 export async function POST(req: Request) {
-  const auth = await getAuthClientDeals();
-  if (!auth?.client) {
-    return NextResponse.json(
-      { success: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
-
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -50,116 +41,81 @@ export async function POST(req: Request) {
     );
   }
 
-  const price = amount(body.purchase_price, "Purchase price");
-  if (typeof price !== "number") {
-    return NextResponse.json({ success: false, error: price.error }, { status: 400 });
+  const locked = rejectLockedInputs(body);
+  if (locked) {
+    return NextResponse.json({ success: false, error: locked }, { status: 400 });
   }
-  const deposit = amount(body.deposit_paid, "Deposit");
-  if (typeof deposit !== "number") {
-    return NextResponse.json({ success: false, error: deposit.error }, { status: 400 });
-  }
-  const mortgage = amount(body.mortgage_amount, "Mortgage amount");
-  if (typeof mortgage !== "number") {
-    return NextResponse.json({ success: false, error: mortgage.error }, { status: 400 });
-  }
-  if (price <= 0) {
+
+  // Which of the client's own files this is about. Checked against the session's
+  // deals by the resolver, so an id that is not theirs is a 404.
+  const fileId = parseFileId(body.file_id);
+  if (fileId !== null && typeof fileId !== "string") {
     return NextResponse.json(
-      { success: false, error: "Enter your purchase price first." },
+      { success: false, error: fileId.error },
+      { status: 404 },
+    );
+  }
+
+  const resolved = await resolveClientEstimateContext(fileId);
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { success: false, error: resolved.error },
+      { status: resolved.status },
+    );
+  }
+  const ctx = resolved.context;
+
+  const mortgage = parseClientMortgage(body.mortgage_amount);
+  if (typeof mortgage !== "number") {
+    return NextResponse.json(
+      { success: false, error: mortgage.error },
       { status: 400 },
     );
   }
 
-  const titleRaw = body.title_premium_override;
-  let titleOverride: number | null = null;
-  if (titleRaw !== null && titleRaw !== undefined && titleRaw !== "") {
-    const n = Number(titleRaw);
-    if (Number.isFinite(n) && n >= 0 && n <= MAX_AMOUNT) titleOverride = n;
+  if (ctx.locked.price <= 0) {
+    return NextResponse.json(
+      { success: false, error: "We don't have a purchase price on your file yet." },
+      { status: 400 },
+    );
   }
-
-  const propertyTaxRaw = body.property_tax_adjustment;
-  let propertyTax: number | null = null;
-  if (propertyTaxRaw !== null && propertyTaxRaw !== undefined && propertyTaxRaw !== "") {
-    const n = Number(propertyTaxRaw);
-    if (Number.isFinite(n) && Math.abs(n) <= MAX_AMOUNT) propertyTax = n;
-  }
-
-  // ── The firm's schedule and letterhead ──
-  const requestedFirm =
-    typeof body.firm_key === "string" && body.firm_key ? body.firm_key : null;
-
-  const dealIds = (auth.deals ?? []).map((d) => d.id);
-  let issuedRatesUsed: unknown = null;
-  if (dealIds.length > 0 && !requestedFirm) {
-    const { data: rows } = await supabaseAdmin
-      .from("deal_closing_estimates")
-      .select("rates_used")
-      .in("deal_id", dealIds)
-      .eq("status", "issued")
-      .eq("is_deleted", false)
-      .order("issued_at", { ascending: false })
-      .limit(1);
-    issuedRatesUsed = rows?.[0]?.rates_used ?? null;
-  }
-
-  const { rates: baseRates, firmKey } = await resolveClientRates(
-    issuedRatesUsed,
-    requestedFirm,
-  );
-  const rates = applyAdjustments(baseRates, body.adjustments);
-
-  // The letterhead comes from the firm row itself — rates alone don't carry it.
-  let config: Record<string, unknown> = {};
-  if (firmKey) {
-    const { data } = await supabaseAdmin
-      .from("closing_cost_config")
-      .select("*")
-      .eq("firm_key", firmKey)
-      .eq("is_deleted", false)
-      .maybeSingle();
-    config = (data as Record<string, unknown>) ?? {};
-  }
-
-  const statementType = await readStatementTypeOption(body.statement_type);
 
   const inputs: ClosingCostInputs = {
-    price,
-    deposit,
+    price: ctx.locked.price,
+    deposit: ctx.locked.deposit,
     mortgage,
-    isToronto: body.is_toronto === true,
+    isToronto: ctx.locked.isToronto,
     isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: titleOverride,
-    propertyTaxAdjustment: propertyTax,
+    titlePremiumOverride: ctx.locked.titlePremiumOverride,
+    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
   };
-  const statement = computeStatement(inputs, rates);
-
-  const str = (v: unknown, max = 300) =>
-    String(v ?? "").trim().slice(0, max) || null;
-
-  const fileNo = str(body.file_no_display, 60);
+  const statement = computeStatement(inputs, ctx.rates);
 
   try {
     const bytes = await generateClosingCostPdf({
       statement,
-      config,
-      statementType,
-      fileNo,
-      propertyAddress: str(body.property_address),
-      clientName:
-        str(body.purchasers, 200) ??
-        `${auth.client.first_name ?? ""} ${auth.client.last_name ?? ""}`.trim() ??
-        null,
-      closingDate: str(body.closing_date, 40),
-      // The client's own copy is always a planning estimate, whatever wording
-      // they previewed — so it always carries the draft watermark.
+      config: ctx.config,
+      statementType: ctx.statementType,
+      fileNo: ctx.locked.fileNo,
+      propertyAddress: ctx.locked.propertyAddress,
+      clientName: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
+      closingDate: ctx.locked.closingDate,
       preparedOn: new Date().toISOString().slice(0, 10),
+      // The client's own copy is always a planning estimate — there is no path
+      // here that produces a Final account, so it always carries the watermark.
       draft: true,
+      // Stamped in the same format the firm's own statements carry, so the two
+      // can be told apart — or matched — at a glance.
+      configVersion: ctx.configVersion,
     });
 
     return new NextResponse(bytes as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${closingCostPdfFileName(fileNo)}"`,
+        "Content-Disposition": `attachment; filename="${closingCostPdfFileName(
+          ctx.locked.fileNo,
+        )}"`,
         "Cache-Control": "private, no-store",
       },
     });

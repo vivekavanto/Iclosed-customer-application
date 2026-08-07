@@ -3,15 +3,23 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Info, Loader2, Mail, TriangleAlert, X } from "lucide-react";
 import {
+  DISCLAIMERS,
   computeStatement,
   ratesFromConfigRow,
   type ClosingCostInputs,
   type ClosingCostRates,
 } from "@/lib/closingCosts";
+import {
+  defaultStatementType,
+  type StatementTypeConfig,
+} from "@/lib/closingCostSettings";
 import { formatCurrency, parseAmountInput } from "@/lib/formatCurrency";
 import { estimatePdfFileName } from "@/lib/closingEstimateEmail";
 import ClosingCostBreakdown from "@/components/dashboard/ClosingCostBreakdown";
 import ClosingCostEmailPreview from "@/components/dashboard/ClosingCostEmailPreview";
+import ClosingCostIssuedStatement, {
+  type IssuedEstimate,
+} from "@/components/dashboard/ClosingCostIssuedStatement";
 
 /* ════════════════════════════════════════════
    CLOSING COST ESTIMATE MODAL
@@ -28,9 +36,30 @@ import ClosingCostEmailPreview from "@/components/dashboard/ClosingCostEmailPrev
    the admin app's copy — so a figure shown here can never disagree with the one
    staff see. The PDF and email routes independently recompute from the same
    module, so neither trusts these numbers.
+
+   Those two answers are also the ONLY thing sent back. Everything else is the
+   file's, resolved server-side by src/lib/clientEstimateContext.ts, and a body
+   that carries one of those fields is refused — so the read-only figures on
+   this screen are read-only in fact, not only in the markup.
 ════════════════════════════════════════════ */
 
-const BRAND = "#C10007";
+/**
+ * Only until GET /api/closing-estimate answers with the file's firm.
+ *
+ * Every colour on this screen is the firm's `brand_color` from Settings →
+ * Closing costs; this exists so the first paint before that arrives is not
+ * black, and is never what a loaded modal renders.
+ */
+const BRAND_FALLBACK = "#C10007";
+
+/** One of the client's files, for the picker. */
+interface FileOption {
+  id: string;
+  file_number: string | null;
+  property_address: string | null;
+  closing_date: string | null;
+  has_issued_estimate: boolean;
+}
 
 interface Prefill {
   purchase_price?: number | null;
@@ -46,8 +75,6 @@ interface Prefill {
   purchasers?: string | null;
   property_address?: string | null;
   closing_date?: string | null;
-  firm_key?: string | null;
-  statement_type?: string | null;
 }
 
 /** "2026-08-12" → "12 August 2026", built from parts so it can't shift a day. */
@@ -119,6 +146,32 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
 
   const [prefill, setPrefill] = useState<Prefill>({});
   const [rates, setRates] = useState<ClosingCostRates | null>(null);
+  /**
+   * Every file this client owns, and which one they are looking at.
+   *
+   * `requestedFileId` is what the PICKER sets and what the fetch asks for;
+   * `activeFileId` is what the server actually resolved. They are separate so
+   * the effect can depend on the request without re-firing on its own answer,
+   * and so the picker still shows the right file on first load, when the client
+   * has asked for nothing and the server chose the default.
+   */
+  const [files, setFiles] = useState<FileOption[]>([]);
+  const [requestedFileId, setRequestedFileId] = useState<string | null>(null);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  /** The statement the firm has issued on this file, if any. Read-only. */
+  const [issued, setIssued] = useState<IssuedEstimate | null>(null);
+  /** The file's firm — fixed server-side; there is no picker. */
+  const [firmLabel, setFirmLabel] = useState<string | null>(null);
+  /** The firm's brand colour from Settings — never a literal on this screen. */
+  const [brand, setBrand] = useState<string>(BRAND_FALLBACK);
+  /**
+   * The client-facing wording for this flavour of statement, from Settings →
+   * Closing costs. A client's copy is always the draft flavour; the server
+   * decides that, this only renders what it is handed.
+   */
+  const [statementType, setStatementType] = useState<StatementTypeConfig>(() =>
+    defaultStatementType("draft"),
+  );
   /** Who the email would come from and go to, resolved server-side. */
   const [envelope, setEnvelope] = useState<{ to: string; from: string } | null>(
     null,
@@ -167,7 +220,11 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/closing-estimate")
+    fetch(
+      requestedFileId
+        ? `/api/closing-estimate?file_id=${encodeURIComponent(requestedFileId)}`
+        : "/api/closing-estimate",
+    )
       .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
       .then(({ ok, data }) => {
         if (cancelled) return;
@@ -178,6 +235,18 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
         setPrefill(p);
         setRates(data.rates ?? null);
         setEnvelope(data.email_envelope ?? null);
+        setFiles((data.files as FileOption[] | undefined) ?? []);
+        // What the SERVER resolved — which on first load is its default choice,
+        // not something the client asked for.
+        setActiveFileId((data.deal?.id as string | null) ?? null);
+        setIssued((data.issued as IssuedEstimate | null) ?? null);
+        setFirmLabel((data.firm?.label as string | null) ?? null);
+        // Branding and wording both come from Settings → Closing costs. The
+        // fallbacks only cover a config the migrations have not reached yet.
+        setBrand((data.firm?.brand_color as string | null) || BRAND_FALLBACK);
+        if (data.statement_type) {
+          setStatementType(data.statement_type as StatementTypeConfig);
+        }
         const seededMortgage = Number(p.mortgage_amount ?? 0);
         setMortgage(
           Number.isFinite(seededMortgage) && seededMortgage > 0
@@ -199,12 +268,25 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, requestedFileId]);
 
   const retry = () => {
     setLoading(true);
     setLoadError(null);
     setReloadKey((k) => k + 1);
+  };
+
+  /** Switch files. Everything on screen is re-fetched for the new one. */
+  const selectFile = (id: string) => {
+    if (id === activeFileId) return;
+    setLoading(true);
+    setLoadError(null);
+    setNotice(null);
+    // Collapse both panels: leaving them open would show one file's breakdown
+    // above another file's heading for as long as the fetch takes.
+    setExpanded(false);
+    setPreviewOpen(false);
+    setRequestedFileId(id);
   };
 
   // Memoised: ratesFromConfigRow builds a fresh object, which would otherwise
@@ -238,25 +320,22 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     [inputs, effectiveRates],
   );
 
-  /** The exact body the PDF and email routes both receive. */
+  /**
+   * The exact body the save, PDF and email routes all receive.
+   *
+   * Two fields, because two fields are all a client gets to decide. Sending any
+   * of the file's own figures back would be rejected outright — see
+   * LOCKED_INPUT_KEYS in src/lib/clientEstimateContext.ts.
+   */
   const requestBody = useMemo(
     () => ({
-      firm_key: prefill.firm_key ?? null,
-      statement_type: prefill.statement_type ?? null,
-      file_no_display: prefill.file_no_display ?? null,
-      purchasers: prefill.purchasers ?? prefill.client_name ?? null,
-      property_address: prefill.property_address ?? null,
-      closing_date: prefill.closing_date ?? null,
-      purchase_price: inputs.price,
-      deposit_paid: inputs.deposit,
+      // Not an input — it names which of the client's own files this is about,
+      // and the server checks it against their session before reading anything.
+      file_id: activeFileId,
       mortgage_amount: inputs.mortgage,
-      is_toronto: inputs.isToronto,
       is_first_time_buyer: inputs.isFirstTimeBuyer,
-      title_premium_override: inputs.titlePremiumOverride,
-      property_tax_adjustment: inputs.propertyTaxAdjustment,
-      adjustments: {},
     }),
-    [prefill, inputs],
+    [activeFileId, inputs.mortgage, inputs.isFirstTimeBuyer],
   );
 
   // ── Mirror the client's planning figures onto their file ──
@@ -270,7 +349,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
 
   useEffect(() => {
     if (loading || loadError) return;
-    if (!answered || requestBody.purchase_price <= 0) return;
+    if (!answered || price <= 0) return;
 
     const signature = JSON.stringify(requestBody);
     if (signature === savedSignature.current) return;
@@ -293,7 +372,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [loading, loadError, answered, requestBody]);
+  }, [loading, loadError, answered, price, requestBody]);
 
   const handleDownload = async () => {
     if (price <= 0) {
@@ -456,6 +535,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
               price={statement.balance.purchasePrice}
               totalClosingCosts={statement.total}
               balanceDue={statement.balance.balanceDue}
+              brand={brand}
               sending={sending}
               onSend={handleEmail}
               onCancel={() => setPreviewOpen(false)}
@@ -463,16 +543,82 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
             {notice && (
               <p
                 className={`mt-3 text-center text-xs ${
-                  notice.type === "error"
-                    ? "text-[#C10007]"
-                    : "text-emerald-600"
+                  notice.type === "error" ? "" : "text-emerald-600"
                 }`}
+                style={notice.type === "error" ? { color: brand } : undefined}
               >
                 {notice.message}
               </p>
             )}
           </div>
         ) : (
+          <>
+            {/* ══ Which file ══
+                Only when there is a choice to make. A buyer with a purchase and
+                a sale on the go needs to say which one they are planning
+                around; a buyer with one file should not be asked. */}
+            {files.length > 1 && (
+              <div className="px-5 sm:px-7 pt-5 sm:pt-7">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                  Which file?
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {files.map((file) => {
+                    const active = file.id === activeFileId;
+                    return (
+                      <button
+                        key={file.id}
+                        type="button"
+                        onClick={() => selectFile(file.id)}
+                        aria-pressed={active}
+                        className={`rounded-lg border px-3 py-2 text-left text-[12.5px] font-semibold transition cursor-pointer ${
+                          active
+                            ? ""
+                            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                        }`}
+                        style={
+                          active
+                            ? { borderColor: brand, color: brand }
+                            : undefined
+                        }
+                      >
+                        {shortAddress(file.property_address) ??
+                          file.file_number ??
+                          "Your file"}
+                        <span className="ml-1.5 font-normal text-gray-400">
+                          {file.has_issued_estimate
+                            ? "· statement ready"
+                            : file.file_number
+                              ? `· ${file.file_number}`
+                              : ""}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ══ The firm's issued statement ══
+                Shown first and kept visually separate, because it is a document
+                the firm stands behind and the calculator below it is not. Its
+                figures come from the frozen snapshot, so nothing on this screen
+                can move them. */}
+            {issued && (
+              <div className="px-5 sm:px-7 pt-5 sm:pt-7">
+                <ClosingCostIssuedStatement
+                  issued={issued}
+                  firmLabel={firmLabel}
+                  brand={brand}
+                  fileId={activeFileId}
+                  onError={(message) => showNotice(message, "error")}
+                />
+                <h3 className="mt-6 text-sm font-bold text-gray-900">
+                  Try your own numbers
+                </h3>
+              </div>
+            )}
+
           <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-6 md:gap-8 px-5 sm:px-7 py-5 sm:py-7">
             {/* ══ Left: the two questions ══ */}
             <div className="space-y-4">
@@ -482,7 +628,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                   <h3 className="text-sm font-bold text-gray-900">
                     Enter your mortgage amount
                   </h3>
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#C10007]">
+                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: brand }}>
                     Required
                   </span>
                 </div>
@@ -503,7 +649,15 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     }
                     placeholder="0"
                     aria-label="Mortgage amount"
-                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-8 pr-3 text-sm tabular-nums text-gray-900 focus:outline-none focus:border-[#C10007] focus:ring-1 focus:ring-[#C10007]"
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-8 pr-3 text-sm tabular-nums text-gray-900 outline-none transition"
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = brand;
+                      e.currentTarget.style.boxShadow = `0 0 0 1px ${brand}`;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "";
+                      e.currentTarget.style.boxShadow = "";
+                    }}
                   />
                 </div>
               </div>
@@ -514,7 +668,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                   type="checkbox"
                   checked={isFirstTimeBuyer}
                   onChange={(e) => setIsFirstTimeBuyer(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 accent-[#C10007]"
+                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300" style={{ accentColor: brand }}
                 />
                 <span>
                   <span className="block text-sm font-semibold text-gray-900">
@@ -541,7 +695,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     type="button"
                     onClick={handleDownload}
                     disabled={downloading || price <= 0}
-                    className="flex items-center gap-1.5 text-sm font-semibold text-[#C10007] hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer"
+                    className="flex items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer" style={{ color: brand }}
                   >
                     {downloading ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -554,7 +708,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     type="button"
                     onClick={handleEmailPreview}
                     disabled={sending || price <= 0}
-                    className="flex items-center gap-1.5 text-sm font-semibold text-[#C10007] hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer"
+                    className="flex items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer" style={{ color: brand }}
                   >
                     {sending ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -570,10 +724,9 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                 {notice && (
                   <p
                     className={`mt-2 text-xs ${
-                      notice.type === "error"
-                        ? "text-[#C10007]"
-                        : "text-emerald-600"
+                      notice.type === "error" ? "" : "text-emerald-600"
                     }`}
+                    style={notice.type === "error" ? { color: brand } : undefined}
                   >
                     {notice.message}
                   </p>
@@ -585,7 +738,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
             <div>
               <p
                 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest"
-                style={{ color: BRAND }}
+                style={{ color: brand }}
               >
                 Funds you&rsquo;ll need on closing
               </p>
@@ -596,7 +749,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
               {price > 0 ? (
                 <p
                   className="mt-1.5 text-3xl sm:text-5xl font-bold tabular-nums leading-tight"
-                  style={{ color: BRAND }}
+                  style={{ color: brand }}
                 >
                   {formatCurrency(statement.balance.balanceDue)}
                 </p>
@@ -693,42 +846,52 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                 </button>
                 {expanded && (
                   <div className="border-t border-gray-100 px-4 py-4">
-                    <ClosingCostBreakdown statement={statement} />
+                    <ClosingCostBreakdown statement={statement} brand={brand} />
                   </div>
                 )}
               </div>
 
-              {/* Draft warning */}
-              <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-4">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F59E0B] text-[11px] font-bold text-white">
-                  !
-                </span>
-                <p className="text-xs leading-relaxed text-[#92400E]">
-                  <span className="font-bold">
-                    Draft for planning only &mdash; please don&rsquo;t send funds
-                    yet.
-                  </span>{" "}
-                  We&rsquo;ll confirm your final figures once your lender&rsquo;s
-                  mortgage instructions arrive.
-                </p>
-              </div>
+              {/* ══ The statement type's own warning ══
+                  Shown for a flavour that carries a watermark — that flag IS
+                  "this is not the final word", and the lead disclaimer is how
+                  Settings → Closing costs words it. Nothing here is a literal:
+                  staff change what the client reads by editing the statement
+                  type, not by asking for a deploy. */}
+              {statementType.show_watermark && (
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-4">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F59E0B] text-[11px] font-bold text-white">
+                    !
+                  </span>
+                  <p className="text-xs leading-relaxed text-[#92400E]">
+                    <span className="font-bold">{statementType.label}</span>{" "}
+                    {statementType.disclaimer_intro}
+                  </p>
+                </div>
+              )}
 
-              {/* Disclaimer */}
+              {/* ══ Disclaimers ══
+                  Composed as the admin statement and the PDF compose them: the
+                  configurable lead line, the shared legal paragraphs from the
+                  twin closingCosts.ts, then the firm's optional footer note.
+                  One source per piece of text.
+
+                  The lead is dropped when the warning box above already carries
+                  it — the same sentence twice on one screen reads as a mistake,
+                  and it is the box that gives it weight. */}
               <p className="mt-4 text-[11px] leading-relaxed text-gray-400">
-                Assumes a standard residential purchase with no more than one
-                mortgage, no independent legal advice, no title-related
-                rectification, and no gift or trust arrangements; additional fees
-                apply where these are needed. An estimate for planning only. The
-                property tax and common expense adjustment shown is an estimate
-                only; the final Statement of Adjustments items (property tax,
-                utility and condominium fee adjustments) are confirmed once we
-                receive the Statement of Adjustments from the seller&rsquo;s
-                lawyer. The title insurance premium is approximate until First
-                Canadian Title issues its quote, and any first-time buyer rebate
-                depends on confirming your eligibility. E. &amp; O.E.
+                {[
+                  ...(statementType.show_watermark
+                    ? []
+                    : [statementType.disclaimer_intro || DISCLAIMERS[0]]),
+                  ...DISCLAIMERS.slice(1),
+                  statementType.footer_note,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               </p>
             </div>
           </div>
+          </>
         )}
       </div>
     </div>

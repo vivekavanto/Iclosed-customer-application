@@ -22,8 +22,6 @@ import { formatCurrency } from "@/lib/formatCurrency";
    this side of the line.
 ════════════════════════════════════════════ */
 
-const BRAND = "#C10007";
-
 /** Client-facing wording, keyed by the statement line key. */
 const LABEL_OVERRIDES: Record<string, string> = {
   title_premium: "Title insurance premium (FCT)",
@@ -32,17 +30,6 @@ const LABEL_OVERRIDES: Record<string, string> = {
   reg_mortgage: "Registration of mortgage",
   sheriff: "Sheriff's certificates",
   property_tax_adjustment: "Property tax & common expenses adjustments",
-};
-
-/**
- * Lines the calculator prices from a standard schedule but whose final charge
- * depends on how many searches/certificates the file actually needs. The lib
- * badges the title premium itself; these are the display-only additions.
- */
-const EXTRA_BADGES: Record<string, string> = {
-  teraview: "ESTIMATE",
-  sheriff: "ESTIMATE",
-  property_tax_adjustment: "ESTIMATE",
 };
 
 /** What each line is, in plain English, behind the ⓘ. */
@@ -78,13 +65,17 @@ const EXPLANATIONS: Record<string, string> = {
 
 const Row: React.FC<{
   line: StatementLine;
+  /** The firm's brand colour from Settings — never a literal in here. */
+  brand: string;
   /** Grey inline note after the label, e.g. the HST rate. */
   note?: string;
   openKey: string | null;
   onToggle: (key: string) => void;
-}> = ({ line, note, openKey, onToggle }) => {
+}> = ({ line, brand, note, openKey, onToggle }) => {
   const label = LABEL_OVERRIDES[line.key] ?? line.label;
-  const badge = line.badge ?? EXTRA_BADGES[line.key];
+  // The engine decides which lines are provisional, so this screen, the admin
+  // screen and the PDF always agree. See CALC_VERSION 7 in closingCosts.ts.
+  const badge = line.badge;
   const explanation = EXPLANATIONS[line.key];
   const isCredit = line.amount < 0;
   const open = openKey === line.key;
@@ -104,7 +95,7 @@ const Row: React.FC<{
           {badge && (
             <span
               className="rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wide"
-              style={{ backgroundColor: "#FEF2F2", color: BRAND }}
+              style={{ backgroundColor: `${brand}14`, color: brand }}
             >
               {badge}
             </span>
@@ -115,11 +106,10 @@ const Row: React.FC<{
               onClick={() => onToggle(line.key)}
               aria-label={`What is ${label}?`}
               aria-expanded={open}
-              className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer ${
-                open
-                  ? "bg-[#FEF2F2] text-[#C10007]"
-                  : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-              }`}
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-400 transition-colors hover:bg-gray-200 cursor-pointer"
+              style={
+                open ? { backgroundColor: `${brand}14`, color: brand } : undefined
+              }
             >
               <Info size={10} strokeWidth={2.5} />
             </button>
@@ -142,18 +132,23 @@ const Row: React.FC<{
   );
 };
 
-const GroupTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const GroupTitle: React.FC<{ brand: string; children: React.ReactNode }> = ({
+  brand,
+  children,
+}) => (
   <h4
     className="text-[10px] font-bold uppercase tracking-widest"
-    style={{ color: BRAND }}
+    style={{ color: brand }}
   >
     {children}
   </h4>
 );
 
-const ClosingCostBreakdown: React.FC<{ statement: Statement }> = ({
-  statement,
-}) => {
+const ClosingCostBreakdown: React.FC<{
+  statement: Statement;
+  /** The firm's brand colour, from Settings → Closing costs. */
+  brand: string;
+}> = ({ statement, brand }) => {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const toggle = (key: string) =>
     setOpenKey((prev) => (prev === key ? null : key));
@@ -167,12 +162,13 @@ const ClosingCostBreakdown: React.FC<{ statement: Statement }> = ({
     <div className="space-y-4">
       {statement.groups.map((group) => (
         <div key={group.key}>
-          <GroupTitle>{group.title}</GroupTitle>
+          <GroupTitle brand={brand}>{group.title}</GroupTitle>
           <div className="mt-1 divide-y divide-gray-50">
             {group.lines.map((line) => (
               <Row
                 key={line.key}
                 line={line}
+                brand={brand}
                 openKey={openKey}
                 onToggle={toggle}
               />
@@ -185,6 +181,7 @@ const ClosingCostBreakdown: React.FC<{ statement: Statement }> = ({
       <div className="border-t border-dashed border-gray-200 pt-2">
         <Row
           line={{ key: "hst", label: "HST", amount: statement.hst.amount }}
+          brand={brand}
           note={hstNote}
           openKey={openKey}
           onToggle={toggle}
@@ -195,10 +192,11 @@ const ClosingCostBreakdown: React.FC<{ statement: Statement }> = ({
           added into "Total closing costs" below. */}
       {statement.propertyTax && (
         <div>
-          <GroupTitle>Adjustments</GroupTitle>
+          <GroupTitle brand={brand}>Adjustments</GroupTitle>
           <div className="mt-1">
             <Row
               line={statement.propertyTax}
+              brand={brand}
               openKey={openKey}
               onToggle={toggle}
             />

@@ -66,6 +66,16 @@ export type StatementTypeKey = (typeof STATEMENT_TYPE_KEYS)[number];
 
 export const FALLBACK_STATEMENT_TYPE: StatementTypeKey = "draft";
 
+/**
+ * The property tax & common expense adjustment a new estimate starts with.
+ *
+ * NOT part of ClosingCostRates: it is a starting figure for the form, not an
+ * input to the maths — `computeStatement` uses whatever the clerk leaves in the
+ * field. It lives in the shared row so the firm's planning figure is edited in
+ * Settings rather than hard-coded in the calculator.
+ */
+export const DEFAULT_PROPERTY_TAX_ADJUSTMENT = 1000;
+
 export function isStatementTypeKey(v: unknown): v is StatementTypeKey {
   return (
     typeof v === "string" && (STATEMENT_TYPE_KEYS as readonly string[]).includes(v)
@@ -170,6 +180,7 @@ export function defaultSharedRow(): Record<string, unknown> {
     label: "Statutory & third-party (shared by all firms)",
     reg_transfer: d.regTransfer,
     reg_mortgage: d.regMortgage,
+    property_tax_default: DEFAULT_PROPERTY_TAX_ADJUSTMENT,
     hst_rate: d.hstRate,
     rebate_ontario_max: d.rebateOntarioMax,
     rebate_toronto_max: d.rebateTorontoMax,
@@ -236,13 +247,19 @@ export interface StatementTypeConfig {
 }
 
 /**
- * Defaults are byte-identical to the strings that are hard-coded today
- * (closingCostPdf.ts and ClosingCostStatement.tsx), so nothing a client sees
- * moves until a staff member deliberately edits it.
+ * Defaults mirror the seeded rows, so a fresh environment with no
+ * `closing_cost_statement_types` table renders exactly what a migrated one does.
  *
  * Only the lead line and an optional footer note are editable — DISCLAIMERS[1..4]
  * stay in the twin `closingCosts.ts` so the portal keeps rendering the same
  * legal text without a second source of truth.
+ *
+ * The draft's `footer_note` is the fee-scope limitation that used to be
+ * hard-coded in the customer portal's estimate modal. It lives here so both
+ * surfaces read one copy of it, and staff can edit it — the admin repo's
+ * migrations/2026-08-08-closing-cost-draft-footer-note.sql puts the same text on
+ * the seeded row. A FINAL account deliberately carries none: it states the fees
+ * actually charged, so a caveat about what the quote assumed does not belong.
  */
 const STATEMENT_TYPE_DEFAULTS: Record<StatementTypeKey, StatementTypeConfig> = {
   draft: {
@@ -252,7 +269,8 @@ const STATEMENT_TYPE_DEFAULTS: Record<StatementTypeKey, StatementTypeConfig> = {
     screen_heading: "ESTIMATED STATEMENT OF ACCOUNT",
     disclaimer_intro:
       "This is an estimate for planning purposes only. Final figures will be set out in the Statement of Account before closing.",
-    footer_note: "",
+    footer_note:
+      "Assumes a standard residential purchase with no more than one mortgage, no independent legal advice, no title-related rectification, and no gift or trust arrangements; additional fees apply where these are needed.",
     show_watermark: true,
     watermark_text: "DRAFT",
   },

@@ -5,12 +5,6 @@
 // calculator. So this is a deliberately small mirror rather than a copy of the
 // admin module — no writes, no defaults management, no statement types.
 //
-// ── Which rates a client sees ───────────────────────────────────────────
-// When the firm has issued an estimate, its FROZEN `rates_used` snapshot is
-// authoritative: the client's what-if numbers must be built from the same fee
-// schedule they were quoted, not from whatever the firm's standard is today.
-// Only when no estimate exists yet do we fall back to the live configuration.
-//
 // ── The firm / shared split ─────────────────────────────────────────────
 // `closing_cost_config` holds one row per firm (its own legal & admin fees plus
 // its letterhead); `closing_cost_shared_rates` holds the statutory and
@@ -20,54 +14,37 @@
 //
 // Shared is overlaid LAST so it stays the single source of truth even while
 // `closing_cost_config` still carries its legacy copies of those columns.
+//
+// ── No firm picker ──────────────────────────────────────────────────────
+// A client's firm is fixed by their file and resolved server-side, so there is
+// deliberately no "every firm a client may choose" reader here. See
+// `clientEstimateContext.ts`, which owns that decision for every route.
 
 import supabaseAdmin from "./supabaseAdmin";
-import { DEFAULT_RATES, type ClosingCostRates, ratesFromConfigRow } from "./closingCosts";
 import {
-  FIRM_KEYS,
+  // Which columns `closing_cost_shared_rates` owns is decided ONCE, in the twin
+  // settings module. This file used to restate the list, which made it a third
+  // copy that could silently fall behind — and did.
+  SHARED_RATE_COLUMNS,
   STATEMENT_TYPE_KEYS,
-  defaultFirmRow,
-  defaultSharedRow,
   defaultStatementType,
   statementTypeFromRow,
   toStatementTypeKey,
   type StatementTypeConfig,
 } from "./closingCostSettings";
 
-/** Owned by `closing_cost_shared_rates`; identical for every firm. */
-const SHARED_RATE_COLUMNS = [
-  "reg_transfer",
-  "reg_mortgage",
-  // Not a rate — the firm's planning figure for the Statement of Adjustments,
-  // carried through so the portal's calculator starts from the same number the
-  // admin app does.
-  "property_tax_default",
-  "hst_rate",
-  "rebate_ontario_max",
-  "rebate_toronto_max",
-  "title_premium_base",
-  "title_premium_rate",
-  "title_premium_min",
-  "ltt_tiers",
-  "mltt_tiers",
-] as const;
-
-export interface ResolvedRates {
-  rates: ClosingCostRates;
-  /** True when these came from an issued estimate's frozen snapshot. */
-  fromIssuedEstimate: boolean;
-  /** The firm whose fee schedule these are, when known. */
-  firmKey: string | null;
-}
-
 /**
- * The live configuration, merged firm + shared.
+ * The live configuration for one firm, merged firm + shared, as ONE flat
+ * snake_case row of the shape `ratesFromConfigRow` and `generateClosingCostPdf`
+ * both already consume. It therefore carries the letterhead columns and the
+ * firm's `property_tax_default` alongside the rates, so a caller that needs all
+ * three reads the database once.
  *
  * Tolerant by design: this runs against a database the ADMIN app migrates, so
  * a table or column that does not exist yet must degrade to the code defaults
  * rather than break the client's page.
  */
-async function readLiveRates(preferredFirmKey?: string | null): Promise<{
+export async function readFirmAndSharedRow(preferredFirmKey?: string | null): Promise<{
   row: Record<string, unknown>;
   firmKey: string | null;
 }> {
@@ -120,133 +97,7 @@ async function readLiveRates(preferredFirmKey?: string | null): Promise<{
   return { row: merged, firmKey };
 }
 
-/**
- * The rate schedule to build the client's what-if statement from.
- *
- * `issuedRatesUsed` is the estimate's frozen `rates_used` jsonb. It is already
- * snake_case (written by ratesToSnapshot), so it feeds ratesFromConfigRow
- * directly.
- */
-export async function resolveClientRates(
-  issuedRatesUsed: unknown,
-  firmKey?: string | null,
-): Promise<ResolvedRates> {
-  if (issuedRatesUsed && typeof issuedRatesUsed === "object") {
-    const snapshot = issuedRatesUsed as Record<string, unknown>;
-    // Guard against an empty {} default so a half-written row still calculates.
-    if (Object.keys(snapshot).length > 0) {
-      return {
-        rates: ratesFromConfigRow(snapshot),
-        fromIssuedEstimate: true,
-        firmKey: firmKey ?? null,
-      };
-    }
-  }
-
-  try {
-    const { row, firmKey: resolvedFirm } = await readLiveRates(firmKey);
-    return {
-      rates: ratesFromConfigRow(row),
-      fromIssuedEstimate: false,
-      firmKey: resolvedFirm,
-    };
-  } catch {
-    return { rates: DEFAULT_RATES, fromIssuedEstimate: false, firmKey: null };
-  }
-}
-
-// ─────────────────────── firm & statement-type lists ───────────────────────
-
-export interface FirmOption {
-  firm_key: string;
-  label: string;
-  firm_badge: string | null;
-  brand_color: string | null;
-  /** The firm's own fee schedule, merged with the shared statutory values. */
-  rates: ClosingCostRates;
-}
-
-/**
- * The code-default firms, used when nothing is configured in the database.
- *
- * Without this the picker silently disappears on any environment where the
- * closing-cost migrations have not been run — which reads as a missing feature
- * rather than as missing configuration. Deactivating a firm is a deliberate
- * choice made in admin settings; having no rows at all is not.
- */
-function fallbackFirmOptions(): FirmOption[] {
-  const shared = defaultSharedRow();
-  return FIRM_KEYS.map((key) => {
-    const row = defaultFirmRow(key);
-    return {
-      firm_key: key,
-      label: String(row.label ?? key),
-      firm_badge: (row.firm_badge as string | null) ?? null,
-      brand_color: (row.brand_color as string | null) ?? null,
-      rates: ratesFromConfigRow({ ...row, ...shared }),
-    };
-  });
-}
-
-/**
- * Every firm a client may pick, each with its own resolved rate schedule.
- *
- * Only ACTIVE firms — an inactive one is not something the firm offers, so it
- * must not appear as a choice. Falls back to the code defaults when the
- * configuration has not been migrated yet.
- */
-export async function readFirmOptions(): Promise<FirmOption[]> {
-  let shared: Record<string, unknown> | null = null;
-  try {
-    const { data } = await supabaseAdmin
-      .from("closing_cost_shared_rates")
-      .select("*")
-      .eq("is_active", true)
-      .eq("is_deleted", false)
-      .maybeSingle();
-    shared = data ?? null;
-  } catch {
-    shared = null;
-  }
-
-  let firms: Record<string, unknown>[] = [];
-  try {
-    const { data } = await supabaseAdmin
-      .from("closing_cost_config")
-      .select("*")
-      .eq("is_active", true)
-      .eq("is_deleted", false)
-      .order("sort_order", { ascending: true });
-    firms = (data ?? []) as Record<string, unknown>[];
-  } catch {
-    return fallbackFirmOptions();
-  }
-
-  const usable = firms.filter((row) => Boolean(row.firm_key));
-  // Nothing configured at all — not the same thing as every firm being switched
-  // off, so offer the built-in ones rather than an empty picker.
-  if (usable.length === 0) return fallbackFirmOptions();
-
-  return usable
-    .map((row) => {
-      const merged: Record<string, unknown> = { ...row };
-      // Shared last and by explicit key, so a firm row's stale legacy copies of
-      // the statutory columns can never beat the shared source of truth.
-      if (shared) {
-        for (const key of SHARED_RATE_COLUMNS) {
-          const value = shared[key];
-          if (value !== null && value !== undefined) merged[key] = value;
-        }
-      }
-      return {
-        firm_key: String(row.firm_key),
-        label: String(row.label ?? row.firm_key),
-        firm_badge: (row.firm_badge as string | null) ?? null,
-        brand_color: (row.brand_color as string | null) ?? null,
-        rates: ratesFromConfigRow(merged),
-      };
-    });
-}
+// ─────────────────────────── statement-type copy ───────────────────────────
 
 /**
  * The client-facing wording for both statement types.
