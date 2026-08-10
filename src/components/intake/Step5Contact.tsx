@@ -125,6 +125,7 @@ function AgentNameSearch({
     onNameChange,
     onSelect,
     onAddNew,
+    onBlur,
 }: {
     value: string;
     partnerType: "Real Estate Agent" | "Mortgage Broker";
@@ -133,6 +134,7 @@ function AgentNameSearch({
     onNameChange: (name: string) => void;
     onSelect: (partner: PartnerSearchResult) => void;
     onAddNew: (name: string) => void;
+    onBlur?: () => void;
 }) {
     const [open, setOpen] = React.useState(false);
     const [results, setResults] = React.useState<PartnerSearchResult[]>([]);
@@ -219,6 +221,7 @@ function AgentNameSearch({
                         onNameChange(val);
                     }}
                     onFocus={() => setOpen(true)}
+                    onBlur={onBlur}
                     className="flex-1 px-4 py-2.5 text-sm bg-transparent text-gray-900 outline-none"
                 />
                 <Search size={16} className="mr-3 text-gray-400 flex-shrink-0" />
@@ -418,19 +421,25 @@ export default function Step5Contact({
     // partners.brokerage_type value the "Agent name" search scopes to.
     const partnerType: "Real Estate Agent" | "Mortgage Broker" =
         referralSource === "Mortgage broker" ? "Mortgage Broker" : "Real Estate Agent";
-    const updateAgent = (field: keyof ReferralAgentInfo, value: string) =>
+    // Editing clears that field's error so the message never fights the user;
+    // it comes back on blur if the new value is still invalid.
+    const updateAgent = (field: keyof ReferralAgentInfo, value: string) => {
         setReferralAgent((prev) => ({ ...prev, [field]: value }));
+        setReferralAgentErrors((prev) => ({ ...prev, [field]: undefined }));
+    };
 
     // Client typed in the name box — keep the text but break any existing-partner
     // link so we don't credit the wrong record. When a partner WAS linked, the
     // email/phone/company were auto-filled from that record, so wipe them too;
     // otherwise a new agent inherits the previous agent's stale contact details.
-    const handleAgentNameChange = (name: string) =>
+    const handleAgentNameChange = (name: string) => {
         setReferralAgent((prev) =>
             prev.partnerId
                 ? { name, company: "", email: "", phone: "", partnerId: null }
                 : { ...prev, name, partnerId: null },
         );
+        setReferralAgentErrors((prev) => ({ ...prev, name: undefined }));
+    };
 
     // Client confirmed the typed name as a brand-new agent via the "Add … as a
     // new agent" option — start a clean record (no stale details, no link).
@@ -482,6 +491,12 @@ export default function Step5Contact({
         email?: string;
         phone?: string;
     }>({});
+
+    // Report just the field the user left, using the same rules as submit.
+    const blurAgentField = (field: "name" | "email" | "phone") => {
+        const errs = validateReferralAgent(referralAgent);
+        setReferralAgentErrors((prev) => ({ ...prev, [field]: errs[field] }));
+    };
 
     const formatCoPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -1274,6 +1289,7 @@ export default function Step5Contact({
                                                 onNameChange={handleAgentNameChange}
                                                 onSelect={handleSelectPartner}
                                                 onAddNew={handleAddNewAgent}
+                                                onBlur={() => blurAgentField("name")}
                                             />
                                             {referralAgent.partnerId && (
                                                 <p className="mt-1 flex items-center gap-1.5 text-xs text-green-600">
@@ -1308,7 +1324,8 @@ export default function Step5Contact({
                                                 placeholder="jane@remax.ca"
                                                 value={referralAgent.email}
                                                 onChange={(e) => updateAgent("email", e.target.value)}
-                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                                onBlur={() => blurAgentField("email")}
+                                                className={`w-full px-4 py-2.5 rounded-lg border text-sm bg-white text-gray-900 outline-none transition-colors ${referralAgentErrors.email ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
                                             />
                                             {referralAgentErrors.email && (
                                                 <p className="text-red-600 text-sm mt-1">{referralAgentErrors.email}</p>
@@ -1324,7 +1341,8 @@ export default function Step5Contact({
                                                 placeholder="(416) 555-1234"
                                                 value={referralAgent.phone}
                                                 onChange={(e) => updateAgent("phone", formatCoPhone(e.target.value))}
-                                                className="w-full px-4 py-2.5 rounded-lg border text-sm border-gray-200 bg-white text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10 transition-colors"
+                                                onBlur={() => blurAgentField("phone")}
+                                                className={`w-full px-4 py-2.5 rounded-lg border text-sm bg-white text-gray-900 outline-none transition-colors ${referralAgentErrors.phone ? "border-[#C10007] ring-2 ring-[#C10007]/10" : "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"}`}
                                             />
                                             {referralAgentErrors.phone && (
                                                 <p className="text-red-600 text-sm mt-1">{referralAgentErrors.phone}</p>

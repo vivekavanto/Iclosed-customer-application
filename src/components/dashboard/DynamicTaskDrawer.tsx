@@ -5,7 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
-import { getTaskDescription, type TaskSide } from "@/lib/taskDescriptions";
+import { getTaskCopy, type TaskSide } from "@/lib/taskDescriptions";
 import {
   isCityField,
   isPostalCodeField,
@@ -29,6 +29,7 @@ import {
   ArrowRight,
   ChevronDown,
   FileText,
+  Info,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -53,7 +54,9 @@ interface FormField {
     | "textarea"
     | "file"
     | "checkbox"
-    | "date";
+    | "date"
+    | "radio"
+    | "note";
   label: string;
   placeholder: string | null;
   required: boolean;
@@ -136,20 +139,39 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
 // Reads a conditional-visibility rule out of a field's `options` JSON.
 // Shape (set in the DB, not hardcoded here):
 //   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
+// Amber callout — used for task-description notes and "note" fields.
+function InfoNote({ text }: { text: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+      <Info size={14} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-amber-600" />
+      <p className="text-sm leading-relaxed text-amber-800">{text}</p>
+    </div>
+  );
+}
+
+// Matches one value (`equals`) or any of several (`equals_any`).
 function getVisibleWhen(
   opts: unknown,
-): { field_label: string; equals: string } | null {
+): { field_label: string; values: string[] } | null {
   if (
     opts &&
     typeof opts === "object" &&
     !Array.isArray(opts) &&
     "visible_when" in opts
   ) {
-    const vw = (opts as { visible_when?: { field_label?: string; equals?: string } })
-      .visible_when;
-    if (vw?.field_label && vw.equals != null) {
-      return { field_label: String(vw.field_label), equals: String(vw.equals) };
-    }
+    const vw = (
+      opts as {
+        visible_when?: { field_label?: string; equals?: string; equals_any?: unknown };
+      }
+    ).visible_when;
+    if (!vw?.field_label) return null;
+    const values = Array.isArray(vw.equals_any)
+      ? vw.equals_any.map((v) => String(v))
+      : vw.equals != null
+        ? [String(vw.equals)]
+        : [];
+    if (values.length === 0) return null;
+    return { field_label: String(vw.field_label), values };
   }
   return null;
 }
@@ -1017,66 +1039,76 @@ export default function DynamicTaskDrawer({
     );
     if (!parent) return true;
     const current = (values[parent.id] ?? "").trim().toLowerCase();
-    return current === rule.equals.trim().toLowerCase();
+    return rule.values.some((v) => v.trim().toLowerCase() === current);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
+    if (field.field_type === "note") return false;
     return field.required || !!getVisibleWhen(field.options);
+  }
+
+  // Validate ONE field. Shared by submit and the on-blur check so a field the
+  // user tabs out of reports exactly what submit would report.
+  function fieldError(
+    field: FormField,
+    activeFiles: Record<string, File> = files
+  ): string | null {
+    // Skip fields hidden by an unmet visible_when condition.
+    if (!isFieldVisible(field)) return null;
+    // Notes are display-only — nothing to validate.
+    if (field.field_type === "note") return null;
+
+    const required = fieldRequired(field);
+    const val = values[field.id]?.trim() ?? "";
+
+    if (field.field_type === "file") {
+      if (fileFieldAllowsMultiple(field)) {
+        // Multiple field: satisfied by any new OR kept existing file.
+        const hasAny =
+          (multiFiles[field.id]?.length ?? 0) > 0 ||
+          (existingMultiFiles[field.id]?.length ?? 0) > 0;
+        return required && !hasAny ? `${field.label} is required.` : null;
+      }
+      return required && !activeFiles[field.id] && !existingFiles[field.id]
+        ? `${field.label} is required.`
+        : null;
+    }
+    if (field.field_type === "checkbox") {
+      return required && values[field.id] !== "true"
+        ? `${field.label} is required.`
+        : null;
+    }
+    if (field.field_type === "email") {
+      if (required && !val) return `${field.label} is required.`;
+      return val && !isValidEmail(val) ? "Enter a valid email address." : null;
+    }
+    if (field.field_type === "phone") {
+      if (required && !val) return `${field.label} is required.`;
+      return val && !isValidPhone(val)
+        ? "Enter a valid phone number in (416) 555-1234 format."
+        : null;
+    }
+    if (required && !val) return `${field.label} is required.`;
+    if (val && isCityField(field.label)) return validateCity(val);
+    if (val && isPostalCodeField(field.label)) return validatePostalCode(val);
+    if (val && isUnitField(field.label)) return validateUnit(val);
+    return null;
+  }
+
+  // Show a field's error as soon as focus leaves it. setValue clears the error
+  // again on the next keystroke, so the message never fights the user.
+  function blurField(field: FormField) {
+    const err = fieldError(field);
+    setErrors((prev) => ({ ...prev, [field.id]: err ?? "" }));
   }
 
   function validate(activeFiles: Record<string, File> = files): boolean {
     const newErrors: Record<string, string> = {};
     for (const field of fields) {
-      // Skip fields hidden by an unmet visible_when condition.
-      if (!isFieldVisible(field)) continue;
-
-      const required = fieldRequired(field);
-      const val = values[field.id]?.trim() ?? "";
-
-      if (field.field_type === "file") {
-        if (fileFieldAllowsMultiple(field)) {
-          // Multiple field: satisfied by any new OR kept existing file.
-          const hasAny =
-            (multiFiles[field.id]?.length ?? 0) > 0 ||
-            (existingMultiFiles[field.id]?.length ?? 0) > 0;
-          if (required && !hasAny) {
-            newErrors[field.id] = `${field.label} is required.`;
-          }
-        } else if (required && !activeFiles[field.id] && !existingFiles[field.id]) {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      } else if (field.field_type === "checkbox") {
-        if (required && values[field.id] !== "true") {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      } else if (field.field_type === "email") {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && !isValidEmail(val)) {
-          newErrors[field.id] = "Enter a valid email address.";
-        }
-      } else if (field.field_type === "phone") {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && !isValidPhone(val)) {
-          newErrors[field.id] = "Enter a valid phone number in (416) 555-1234 format.";
-        }
-      } else {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && isCityField(field.label)) {
-          const cityError = validateCity(val);
-          if (cityError) newErrors[field.id] = cityError;
-        } else if (val && isPostalCodeField(field.label)) {
-          const postalError = validatePostalCode(val);
-          if (postalError) newErrors[field.id] = postalError;
-        } else if (val && isUnitField(field.label)) {
-          const unitError = validateUnit(val);
-          if (unitError) newErrors[field.id] = unitError;
-        }
-      }
+      const err = fieldError(field, activeFiles);
+      if (err) newErrors[field.id] = err;
     }
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
@@ -1107,7 +1139,10 @@ export default function DynamicTaskDrawer({
         file_name: string;
       }> = [];
 
-      for (const field of fields.filter((f) => f.field_type === "file")) {
+      // Skip hidden file fields — don't store what the answer now excludes.
+      for (const field of fields.filter(
+        (f) => f.field_type === "file" && isFieldVisible(f)
+      )) {
         const file = workingFiles[field.id];
         if (!file) continue; // no new file for this slot
 
@@ -1155,7 +1190,9 @@ export default function DynamicTaskDrawer({
       }
 
       // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
-      for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
+      for (const field of fields.filter(
+        (f) => fileFieldAllowsMultiple(f) && isFieldVisible(f)
+      )) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
 
@@ -1200,9 +1237,14 @@ export default function DynamicTaskDrawer({
         }
       }
 
-      // ── 2. Build text/select/textarea responses ──
+      // ── 2. Build text/select/textarea responses ("note" is display-only) ──
       const textResponses = fields
-        .filter((f) => f.field_type !== "file" && f.field_type !== "checkbox")
+        .filter(
+          (f) =>
+            f.field_type !== "file" &&
+            f.field_type !== "checkbox" &&
+            f.field_type !== "note"
+        )
         .map((f) => ({
           field_id: f.id,
           field_label: f.label,
@@ -1224,7 +1266,12 @@ export default function DynamicTaskDrawer({
 
       // ── 4. Keep existing file responses that weren't replaced ──
       const existingFileResponses = Object.entries(existingFiles)
-        .filter(([fieldId]) => !workingFiles[fieldId]) // not replaced by new file
+        .filter(([fieldId]) => {
+          if (workingFiles[fieldId]) return false; // replaced by a new file
+          // Drop a previously-stored file whose field is now hidden.
+          const f = fields.find((x) => x.id === fieldId);
+          return !f || isFieldVisible(f);
+        })
         .map(([fieldId, info]) => {
           const field = fields.find((f) => f.id === fieldId);
           return {
@@ -1351,7 +1398,9 @@ export default function DynamicTaskDrawer({
       }
 
       // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
-      for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
+      for (const field of fields.filter(
+        (f) => fileFieldAllowsMultiple(f) && isFieldVisible(f)
+      )) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
 
@@ -1476,7 +1525,7 @@ export default function DynamicTaskDrawer({
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
   const isVoidChequeTask = taskTitle.toLowerCase().includes("void cheque");
   const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
-  const taskDescription = getTaskDescription(taskTitle, side);
+  const taskCopy = getTaskCopy(taskTitle, side);
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {
@@ -1644,10 +1693,13 @@ export default function DynamicTaskDrawer({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
 
-          {taskDescription && (
-            <p className="text-sm text-gray-600 leading-relaxed">
-              {taskDescription}
-            </p>
+          {taskCopy && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {taskCopy.description}
+              </p>
+              {taskCopy.note && <InfoNote text={taskCopy.note} />}
+            </div>
           )}
 
           {/* ── Home Insurance static sections ── */}
@@ -1979,6 +2031,56 @@ export default function DynamicTaskDrawer({
               // Hide fields whose visible_when condition isn't currently met.
               if (!isFieldVisible(field)) return null;
 
+              // Display-only callout — the label carries the message.
+              if (field.field_type === "note") {
+                return (
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <InfoNote text={field.label} />
+                  </div>
+                );
+              }
+
+              // Pill choices (Yes / No / Partial) — options share the select shape.
+              if (field.field_type === "radio") {
+                const opts = isSelectOptions(field.options) ? field.options : [];
+                const selected = values[field.id] ?? "";
+                return (
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <label className="text-sm font-semibold text-gray-800 mb-2 block">
+                      {field.label}
+                      {fieldRequired(field) && (
+                        <span className="text-[#C10007] ml-1">*</span>
+                      )}
+                    </label>
+                    <div className="flex flex-wrap gap-2.5">
+                      {opts.map((o) => {
+                        const isOn = selected === o.value;
+                        return (
+                          <button
+                            key={o.value}
+                            type="button"
+                            onClick={() => setValue(field.id, o.value)}
+                            className={[
+                              "px-5 py-2 rounded-full border text-sm font-semibold transition-colors",
+                              isOn
+                                ? "border-[#C10007] text-[#C10007] bg-white"
+                                : "border-gray-200 text-gray-700 bg-white hover:border-gray-300",
+                            ].join(" ")}
+                          >
+                            {o.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {errors[field.id] && (
+                      <p className="mt-1.5 text-xs text-[#C10007]">
+                        {errors[field.id]}
+                      </p>
+                    )}
+                  </div>
+                );
+              }
+
               const isIdTask = isUploadIdTask;
               const fileFields = fields.filter((f) => f.field_type === "file");
               const fileIdx = fileFields.indexOf(field);
@@ -2256,6 +2358,7 @@ export default function DynamicTaskDrawer({
                     <select
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
+                      onBlur={() => blurField(field)}
                       className={[
                         inputBase,
                         errors[field.id] ? inputError : inputNormal,
@@ -2299,6 +2402,7 @@ export default function DynamicTaskDrawer({
                     <textarea
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
+                      onBlur={() => blurField(field)}
                       placeholder={field.placeholder ?? ""}
                       rows={3}
                       className={[
@@ -2337,6 +2441,7 @@ export default function DynamicTaskDrawer({
                         ? setValue(field.id, formatPhone(e.target.value))
                         : setValue(field.id, e.target.value)
                     }
+                    onBlur={() => blurField(field)}
                     placeholder={field.placeholder ?? (field.field_type === "phone" ? "(416) 555-1234" : "")}
                     className={[
                       inputBase,
