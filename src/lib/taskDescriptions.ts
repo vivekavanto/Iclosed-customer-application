@@ -23,7 +23,9 @@ const RULES: TaskDescriptionRule[] = [
     match: "latest property tax bill",
     sides: ["sale"],
     description:
-      "Please upload your latest property tax bill and proof of payment. We use these to adjust taxes between you and the buyer. Because taxes are split by the closing date, each side pays only for the part of the year they own the home.",
+      `Please upload your latest property tax bill and proof of payment. We use these to adjust taxes between you and the buyer. Because taxes are split by the closing date, each side pays only for the part of the year they own the home.
+      
+      If your property taxes are paid by pre-authorized withdrawal, please contact the municipality to cancel it as of the closing date. This does not happen automatically when the property is sold, and withdrawals will continue after closing unless you cancel.`,
   },
   {
     match: "rental equipment information",

@@ -1026,57 +1026,64 @@ export default function DynamicTaskDrawer({
     return field.required || !!getVisibleWhen(field.options);
   }
 
+  // Validate ONE field. Shared by submit and the on-blur check so a field the
+  // user tabs out of reports exactly what submit would report.
+  function fieldError(
+    field: FormField,
+    activeFiles: Record<string, File> = files
+  ): string | null {
+    // Skip fields hidden by an unmet visible_when condition.
+    if (!isFieldVisible(field)) return null;
+
+    const required = fieldRequired(field);
+    const val = values[field.id]?.trim() ?? "";
+
+    if (field.field_type === "file") {
+      if (fileFieldAllowsMultiple(field)) {
+        // Multiple field: satisfied by any new OR kept existing file.
+        const hasAny =
+          (multiFiles[field.id]?.length ?? 0) > 0 ||
+          (existingMultiFiles[field.id]?.length ?? 0) > 0;
+        return required && !hasAny ? `${field.label} is required.` : null;
+      }
+      return required && !activeFiles[field.id] && !existingFiles[field.id]
+        ? `${field.label} is required.`
+        : null;
+    }
+    if (field.field_type === "checkbox") {
+      return required && values[field.id] !== "true"
+        ? `${field.label} is required.`
+        : null;
+    }
+    if (field.field_type === "email") {
+      if (required && !val) return `${field.label} is required.`;
+      return val && !isValidEmail(val) ? "Enter a valid email address." : null;
+    }
+    if (field.field_type === "phone") {
+      if (required && !val) return `${field.label} is required.`;
+      return val && !isValidPhone(val)
+        ? "Enter a valid phone number in (416) 555-1234 format."
+        : null;
+    }
+    if (required && !val) return `${field.label} is required.`;
+    if (val && isCityField(field.label)) return validateCity(val);
+    if (val && isPostalCodeField(field.label)) return validatePostalCode(val);
+    if (val && isUnitField(field.label)) return validateUnit(val);
+    return null;
+  }
+
+  // Show a field's error as soon as focus leaves it. setValue clears the error
+  // again on the next keystroke, so the message never fights the user.
+  function blurField(field: FormField) {
+    const err = fieldError(field);
+    setErrors((prev) => ({ ...prev, [field.id]: err ?? "" }));
+  }
+
   function validate(activeFiles: Record<string, File> = files): boolean {
     const newErrors: Record<string, string> = {};
     for (const field of fields) {
-      // Skip fields hidden by an unmet visible_when condition.
-      if (!isFieldVisible(field)) continue;
-
-      const required = fieldRequired(field);
-      const val = values[field.id]?.trim() ?? "";
-
-      if (field.field_type === "file") {
-        if (fileFieldAllowsMultiple(field)) {
-          // Multiple field: satisfied by any new OR kept existing file.
-          const hasAny =
-            (multiFiles[field.id]?.length ?? 0) > 0 ||
-            (existingMultiFiles[field.id]?.length ?? 0) > 0;
-          if (required && !hasAny) {
-            newErrors[field.id] = `${field.label} is required.`;
-          }
-        } else if (required && !activeFiles[field.id] && !existingFiles[field.id]) {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      } else if (field.field_type === "checkbox") {
-        if (required && values[field.id] !== "true") {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      } else if (field.field_type === "email") {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && !isValidEmail(val)) {
-          newErrors[field.id] = "Enter a valid email address.";
-        }
-      } else if (field.field_type === "phone") {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && !isValidPhone(val)) {
-          newErrors[field.id] = "Enter a valid phone number in (416) 555-1234 format.";
-        }
-      } else {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && isCityField(field.label)) {
-          const cityError = validateCity(val);
-          if (cityError) newErrors[field.id] = cityError;
-        } else if (val && isPostalCodeField(field.label)) {
-          const postalError = validatePostalCode(val);
-          if (postalError) newErrors[field.id] = postalError;
-        } else if (val && isUnitField(field.label)) {
-          const unitError = validateUnit(val);
-          if (unitError) newErrors[field.id] = unitError;
-        }
-      }
+      const err = fieldError(field, activeFiles);
+      if (err) newErrors[field.id] = err;
     }
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
@@ -2256,6 +2263,7 @@ export default function DynamicTaskDrawer({
                     <select
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
+                      onBlur={() => blurField(field)}
                       className={[
                         inputBase,
                         errors[field.id] ? inputError : inputNormal,
@@ -2299,6 +2307,7 @@ export default function DynamicTaskDrawer({
                     <textarea
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
+                      onBlur={() => blurField(field)}
                       placeholder={field.placeholder ?? ""}
                       rows={3}
                       className={[
@@ -2337,6 +2346,7 @@ export default function DynamicTaskDrawer({
                         ? setValue(field.id, formatPhone(e.target.value))
                         : setValue(field.id, e.target.value)
                     }
+                    onBlur={() => blurField(field)}
                     placeholder={field.placeholder ?? (field.field_type === "phone" ? "(416) 555-1234" : "")}
                     className={[
                       inputBase,
