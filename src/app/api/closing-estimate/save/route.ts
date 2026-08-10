@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { getAuthClientDeals } from "@/lib/getAuthClient";
-import { resolveClientRates } from "@/lib/closingCostRates";
 import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { applyAdjustments } from "@/lib/closingCostAdjustments";
+import {
+  parseClientMortgage,
+  parseFileId,
+  rejectLockedInputs,
+  resolveClientEstimateContext,
+} from "@/lib/clientEstimateContext";
 
 // POST /api/closing-estimate/save
 //
 // Puts the client's OWN closing-cost calculation in front of the back office.
 //
 // The office wants to see the numbers the client worked out for themselves —
-// what price they are planning around and what closing costs they are expecting
-// — so this mirrors the live calculator onto the client's file as a completed,
-// admin-only task with one response row per statement line. The admin panel
-// already renders task responses generically, so nothing changes over there.
+// what mortgage they are planning around and what closing costs they are
+// expecting — so this mirrors the live calculator onto the client's file as a
+// completed, admin-only task with one response row per statement line. The
+// admin panel already renders task responses generically, so nothing changes
+// over there.
 //
 // ── The boundary this does NOT cross ────────────────────────────────────
 // Nothing here is written to `deal_closing_estimates`. That table is the firm's
@@ -21,15 +25,12 @@ import { applyAdjustments } from "@/lib/closingCostAdjustments";
 // mistaken for a staff-prepared statement. The task title and the leading note
 // row both say whose numbers these are.
 //
-// The server RECOMPUTES the statement from the raw inputs — a client-sent total
-// is never trusted, and never even read.
-//
-// One task per file, overwritten each time, so the office always sees the
-// client's latest thinking rather than a pile of half-finished attempts.
+// Only the mortgage amount and the first-time-buyer flag come from the request.
+// Everything else — the price, the deposit, the property, the firm and its fee
+// schedule — is resolved from the client's own file, so what the office reads
+// here can never be a figure the client simply asserted.
 
 export const dynamic = "force-dynamic";
-
-const MAX_AMOUNT = 1_000_000_000;
 
 /**
  * The title the task is found and re-found by. Changing it orphans the tasks
@@ -46,21 +47,7 @@ function money(n: number): string {
   return `${neg ? "-" : ""}$${abs}`;
 }
 
-function amount(raw: unknown): number | null {
-  const value = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
-  if (!Number.isFinite(value) || value < 0 || value > MAX_AMOUNT) return null;
-  return value;
-}
-
 export async function POST(req: Request) {
-  const auth = await getAuthClientDeals();
-  if (!auth?.client) {
-    return NextResponse.json(
-      { success: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
-
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -71,79 +58,61 @@ export async function POST(req: Request) {
     );
   }
 
-  const price = amount(body.purchase_price);
-  const deposit = amount(body.deposit_paid);
-  const mortgage = amount(body.mortgage_amount);
-  if (price === null || deposit === null || mortgage === null) {
+  const locked = rejectLockedInputs(body);
+  if (locked) {
+    return NextResponse.json({ success: false, error: locked }, { status: 400 });
+  }
+
+  // Which of the client's own files this is about. Checked against the session's
+  // deals by the resolver, so an id that is not theirs is a 404.
+  const fileId = parseFileId(body.file_id);
+  if (fileId !== null && typeof fileId !== "string") {
     return NextResponse.json(
-      { success: false, error: "Invalid figures" },
+      { success: false, error: fileId.error },
+      { status: 404 },
+    );
+  }
+
+  const resolved = await resolveClientEstimateContext(fileId);
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { success: false, error: resolved.error },
+      { status: resolved.status },
+    );
+  }
+  const ctx = resolved.context;
+
+  const mortgage = parseClientMortgage(body.mortgage_amount);
+  if (typeof mortgage !== "number") {
+    return NextResponse.json(
+      { success: false, error: mortgage.error },
       { status: 400 },
     );
   }
 
-  // Nothing worth showing the office until there is a price to plan around.
-  if (price <= 0) {
+  // Nothing worth showing the office until the file carries a price to plan
+  // around.
+  if (ctx.locked.price <= 0) {
     return NextResponse.json({ success: true, saved: false, reason: "no_price" });
   }
 
-  const deals = auth.deals ?? [];
-  if (deals.length === 0) {
-    // A client with no file yet has nowhere for this to hang. The calculator
-    // still works — it just isn't mirrored anywhere.
+  // A client with no file yet has nowhere for this to hang. The calculator
+  // still works — it just isn't mirrored anywhere.
+  if (!ctx.deal) {
     return NextResponse.json({ success: true, saved: false, reason: "no_deal" });
   }
-
-  // Pick the SAME file the calculator prefilled from (GET /api/closing-estimate
-  // resolves it this way), so the estimate lands on the file the client was
-  // actually looking at.
-  const dealIds = deals.map((d) => d.id);
-  const { data: issuedRows } = await supabaseAdmin
-    .from("deal_closing_estimates")
-    .select("deal_id, rates_used, firm_key")
-    .in("deal_id", dealIds)
-    .eq("status", "issued")
-    .eq("is_deleted", false)
-    .order("issued_at", { ascending: false })
-    .limit(1);
-
-  const issued = issuedRows?.[0] ?? null;
-  const deal = issued
-    ? (deals.find((d) => d.id === issued.deal_id) ?? deals[0])
-    : deals[0];
-
-  // The same schedule the page calculated with, by the same rule: while the
-  // client is still on the firm that quoted them, the FROZEN rates win — a fee
-  // the firm raised last week must not reprice what they were actually quoted.
-  // Exploring another firm switches to that firm's current standard. Getting
-  // this wrong would show the office a total the client never saw.
-  const requestedFirm =
-    typeof body.firm_key === "string" && body.firm_key ? body.firm_key : null;
-  const onIssuingFirm =
-    !requestedFirm || (!!issued?.firm_key && requestedFirm === issued.firm_key);
-  const { rates: baseRates } = await resolveClientRates(
-    onIssuingFirm ? (issued?.rates_used ?? null) : null,
-    requestedFirm ?? issued?.firm_key ?? null,
-  );
-  const rates = applyAdjustments(baseRates, body.adjustments);
-
-  const optional = (raw: unknown, allowNegative = false): number | null => {
-    if (raw === null || raw === undefined || raw === "") return null;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || Math.abs(n) > MAX_AMOUNT) return null;
-    if (!allowNegative && n < 0) return null;
-    return n;
-  };
+  const deal = ctx.deal;
 
   const inputs: ClosingCostInputs = {
-    price,
-    deposit,
+    price: ctx.locked.price,
+    deposit: ctx.locked.deposit,
     mortgage,
-    isToronto: body.is_toronto === true,
+    isToronto: ctx.locked.isToronto,
     isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: optional(body.title_premium_override),
-    propertyTaxAdjustment: optional(body.property_tax_adjustment, true),
+    titlePremiumOverride: ctx.locked.titlePremiumOverride,
+    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
   };
-  const statement = computeStatement(inputs, rates);
+  const statement = computeStatement(inputs, ctx.rates);
 
   // ── Find or create the file's single estimate task ──
   //
@@ -231,8 +200,8 @@ export async function POST(req: Request) {
       "About these figures",
       "Entered by the client in the portal's closing-cost calculator. A planning estimate — not a statement of account.",
     ),
-    row("Purchase price", money(price)),
-    row("Deposit already paid", money(deposit)),
+    row("Purchase price", money(inputs.price)),
+    row("Deposit already paid", money(inputs.deposit)),
     row("Mortgage amount", mortgage > 0 ? money(mortgage) : "None — cash deal"),
     row(
       "Where is the property?",

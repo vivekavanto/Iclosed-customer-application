@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { getAuthClientDeals } from "@/lib/getAuthClient";
 import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
-import { readStatementTypeOption, resolveClientRates } from "@/lib/closingCostRates";
 import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { applyAdjustments } from "@/lib/closingCostAdjustments";
 import { generateClosingCostPdf } from "@/lib/closingCostPdf";
 import {
   estimateEmailHtml,
   estimateEmailSubject,
   estimatePdfFileName,
 } from "@/lib/closingEstimateEmail";
+import {
+  parseClientMortgage,
+  parseFileId,
+  rejectLockedInputs,
+  resolveClientEstimateContext,
+} from "@/lib/clientEstimateContext";
 
 // POST /api/closing-estimate/email
 //
@@ -25,34 +28,19 @@ import {
 // The firm's own issued statement is emailed from the admin app and downloaded
 // here via /api/closing-estimate/pdf — those paths are untouched by this one.
 //
-// The server RECOMPUTES the statement from the raw inputs; a client-sent total
-// is never trusted, and never even read.
+// ── Where it goes ───────────────────────────────────────────────────────
+// The address on the client's file, and nowhere else. The caller supplies no
+// recipient: this is "email it to me", and accepting a `to` would make an
+// authenticated planning tool into a way to send firm-branded attachments from
+// the firm's own address to anyone.
+//
+// The figures are resolved the same way as everywhere else in the portal — the
+// mortgage amount and the first-time-buyer flag from the request, everything
+// else from the file.
 
 export const dynamic = "force-dynamic";
 
-const MAX_AMOUNT = 1_000_000_000;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// money() and esc() now live in src/lib/closingEstimateEmail.ts, alongside the
-// body they format — the preview needs them too.
-
-function amount(raw: unknown, label: string): number | { error: string } {
-  const value = raw === null || raw === undefined || raw === "" ? 0 : Number(raw);
-  if (!Number.isFinite(value)) return { error: `${label} must be a number` };
-  if (value < 0) return { error: `${label} cannot be negative` };
-  if (value > MAX_AMOUNT) return { error: `${label} is unrealistically large` };
-  return value;
-}
-
 export async function POST(req: Request) {
-  const auth = await getAuthClientDeals();
-  if (!auth?.client) {
-    return NextResponse.json(
-      { success: false, error: "Not authenticated" },
-      { status: 401 },
-    );
-  }
-
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -63,122 +51,91 @@ export async function POST(req: Request) {
     );
   }
 
-  // The client may send it to themselves at a different address, but never to
-  // an arbitrary third party in bulk — one recipient, and it is rate-limited by
-  // the fact that it is behind a session.
-  const to = String(body.to ?? auth.client.email ?? "").trim();
-  if (!EMAIL_RE.test(to)) {
+  const locked = rejectLockedInputs(body);
+  if (locked) {
+    return NextResponse.json({ success: false, error: locked }, { status: 400 });
+  }
+
+  // Which of the client's own files this is about. Checked against the session's
+  // deals by the resolver, so an id that is not theirs is a 404.
+  const fileId = parseFileId(body.file_id);
+  if (fileId !== null && typeof fileId !== "string") {
     return NextResponse.json(
-      { success: false, error: "Enter a valid email address." },
+      { success: false, error: fileId.error },
+      { status: 404 },
+    );
+  }
+
+  const resolved = await resolveClientEstimateContext(fileId);
+  if (!resolved.ok) {
+    return NextResponse.json(
+      { success: false, error: resolved.error },
+      { status: resolved.status },
+    );
+  }
+  const ctx = resolved.context;
+
+  const to = (ctx.emailTo ?? "").trim();
+  if (!to) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "There is no email address on your file. Please contact us.",
+      },
       { status: 400 },
     );
   }
 
-  const price = amount(body.purchase_price, "Purchase price");
-  if (typeof price !== "number") {
-    return NextResponse.json({ success: false, error: price.error }, { status: 400 });
-  }
-  const deposit = amount(body.deposit_paid, "Deposit");
-  if (typeof deposit !== "number") {
-    return NextResponse.json({ success: false, error: deposit.error }, { status: 400 });
-  }
-  const mortgage = amount(body.mortgage_amount, "Mortgage amount");
+  const mortgage = parseClientMortgage(body.mortgage_amount);
   if (typeof mortgage !== "number") {
-    return NextResponse.json({ success: false, error: mortgage.error }, { status: 400 });
-  }
-  if (price <= 0) {
     return NextResponse.json(
-      { success: false, error: "Enter a purchase price first." },
+      { success: false, error: mortgage.error },
       { status: 400 },
     );
   }
 
-  // Same rate schedule the page calculated with. An explicitly chosen firm
-  // wins; otherwise the issued estimate's frozen snapshot, so the client's
-  // what-if numbers build on the fees they were actually quoted.
-  const requestedFirm =
-    typeof body.firm_key === "string" && body.firm_key ? body.firm_key : null;
-
-  const dealIds = (auth.deals ?? []).map((d) => d.id);
-  let issuedRatesUsed: unknown = null;
-  let firmKey: string | null = requestedFirm;
-  if (dealIds.length > 0 && !requestedFirm) {
-    const { data: rows } = await supabaseAdmin
-      .from("deal_closing_estimates")
-      .select("rates_used, firm_key")
-      .in("deal_id", dealIds)
-      .eq("status", "issued")
-      .eq("is_deleted", false)
-      .order("issued_at", { ascending: false })
-      .limit(1);
-    issuedRatesUsed = rows?.[0]?.rates_used ?? null;
-    firmKey = rows?.[0]?.firm_key ?? null;
+  if (ctx.locked.price <= 0) {
+    return NextResponse.json(
+      { success: false, error: "We don't have a purchase price on your file yet." },
+      { status: 400 },
+    );
   }
-
-  const { rates: baseRates } = await resolveClientRates(issuedRatesUsed, firmKey);
-  const rates = applyAdjustments(baseRates, body.adjustments);
-
-  const optional = (raw: unknown, allowNegative = false): number | null => {
-    if (raw === null || raw === undefined || raw === "") return null;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || Math.abs(n) > MAX_AMOUNT) return null;
-    if (!allowNegative && n < 0) return null;
-    return n;
-  };
 
   const inputs: ClosingCostInputs = {
-    price,
-    deposit,
+    price: ctx.locked.price,
+    deposit: ctx.locked.deposit,
     mortgage,
-    isToronto: body.is_toronto === true,
+    isToronto: ctx.locked.isToronto,
     isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: optional(body.title_premium_override),
-    propertyTaxAdjustment: optional(body.property_tax_adjustment, true),
+    titlePremiumOverride: ctx.locked.titlePremiumOverride,
+    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
   };
-  const statement = computeStatement(inputs, rates);
+  const statement = computeStatement(inputs, ctx.rates);
 
   // ── The attachment ──
   // Same generator, same inputs and the same statement type as the on-screen
   // preview, so the PDF in the client's inbox can never disagree with what they
   // were looking at when they hit send.
-  const statementType = await readStatementTypeOption(body.statement_type);
-
-  let config: Record<string, unknown> = {};
-  if (firmKey) {
-    const { data } = await supabaseAdmin
-      .from("closing_cost_config")
-      .select("*")
-      .eq("firm_key", firmKey)
-      .eq("is_deleted", false)
-      .maybeSingle();
-    config = (data as Record<string, unknown>) ?? {};
-  }
-
-  const str = (v: unknown, max = 300) => String(v ?? "").trim().slice(0, max) || null;
-  const fileNo = str(body.file_no_display, 60);
-
   let attachment: { filename: string; content: Buffer } | null = null;
   try {
     const bytes = await generateClosingCostPdf({
       statement,
-      config,
-      statementType,
-      fileNo,
-      propertyAddress: str(body.property_address),
-      clientName:
-        str(body.purchasers, 200) ??
-        `${auth.client.first_name ?? ""} ${auth.client.last_name ?? ""}`.trim() ??
-        null,
-      closingDate: str(body.closing_date, 40),
+      config: ctx.config,
+      statementType: ctx.statementType,
+      fileNo: ctx.locked.fileNo,
+      propertyAddress: ctx.locked.propertyAddress,
+      clientName: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
+      closingDate: ctx.locked.closingDate,
       preparedOn: new Date().toISOString().slice(0, 10),
       // A client's own copy is always a planning estimate, whatever wording they
       // previewed — so it always carries the draft watermark.
       draft: true,
+      configVersion: ctx.configVersion,
     });
     attachment = {
       filename: estimatePdfFileName({
-        fileNo,
-        propertyAddress: str(body.property_address),
+        fileNo: ctx.locked.fileNo,
+        propertyAddress: ctx.locked.propertyAddress,
       }),
       content: Buffer.from(bytes),
     };
@@ -192,10 +149,10 @@ export async function POST(req: Request) {
   // that lands in their inbox is the one they approved. See
   // src/lib/closingEstimateEmail.ts.
   const html = estimateEmailHtml({
-    firstName: auth.client.first_name ?? null,
-    propertyAddress: str(body.property_address),
-    fileNo,
-    price,
+    firstName: ctx.client.firstName,
+    propertyAddress: ctx.locked.propertyAddress,
+    fileNo: ctx.locked.fileNo,
+    price: inputs.price,
     totalClosingCosts: statement.total,
     balanceDue: statement.balance.balanceDue,
     hasAttachment: Boolean(attachment),
@@ -206,7 +163,7 @@ export async function POST(req: Request) {
       from: EMAIL_FROM,
       replyTo: EMAIL_REPLY_TO,
       to: [to],
-      subject: estimateEmailSubject(fileNo),
+      subject: estimateEmailSubject(ctx.locked.fileNo),
       html,
       attachments: attachment ? [attachment] : undefined,
     });
@@ -223,18 +180,18 @@ export async function POST(req: Request) {
   try {
     await supabaseAdmin.from("audit_logs").insert({
       action: "closing_estimate.client_self_email",
-      actor_email: auth.client.email ?? null,
+      actor_email: ctx.client.email ?? null,
       resource_type: "clients",
-      resource_id: auth.client.id,
+      resource_id: ctx.client.id,
       metadata: {
         to,
-        purchase_price: price,
-        deposit_paid: deposit,
+        purchase_price: inputs.price,
+        deposit_paid: inputs.deposit,
         mortgage_amount: mortgage,
         is_toronto: inputs.isToronto,
         is_first_time_buyer: inputs.isFirstTimeBuyer,
         balance_due: statement.balance.balanceDue,
-        statement_type: statementType.type_key,
+        statement_type: ctx.statementType.type_key,
         pdf_attached: Boolean(attachment),
         note: "Client's own planning estimate — not written to deal_closing_estimates",
       },

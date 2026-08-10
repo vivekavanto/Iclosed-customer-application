@@ -25,6 +25,10 @@ interface Step2Props {
     setPurchasePrice: (value: string) => void;
     sellingPrice: string;
     setSellingPrice: (value: string) => void;
+    depositAmount: string;
+    setDepositAmount: (value: string) => void;
+    sellingDepositAmount: string;
+    setSellingDepositAmount: (value: string) => void;
     formData: AddressData;
     setFormData: (data: AddressData) => void;
     sellingFormData: AddressData;
@@ -67,6 +71,8 @@ function PropertyDetailsForm({
     priceValue,
     onPriceChange,
     priceError,
+    depositValue,
+    onDepositChange,
     formatCurrency,
 }: {
     label: string;
@@ -81,6 +87,8 @@ function PropertyDetailsForm({
     priceValue: string;
     onPriceChange: (value: string) => void;
     priceError: string;
+    depositValue: string;
+    onDepositChange: (value: string) => void;
     formatCurrency: (value: string) => string;
 }) {
     const errors = validateAddress(formData);
@@ -116,6 +124,17 @@ function PropertyDetailsForm({
                 {priceError && (
                     <p className="text-sm text-red-600 -mt-2">{priceError}</p>
                 )}
+
+                {/* Deposit — optional */}
+                <Input
+                    label="Deposit Amount"
+                    id={`${prefix}-deposit`}
+                    type="text"
+                    value={depositValue}
+                    onChange={(e) => onDepositChange(formatCurrency(e.target.value))}
+                    placeholder="$50,000"
+                    hint="Optional — leave blank if not known yet."
+                />
 
                 {/* Divider between price and address */}
                 <div className="border-t border-dashed border-gray-200 pt-4" />
@@ -202,6 +221,10 @@ const Step2: React.FC<Step2Props> = ({
     setPurchasePrice,
     sellingPrice,
     setSellingPrice,
+    depositAmount,
+    setDepositAmount,
+    sellingDepositAmount,
+    setSellingDepositAmount,
     formData,
     setFormData,
     sellingFormData,
@@ -411,6 +434,8 @@ const Step2: React.FC<Step2Props> = ({
                                     priceValue={purchasePrice}
                                     onPriceChange={setPurchasePrice}
                                     priceError={priceError}
+                                    depositValue={depositAmount}
+                                    onDepositChange={setDepositAmount}
                                     formatCurrency={formatCurrency}
                                 />
 
@@ -427,6 +452,8 @@ const Step2: React.FC<Step2Props> = ({
                                     priceValue={sellingPrice}
                                     onPriceChange={setSellingPrice}
                                     priceError={sellingPriceError}
+                                    depositValue={sellingDepositAmount}
+                                    onDepositChange={setSellingDepositAmount}
                                     formatCurrency={formatCurrency}
                                 />
                             </>
@@ -444,6 +471,8 @@ const Step2: React.FC<Step2Props> = ({
                                 priceValue={purchasePrice}
                                 onPriceChange={setPurchasePrice}
                                 priceError={priceError}
+                                depositValue={depositAmount}
+                                onDepositChange={setDepositAmount}
                                 formatCurrency={formatCurrency}
                             />
                         )}

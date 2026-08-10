@@ -20,6 +20,8 @@ export async function POST(req: Request) {
       sub_service,
       price,
       selling_price,
+      deposit_amount,
+      selling_deposit_amount,
       address_street,
       address_unit,
       address_city,
@@ -75,6 +77,15 @@ export async function POST(req: Request) {
       sub_service === "both" && selling_price
         ? String(selling_price).replace(/[^0-9.]/g, "")
         : null;
+    // Deposit is optional on the intake form — an empty string stays null so it
+    // never lands in the DB as 0 and gets mistaken for "no deposit required".
+    const cleanAmount = (value: unknown) => {
+      const digits = value ? String(value).replace(/[^0-9.]/g, "") : "";
+      return digits ? digits : null;
+    };
+    const cleanDeposit = cleanAmount(deposit_amount);
+    const cleanSellingDeposit =
+      sub_service === "both" ? cleanAmount(selling_deposit_amount) : null;
     const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
     const uploadMode =
       document_upload_mode === "me" ||
@@ -369,6 +380,11 @@ export async function POST(req: Request) {
         lead_type,
         price: cleanPrice,
         selling_price: cleanSellingPrice,
+        // Optional deposit. Only spread the keys when a deposit was actually
+        // entered so an intake without one never references the column — keeps
+        // intake working before the deposit migration is applied.
+        ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
+        ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
         address_street,
         address_unit,
         address_city,
@@ -440,6 +456,8 @@ export async function POST(req: Request) {
               lead_type,
               price: cleanPrice,
               selling_price: cleanSellingPrice,
+              ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
+              ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
               address_street,
               address_unit,
               address_city,

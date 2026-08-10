@@ -26,7 +26,7 @@ import {
    wording is a preview that quietly stops being true.
 ════════════════════════════════════════════ */
 
-const BRAND = "#C10007";
+
 
 const ClosingCostEmailPreview: React.FC<{
   to: string;
@@ -37,6 +37,8 @@ const ClosingCostEmailPreview: React.FC<{
   price: number;
   totalClosingCosts: number;
   balanceDue: number;
+  /** The firm's brand colour, from Settings → Closing costs. */
+  brand: string;
   sending: boolean;
   onSend: () => void;
   onCancel: () => void;
@@ -49,6 +51,7 @@ const ClosingCostEmailPreview: React.FC<{
   price,
   totalClosingCosts,
   balanceDue,
+  brand,
   sending,
   onSend,
   onCancel,
@@ -79,7 +82,7 @@ const ClosingCostEmailPreview: React.FC<{
             <span
               className="text-xl font-bold italic leading-none"
               style={{
-                color: BRAND,
+                color: brand,
                 fontFamily: "Georgia, 'Times New Roman', serif",
               }}
             >
@@ -143,7 +146,7 @@ const ClosingCostEmailPreview: React.FC<{
                 </span>
                 <span
                   className="shrink-0 text-sm font-bold tabular-nums"
-                  style={{ color: row.emphasis ? BRAND : "#1e293b" }}
+                  style={{ color: row.emphasis ? brand : "#1e293b" }}
                 >
                   {money(row.amount)}
                 </span>
@@ -162,7 +165,7 @@ const ClosingCostEmailPreview: React.FC<{
           {/* Attachment */}
           <div className="mt-5 flex items-center gap-3 rounded-xl border border-gray-200 p-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#FEF2F2]">
-              <FileText size={14} style={{ color: BRAND }} strokeWidth={2} />
+              <FileText size={14} style={{ color: brand }} strokeWidth={2} />
             </span>
             <span className="min-w-0 truncate text-sm text-gray-700">
               {attachmentName}
@@ -188,7 +191,7 @@ const ClosingCostEmailPreview: React.FC<{
           onClick={onSend}
           disabled={sending}
           className="flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white hover:bg-[#a30006] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          style={{ backgroundColor: BRAND }}
+          style={{ backgroundColor: brand }}
         >
           {sending ? (
             <>

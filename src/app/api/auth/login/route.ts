@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
 import { notifyAdminActivation } from '@/lib/notifyAdminActivation';
+import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
 
 export async function POST(request: Request) {
   try {
@@ -141,10 +142,18 @@ export async function POST(request: Request) {
       console.log("[LOGIN] No client found, skipping welcome email");
     }
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       { success: true, user: data.user, client_id: client?.id},
       { status: 200 }
     );
+
+    // Start the absolute session clock. Middleware enforces this deadline on
+    // every subsequent request, so a session ends a fixed 3h after login no
+    // matter how active the user is or how often the token gets refreshed.
+    const deadline = sessionDeadlineCookie(Date.now());
+    response.cookies.set(deadline.name, deadline.value, deadline.options);
+
+    return response;
   } catch (err: any) {
     return NextResponse.json(
       { error: 'Internal server error' },

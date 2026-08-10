@@ -29,6 +29,9 @@ export default function ServiceSelection() {
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
+  // Optional deposit held under the agreement — captured per property side.
+  const [depositAmount, setDepositAmount] = useState("");
+  const [sellingDepositAmount, setSellingDepositAmount] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
   const [apsPurchaseSigned, setApsPurchaseSigned] = useState<"yes" | "no" | null>(null);
@@ -189,6 +192,8 @@ export default function ServiceSelection() {
     setSelectedClosingOption(null);
     setPurchasePrice("");
     setSellingPrice("");
+    setDepositAmount("");
+    setSellingDepositAmount("");
     setApsPurchaseSigned(null);
     setApsSaleSigned(null);
     setPurchaseFiles([]);
@@ -242,6 +247,10 @@ export default function ServiceSelection() {
             setPurchasePrice={setPurchasePrice}
             sellingPrice={sellingPrice}
             setSellingPrice={setSellingPrice}
+            depositAmount={depositAmount}
+            setDepositAmount={setDepositAmount}
+            sellingDepositAmount={sellingDepositAmount}
+            setSellingDepositAmount={setSellingDepositAmount}
             formData={addressData}
             setFormData={setAddressData}
             sellingFormData={sellingAddressData}
@@ -320,6 +329,9 @@ export default function ServiceSelection() {
                     sub_service: selectedClosingOption,
                     price: purchasePrice,
                     selling_price: selectedClosingOption === "both" ? sellingPrice : null,
+                    deposit_amount: depositAmount,
+                    selling_deposit_amount:
+                      selectedClosingOption === "both" ? sellingDepositAmount : null,
 
                     address_street: addressData.street,
                     address_unit: addressData.unit,

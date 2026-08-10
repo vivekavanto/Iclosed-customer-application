@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { SESSION_DEADLINE_COOKIE } from "@/lib/sessionPolicy";
 
 export async function POST() {
   try {
@@ -23,7 +24,12 @@ export async function POST() {
     );
 
     await supabase.auth.signOut();
-    return NextResponse.json({ success: true });
+
+    const response = NextResponse.json({ success: true });
+    // Drop the absolute-deadline cookie alongside the session, so the next
+    // login starts a fresh 3h window instead of inheriting this one's.
+    response.cookies.delete(SESSION_DEADLINE_COOKIE);
+    return response;
   } catch (err) {
     return NextResponse.json({ success: false, error: "Server error" }, { status: 500 });
   }

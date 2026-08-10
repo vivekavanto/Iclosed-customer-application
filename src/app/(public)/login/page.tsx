@@ -15,16 +15,23 @@ import {
 } from "lucide-react";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { beginClientSession } from "@/lib/sessionClient";
 
 function LinkExpiredBanner() {
   const searchParams = useSearchParams();
   const [dismissed, setDismissed] = useState(false);
 
-  if (searchParams.get("reason") !== "link_expired" || dismissed) return null;
+  // Middleware bounces a dead session here with ?expired=1. Without a message
+  // the user just finds themselves back at the login form with no explanation.
+  const sessionExpired = searchParams.get("expired") === "1";
+  const linkExpired = searchParams.get("reason") === "link_expired";
+
+  if ((!sessionExpired && !linkExpired) || dismissed) return null;
 
   const detail = searchParams.get("detail");
-  const body =
-    detail === "used"
+  const body = sessionExpired
+    ? "For your security, sessions end automatically. Please sign in again to continue."
+    : detail === "used"
       ? "This invitation has already been used. Sign in below or reset your password if you've forgotten it."
       : detail === "missing"
       ? "This activation link is invalid. Please contact your iClosed advisor for a new invitation."
@@ -43,7 +50,11 @@ function LinkExpiredBanner() {
         className="mt-0.5 flex-shrink-0 text-amber-600"
       />
       <div className="flex-1 text-[0.82rem] leading-relaxed">
-        <p className="font-semibold">Your activation link has expired</p>
+        <p className="font-semibold">
+          {sessionExpired
+            ? "Your session has expired"
+            : "Your activation link has expired"}
+        </p>
         <p className="mt-0.5 text-amber-800">{body}</p>
       </div>
       <button
@@ -86,6 +97,11 @@ export default function LoginPage() {
       if (!res.ok) {
         setError(data.error || "Login failed");
       } else if (data.success) {
+        // Start the idle + absolute clocks for THIS login. Without it the guard
+        // would read whatever `iclosed:lastActivity` a previous session left in
+        // localStorage and expire a brand-new session on sight.
+        beginClientSession();
+
         // Check if retainer is signed before redirecting
         try {
           const retainerRes = await fetch("/api/retainer/check");
