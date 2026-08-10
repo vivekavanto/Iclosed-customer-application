@@ -4,6 +4,8 @@ interface TaskDescriptionRule {
   match: string;
   sides?: Exclude<TaskSide, null>[];
   description: string;
+  // Rendered as a highlighted callout below the description.
+  note?: string;
 }
 
 const RULES: TaskDescriptionRule[] = [
@@ -23,9 +25,8 @@ const RULES: TaskDescriptionRule[] = [
     match: "latest property tax bill",
     sides: ["sale"],
     description:
-      `Please upload your latest property tax bill and proof of payment. We use these to adjust taxes between you and the buyer. Because taxes are split by the closing date, each side pays only for the part of the year they own the home.
-      
-      If your property taxes are paid by pre-authorized withdrawal, please contact the municipality to cancel it as of the closing date. This does not happen automatically when the property is sold, and withdrawals will continue after closing unless you cancel.`,
+      "Please upload your latest property tax bill and proof of payment. We use these to adjust taxes between you and the buyer. Because taxes are split by the closing date, each side pays only for the part of the year they own the home.",
+    note: "If your property taxes are paid by pre-authorized withdrawal, please contact the municipality to cancel it as of the closing date. This does not happen automatically when the property is sold, and withdrawals will continue after closing unless you cancel.",
   },
   {
     match: "rental equipment information",
@@ -47,17 +48,17 @@ const RULES: TaskDescriptionRule[] = [
   },
 ];
 
-export function getTaskDescription(
+export function getTaskCopy(
   title: string | null | undefined,
   side: TaskSide = null,
-): string | null {
+): { description: string; note: string | null } | null {
   const normalized = (title ?? "").toLowerCase();
   if (!normalized) return null;
 
   for (const rule of RULES) {
     if (!normalized.includes(rule.match)) continue;
     if (rule.sides && (side === null || !rule.sides.includes(side))) continue;
-    return rule.description;
+    return { description: rule.description, note: rule.note ?? null };
   }
   return null;
 }
