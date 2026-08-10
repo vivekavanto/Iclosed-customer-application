@@ -109,20 +109,29 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
 // Reads a conditional-visibility rule out of a field's `options` JSON.
 // Shape (set in the DB, not hardcoded here):
 //   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
+// Matches one value (`equals`) or any of several (`equals_any`).
 function getVisibleWhen(
   opts: unknown,
-): { field_label: string; equals: string } | null {
+): { field_label: string; values: string[] } | null {
   if (
     opts &&
     typeof opts === "object" &&
     !Array.isArray(opts) &&
     "visible_when" in opts
   ) {
-    const vw = (opts as { visible_when?: { field_label?: string; equals?: string } })
-      .visible_when;
-    if (vw?.field_label && vw.equals != null) {
-      return { field_label: String(vw.field_label), equals: String(vw.equals) };
-    }
+    const vw = (
+      opts as {
+        visible_when?: { field_label?: string; equals?: string; equals_any?: unknown };
+      }
+    ).visible_when;
+    if (!vw?.field_label) return null;
+    const values = Array.isArray(vw.equals_any)
+      ? vw.equals_any.map((v) => String(v))
+      : vw.equals != null
+        ? [String(vw.equals)]
+        : [];
+    if (values.length === 0) return null;
+    return { field_label: String(vw.field_label), values };
   }
   return null;
 }
@@ -1035,7 +1044,7 @@ export default function PersonalInfoTaskDrawer({
     );
     if (!parent) return true;
     const current = (values[parent.id] ?? "").trim().toLowerCase();
-    return current === rule.equals.trim().toLowerCase();
+    return rule.values.some((v) => v.trim().toLowerCase() === current);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
