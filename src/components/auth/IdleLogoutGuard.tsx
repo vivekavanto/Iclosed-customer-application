@@ -2,11 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { resetUser } from "@/lib/analytics";
+import {
+  LAST_ACTIVITY_KEY,
+  SESSION_EXPIRED_HEADER,
+  SESSION_MAX_AGE_MS,
+  SESSION_START_KEY,
+} from "@/lib/sessionPolicy";
+import { endClientSession } from "@/lib/sessionClient";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 const IDLE_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_IDLE_TIMEOUT_MS) || DEFAULT_IDLE_TIMEOUT_MS;
-const STORAGE_KEY = "iclosed:lastActivity";
+const STORAGE_KEY = LAST_ACTIVITY_KEY;
 // Poll at ~quarter of the timeout so short (test) timeouts fire promptly,
 // capped between 2s and 60s.
 const CHECK_INTERVAL_MS = Math.max(
@@ -31,6 +38,21 @@ const AUTH_401_IGNORE_PATHS = ["/api/auth/login", "/api/auth/logout"];
 
 function isIgnoredAuthPath(pathname: string): boolean {
   return AUTH_401_IGNORE_PATHS.some((p) => pathname.startsWith(p));
+}
+
+/**
+ * Does this 401 actually mean the session died?
+ *
+ * It used to be assumed that ANY same-origin /api/* 401 was an expiry, which is
+ * how users got logged out of perfectly valid sessions: getAuthUser() returns
+ * null on any thrown error (a transient network blip reaching Supabase is
+ * enough), getAuthClient() returns null for an admin_users email or a failed
+ * client insert, and every one of those paths answers 401. Only the middleware
+ * can tell a dead session from an unrelated authorization failure, so we trust
+ * the header it sets and nothing else.
+ */
+function isSessionExpiry(response: Response): boolean {
+  return response.headers.get(SESSION_EXPIRED_HEADER) === "1";
 }
 
 // The retainer link emailed to a brand-new customer (/retainer?token=…) is an
@@ -69,6 +91,12 @@ export default function IdleLogoutGuard() {
       } catch {}
     };
 
+    const readSessionStart = (): number => {
+      const raw = localStorage.getItem(SESSION_START_KEY);
+      const n = raw ? Number(raw) : NaN;
+      return Number.isFinite(n) ? n : 0;
+    };
+
     const expireSession = async () => {
       if (loggingOut) return;
       // Never auto-logout an account-free page (e.g. the emailed retainer link):
@@ -79,20 +107,36 @@ export default function IdleLogoutGuard() {
       try {
         await fetch("/api/auth/logout", { method: "POST" });
       } catch {}
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch {}
+      endClientSession();
       resetUser();
       window.setTimeout(() => {
         window.location.href = "/login";
       }, MODAL_VISIBLE_MS);
     };
 
-    const checkIdle = () => {
-      const last = readLastActivity();
-      if (last > 0 && Date.now() - last > IDLE_TIMEOUT_MS) {
+    // Two independent reasons to end a session:
+    //   • idle    — no interaction for IDLE_TIMEOUT_MS
+    //   • expired — SESSION_MAX_AGE_MS since login, however active the user was
+    // The absolute cap is enforced server-side in middleware; mirroring it here
+    // means a user parked on a page (making no requests, so middleware never
+    // runs) is still logged out on time instead of at their next click.
+    // Returns true when the session was ended, so the caller can bail out.
+    const checkExpiry = (): boolean => {
+      const at = Date.now();
+
+      const start = readSessionStart();
+      if (start > 0 && at - start >= SESSION_MAX_AGE_MS) {
         void expireSession();
+        return true;
       }
+
+      const last = readLastActivity();
+      if (last > 0 && at - last > IDLE_TIMEOUT_MS) {
+        void expireSession();
+        return true;
+      }
+
+      return false;
     };
 
     const onActivity = () => {
@@ -105,17 +149,28 @@ export default function IdleLogoutGuard() {
       void expireSession();
     };
 
-    const initial = readLastActivity();
-    if (initial > 0 && Date.now() - initial > IDLE_TIMEOUT_MS) {
-      void expireSession();
-      return;
+    const now = Date.now();
+
+    // The invite / magic-link / set-password flows establish their session in
+    // the browser and never pass through the login form, so nothing stamped a
+    // start time. Do it on first mount — same grace the middleware gives the
+    // deadline cookie, so those users get a full window rather than no cap.
+    if (readSessionStart() === 0) {
+      try {
+        localStorage.setItem(SESSION_START_KEY, String(now));
+      } catch {}
     }
-    if (initial === 0) writeNow();
+
+    // Evaluate BOTH clocks on mount, not just the idle one — a reload after the
+    // absolute cap has passed must end the session immediately rather than wait
+    // for the next poll tick.
+    if (checkExpiry()) return;
+    if (readLastActivity() === 0) writeNow();
 
     ACTIVITY_EVENTS.forEach((evt) =>
       window.addEventListener(evt, onActivity, { passive: true }),
     );
-    const intervalId = window.setInterval(checkIdle, CHECK_INTERVAL_MS);
+    const intervalId = window.setInterval(checkExpiry, CHECK_INTERVAL_MS);
     window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpiredEvent);
 
     // Intercept same-origin /api/* fetches and trigger the modal on 401.
@@ -123,7 +178,7 @@ export default function IdleLogoutGuard() {
     const patchedFetch: typeof window.fetch = async (input, init) => {
       const response = await originalFetch(input, init);
       try {
-        if (response.status === 401) {
+        if (response.status === 401 && isSessionExpiry(response)) {
           const url =
             typeof input === "string"
               ? input

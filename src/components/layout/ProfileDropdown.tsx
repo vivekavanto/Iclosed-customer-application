@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { createBrowserClient } from "@supabase/ssr";
 import { resetUser } from "@/lib/analytics";
+import { endClientSession } from "@/lib/sessionClient";
 
 export interface ProfileUser {
   first_name?: string;
@@ -33,6 +34,9 @@ export default function ProfileDropdown({ user }: { user: ProfileUser | null }) 
       );
       await supabase.auth.signOut();
     } catch {}
+    // Clear the idle/session clocks too — leaving them behind made the NEXT
+    // login read a hours-old activity stamp and expire itself immediately.
+    endClientSession();
     resetUser();
     window.location.href = "/login";
   };

@@ -6,8 +6,8 @@ import { useState, useEffect } from "react";
 import { Menu, X, LogOut, LogIn, LayoutDashboard } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
-import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import { identifyUser, resetUser } from "@/lib/analytics";
+import { endClientSession } from "@/lib/sessionClient";
 // import Footer from "@/components/layout/Footer";
 
 const navLinks = [
@@ -106,6 +106,9 @@ export default function DashboardLayout({
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
+    // Clear the idle/session clocks too — leaving them behind made the NEXT
+    // login read a hours-old activity stamp and expire itself immediately.
+    endClientSession();
     resetUser();
     window.location.href = "/login";
   };
@@ -117,7 +120,6 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)]">
       <IdleLogoutGuard />
-      <SessionKeepAlive />
       {/* ── Top Navigation Bar ── */}
       <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center gap-4">

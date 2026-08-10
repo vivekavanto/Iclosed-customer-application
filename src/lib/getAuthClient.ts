@@ -12,6 +12,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 /**
  * Gets the authenticated Supabase user from the server-side session (cookie).
  * Returns null if no session OR if env vars are missing (falls back to lead_id flow).
+ *
+ * READ-ONLY on purpose. This used to persist rotated tokens via
+ * `cookieStore.set()`, which made every API route a competing writer of the
+ * same auth cookie — concurrent dashboard calls each exchanged the same refresh
+ * token and raced to Set-Cookie a different result, and whichever response
+ * landed last could leave the browser holding an already-consumed token. The
+ * middleware refreshes ahead of expiry and is now the sole writer, so `setAll`
+ * here is deliberately a no-op: this client reads the token middleware just
+ * put on the request and nothing more.
  */
 export async function getAuthUser() {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -29,10 +38,9 @@ export async function getAuthUser() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
+        setAll() {
+          // Intentionally empty — see the note above. Writing here reintroduces
+          // the multi-writer cookie race that logged users out mid-session.
         },
       },
     });
