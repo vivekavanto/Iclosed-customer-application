@@ -1,6 +1,7 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
 import { blobToken } from "@/lib/blobPrivacy";
+import { MAX_DOCUMENT_UPLOAD_BYTES } from "@/lib/uploadValidation";
 
 // Generic client-upload token endpoint used by DynamicTaskDrawer and other
 // dashboard drawers. Browser uploads go directly to Vercel Blob, bypassing
@@ -30,9 +31,23 @@ export async function POST(req: Request) {
       // matching store — private store's token once the flag is on (SEC-003).
       token: blobToken(),
       onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        // Identification documents carry the app's advertised 10 MB ceiling
+        // (MAX_DOCUMENT_UPLOAD_BYTES). Everything else keeps the historical
+        // 25 MB allowance so the other dashboard drawers are unaffected.
+        // Enforced HERE because the bytes go browser -> Blob directly: Blob
+        // rejects the PUT itself, so an oversized file never reaches the store.
+        let docType: string | null = null;
+        try {
+          const parsed = clientPayload ? JSON.parse(clientPayload) : null;
+          docType = typeof parsed?.doc_type === "string" ? parsed.doc_type : null;
+        } catch {
+          /* free-form payload — fall back to the default ceiling */
+        }
+
         return {
           allowedContentTypes: ALLOWED_CONTENT_TYPES,
-          maximumSizeInBytes: MAX_SIZE,
+          maximumSizeInBytes:
+            docType === "identification" ? MAX_DOCUMENT_UPLOAD_BYTES : MAX_SIZE,
           tokenPayload: clientPayload ?? null,
         };
       },
