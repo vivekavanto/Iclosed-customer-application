@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, Fragment } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, Fragment } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
@@ -25,6 +25,16 @@ import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
 import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
+import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
+import {
+  isCityField,
+  isPostalCodeField,
+  isStreetAddressField,
+  isUnitField,
+  validateCity,
+  validatePostalCode,
+  validateUnit,
+} from "@/lib/addressValidation";
 
 /* ─────────────────────────────────────────────
    TYPES
@@ -99,20 +109,29 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
 // Reads a conditional-visibility rule out of a field's `options` JSON.
 // Shape (set in the DB, not hardcoded here):
 //   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
+// Matches one value (`equals`) or any of several (`equals_any`).
 function getVisibleWhen(
   opts: unknown,
-): { field_label: string; equals: string } | null {
+): { field_label: string; values: string[] } | null {
   if (
     opts &&
     typeof opts === "object" &&
     !Array.isArray(opts) &&
     "visible_when" in opts
   ) {
-    const vw = (opts as { visible_when?: { field_label?: string; equals?: string } })
-      .visible_when;
-    if (vw?.field_label && vw.equals != null) {
-      return { field_label: String(vw.field_label), equals: String(vw.equals) };
-    }
+    const vw = (
+      opts as {
+        visible_when?: { field_label?: string; equals?: string; equals_any?: unknown };
+      }
+    ).visible_when;
+    if (!vw?.field_label) return null;
+    const values = Array.isArray(vw.equals_any)
+      ? vw.equals_any.map((v) => String(v))
+      : vw.equals != null
+        ? [String(vw.equals)]
+        : [];
+    if (values.length === 0) return null;
+    return { field_label: String(vw.field_label), values };
   }
   return null;
 }
@@ -245,6 +264,10 @@ async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
 
 const inputBase =
   "w-full px-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs";
+// inputBase with pl-9 for AddressAutocomplete's pin. Spelled out, not appended:
+// Tailwind resolves padding conflicts by stylesheet order, not class order.
+const inputWithIcon =
+  "w-full pl-9 pr-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs";
 const inputNormal =
   "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10";
 const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
@@ -937,6 +960,40 @@ export default function PersonalInfoTaskDrawer({
     if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
 
+  // Address autocomplete wiring for City and Postal Code fields.
+  const addressSiblingIds = useMemo(() => {
+    const findId = (match: (label: string) => boolean) =>
+      fields.find((f) => f.field_type === "text" && match(f.label))?.id ?? null;
+    return {
+      city: findId(isCityField),
+      postal: findId(isPostalCodeField),
+    };
+  }, [fields]);
+
+  const handleAddressSelect = useCallback(
+    (
+      streetFieldId: string,
+      address: { street: string; city: string; postalCode: string }
+    ) => {
+      const filled: Record<string, string> = { [streetFieldId]: address.street };
+      // Google omits missing components — don't blank what the user typed.
+      if (addressSiblingIds.city && address.city) {
+        filled[addressSiblingIds.city] = address.city;
+      }
+      if (addressSiblingIds.postal && address.postalCode) {
+        filled[addressSiblingIds.postal] = address.postalCode;
+      }
+
+      setValues((prev) => ({ ...prev, ...filled }));
+      setErrors((prev) => {
+        const next = { ...prev };
+        for (const id of Object.keys(filled)) next[id] = "";
+        return next;
+      });
+    },
+    [addressSiblingIds]
+  );
+
   function setFile(fieldId: string, file: File) {
     setFiles((prev) => ({ ...prev, [fieldId]: file }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
@@ -987,7 +1044,7 @@ export default function PersonalInfoTaskDrawer({
     );
     if (!parent) return true;
     const current = (values[parent.id] ?? "").trim().toLowerCase();
-    return current === rule.equals.trim().toLowerCase();
+    return rule.values.some((v) => v.trim().toLowerCase() === current);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
@@ -996,48 +1053,64 @@ export default function PersonalInfoTaskDrawer({
     return field.required || !!getVisibleWhen(field.options);
   }
 
+  // Validate ONE field. Shared by submit and the on-blur check so a field the
+  // user tabs out of reports exactly what submit would report.
+  function fieldError(
+    field: FormField,
+    activeFiles: Record<string, File> = files
+  ): string | null {
+    // Skip fields hidden by an unmet visible_when condition.
+    if (!isFieldVisible(field)) return null;
+
+    const required = fieldRequired(field);
+    const val = values[field.id]?.trim() ?? "";
+
+    if (field.field_type === "file") {
+      if (fileFieldAllowsMultiple(field)) {
+        // Multiple field: satisfied by any new OR kept existing file.
+        const hasAny =
+          (multiFiles[field.id]?.length ?? 0) > 0 ||
+          (existingMultiFiles[field.id]?.length ?? 0) > 0;
+        return required && !hasAny ? `${field.label} is required.` : null;
+      }
+      return required && !activeFiles[field.id] && !existingFiles[field.id]
+        ? `${field.label} is required.`
+        : null;
+    }
+    if (field.field_type === "checkbox") {
+      return required && values[field.id] !== "true"
+        ? `${field.label} is required.`
+        : null;
+    }
+    if (field.field_type === "email") {
+      if (required && !val) return `${field.label} is required.`;
+      return val && !isValidEmail(val) ? "Enter a valid email address." : null;
+    }
+    if (field.field_type === "phone") {
+      if (required && !val) return `${field.label} is required.`;
+      return val && !isValidPhone(val)
+        ? "Enter a valid phone number in (416) 555-1234 format."
+        : null;
+    }
+    if (required && !val) return `${field.label} is required.`;
+    if (val && isCityField(field.label)) return validateCity(val);
+    if (val && isPostalCodeField(field.label)) return validatePostalCode(val);
+    if (val && isUnitField(field.label)) return validateUnit(val);
+    return null;
+  }
+
+  // Show a field's error as soon as focus leaves it. setValue clears the error
+  // again on the next keystroke, so the message never fights the user.
+  function blurField(field: FormField) {
+    const err = fieldError(field);
+    setErrors((prev) => ({ ...prev, [field.id]: err ?? "" }));
+  }
+
   function validate(activeFiles: Record<string, File> = files): boolean {
     const newErrors: Record<string, string> = {};
     for (const field of fields) {
-      // Skip fields hidden by an unmet visible_when condition.
-      if (!isFieldVisible(field)) continue;
-
-      const required = fieldRequired(field);
-      const val = values[field.id]?.trim() ?? "";
-
-      if (field.field_type === "file") {
-        if (fileFieldAllowsMultiple(field)) {
-          // Multiple field: satisfied by any new OR kept existing file.
-          const hasAny =
-            (multiFiles[field.id]?.length ?? 0) > 0 ||
-            (existingMultiFiles[field.id]?.length ?? 0) > 0;
-          if (required && !hasAny) {
-            newErrors[field.id] = `${field.label} is required.`;
-          }
-        } else if (required && !activeFiles[field.id] && !existingFiles[field.id]) {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      } else if (field.field_type === "checkbox") {
-        if (required && values[field.id] !== "true") {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      } else if (field.field_type === "email") {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && !isValidEmail(val)) {
-          newErrors[field.id] = "Enter a valid email address.";
-        }
-      } else if (field.field_type === "phone") {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        } else if (val && !isValidPhone(val)) {
-          newErrors[field.id] = "Enter a valid phone number in (416) 555-1234 format.";
-        }
-      } else {
-        if (required && !val) {
-          newErrors[field.id] = `${field.label} is required.`;
-        }
-      }
+      const err = fieldError(field, activeFiles);
+      if (err) newErrors[field.id] = err;
     }
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
@@ -2158,6 +2231,7 @@ export default function PersonalInfoTaskDrawer({
                     <select
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
+                      onBlur={() => blurField(field)}
                       className={[
                         inputBase,
                         errors[field.id] ? inputError : inputNormal,
@@ -2201,6 +2275,7 @@ export default function PersonalInfoTaskDrawer({
                     <textarea
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
+                      onBlur={() => blurField(field)}
                       placeholder={field.placeholder ?? ""}
                       rows={3}
                       className={[
@@ -2237,6 +2312,24 @@ export default function PersonalInfoTaskDrawer({
                       <span className="text-gray-400 font-normal text-xs ml-2">(Optional)</span>
                     )}
                   </label>
+                  {isStreetAddressField(field.label) &&
+                  field.field_type === "text" ? (
+                    <AddressAutocomplete
+                      value={values[field.id] ?? ""}
+                      onChange={(v) => setValue(field.id, v)}
+                      onSelect={(address) =>
+                        handleAddressSelect(field.id, address)
+                      }
+                      onBlur={() => blurField(field)}
+                      placeholder={field.placeholder ?? "123 Main Street"}
+                      // Mailing address, not the property — allow all of Canada.
+                      restrictToOntario={false}
+                      inputClassName={[
+                        inputWithIcon,
+                        errors[field.id] ? inputError : inputNormal,
+                      ].join(" ")}
+                    />
+                  ) : (
                   <input
                     type={
                       field.field_type === "phone" ? "tel" : field.field_type
@@ -2247,12 +2340,14 @@ export default function PersonalInfoTaskDrawer({
                         ? setValue(field.id, formatPhone(e.target.value))
                         : setValue(field.id, e.target.value)
                     }
+                    onBlur={() => blurField(field)}
                     placeholder={field.placeholder ?? (field.field_type === "phone" ? "(416) 555-1234" : "")}
                     className={[
                       inputBase,
                       errors[field.id] ? inputError : inputNormal,
                     ].join(" ")}
                   />
+                  )}
                   {errors[field.id] && (
                     <p className="mt-1.5 text-xs text-[#C10007]">
                       {errors[field.id]}

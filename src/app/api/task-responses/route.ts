@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
+import {
+  isCityField,
+  isPostalCodeField,
+  isUnitField,
+  validateCity,
+  validatePostalCode,
+  validateUnit,
+} from "@/lib/addressValidation";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
 // the admin panel expects: canadian_citizen | permanent_resident | visa | refugee_status | non_citizen_unsure.
@@ -57,6 +65,26 @@ export async function POST(req: Request) {
         { success: false, error: "task_id and responses[] are required" },
         { status: 400 }
       );
+    }
+
+    if (!draft) {
+      for (const r of responses) {
+        const value = typeof r?.value === "string" ? r.value.trim() : "";
+        if (!value) continue;
+        const fieldError = isCityField(r?.field_label)
+          ? validateCity(value)
+          : isPostalCodeField(r?.field_label)
+            ? validatePostalCode(value)
+            : isUnitField(r?.field_label)
+              ? validateUnit(value)
+              : null;
+        if (fieldError) {
+          return NextResponse.json(
+            { success: false, error: `${r.field_label}: ${fieldError}` },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Delete any existing responses for this task (full re-submit / overwrite)

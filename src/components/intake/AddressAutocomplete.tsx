@@ -15,6 +15,11 @@ interface AddressAutocompleteProps {
   onSelect: (data: SelectedAddress) => void;
   onBlur?: () => void;
   hasError?: boolean;
+  placeholder?: string;
+  /** Replaces the default input classes. Must include `pl-9` for the pin icon. */
+  inputClassName?: string;
+  /** False allows all of Canada — for mailing addresses, not property addresses. */
+  restrictToOntario?: boolean;
 }
 
 const ONTARIO_BOUNDS = {
@@ -104,6 +109,9 @@ export default function AddressAutocomplete({
   onSelect,
   onBlur,
   hasError,
+  placeholder = "123 Main Street",
+  inputClassName,
+  restrictToOntario = true,
 }: AddressAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
@@ -132,21 +140,24 @@ export default function AddressAutocomplete({
       componentRestrictions: { country: "ca" },
       types: ["address"],
       fields: ["address_components", "formatted_address", "geometry"],
-      bounds: ONTARIO_BOUNDS,
-      strictBounds: true,
+      ...(restrictToOntario
+        ? { bounds: ONTARIO_BOUNDS, strictBounds: true }
+        : {}),
     });
 
     autocomplete.addListener("place_changed", () => {
       const place = autocomplete.getPlace();
       if (!place.address_components) return;
-      const province = place.address_components.find((c) =>
-        c.types.includes("administrative_area_level_1")
-      );
-      const isOntario = province?.short_name === "ON";
-      if (!isOntario) {
-        setProvinceError("Please select an address in Ontario.");
-        onChangeRef.current("");
-        return;
+
+      if (restrictToOntario) {
+        const province = place.address_components.find((c) =>
+          c.types.includes("administrative_area_level_1")
+        );
+        if (province?.short_name !== "ON") {
+          setProvinceError("Please select an address in Ontario.");
+          onChangeRef.current("");
+          return;
+        }
       }
       setProvinceError(null);
 
@@ -156,7 +167,7 @@ export default function AddressAutocomplete({
     });
 
     autocompleteRef.current = autocomplete;
-  }, [scriptLoaded]);
+  }, [scriptLoaded, restrictToOntario]);
 
   // Keep the input value in sync (Google overwrites the DOM input)
   const handleChange = useCallback(
@@ -185,14 +196,17 @@ export default function AddressAutocomplete({
           value={value}
           onChange={handleChange}
           onBlur={onBlur}
-          placeholder="123 Main Street"
-          className={[
-            "w-full pl-9 pr-4 py-2.5 rounded-sm border text-sm transition-colors duration-150",
-            "bg-white text-gray-900 placeholder:text-gray-400",
-            hasError
-              ? "border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
-              : "border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-[#C10007]",
-          ].join(" ")}
+          placeholder={placeholder}
+          className={
+            inputClassName ??
+            [
+              "w-full pl-9 pr-4 py-2.5 rounded-sm border text-sm transition-colors duration-150",
+              "bg-white text-gray-900 placeholder:text-gray-400",
+              hasError
+                ? "border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                : "border-gray-200 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-[#C10007]",
+            ].join(" ")
+          }
         />
       </div>
 

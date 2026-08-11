@@ -597,7 +597,7 @@ function AttentionCard({
                               {initials(m.first_name, m.last_name)}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
+                              <p className="ph-mask text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
                                 <span className="truncate">{displayName}</span>
                               </p>
                             </div>
@@ -1475,7 +1475,7 @@ export default function DashboardPage() {
             {propertyLoading ? (
               <p className="text-sm text-gray-400">Loading address...</p>
             ) : activeProperty ? (
-              <h1 className="text-lg sm:text-2xl font-bold text-gray-900 leading-tight">
+              <h1 className="ph-mask text-lg sm:text-2xl font-bold text-gray-900 leading-tight">
                 {heroAddress || "Address not provided"}
               </h1>
             ) : (
@@ -1534,7 +1534,7 @@ export default function DashboardPage() {
                 <div className="space-y-1">
                   {visibleParties.map((p) => (
                     <div key={p.lead_id} className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-bold text-gray-900 leading-tight">
+                      <span className="ph-mask text-sm font-bold text-gray-900 leading-tight">
                         {partyFullName(p)}
                       </span>
                     </div>

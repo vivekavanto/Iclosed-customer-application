@@ -6,6 +6,20 @@ const nextConfig: NextConfig = {
     // D:\package-lock.json (a different project) as the root directory.
     root: __dirname,
   },
+  // Proxy PostHog through our origin so tracker blockers don't drop the data.
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      {
+        source: "/ingest/static/:path*",
+        destination: "https://eu-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/ingest/:path*",
+        destination: "https://eu.i.posthog.com/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {
