@@ -2306,10 +2306,8 @@ export default function PersonalInfoTaskDrawer({
                   <div id={`field-${field.id}`}>
                   <label className="text-sm font-semibold text-gray-800 mb-2 block">
                     {field.label}
-                    {fieldRequired(field) ? (
+                    {fieldRequired(field) && (
                       <span className="text-[#C10007] ml-1">*</span>
-                    ) : (
-                      <span className="text-gray-400 font-normal text-xs ml-2">(Optional)</span>
                     )}
                   </label>
                   {isStreetAddressField(field.label) &&

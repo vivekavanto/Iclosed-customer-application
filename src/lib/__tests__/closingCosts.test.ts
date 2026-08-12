@@ -238,8 +238,8 @@ test("computeStatement: cash purchase drops the mortgage registration only", () 
   // The legal fee does NOT fall — it is one flat fee since CALC_VERSION 4.
   // It was 650 here (the transfer portion alone) under version 3.
   expect(l.legal_fees).toBe(1200);
-  // The sublabel still narrows: it says what the fee covers, not what it cost
-  expect(findLine(s, "legal_fees")?.sublabel).toBe("purchase");
+  // No scope note under the line: one flat fee has no parts to describe.
+  expect(findLine(s, "legal_fees")?.sublabel).toBeUndefined();
   // Title submission is unaffected by there being no mortgage
   expect(l.title_submission).toBe(150);
   // HST base = 1,200 + 150 + 250 + 54.80 + 133.60 = 1,788.40 → 13% = 232.492

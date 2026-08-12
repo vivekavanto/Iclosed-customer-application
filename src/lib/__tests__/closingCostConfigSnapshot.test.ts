@@ -24,7 +24,10 @@ test("configVersionOf: the cross-repo golden stamp", () => {
     { firm_key: "navawilson", label: "Nava Wilson", firm_name: "ACME" },
     DRAFT,
   );
-  expect(configVersionOf(DEFAULT_RATES, snapshot)).toBe("v7.64b1ee0e");
+  // Moved from v7.64b1ee0e on 2026-08-12, when the statement title lost its
+  // "— RESIDENTIAL PURCHASE (ONTARIO)" qualifier. `DRAFT` is the default
+  // statement type, so a wording edit there is meant to move this stamp.
+  expect(configVersionOf(DEFAULT_RATES, snapshot)).toBe("v7.c92cbeb6");
 });
 
 test("configFromSnapshot: reads back an admin-written snapshot", () => {
