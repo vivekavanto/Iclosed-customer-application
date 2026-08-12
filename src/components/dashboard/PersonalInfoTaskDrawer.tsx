@@ -19,6 +19,7 @@ import {
   ArrowRight,
   ChevronDown,
   FileText,
+  Info,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -44,6 +45,19 @@ interface FieldOption {
   value: string;
 }
 
+// Body of a `note` field. `attach_to` names another field's label; the note then
+// renders inside that field's group instead of standing alone.
+interface NoteContent {
+  text?: string;
+  collapsible?: boolean;
+  variant?: "info" | "warning";
+  attach_to?: string;
+  sections?: Array<{
+    heading?: string;
+    items?: Array<{ term?: string; body: string }>;
+  }>;
+}
+
 interface FormField {
   id: string;
   field_type:
@@ -54,7 +68,8 @@ interface FormField {
     | "textarea"
     | "file"
     | "checkbox"
-    | "date";
+    | "date"
+    | "note";
   label: string;
   placeholder: string | null;
   required: boolean;
@@ -62,6 +77,7 @@ interface FormField {
   options:
     | FieldOption[]
     | { accept?: string; max_mb?: number; doc_type?: string }
+    | NoteContent
     | null;
 }
 
@@ -104,6 +120,97 @@ interface PersonalInfoTaskDrawerProps {
 ───────────────────────────────────────────── */
 function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
+}
+
+// Notes are never selects, so `options` is free-form for them.
+function getNoteContent(opts: unknown): NoteContent {
+  if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+    return opts as NoteContent;
+  }
+  return {};
+}
+
+// Amber is reserved for warnings; reference material stays neutral.
+const NOTE_STYLES = {
+  info: {
+    shell: "border-gray-200 bg-gray-50",
+    icon: "text-gray-500",
+    heading: "text-gray-900",
+    body: "text-gray-700",
+  },
+  warning: {
+    shell: "border-amber-200 bg-amber-50",
+    icon: "text-amber-600",
+    heading: "text-amber-900",
+    body: "text-amber-800",
+  },
+} as const;
+
+// Long content collapses behind a toggle; short content is a plain callout.
+function NoteBlock({
+  label,
+  content,
+}: {
+  label: string;
+  content: NoteContent;
+}) {
+  const [open, setOpen] = useState(false);
+  const sections = content.sections ?? [];
+  const body = content.text ?? (sections.length === 0 ? label : "");
+  const collapsible = content.collapsible ?? sections.length > 0;
+  const s = NOTE_STYLES[content.variant ?? "info"];
+
+  const inner = (
+    <div className="space-y-3">
+      {body && (
+        <p className={`text-sm leading-relaxed ${s.body}`}>{body}</p>
+      )}
+      {sections.map((sec, i) => (
+        <div key={i} className="space-y-1.5">
+          {sec.heading && (
+            <p className={`text-sm font-semibold ${s.heading}`}>{sec.heading}</p>
+          )}
+          {(sec.items ?? []).map((item, j) => (
+            <p key={j} className={`text-sm leading-relaxed ${s.body}`}>
+              {item.term && (
+                <span className="font-semibold">{item.term}: </span>
+              )}
+              {item.body}
+            </p>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+
+  if (!collapsible) {
+    return (
+      <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 ${s.shell}`}>
+        <Info size={14} strokeWidth={2} className={`mt-0.5 flex-shrink-0 ${s.icon}`} />
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-lg border ${s.shell}`}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+      >
+        <Info size={14} strokeWidth={2} className={`flex-shrink-0 ${s.icon}`} />
+        <span className={`flex-1 text-sm font-semibold ${s.heading}`}>{label}</span>
+        <ChevronDown
+          size={16}
+          strokeWidth={2}
+          className={`flex-shrink-0 transition-transform ${s.icon} ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && <div className="px-3 pb-3 pl-9">{inner}</div>}
+    </div>
+  );
 }
 
 // Reads a conditional-visibility rule out of a field's `options` JSON.
@@ -1050,8 +1157,55 @@ export default function PersonalInfoTaskDrawer({
   // A conditional field (one with a visible_when rule) is treated as required
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
+    if (field.field_type === "note") return false;
     return field.required || !!getVisibleWhen(field.options);
   }
+
+  // Notes that render inside `label`'s field group rather than on their own.
+  function attachedNotes(label: string): FormField[] {
+    const target = label.trim().toLowerCase();
+    return fields.filter(
+      (f) =>
+        f.field_type === "note" &&
+        (getNoteContent(f.options).attach_to ?? "").trim().toLowerCase() === target &&
+        isFieldVisible(f)
+    );
+  }
+
+  function renderAttachedNotes(label: string) {
+    const notes = attachedNotes(label);
+    if (notes.length === 0) return null;
+    return (
+      <div className="mb-2 space-y-2">
+        {notes.map((n) => (
+          <NoteBlock key={n.id} label={n.label} content={getNoteContent(n.options)} />
+        ))}
+      </div>
+    );
+  }
+
+  // A conditional note can render below the fold, leaving Submit reachable
+  // before it is ever seen. Scroll each newly revealed one into view.
+  const revealedNoteIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const visible = fields
+      .filter(
+        (f) =>
+          f.field_type === "note" &&
+          !!getVisibleWhen(f.options) &&
+          isFieldVisible(f)
+      )
+      .map((f) => f.id);
+
+    const newly = visible.filter((id) => !revealedNoteIds.current.has(id));
+    revealedNoteIds.current = new Set(visible);
+    if (newly.length === 0) return;
+
+    document
+      .getElementById(`field-${newly[0]}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values, fields]);
 
   // Validate ONE field. Shared by submit and the on-blur check so a field the
   // user tabs out of reports exactly what submit would report.
@@ -1061,6 +1215,8 @@ export default function PersonalInfoTaskDrawer({
   ): string | null {
     // Skip fields hidden by an unmet visible_when condition.
     if (!isFieldVisible(field)) return null;
+    // Notes are display-only — nothing to validate.
+    if (field.field_type === "note") return null;
 
     const required = fieldRequired(field);
     const val = values[field.id]?.trim() ?? "";
@@ -1236,7 +1392,12 @@ export default function PersonalInfoTaskDrawer({
 
       // ── 2. Build text/select/textarea responses ──
       const textResponses = fields
-        .filter((f) => f.field_type !== "file" && f.field_type !== "checkbox")
+        .filter(
+          (f) =>
+            f.field_type !== "file" &&
+            f.field_type !== "checkbox" &&
+            f.field_type !== "note"
+        )
         .map((f) => ({
           field_id: f.id,
           field_label: f.label,
@@ -2216,6 +2377,28 @@ export default function PersonalInfoTaskDrawer({
                 );
               }
 
+              // Display-only. Ones bound to another field render there, not here.
+              if (field.field_type === "note") {
+                const attach = getNoteContent(field.options).attach_to;
+                if (attach) {
+                  // Only selects render attached notes; anything else falls
+                  // through to standalone so the note is never dropped.
+                  const target = fields.find(
+                    (f) =>
+                      f.label.trim().toLowerCase() === attach.trim().toLowerCase()
+                  );
+                  if (target?.field_type === "select") return null;
+                }
+                return (
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <NoteBlock
+                      label={field.label}
+                      content={getNoteContent(field.options)}
+                    />
+                  </div>
+                );
+              }
+
               if (field.field_type === "select") {
                 const opts = isSelectOptions(field.options)
                   ? field.options
@@ -2228,6 +2411,7 @@ export default function PersonalInfoTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
+                    {renderAttachedNotes(field.label)}
                     <select
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}

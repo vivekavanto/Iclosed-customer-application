@@ -6,12 +6,19 @@ import { PostHogProvider as PHProvider } from "posthog-js/react";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_TOKEN;
 
-export const isAnalyticsEnabled = Boolean(POSTHOG_KEY);
+// Analytics run in production only 
+const VERCEL_ENV = process.env.NEXT_PUBLIC_VERCEL_ENV;
+const IS_NON_PROD =
+  VERCEL_ENV === "preview" ||
+  VERCEL_ENV === "development" ||
+  process.env.NODE_ENV === "development";
+
+export const isAnalyticsEnabled = Boolean(POSTHOG_KEY) && !IS_NON_PROD;
 
 function initPostHog() {
-  if (!POSTHOG_KEY || posthog.__loaded) return;
+  if (!isAnalyticsEnabled || posthog.__loaded) return;
 
-  posthog.init(POSTHOG_KEY, {
+  posthog.init(POSTHOG_KEY as string, {
     api_host: "/ingest",
     ui_host: "https://eu.posthog.com",
     defaults: "2026-06-25",
@@ -52,7 +59,7 @@ export default function PostHogProvider({
     initPostHog();
   }, []);
 
-  if (!POSTHOG_KEY) return <>{children}</>;
+  if (!isAnalyticsEnabled) return <>{children}</>;
 
   return <PHProvider client={posthog}>{children}</PHProvider>;
 }
