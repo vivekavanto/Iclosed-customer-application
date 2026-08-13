@@ -169,8 +169,13 @@ const ACCEPTABLE_ID_TYPES = [
   "Canadian Government-issued Photo ID Card",
 ];
 
-// IDs that only need a single side (info page)
-const SINGLE_SIDED_IDS = ["Canadian Passport", "Foreign Passport"];
+// Every acceptable ID now requires BOTH sides. Passports used to be the one
+// exception — the photo/info page alone was treated as a complete document — and
+// they no longer are: the reverse/signature page must be provided too.
+//
+// The `"single-sided"` value still exists in the wire and DB types because rows
+// saved before this change carry it, and the parser must keep accepting it. What
+// changed is that nothing in this component treats it as sufficient any more.
 
 type ManualSide = "front" | "back" | "front-and-back";
 
@@ -216,7 +221,8 @@ function formatExistingDocLabel(customType: string | null): string {
     return `${type} — ${sideLabel}`;
   }
 
-  // Document type with no side suffix (single-sided IDs like passports)
+  // Document type with no side suffix — rows saved before both sides were
+  // required, and the generic fallback.
   return customType;
 }
 
@@ -590,7 +596,9 @@ function AcceptableDocumentsSection() {
         <p className="text-xs text-gray-600 leading-relaxed">
           Please provide{" "}
           <span className="font-bold text-[#C10007]">two different government-issued photo IDs</span>{" "}
-          from the list below for identity verification.
+          from the list below for identity verification. We need{" "}
+          <span className="font-semibold text-gray-800">both sides of each ID</span> — for a
+          passport, that is the photo page and its reverse.
         </p>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -1158,14 +1166,13 @@ export default function UploadIdentificationDrawer({
     const { fileId, selectedType, selectedSide } = manualClassifyModal;
     if (!selectedType) return;
 
-    const isSingleSided = SINGLE_SIDED_IDS.includes(selectedType);
-    const sideRequirement = isSingleSided ? "single-sided" : "front-and-back";
-
     const manualDetection: DetectionResult = {
       isIdentification: true,
       documentType: selectedType,
       side: selectedSide,
-      sideRequirement,
+      // Every acceptable ID needs both sides, so a manual classification can
+      // never mark a document satisfied by the one side in front of the user.
+      sideRequirement: "front-and-back",
       confidence: "high",
       reason: "Manually classified by user",
       expiryDate: null,
@@ -1270,7 +1277,8 @@ export default function UploadIdentificationDrawer({
 
   // Count IDs already provided in this drawer so the camera only asks for what's left
   function countAlreadyProvidedIds(): number {
-    // Count complete IDs in the current selection (front+back, both-sides, or single-sided)
+    // Count complete IDs in the current selection (separate front + back, or a
+    // single image showing both sides)
     const selectedComplete = docAnalysis.filter((d) => d.complete).length;
 
     // Count distinct base types in previously uploaded docs as already-provided IDs
@@ -1506,7 +1514,7 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (hasDriversLicenseMissingBack) {
+    if (hasIdMissingBack) {
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1613,7 +1621,7 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (hasDriversLicenseMissingBack) {
+    if (hasIdMissingBack) {
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1718,9 +1726,15 @@ export default function UploadIdentificationDrawer({
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
-  // Group detected documents by type to determine if both sides are present
-  // Now supports multiple documents detected in a single file
-  const detectedDocs: { type: string; side: string; sideRequirement: string; isComplete: boolean; fileId: string; expired: boolean }[] = [];
+  // Group detected documents by type to determine if both sides are present.
+  // Supports multiple documents detected in a single file.
+  //
+  // Only the SIDE is carried forward. The detector's `sideRequirement` and
+  // `isComplete` are deliberately left behind: completeness is now decided in
+  // `docAnalysis` from the sides actually present, so keeping a field here named
+  // "isComplete" that no longer decides completeness would only mislead. Both
+  // values are still persisted with the document by `detectionFields()`.
+  const detectedDocs: { type: string; side: string; fileId: string; expired: boolean }[] = [];
   for (const s of selected) {
     if (s.detection?.isIdentification) {
       const expired = s.detection.expiryStatus === "expired";
@@ -1730,22 +1744,15 @@ export default function UploadIdentificationDrawer({
           detectedDocs.push({
             type: doc.documentType,
             side: doc.side,
-            sideRequirement: doc.sideRequirement,
-            isComplete: doc.isComplete,
             fileId: s.id,
             expired,
           });
         }
       } else if (s.detection.documentType) {
         // Single document detection (backward compatibility)
-        const isComplete = 
-          s.detection.sideRequirement === "single-sided" || 
-          s.detection.side === "front-and-back";
         detectedDocs.push({
           type: s.detection.documentType,
           side: s.detection.side,
-          sideRequirement: s.detection.sideRequirement,
-          isComplete,
           fileId: s.id,
           expired,
         });
@@ -1768,14 +1775,13 @@ export default function UploadIdentificationDrawer({
     const match = /^(.*)_(front-and-back|front|back)$/i.exec(ct);
     const type = match ? match[1] : ct;
     const side = match ? match[2].toLowerCase() : "front-and-back";
-    const sideRequirement = SINGLE_SIDED_IDS.includes(type)
-      ? "single-sided"
-      : "two-sided";
-    const isComplete =
-      sideRequirement === "single-sided" || side === "front-and-back";
+    // Note for old drafts: a passport saved before both sides were required is
+    // stored as "Canadian Passport_front" and now re-hydrates as INCOMPLETE, so
+    // the client is asked for the reverse page when they return to the draft.
+    //
     // Expiry isn't persisted on previously-uploaded docs, so we can't re-check
     // it here — treat as not-expired (the draft save already screened them).
-    detectedDocs.push({ type, side, sideRequirement, isComplete, fileId: doc.id, expired: false });
+    detectedDocs.push({ type, side, fileId: doc.id, expired: false });
   }
 
   // Group by document type
@@ -1787,21 +1793,20 @@ export default function UploadIdentificationDrawer({
   }, {});
 
   // Analyze each document type for side coverage
-  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; isSingleSided: boolean; complete: boolean; expired: boolean }[] = [];
+  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; complete: boolean; expired: boolean }[] = [];
   for (const [type, docs] of Object.entries(docTypeGroups)) {
     const hasFront = docs.some(d => d.side === "front");
     const hasBack = docs.some(d => d.side === "back");
     const hasBothSides = docs.some(d => d.side === "front-and-back");
-    const isSingleSided = docs.some(d => d.sideRequirement === "single-sided");
-    // Use isComplete from detection if available, otherwise calculate
-    const hasCompleteDoc = docs.some(d => d.isComplete);
-    // For single-sided documents (passports), having either front or both makes it complete
-    // This allows users to upload passport back as well without issues
-    const complete = hasCompleteDoc || isSingleSided || hasBothSides || (hasFront && hasBack) || (isSingleSided && (hasFront || hasBack || hasBothSides));
+    // Completeness is decided HERE, from the sides actually present — the
+    // detector's own `is_complete` is deliberately not consulted. The prompt asks
+    // the model to require both sides, but a prompt is advice; this is the rule.
+    // One image showing both sides counts, as does a separate front and back.
+    const complete = hasBothSides || (hasFront && hasBack);
     // An expired ID is NOT a valid piece of ID — flag it so it doesn't count
     // toward the required two and so the UI can surface it.
     const expired = docs.some(d => d.expired);
-    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, isSingleSided, complete, expired });
+    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, complete, expired });
   }
 
   // A document only counts as a VALID/verified ID when it has all required
@@ -1809,58 +1814,34 @@ export default function UploadIdentificationDrawer({
   const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired).length;
   const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired)).length;
 
-  // Driver's licenses are a strictly two-sided ID: the back MUST be provided.
-  // Unlike other incomplete IDs (which are surfaced as soft warnings), a
-  // driver's license missing its back HARD-BLOCKS submission until the user
-  // adds the back side (or a single image showing both sides).
-  const driversLicensesMissingBack = docAnalysis.filter((d) => {
+  // Driver's licences and PASSPORTS are the two IDs where a missing back is a
+  // definite mistake rather than a stray extra file, so they get a hard block
+  // with a message naming what to add, instead of the generic "finish the
+  // incomplete ID" warning. Passports were added here when the photo page alone
+  // stopped being sufficient.
+  const idsMissingBack = docAnalysis.filter((d) => {
     const t = d.type.toLowerCase();
     const isDriversLicense = t.includes("driver") && t.includes("licen");
-    if (!isDriversLicense) return false;
+    const isPassport = t.includes("passport");
+    if (!isDriversLicense && !isPassport) return false;
     // A single image containing both sides, or separate front + back, satisfies it.
     if (d.hasBothSides || d.hasBack) return false;
     return true;
   });
-  const hasDriversLicenseMissingBack = driversLicensesMissingBack.length > 0;
+  const hasIdMissingBack = idsMissingBack.length > 0;
 
-  // Get complete single-sided document types (like passports) to be lenient with their backs
-  const completeSingleSidedTypes = new Set(
-    docAnalysis
-      .filter(d => d.complete && d.isSingleSided)
-      .map(d => d.type.toLowerCase())
-  );
-  
-  // Check for detection failures, but be lenient with potential passport backs
-  // If we have a complete passport and a file fails detection, it might just be the passport back
-  // which is not required - don't block submission for this
+  // A file that fails detection, or comes back as "not identification", blocks
+  // submission.
+  //
+  // There used to be an exception here: a file that looked like a passport back
+  // (by filename or label) was waved through, because the back was not required
+  // and the detector often could not recognise a plain signature page. Now that
+  // the back IS required, waving it through would be the opposite of helpful —
+  // it would let an unverified page stand in for a page the firm has to have. If
+  // the detector cannot read a passport back, the user reclassifies it by hand.
   const hasDetectionFailures = selected.some((s) => {
-    // Helper to check if this file is likely a passport back
-    const isLikelyPassportBack = () => {
-      const fileNameHasBack = s.file.name.toLowerCase().includes("back");
-      const hasCompletePassport = completeSingleSidedTypes.has("canadian passport") || 
-                                   completeSingleSidedTypes.has("foreign passport");
-      const labelIndicatesBack = s.label.includes("back");
-      
-      return (fileNameHasBack && hasCompletePassport) || 
-             (labelIndicatesBack && completeSingleSidedTypes.size > 0);
-    };
-    
-    // Detection errors - be lenient for potential passport backs
-    if (s.detectionError !== null) {
-      if (isLikelyPassportBack()) {
-        return false; // Don't block for passport back detection errors
-      }
-      return true;
-    }
-    
-    // If detection succeeded but it's not identification
-    if (s.detection !== null && !s.detection.isIdentification) {
-      if (isLikelyPassportBack()) {
-        return false; // Don't block for passport back rejection
-      }
-      return true;
-    }
-    
+    if (s.detectionError !== null) return true;
+    if (s.detection !== null && !s.detection.isIdentification) return true;
     return false;
   });
 
@@ -1884,13 +1865,13 @@ export default function UploadIdentificationDrawer({
     completeDocCount >= 2 &&
     !uploading &&
     !hasPendingDetection &&
-    !hasDriversLicenseMissingBack &&
+    !hasIdMissingBack &&
     !hasExpiredDocs;
 
   // Display-only flag for the verification card: are the submission
   // REQUIREMENTS met (ignoring transient uploading / pending-detection states)?
   const readyToSubmit =
-    completeDocCount >= 2 && !hasDriversLicenseMissingBack && !hasExpiredDocs;
+    completeDocCount >= 2 && !hasIdMissingBack && !hasExpiredDocs;
 
   return (
     <>
@@ -2184,13 +2165,11 @@ export default function UploadIdentificationDrawer({
                             <div className="flex flex-col gap-0.5 mt-0.5">
                               <p className={`text-[11px] font-medium truncate ${hasError ? "text-[#C10007]" : "text-green-600"}`}>
                                 {s.detection!.documentType}
-                                {s.detection!.sideRequirement === "single-sided"
-                                  ? ""
-                                  : s.detection!.side === "front-and-back"
-                                    ? " · both sides in one image"
-                                    : s.detection!.side !== "unknown"
-                                      ? ` (${s.detection!.side})`
-                                      : ""}
+                                {s.detection!.side === "front-and-back"
+                                  ? " · both sides in one image"
+                                  : s.detection!.side !== "unknown"
+                                    ? ` (${s.detection!.side})`
+                                    : ""}
                               </p>
                               {showDuplicate && (
                                 <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
@@ -2404,11 +2383,9 @@ export default function UploadIdentificationDrawer({
                             {doc.expired
                               ? " — expired (not a valid ID)"
                               : doc.complete
-                                ? doc.isSingleSided
-                                  ? " — verified"
-                                  : doc.hasBothSides
-                                    ? " — front & back in one image"
-                                    : " — both sides verified"
+                                ? doc.hasBothSides
+                                  ? " — front & back in one image"
+                                  : " — both sides verified"
                                 : ` — missing ${!doc.hasFront && !doc.hasBack ? "front & back" : !doc.hasFront ? "front" : "back"}`
                             }
                           </span>
@@ -2425,10 +2402,10 @@ export default function UploadIdentificationDrawer({
                   <p className="text-xs text-[#C10007] font-semibold">
                     {hasExpiredDocs
                       ? "Remove or replace the expired ID — expired documents are not accepted."
-                      : hasDriversLicenseMissingBack
-                        ? "Upload the back side of your driver's license to continue — it's required before you can submit."
+                      : hasIdMissingBack
+                        ? `Upload the back side of your ${idsMissingBack[0].type} to continue — it's required before you can submit.`
                         : completeDocCount === 0
-                          ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID, or a single-sided ID like a passport."
+                          ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID. Passports need the photo page and its reverse."
                           : incompleteDocCount > 0
                             ? "Finish the incomplete ID (upload its missing side) or add another valid ID — you need two verified IDs (2/2) to submit."
                             : "Add one more valid government ID to submit — two verified IDs (2/2) are required."
@@ -2570,7 +2547,6 @@ export default function UploadIdentificationDrawer({
                       setManualClassifyModal((prev) => ({
                         ...prev,
                         selectedType: e.target.value,
-                        selectedSide: SINGLE_SIDED_IDS.includes(e.target.value) ? "front" : prev.selectedSide,
                       }))
                     }
                     className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C10007]/20 focus:border-[#C10007] cursor-pointer"
@@ -2584,8 +2560,11 @@ export default function UploadIdentificationDrawer({
                   </select>
                 </div>
 
-                {/* Side Selection - only show for front-and-back required docs */}
-                {manualClassifyModal.selectedType && !SINGLE_SIDED_IDS.includes(manualClassifyModal.selectedType) && (
+                {/* Side Selection — shown for every ID type. Passports used to be
+                    excluded here and pinned to "front"; now that their reverse
+                    page is required, the user must be able to say which side
+                    this file shows. */}
+                {manualClassifyModal.selectedType && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                       Side Shown <span className="text-[#C10007]">*</span>
@@ -2612,11 +2591,15 @@ export default function UploadIdentificationDrawer({
                   </div>
                 )}
 
-                {/* Info for single-sided docs */}
-                {manualClassifyModal.selectedType && SINGLE_SIDED_IDS.includes(manualClassifyModal.selectedType) && (
+                {/* Passport-specific guidance: "back" is less obvious on a
+                    booklet than on a card, so name what we mean. */}
+                {manualClassifyModal.selectedType.toLowerCase().includes("passport") && (
                   <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
                     <ShieldCheck size={14} className="flex-shrink-0 mt-0.5" />
-                    <span>Passports only require the photo/info page — no back side needed.</span>
+                    <span>
+                      Passports need both sides: the photo/info page (front) and its
+                      reverse — the signature or endorsement page (back).
+                    </span>
                   </div>
                 )}
               </div>

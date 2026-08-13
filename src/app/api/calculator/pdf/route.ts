@@ -5,6 +5,7 @@ import {
   computePublicEstimate,
   parsePublicEstimatePayload,
 } from "@/lib/publicClosingEstimate";
+import { recordPublicEstimate } from "@/lib/recordPublicEstimate";
 
 // POST /api/calculator/pdf — the public estimator's "Download PDF".
 //
@@ -16,9 +17,16 @@ import {
 // mortgage amount in the URL — into browser history, referer headers and every
 // access log between here and them.
 //
-// Nothing is written. No estimate row, no blob, no lead, and deliberately no
-// audit row either — there is no actor to attribute one to. The bytes are
-// generated and streamed; the only trace is the rate-limit counter.
+// One row is written, to `calculator_estimates`, once the PDF has actually been
+// built: the figures the visitor entered plus the totals the server computed.
+// It records DEMAND, not a lead — `email` on these rows is almost always null,
+// because a browser does not identify itself and the optional name/email inputs
+// live inside the "Email it to me" panel, which a downloader never opens.
+//
+// Still deliberately no audit row, and still no blob: an audit row names an
+// actor, and here there is none. The write cannot fail the request —
+// `recordPublicEstimate` swallows everything — so a visitor gets their PDF even
+// if the table is unreachable.
 
 /** Generating a PDF costs real CPU, so an anonymous caller gets a tight budget. */
 const PDF_LIMIT = 10;
@@ -70,6 +78,16 @@ export async function POST(req: Request) {
         year: "numeric",
       }),
       draft: true,
+    });
+
+    // After generation, not before: a 500 means the visitor never received an
+    // estimate, and a row for one would be a lie.
+    await recordPublicEstimate({
+      source: "pdf",
+      req,
+      input: parsed.input,
+      statement,
+      config,
     });
 
     return new NextResponse(pdfBytes as unknown as BodyInit, {
