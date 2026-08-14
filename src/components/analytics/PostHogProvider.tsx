@@ -6,7 +6,7 @@ import { PostHogProvider as PHProvider } from "posthog-js/react";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_TOKEN;
 
-// Analytics run in production only 
+// Analytics run in production only
 const VERCEL_ENV = process.env.NEXT_PUBLIC_VERCEL_ENV;
 const IS_NON_PROD =
   VERCEL_ENV === "preview" ||

@@ -105,9 +105,9 @@ For EACH distinct identification document you find in the image/PDF, do the foll
    - "front-and-back" if BOTH front AND back sides of that same ID are visible (e.g., both sides of a driver's license scanned together)
    - "unknown" if you cannot determine
 4. Decide required side rule for that ID type:
-   - "single-sided" (one side is sufficient, e.g., passport info page)
-   - "front-and-back" (both sides needed, e.g., driver's license)
-   - "unknown" (cannot determine)
+   - "front-and-back" (both sides needed) — this applies to EVERY acceptable ID type, passports included
+   - "unknown" (cannot determine which acceptable type it is)
+   Do NOT return "single-sided" for any document. No acceptable ID is satisfied by one side.
 5. Extract the EXPIRY DATE if visible on the document:
    - Look for "EXP", "EXPIRY", "EXPIRES", "VALID UNTIL", "DATE D'EXPIRATION", or similar labels
    - Return the date in YYYY-MM-DD format (e.g., "2025-08-15")
@@ -115,7 +115,10 @@ For EACH distinct identification document you find in the image/PDF, do the foll
    - Note: SIN cards and some older IDs may not have expiry dates — return null in those cases
 
 Edge-case policy:
-- Passports (Canadian or Foreign) are "single-sided" (info / photo page only needed). If you see the BACK of a passport (the plain page with no photo), still classify it as a "Canadian Passport" or "Foreign Passport" with side="back" and side_requirement="single-sided". The back is not required but should still be recognized as part of a valid passport if submitted.
+- PASSPORTS (Canadian or Foreign) require BOTH sides: side_requirement="front-and-back", always. The photo/info page on its own is NOT sufficient.
+  - side="front" is the photo / biodata page (photograph, name, date of birth, passport number, machine-readable zone).
+  - side="back" is the reverse of that page or the facing page — typically the signature/endorsement page, the observations page, or the inside back cover. It usually has no photograph and may carry only printed text, a signature line, or a barcode. This is VALID and must be recognized as a passport back, not rejected as "not identification".
+  - side="front-and-back" if both the photo page and its reverse/facing page are visible together (e.g. an open passport photographed across both pages, or two pages scanned into one file).
 - Cards (Driver's License, PR Card, Citizenship Card, NEXUS, plastic SIN, generic Government-issued Photo ID Card) are "front-and-back" required.
 - DRIVER'S LICENSE BACK SIDE DETECTION: The back of a driver's license is VALID identification and must be recognized. Driver's license backs typically contain: a 2D barcode (PDF417), magnetic stripe, additional text/numbers, and sometimes a signature. If you see any of these elements along with a card format, classify it as "Driver's License" with side="back". Do NOT reject driver's license backs as invalid.
 - "Government-issued Photo ID Card" is a LAST-RESORT label only for legitimate provincial/territorial photo ID cards issued in lieu of a driver's license (e.g. Ontario Photo Card, BC Identification Card). Do NOT use this label to smuggle in health cards, work IDs, or any rejected document above.
@@ -132,7 +135,7 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
     {
       "document_type": string,
       "side": "front" | "back" | "front-and-back" | "unknown",
-      "side_requirement": "single-sided" | "front-and-back" | "unknown",
+      "side_requirement": "front-and-back" | "unknown",
       "is_complete": boolean,
       "confidence": "high" | "medium" | "low",
       "expiry_date": string | null
@@ -147,9 +150,9 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
 }
 
 Rules for "is_complete":
-- true if side_requirement is "single-sided" OR if side is "front-and-back"
-- true if side_requirement is "front-and-back" AND side is "front-and-back"
-- false if side_requirement is "front-and-back" but only "front" or "back" is shown
+- true ONLY if side is "front-and-back" — i.e. both sides of that ID are visible in this file
+- false if only "front" or only "back" is shown, for every document type including passports
+- false if side is "unknown"
 
 If "contains_identification" is false, return an empty documents array and explain in "reason" exactly what the document appears to be (e.g. "Ontario Health Card — not acceptable under LSO By-Law 7.1").`;
 }

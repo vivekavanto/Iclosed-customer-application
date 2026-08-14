@@ -9,6 +9,7 @@ import {
   computePublicEstimate,
   parsePublicEstimatePayload,
 } from "@/lib/publicClosingEstimate";
+import { recordPublicEstimate } from "@/lib/recordPublicEstimate";
 
 // POST /api/calculator/email — the public estimator's "Email it to me".
 //
@@ -39,8 +40,15 @@ import {
 // counter is down this button stops working, which is the failure everyone would
 // choose.
 //
-// Nothing is written: no lead, no estimate row, no stored copy of the address.
-// The email is the whole product.
+// One row is written, to `calculator_estimates`: the figures, the totals, and —
+// unlike the download path — the address, because here the visitor typed one.
+// These are the rows the firm can actually follow up on.
+//
+// Still no lead: `leads` is the intake pipeline, and somebody who priced a
+// purchase has signed nothing and asked for nothing. The row is written on the
+// failure path too, since an address that Resend bounced was still a real
+// address typed by a real person. The write cannot fail the request —
+// `recordPublicEstimate` swallows everything.
 
 /** A visitor emails themselves once, maybe twice after a correction. */
 const IP_LIMIT = 5;
@@ -141,6 +149,19 @@ export async function POST(req: Request) {
     config,
     clientName: parsed.input.clientName,
     pdf,
+  });
+
+  // Recorded whichever way the send went — a bounced address was still typed by
+  // a real person, and `email_sent` says which happened.
+  await recordPublicEstimate({
+    source: "email",
+    req,
+    input: parsed.input,
+    statement,
+    config,
+    email: to,
+    emailSent: sent.success,
+    pdfAttached: Boolean(pdf),
   });
 
   if (!sent.success) {
