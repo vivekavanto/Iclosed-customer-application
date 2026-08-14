@@ -55,8 +55,10 @@ SELECT t.id, 'note', 'Understanding Joint Tenants vs Tenants in Common', NULL, f
          WHERE s.task_template_id = t.id AND s.label ILIKE '%in person or virtually%'),
        '{
          "variant": "info",
-         "collapsible": true,
+         "collapsible": false,
+         "display": "badge",
          "attach_to": "How would you like to hold title: joint vs tenants in common?",
+         "disclaimer": "Please note if you go with this option, the parties with lower shares will need to obtain Independent Legal Advice (ILA) as they are taking full mortgage liability for lower shares. This needs to be obtained from another lawyer outside our firm and they will have their own fees. If you have questions about this, please contact us.",
          "sections": [
            {
              "heading": "A) Joint Tenants",
@@ -199,6 +201,12 @@ WHERE t.is_deleted = false
   AND NOT EXISTS (
         SELECT 1 FROM task_form_fields x
         WHERE x.task_template_id = t.id AND x.label = 'Virtual signing fee notice');
+
+-- Source of funds is a single-line text field, like the other questions.
+UPDATE task_form_fields
+SET field_type = 'text'
+WHERE label ILIKE '%source of funds%'
+  AND field_type = 'textarea';
 
 COMMIT;
 
