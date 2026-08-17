@@ -140,13 +140,15 @@ function formatLeadTypeLabel(raw: string | null | undefined): string {
  *   ALL_TASKS_ALERT_TO="admins"                             → every active
  *                                                             admin_users row
  *
- * Keep this in step with the admin repo's copy in
- * src/lib/notifyAllTasksComplete.ts — either app may be the one that sends.
+ * Kept in step with the admin repo's copy in src/lib/notifyAllTasksComplete.ts,
+ * which now handles the normal path (see requestAllTasksCompleteAlert.ts) — this
+ * default only governs the fallback, and the two diverging is what previously
+ * sent client-completion alerts to a different inbox than staff-completion ones.
  *
  * The in-app notification is unaffected either way — it's a broadcast row, so
  * every admin still sees it in the sidebar bell regardless of who is emailed.
  */
-const DEFAULT_ALERT_TO = "testing@navawilson.law";
+const DEFAULT_ALERT_TO = "aliya@navawilson.law";
 
 async function resolveRecipients(): Promise<string[]> {
   const configured = (process.env.ALL_TASKS_ALERT_TO ?? DEFAULT_ALERT_TO).trim();
@@ -296,6 +298,16 @@ async function dispatchAlert(
   // into "Purchase & Sale of X and Y". Mirrors renderTransactionPhrase in the
   // admin repo.
   const propertyAddress = [purchase, selling].filter(Boolean).join(" and ");
+  // Street line only — "2615 Ellesmere Road", not the full
+  // "2615 Ellesmere Road, Toronto, ON, M1H 2S6", for subject lines that get
+  // truncated in an inbox list. joinParts glues street, city, province and
+  // postal with ", ", so the first segment is the street. Mirrors
+  // propertyStreet in the admin repo's notifyAllTasksComplete.ts — either app
+  // may be the one that renders this template.
+  const streetOf = (joined: string) => (joined.split(",")[0] ?? "").trim();
+  const propertyStreet = [streetOf(purchase), streetOf(selling)]
+    .filter(Boolean)
+    .join(" and ");
   let transaction = "";
   if (isCombined && purchase && selling) {
     transaction = `Purchase of ${purchase} and Sale of ${selling}`;
@@ -373,6 +385,7 @@ async function dispatchAlert(
     party_summary: escapeHtml(partySummary),
     transaction: escapeHtml(transaction),
     property_address: escapeHtml(propertyAddress),
+    property_street: escapeHtml(propertyStreet),
     closing_date: escapeHtml(closingDate),
     file_number: escapeHtml(fileNumber),
     lead_type: escapeHtml(leadTypeLabel),

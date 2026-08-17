@@ -10,7 +10,7 @@ import {
   validatePostalCode,
   validateUnit,
 } from "@/lib/addressValidation";
-import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
+import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
@@ -343,7 +343,9 @@ export async function POST(req: Request) {
         source: "task-responses",
       });
 
-      await notifyAllTasksComplete(task.deal_id);
+      // Routed through the admin app so the alert carries the file's documents;
+      // falls back to sending from here if it can't be reached.
+      await requestAllTasksCompleteAlert(task.deal_id);
     }
 
     return NextResponse.json({ success: true });

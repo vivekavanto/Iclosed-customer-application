@@ -1,7 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
 import { syncSharedTaskCompletion, syncSharedTaskPatch, advanceMilestone } from "@/lib/syncSharedTask";
-import { notifyAllTasksComplete } from "@/lib/notifyAllTasksComplete";
+import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
 export async function PATCH(
@@ -125,7 +125,9 @@ export async function PATCH(
         source: "tasks-patch",
       });
 
-      await notifyAllTasksComplete(task.deal_id);
+      // Routed through the admin app so the alert carries the file's documents;
+      // falls back to sending from here if it can't be reached.
+      await requestAllTasksCompleteAlert(task.deal_id);
     }
 
     return NextResponse.json({ success: true });
