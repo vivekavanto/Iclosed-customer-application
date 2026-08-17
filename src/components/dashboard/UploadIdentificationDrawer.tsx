@@ -1514,7 +1514,10 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (hasIdMissingBack) {
+    if (hasIncompleteIds) {
+      setGlobalError(
+        `Both sides of every ID are required — upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} (for a passport, the photo page and its reverse) or remove that document.`,
+      );
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1621,7 +1624,10 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    if (hasIdMissingBack) {
+    if (hasIncompleteIds) {
+      setGlobalError(
+        `Both sides of every ID are required — upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} (for a passport, the photo page and its reverse) or remove that document.`,
+      );
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1774,7 +1780,12 @@ export default function UploadIdentificationDrawer({
 
     const match = /^(.*)_(front-and-back|front|back)$/i.exec(ct);
     const type = match ? match[1] : ct;
-    const side = match ? match[2].toLowerCase() : "front-and-back";
+    // No side suffix means the side was never established — detection returned
+    // "unknown" (custom_type is written without a suffix in that case), or the
+    // row predates side tracking. Reading that as "front-and-back" would let a
+    // lone passport photo page re-hydrate as a complete ID and slip past the
+    // both-sides check, so it stays unknown and the page is asked for again.
+    const side = match ? match[2].toLowerCase() : "unknown";
     // Note for old drafts: a passport saved before both sides were required is
     // stored as "Canadian Passport_front" and now re-hydrates as INCOMPLETE, so
     // the client is asked for the reverse page when they return to the draft.
@@ -1814,21 +1825,22 @@ export default function UploadIdentificationDrawer({
   const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired).length;
   const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired)).length;
 
-  // Driver's licences and PASSPORTS are the two IDs where a missing back is a
-  // definite mistake rather than a stray extra file, so they get a hard block
-  // with a message naming what to add, instead of the generic "finish the
-  // incomplete ID" warning. Passports were added here when the photo page alone
-  // stopped being sufficient.
-  const idsMissingBack = docAnalysis.filter((d) => {
-    const t = d.type.toLowerCase();
-    const isDriversLicense = t.includes("driver") && t.includes("licen");
-    const isPassport = t.includes("passport");
-    if (!isDriversLicense && !isPassport) return false;
-    // A single image containing both sides, or separate front + back, satisfies it.
-    if (d.hasBothSides || d.hasBack) return false;
-    return true;
-  });
-  const hasIdMissingBack = idsMissingBack.length > 0;
+  // Any recognised ID that is missing a side is a HARD BLOCK on submission, with
+  // a message naming the document and the page still owed. This used to single
+  // out driver's licences and passports — the two where a missing back is a
+  // definite mistake — and let every other half-provided ID through on the
+  // generic "finish the incomplete ID" warning. Nothing about the rule is
+  // type-specific though: identity cannot be verified from one side of any of
+  // them, so a stray half-ID is no longer uploadable alongside two good ones.
+  // (Removing the file is still the way to submit without that document.)
+  const incompleteIds = docAnalysis.filter((d) => !d.complete);
+  const hasIncompleteIds = incompleteIds.length > 0;
+
+  // "back", "front", or "front & back" — the page(s) still owed for an ID.
+  function describeMissingSides(doc: { hasFront: boolean; hasBack: boolean }): string {
+    if (!doc.hasFront && !doc.hasBack) return "front & back";
+    return doc.hasFront ? "back" : "front";
+  }
 
   // A file that fails detection, or comes back as "not identification", blocks
   // submission.
@@ -1865,13 +1877,13 @@ export default function UploadIdentificationDrawer({
     completeDocCount >= 2 &&
     !uploading &&
     !hasPendingDetection &&
-    !hasIdMissingBack &&
+    !hasIncompleteIds &&
     !hasExpiredDocs;
 
   // Display-only flag for the verification card: are the submission
   // REQUIREMENTS met (ignoring transient uploading / pending-detection states)?
   const readyToSubmit =
-    completeDocCount >= 2 && !hasIdMissingBack && !hasExpiredDocs;
+    completeDocCount >= 2 && !hasIncompleteIds && !hasExpiredDocs;
 
   return (
     <>
@@ -2351,9 +2363,13 @@ export default function UploadIdentificationDrawer({
                       <p className="text-sm font-bold text-gray-900">
                         {hasExpiredDocs
                           ? "Expired ID — action needed"
-                          : completeDocCount === 0
-                            ? "2 Valid Government IDs Required"
-                            : "1 More Valid Government ID Required"}
+                          : hasIncompleteIds
+                            ? incompleteIds.length === 1
+                              ? `${incompleteIds[0].type} — ${describeMissingSides(incompleteIds[0])} required`
+                              : "Both Sides of Every ID Required"
+                            : completeDocCount === 0
+                              ? "2 Valid Government IDs Required"
+                              : "1 More Valid Government ID Required"}
                       </p>
                       <p className="text-xs text-gray-900">
                         {hasExpiredDocs
@@ -2402,8 +2418,8 @@ export default function UploadIdentificationDrawer({
                   <p className="text-xs text-[#C10007] font-semibold">
                     {hasExpiredDocs
                       ? "Remove or replace the expired ID — expired documents are not accepted."
-                      : hasIdMissingBack
-                        ? `Upload the back side of your ${idsMissingBack[0].type} to continue — it's required before you can submit.`
+                      : hasIncompleteIds
+                        ? `Upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} to continue — both sides of every ID are required before you can submit. For a passport that means the photo page and its reverse. Alternatively, remove that document.`
                         : completeDocCount === 0
                           ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID. Passports need the photo page and its reverse."
                           : incompleteDocCount > 0
