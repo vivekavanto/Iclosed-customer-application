@@ -46,12 +46,15 @@ interface FieldOption {
 }
 
 // Body of a `note` field. `attach_to` names another field's label; the note then
-// renders inside that field's group instead of standing alone.
+// renders inside that field's group instead of standing alone. display "badge"
+// puts it behind a "?" next to that field's label.
 interface NoteContent {
   text?: string;
   collapsible?: boolean;
   variant?: "info" | "warning";
   attach_to?: string;
+  display?: "badge" | "block";
+  disclaimer?: string;
   sections?: Array<{
     heading?: string;
     items?: Array<{ term?: string; body: string }>;
@@ -146,6 +149,93 @@ const NOTE_STYLES = {
   },
 } as const;
 
+// Shared body for the callout, the collapsible panel and the badge popover.
+function NoteBody({
+  label,
+  content,
+  palette,
+}: {
+  label: string;
+  content: NoteContent;
+  palette: (typeof NOTE_STYLES)[keyof typeof NOTE_STYLES];
+}) {
+  const sections = content.sections ?? [];
+  const body = content.text ?? (sections.length === 0 ? label : "");
+  const s = palette;
+
+  return (
+    <div className="space-y-3">
+      {body && <p className={`text-sm leading-relaxed ${s.body}`}>{body}</p>}
+      {sections.map((sec, i) => (
+        <div key={i} className="space-y-1.5">
+          {sec.heading && (
+            <p className={`text-sm font-semibold ${s.heading}`}>{sec.heading}</p>
+          )}
+          {(sec.items ?? []).map((item, j) => (
+            <p key={j} className={`text-sm leading-relaxed ${s.body}`}>
+              {item.term && <span className="font-semibold">{item.term}: </span>}
+              {item.body}
+            </p>
+          ))}
+        </div>
+      ))}
+      {content.disclaimer && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <Info size={14} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-amber-600" />
+          <p className="text-sm leading-relaxed text-amber-800">{content.disclaimer}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A "?" next to a field label opening a popover. Closes on outside click or Esc.
+function HelpBadge({ label, content }: { label: string; content: NoteContent }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <span ref={wrapRef} className="relative ml-1.5 inline-block align-middle">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={label}
+        className="inline-flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-full bg-gray-900 text-[11px] font-bold leading-none text-white hover:bg-gray-700"
+      >
+        ?
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-7 z-50 w-[min(30rem,78vw)] rounded-xl border border-gray-200 bg-white p-4 text-left font-normal shadow-xl"
+          role="dialog"
+        >
+          <p className="mb-3 text-sm font-semibold text-gray-900">{label}</p>
+          <NoteBody label={label} content={content} palette={NOTE_STYLES.info} />
+        </div>
+      )}
+    </span>
+  );
+}
+
 // Long content collapses behind a toggle; short content is a plain callout.
 function NoteBlock({
   label,
@@ -155,33 +245,9 @@ function NoteBlock({
   content: NoteContent;
 }) {
   const [open, setOpen] = useState(false);
-  const sections = content.sections ?? [];
-  const body = content.text ?? (sections.length === 0 ? label : "");
-  const collapsible = content.collapsible ?? sections.length > 0;
+  const collapsible = content.collapsible ?? (content.sections ?? []).length > 0;
   const s = NOTE_STYLES[content.variant ?? "info"];
-
-  const inner = (
-    <div className="space-y-3">
-      {body && (
-        <p className={`text-sm leading-relaxed ${s.body}`}>{body}</p>
-      )}
-      {sections.map((sec, i) => (
-        <div key={i} className="space-y-1.5">
-          {sec.heading && (
-            <p className={`text-sm font-semibold ${s.heading}`}>{sec.heading}</p>
-          )}
-          {(sec.items ?? []).map((item, j) => (
-            <p key={j} className={`text-sm leading-relaxed ${s.body}`}>
-              {item.term && (
-                <span className="font-semibold">{item.term}: </span>
-              )}
-              {item.body}
-            </p>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
+  const inner = <NoteBody label={label} content={content} palette={s} />;
 
   if (!collapsible) {
     return (
@@ -1172,8 +1238,19 @@ export default function PersonalInfoTaskDrawer({
     );
   }
 
+  // Badge notes sit in the label itself; the rest render above the input.
+  function renderLabelBadges(label: string) {
+    return attachedNotes(label)
+      .filter((n) => getNoteContent(n.options).display === "badge")
+      .map((n) => (
+        <HelpBadge key={n.id} label={n.label} content={getNoteContent(n.options)} />
+      ));
+  }
+
   function renderAttachedNotes(label: string) {
-    const notes = attachedNotes(label);
+    const notes = attachedNotes(label).filter(
+      (n) => getNoteContent(n.options).display !== "badge"
+    );
     if (notes.length === 0) return null;
     return (
       <div className="mb-2 space-y-2">
@@ -2410,6 +2487,7 @@ export default function PersonalInfoTaskDrawer({
                       {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
+                      {renderLabelBadges(field.label)}
                     </label>
                     {renderAttachedNotes(field.label)}
                     <select
@@ -2455,6 +2533,7 @@ export default function PersonalInfoTaskDrawer({
                       {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
+                      {renderLabelBadges(field.label)}
                     </label>
                     <textarea
                       value={values[field.id] ?? ""}
