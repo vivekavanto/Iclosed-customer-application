@@ -32,6 +32,7 @@ import {
   isPostalCodeField,
   isStreetAddressField,
   isUnitField,
+  normalizePostalCode,
   validateCity,
   validatePostalCode,
   validateUnit,
@@ -1129,6 +1130,8 @@ export default function PersonalInfoTaskDrawer({
   }
 
   function setValue(fieldId: string, value: string) {
+    const label = fields.find((f) => f.id === fieldId)?.label;
+    if (isPostalCodeField(label)) value = normalizePostalCode(value);
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
@@ -1154,7 +1157,7 @@ export default function PersonalInfoTaskDrawer({
         filled[addressSiblingIds.city] = address.city;
       }
       if (addressSiblingIds.postal && address.postalCode) {
-        filled[addressSiblingIds.postal] = address.postalCode;
+        filled[addressSiblingIds.postal] = normalizePostalCode(address.postalCode);
       }
 
       setValues((prev) => ({ ...prev, ...filled }));

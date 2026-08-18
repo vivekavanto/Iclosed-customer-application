@@ -5,7 +5,11 @@ import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { NextResponse } from "next/server";
-import { validateCity, validatePostalCode } from "@/lib/addressValidation";
+import {
+  normalizePostalCode,
+  validateCity,
+  validatePostalCode,
+} from "@/lib/addressValidation";
 
 export async function POST(req: Request) {
   try {
@@ -25,12 +29,12 @@ export async function POST(req: Request) {
       address_street,
       address_unit,
       address_city,
-      address_postal_code,
+      address_postal_code: rawAddressPostalCode,
       address_province,
       selling_address_street,
       selling_address_unit,
       selling_address_city,
-      selling_address_postal_code,
+      selling_address_postal_code: rawSellingAddressPostalCode,
       selling_address_province,
       aps_signed,
       aps_signed_purchase,
@@ -45,6 +49,12 @@ export async function POST(req: Request) {
       referral_agent_email,
       referral_agent_phone,
     } = body;
+
+    // Postal codes are stored uppercase everywhere.
+    const address_postal_code =
+      normalizePostalCode(rawAddressPostalCode).trim() || null;
+    const selling_address_postal_code =
+      normalizePostalCode(rawSellingAddressPostalCode).trim() || null;
 
     // Per-side APS flags drive Buy & Sell. For single-side flows the legacy
     // aps_signed flag is mapped onto the matching side so older callers still work.

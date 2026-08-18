@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MapPin, Loader2 } from "lucide-react";
+import { normalizePostalCode } from "@/lib/addressValidation";
 
 interface SelectedAddress {
   street: string;
@@ -99,7 +100,7 @@ function extractAddress(
   return {
     street: [streetNumber, route].filter(Boolean).join(" "),
     city,
-    postalCode,
+    postalCode: normalizePostalCode(postalCode),
   };
 }
 

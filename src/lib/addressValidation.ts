@@ -48,6 +48,12 @@ export function isStreetAddressField(label: string | null | undefined): boolean 
 const POSTAL_REGEX =
   /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]([\s-]?\d[ABCEGHJ-NPRSTV-Z]\d)?$/i;
 
+// Postal codes are always stored and shown uppercase ("m5v 3a8" → "M5V 3A8").
+// No trimming here so it can run on every keystroke without eating a typed space.
+export function normalizePostalCode(raw: string | null | undefined): string {
+  return (raw ?? "").toUpperCase();
+}
+
 export function validatePostalCode(raw: string): string | null {
   const postal = raw.trim();
   if (!postal) return "Postal code is required.";

@@ -10,6 +10,7 @@ import {
   isCityField,
   isPostalCodeField,
   isUnitField,
+  normalizePostalCode,
   validateCity,
   validatePostalCode,
   validateUnit,
@@ -985,6 +986,8 @@ export default function DynamicTaskDrawer({
   }
 
   function setValue(fieldId: string, value: string) {
+    const label = fields.find((f) => f.id === fieldId)?.label;
+    if (isPostalCodeField(label)) value = normalizePostalCode(value);
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
