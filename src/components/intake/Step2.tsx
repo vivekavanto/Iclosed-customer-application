@@ -125,7 +125,10 @@ function PropertyDetailsForm({
                     <p className="text-sm text-red-600 -mt-2">{priceError}</p>
                 )}
 
-                {/* Deposit — optional */}
+                {/* Deposit. Still not REQUIRED to submit — it just isn't
+                    labelled as optional: the hint invited people to skip a
+                    figure the firm wants, and the closing-cost estimator
+                    prefills "Deposit already paid" from it. */}
                 <Input
                     label="Deposit Amount"
                     id={`${prefix}-deposit`}
@@ -133,7 +136,6 @@ function PropertyDetailsForm({
                     value={depositValue}
                     onChange={(e) => onDepositChange(formatCurrency(e.target.value))}
                     placeholder="$50,000"
-                    hint="Optional — leave blank if not known yet."
                 />
 
                 {/* Divider between price and address */}

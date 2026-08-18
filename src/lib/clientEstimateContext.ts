@@ -96,6 +96,8 @@ export interface ClientEstimateContext {
     property_address: string | null;
     closing_date: string | null;
     price: number | null;
+    /** Deposit already paid, from intake. NULL when nobody has given one. */
+    deposit_amount: number | null;
   } | null;
   /** The firm's latest ISSUED estimate on this file. Drafts are staff-only. */
   issued: Record<string, unknown> | null;
@@ -289,6 +291,7 @@ export async function resolveClientEstimateContext(
           property_address: deal.property_address ?? null,
           closing_date: deal.closing_date ?? null,
           price: deal.price ?? null,
+          deposit_amount: deal.deposit_amount ?? null,
         }
       : null,
     issued,
@@ -304,7 +307,9 @@ export async function resolveClientEstimateContext(
     issuedFirmLabel,
     locked: {
       price: num(issued?.purchase_price ?? deal?.price ?? 0),
-      deposit: num(issued?.deposit_paid ?? 0),
+      // Staff's issued figure wins; otherwise the deposit the client gave at
+      // intake, which the file carries, so they aren't asked for it twice.
+      deposit: num(issued?.deposit_paid ?? deal?.deposit_amount ?? 0),
       // Staff's answer wins once an estimate has been issued — they confirmed
       // it. Only before that is the address read, and it decides the municipal
       // land transfer tax the client cannot argue with, so it is read properly.

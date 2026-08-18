@@ -407,7 +407,7 @@ export async function getAuthClientDeal() {
   const { data: deal } = await supabaseAdmin
     .from("deals")
     .select(
-      "id, file_number, type, status, closing_date, property_address, price, lead_id"
+      "id, file_number, type, status, closing_date, property_address, price, deposit_amount, lead_id"
     )
     .eq("client_id", client.id)
     .eq("is_deleted", false)
@@ -429,7 +429,7 @@ export async function getAuthClientDeals() {
   const { data: deals } = await supabaseAdmin
     .from("deals")
     .select(
-      "id, file_number, type, status, closing_date, property_address, price, lead_id"
+      "id, file_number, type, status, closing_date, property_address, price, deposit_amount, lead_id"
     )
     .eq("client_id", client.id)
     .eq("is_deleted", false)
