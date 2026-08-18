@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Download, Loader2, Mail, Send } from "lucide-react";
 import {
+  BALANCE_LABELS,
   DEFAULT_RATES,
   DISCLAIMERS,
   LINE_TOOLTIPS,
@@ -72,10 +73,9 @@ const PublicClosingCostCalculator: React.FC<{
   const [config, setConfig] = useState<CalculatorConfig | null>(initialConfig);
   const [configError, setConfigError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  // Collapsed on arrival. The figure a visitor came for is the balance due; the
-  // nine-line itemisation is the answer to "why", which is a question they only
-  // ask after they have seen the number.
-  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  // Open by default: the itemised costs are what the estimate IS, and a client
+  // who has to press "Expand" to see them reads the single total as the answer.
+  const [breakdownOpen, setBreakdownOpen] = useState(true);
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [emailName, setEmailName] = useState("");
@@ -599,29 +599,34 @@ const PublicClosingCostCalculator: React.FC<{
 
             <div className="mt-4 border-t border-gray-100 pt-3">
               <BalanceRow
-                label="Purchase price"
+                label={BALANCE_LABELS.purchase_price}
                 value={formatCurrency(statement.balance.purchasePrice)}
               />
               <BalanceRow
                 muted
-                label="less deposit already paid"
+                label={BALANCE_LABELS.deposit}
                 value={signedCurrency(-statement.balance.depositPaid)}
               />
               <BalanceRow
                 muted
-                label="less mortgage advance from your lender"
+                label={BALANCE_LABELS.mortgage}
                 value={signedCurrency(-statement.balance.mortgageAmount)}
+              />
+              {/* Costs before adjustments, matching the statement and the PDF. */}
+              <BalanceRow
+                label={BALANCE_LABELS.closing_costs}
+                value={signedCurrency(statement.balance.closingCosts)}
               />
               {statement.balance.propertyTaxAdjustment !== 0 && (
                 <BalanceRow
-                  label="plus adjustments (est.)"
+                  label={
+                    statement.balance.propertyTaxAdjustment > 0
+                      ? BALANCE_LABELS.adjustment_charge
+                      : BALANCE_LABELS.adjustment_credit
+                  }
                   value={signedCurrency(statement.balance.propertyTaxAdjustment)}
                 />
               )}
-              <BalanceRow
-                label="plus closing costs"
-                value={signedCurrency(statement.balance.closingCosts)}
-              />
             </div>
 
             {/* ── The itemised breakdown ── */}
@@ -668,7 +673,7 @@ const PublicClosingCostCalculator: React.FC<{
                         <div className="mt-1.5 border-t border-dashed border-gray-300 pt-2">
                           {renderLine({
                             key: "hst",
-                            label: `HST @ ${(rates.hstRate * 100).toFixed(0)}% on taxable fees & disbursements`,
+                            label: statement.hst.label,
                             amount: statement.hst.amount,
                           })}
                         </div>
@@ -676,6 +681,14 @@ const PublicClosingCostCalculator: React.FC<{
                     </div>
                   ))}
 
+                  <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-900 pt-2.5">
+                    <span className="text-[13px] font-semibold text-gray-900">
+                      {BALANCE_LABELS.total}
+                    </span>
+                    <span className="text-[14px] font-semibold tabular-nums text-gray-900">
+                      {formatCurrency(statement.total)}
+                    </span>
+                  </div>
                   {statement.propertyTax && (
                     <div>
                       <h3
@@ -688,14 +701,6 @@ const PublicClosingCostCalculator: React.FC<{
                     </div>
                   )}
 
-                  <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-900 pt-2.5">
-                    <span className="text-[13px] font-semibold text-gray-900">
-                      Total closing costs
-                    </span>
-                    <span className="text-[14px] font-semibold tabular-nums text-gray-900">
-                      {formatCurrency(statement.total)}
-                    </span>
-                  </div>
                 </div>
               )}
             </div>

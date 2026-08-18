@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { Download, FileCheck2, Loader2 } from "lucide-react";
+import { BALANCE_LABELS } from "@/lib/closingCosts";
 import { formatCurrency } from "@/lib/formatCurrency";
 import { snapshotToStatement } from "@/lib/closingEstimateSnapshot";
 import ClosingCostBreakdown from "@/components/dashboard/ClosingCostBreakdown";
@@ -152,7 +153,7 @@ const ClosingCostIssuedStatement: React.FC<{
         </div>
         <div className="rounded-xl bg-white px-4 py-3">
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            Total closing costs
+            {BALANCE_LABELS.total}
           </p>
           <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-gray-900">
             {formatCurrency(totalClosingCosts)}

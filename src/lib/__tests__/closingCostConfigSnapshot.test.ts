@@ -24,10 +24,12 @@ test("configVersionOf: the cross-repo golden stamp", () => {
     { firm_key: "navawilson", label: "Nava Wilson", firm_name: "ACME" },
     DRAFT,
   );
-  // Moved from v7.64b1ee0e on 2026-08-12, when the statement title lost its
+  // Moved from v7.64b1ee0e on 2026-08-12, and from v7.c92cbeb6 on 2026-08-18
+  // when Toronto's graduated MLTT rates took effect. Originally it moved when
+  // the statement title lost its
   // "— RESIDENTIAL PURCHASE (ONTARIO)" qualifier. `DRAFT` is the default
   // statement type, so a wording edit there is meant to move this stamp.
-  expect(configVersionOf(DEFAULT_RATES, snapshot)).toBe("v7.c92cbeb6");
+  expect(configVersionOf(DEFAULT_RATES, snapshot)).toBe("v7.5d7e2998");
 });
 
 test("configFromSnapshot: reads back an admin-written snapshot", () => {

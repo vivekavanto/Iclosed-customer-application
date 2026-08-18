@@ -2,7 +2,12 @@
 
 import React, { useState } from "react";
 import { Info } from "lucide-react";
-import type { Statement, StatementLine } from "@/lib/closingCosts";
+import {
+  BALANCE_LABELS,
+  LINE_LABELS,
+  type Statement,
+  type StatementLine,
+} from "@/lib/closingCosts";
 import { formatCurrency } from "@/lib/formatCurrency";
 
 /* ════════════════════════════════════════════
@@ -21,16 +26,6 @@ import { formatCurrency } from "@/lib/formatCurrency";
    and must not drift. Client-facing wording is presentation, so it belongs on
    this side of the line.
 ════════════════════════════════════════════ */
-
-/** Client-facing wording, keyed by the statement line key. */
-const LABEL_OVERRIDES: Record<string, string> = {
-  title_premium: "Title insurance premium (FCT)",
-  title_submission: "First Canadian Title — submission & review",
-  reg_transfer: "Registration of transfer",
-  reg_mortgage: "Registration of mortgage",
-  sheriff: "Sheriff's certificates",
-  property_tax_adjustment: "Property tax & common expenses adjustments",
-};
 
 /** What each line is, in plain English, behind the ⓘ. */
 const EXPLANATIONS: Record<string, string> = {
@@ -72,7 +67,9 @@ const Row: React.FC<{
   openKey: string | null;
   onToggle: (key: string) => void;
 }> = ({ line, brand, note, openKey, onToggle }) => {
-  const label = LABEL_OVERRIDES[line.key] ?? line.label;
+  // LINE_LABELS in closingCosts.ts is the one place a fee is named, so this
+  // screen, the admin panel and the PDF cannot drift apart.
+  const label = line.label;
   // The engine decides which lines are provisional, so this screen, the admin
   // screen and the PDF always agree. See CALC_VERSION 7 in closingCosts.ts.
   const badge = line.badge;
@@ -180,7 +177,11 @@ const ClosingCostBreakdown: React.FC<{
       {/* HST sits outside the groups — it is charged on only some of them. */}
       <div className="border-t border-dashed border-gray-200 pt-2">
         <Row
-          line={{ key: "hst", label: "HST", amount: statement.hst.amount }}
+          line={{
+            key: "hst",
+            label: LINE_LABELS.hst,
+            amount: statement.hst.amount,
+          }}
           brand={brand}
           note={hstNote}
           openKey={openKey}
@@ -188,8 +189,16 @@ const ClosingCostBreakdown: React.FC<{
         />
       </div>
 
-      {/* A Statement of Adjustments item, so it is listed but deliberately NOT
-          added into "Total closing costs" below. */}
+      <div className="flex items-center justify-between gap-4 border-t border-gray-300 pt-3">
+        <span className="text-sm font-bold text-gray-900">
+          {BALANCE_LABELS.total}
+        </span>
+        <span className="shrink-0 text-sm font-bold tabular-nums text-gray-900">
+          {formatCurrency(statement.total)}
+        </span>
+      </div>
+      {/* A Statement of Adjustments item, so it is listed AFTER the total and
+          deliberately not added into it — printed in this order on the PDF too. */}
       {statement.propertyTax && (
         <div>
           <GroupTitle brand={brand}>Adjustments</GroupTitle>
@@ -204,14 +213,6 @@ const ClosingCostBreakdown: React.FC<{
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-4 border-t border-gray-300 pt-3">
-        <span className="text-sm font-bold text-gray-900">
-          Total closing costs
-        </span>
-        <span className="shrink-0 text-sm font-bold tabular-nums text-gray-900">
-          {formatCurrency(statement.total)}
-        </span>
-      </div>
     </div>
   );
 };

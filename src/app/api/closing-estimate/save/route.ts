@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
+import {
+  BALANCE_LABELS,
+  computeStatement,
+  type ClosingCostInputs,
+} from "@/lib/closingCosts";
 import {
   parseClientMortgage,
   parseFileId,
@@ -217,14 +221,13 @@ export async function POST(req: Request) {
       g.lines.map((l) => row(l.label, money(l.amount))),
     ),
     row(statement.hst.label, money(statement.hst.amount)),
+    // Total first, then the Statement of Adjustments item — the order the PDF
+    // and both on-screen statements print them in.
+    row(BALANCE_LABELS.total, money(statement.total)),
     ...(statement.propertyTax
       ? [row(statement.propertyTax.label, money(statement.propertyTax.amount))]
       : []),
-    row("Total closing costs", money(statement.total)),
-    row(
-      "Estimated balance due on closing",
-      money(statement.balance.balanceDue),
-    ),
+    row(BALANCE_LABELS.balance_due, money(statement.balance.balanceDue)),
     row("Calculated on", now.slice(0, 10)),
   ];
 

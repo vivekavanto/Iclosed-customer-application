@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Info, Loader2, Mail, TriangleAlert, X } from "lucide-react";
 import {
+  BALANCE_LABELS,
   DISCLAIMERS,
   computeStatement,
   ratesFromConfigRow,
@@ -184,7 +185,10 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
 
   const [mortgage, setMortgage] = useState("");
   const [isFirstTimeBuyer, setIsFirstTimeBuyer] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  // Open on arrival: the fee-by-fee breakdown is the substance of the estimate,
+  // and a client who has to press "See the full breakdown" to reach it reads the
+  // single balance figure as the whole answer.
+  const [expanded, setExpanded] = useState(true);
   const [showTaxHint, setShowTaxHint] = useState(false);
   /** The email preview replaces the estimate body until it is sent or backed out of. */
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -287,9 +291,9 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     setLoading(true);
     setLoadError(null);
     setNotice(null);
-    // Collapse both panels: leaving them open would show one file's breakdown
-    // above another file's heading for as long as the fetch takes.
-    setExpanded(false);
+    // The whole body is replaced by the loading state while the new file is
+    // fetched, so the breakdown can stay open across the switch. The PDF preview
+    // cannot — it would keep showing the previous file's document.
     setPreviewOpen(false);
     setRequestedFileId(id);
   };
@@ -783,17 +787,17 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
               {/* Summary */}
               <div className="mt-5 divide-y divide-gray-100 border-t border-gray-100">
                 <SummaryRow
-                  label="Purchase price"
+                  label={BALANCE_LABELS.purchase_price}
                   amount={formatCurrency(statement.balance.purchasePrice)}
                 />
                 <SummaryRow
-                  label="less deposit already paid"
+                  label={BALANCE_LABELS.deposit}
                   amount={`− ${formatCurrency(statement.balance.depositPaid, {
                     sign: false,
                   })}`}
                 />
                 <SummaryRow
-                  label="less mortgage advance from your lender"
+                  label={BALANCE_LABELS.mortgage}
                   amount={
                     answered
                       ? `− ${formatCurrency(statement.balance.mortgageAmount, {
@@ -802,9 +806,20 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                       : "—"
                   }
                 />
+                {/* Costs before adjustments, matching the PDF statement. */}
+                <SummaryRow
+                  label={BALANCE_LABELS.closing_costs}
+                  amount={`+ ${formatCurrency(statement.balance.closingCosts, {
+                    sign: false,
+                  })}`}
+                />
                 {propertyTaxAmount !== 0 && (
                   <SummaryRow
-                    label="plus property tax & common expense adjustments (est.)"
+                    label={
+                      propertyTaxAmount > 0
+                        ? BALANCE_LABELS.adjustment_charge
+                        : BALANCE_LABELS.adjustment_credit
+                    }
                     amount={`${propertyTaxAmount < 0 ? "−" : "+"} ${formatCurrency(
                       propertyTaxAmount,
                       { sign: false },
@@ -821,12 +836,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     }
                   />
                 )}
-                <SummaryRow
-                  label="plus closing costs"
-                  amount={`+ ${formatCurrency(statement.balance.closingCosts, {
-                    sign: false,
-                  })}`}
-                />
               </div>
 
               {showTaxHint && (

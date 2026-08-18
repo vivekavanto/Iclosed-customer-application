@@ -98,11 +98,11 @@ test("torontoMLTT: still equal to provincial through $3M", () => {
 
 test("torontoMLTT: luxury tiers above $2M", () => {
   expect(torontoMLTT(3_000_000)).toBe(61_475);
-  expect(torontoMLTT(4_000_000)).toBe(96_475);
-  expect(torontoMLTT(5_000_000)).toBe(141_475);
-  expect(torontoMLTT(10_000_000)).toBe(416_475);
-  expect(torontoMLTT(20_000_000)).toBe(1_066_475);
-  expect(torontoMLTT(25_000_000)).toBe(1_441_475);
+  expect(torontoMLTT(4_000_000)).toBe(105_475); // + 1,000,000 × 4.40%
+  expect(torontoMLTT(5_000_000)).toBe(159_975); // + 1,000,000 × 5.45%
+  expect(torontoMLTT(10_000_000)).toBe(484_975); // + 5,000,000 × 6.50%
+  expect(torontoMLTT(20_000_000)).toBe(1_239_975); // + 10,000,000 × 7.55%
+  expect(torontoMLTT(25_000_000)).toBe(1_669_975); // + 5,000,000 × 8.60%
 });
 
 // ── FCT title premium ──────────────────────────────────────────────────
