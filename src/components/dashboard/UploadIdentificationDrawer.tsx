@@ -179,6 +179,13 @@ const ACCEPTABLE_ID_TYPES = [
 
 type ManualSide = "front" | "back" | "front-and-back";
 
+// Human name for a document's SECOND side. On a passport that page is the
+// signature page — the page the firm actually needs; calling it "the back"
+// points people at the blank rear cover. Card-style IDs really do have a back.
+function secondSideLabel(type: string): string {
+  return /passport/i.test(type) ? "signature page" : "back";
+}
+
 const LABEL_OPTIONS: { value: LabelKey; text: string }[] = [
   { value: "primary_front", text: "Primary ID - Front" },
   { value: "primary_back", text: "Primary ID - Back" },
@@ -598,7 +605,7 @@ function AcceptableDocumentsSection() {
           <span className="font-bold text-[#C10007]">two different government-issued photo IDs</span>{" "}
           from the list below for identity verification. We need{" "}
           <span className="font-semibold text-gray-800">both sides of each ID</span> — for a
-          passport, that is the photo page and its reverse.
+          passport, that is the photo page and the signature page.
         </p>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -1516,7 +1523,7 @@ export default function UploadIdentificationDrawer({
     }
     if (hasIncompleteIds) {
       setGlobalError(
-        `Both sides of every ID are required — upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} (for a passport, the photo page and its reverse) or remove that document.`,
+        `Both sides of every ID are required — upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} (for a passport, the photo page and the signature page) or remove that document.`,
       );
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -1626,7 +1633,7 @@ export default function UploadIdentificationDrawer({
     }
     if (hasIncompleteIds) {
       setGlobalError(
-        `Both sides of every ID are required — upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} (for a passport, the photo page and its reverse) or remove that document.`,
+        `Both sides of every ID are required — upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} (for a passport, the photo page and the signature page) or remove that document.`,
       );
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
@@ -1836,10 +1843,12 @@ export default function UploadIdentificationDrawer({
   const incompleteIds = docAnalysis.filter((d) => !d.complete);
   const hasIncompleteIds = incompleteIds.length > 0;
 
-  // "back", "front", or "front & back" — the page(s) still owed for an ID.
-  function describeMissingSides(doc: { hasFront: boolean; hasBack: boolean }): string {
-    if (!doc.hasFront && !doc.hasBack) return "front & back";
-    return doc.hasFront ? "back" : "front";
+  // "signature page", "back", "front", … — the page(s) still owed for an ID,
+  // named per document type via secondSideLabel().
+  function describeMissingSides(doc: { type: string; hasFront: boolean; hasBack: boolean }): string {
+    const second = secondSideLabel(doc.type);
+    if (!doc.hasFront && !doc.hasBack) return `front & ${second}`;
+    return doc.hasFront ? second : "front";
   }
 
   // A file that fails detection, or comes back as "not identification", blocks
@@ -2400,9 +2409,9 @@ export default function UploadIdentificationDrawer({
                               ? " — expired (not a valid ID)"
                               : doc.complete
                                 ? doc.hasBothSides
-                                  ? " — front & back in one image"
+                                  ? " — both sides in one image"
                                   : " — both sides verified"
-                                : ` — missing ${!doc.hasFront && !doc.hasBack ? "front & back" : !doc.hasFront ? "front" : "back"}`
+                                : ` — missing ${describeMissingSides(doc)}`
                             }
                           </span>
                         </div>
@@ -2412,19 +2421,20 @@ export default function UploadIdentificationDrawer({
                 </div>
               )}
 
-              {/* Action hint while submission is blocked */}
-              {!readyToSubmit && (
+              {/* Action hint while submission is blocked. Nothing is shown for a
+                  half-provided ID: the header and the per-document line above
+                  already name the page still owed, and the submit button repeats
+                  it — a paragraph here just said the same thing a third time. */}
+              {!readyToSubmit && (hasExpiredDocs || !hasIncompleteIds) && (
                 <div className="px-4 py-2.5 bg-white border-t border-gray-100">
                   <p className="text-xs text-[#C10007] font-semibold">
                     {hasExpiredDocs
                       ? "Remove or replace the expired ID — expired documents are not accepted."
-                      : hasIncompleteIds
-                        ? `Upload the ${describeMissingSides(incompleteIds[0])} of your ${incompleteIds[0].type} to continue — both sides of every ID are required before you can submit. For a passport that means the photo page and its reverse. Alternatively, remove that document.`
-                        : completeDocCount === 0
-                          ? "Add two valid government IDs to submit (2/2) — upload the front and back of each ID. Passports need the photo page and its reverse."
-                          : incompleteDocCount > 0
-                            ? "Finish the incomplete ID (upload its missing side) or add another valid ID — you need two verified IDs (2/2) to submit."
-                            : "Add one more valid government ID to submit — two verified IDs (2/2) are required."
+                      : completeDocCount === 0
+                        ? "Add two valid government IDs to submit (2/2) — upload both sides of each ID. Passports need the photo page and the signature page."
+                        : incompleteDocCount > 0
+                          ? "Finish the incomplete ID (upload its missing side) or add another valid ID — you need two verified IDs (2/2) to submit."
+                          : "Add one more valid government ID to submit — two verified IDs (2/2) are required."
                     }
                   </p>
                 </div>
@@ -2613,8 +2623,9 @@ export default function UploadIdentificationDrawer({
                   <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
                     <ShieldCheck size={14} className="flex-shrink-0 mt-0.5" />
                     <span>
-                      Passports need both sides: the photo/info page (front) and its
-                      reverse — the signature or endorsement page (back).
+                      Passports need both sides: the photo/info page (front) and the
+                      signature page — upload that one as the &ldquo;back&rdquo;, not the blank
+                      rear cover.
                     </span>
                   </div>
                 )}
