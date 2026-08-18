@@ -103,6 +103,12 @@ export async function GET(req: Request) {
       is_toronto: ctx.locked.isToronto,
       title_premium_override: ctx.locked.titlePremiumOverride,
       property_tax_adjustment: ctx.locked.propertyTaxAdjustment,
+      // Which lines the firm marked provisional, so the client's chips match
+      // the statement the firm issued.
+      title_premium_is_estimate: ctx.locked.titlePremiumIsEstimate,
+      teraview_is_estimate: ctx.locked.teraviewIsEstimate,
+      sheriff_is_estimate: ctx.locked.sheriffIsEstimate,
+      property_tax_is_estimate: ctx.locked.propertyTaxIsEstimate,
       file_no_display: ctx.locked.fileNo,
       purchasers: ctx.locked.purchasers,
       property_address: ctx.locked.propertyAddress,

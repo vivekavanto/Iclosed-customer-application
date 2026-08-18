@@ -68,6 +68,13 @@ export const LOCKED_INPUT_KEYS = [
   "provincial_ltt_override",
   "municipal_ltt_override",
   "property_tax_adjustment",
+  // Which lines carry the ESTIMATE chip is the firm's call, saved with the
+  // estimate. A client asserting it would be re-labelling the firm's own
+  // statement.
+  "title_premium_is_estimate",
+  "teraview_is_estimate",
+  "sheriff_is_estimate",
+  "property_tax_is_estimate",
   "firm_key",
   "statement_type",
   "file_no_display",

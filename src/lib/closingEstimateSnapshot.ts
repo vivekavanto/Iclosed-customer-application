@@ -87,6 +87,9 @@ export function snapshotToStatement(snapshot: unknown): Statement | null {
             label: String(p.label ?? "Property tax adjustment"),
             amount: num(p.amount),
             ...(p.sublabel ? { sublabel: String(p.sublabel) } : {}),
+            // Absent on every snapshot written before the chip was carried
+            // through, which correctly reads back as "no chip".
+            ...(p.badge ? { badge: String(p.badge) } : {}),
           };
         })()
       : null,

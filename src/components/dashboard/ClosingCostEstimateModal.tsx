@@ -69,6 +69,11 @@ interface Prefill {
   is_first_time_buyer?: boolean | null;
   title_premium_override?: number | null;
   property_tax_adjustment?: number | null;
+  /** The firm's "Is estimate" answers. null = never said → line default. */
+  title_premium_is_estimate?: boolean | null;
+  teraview_is_estimate?: boolean | null;
+  sheriff_is_estimate?: boolean | null;
+  property_tax_is_estimate?: boolean | null;
   email?: string | null;
   client_name?: string | null;
   file_no_display?: string | null;
@@ -311,6 +316,12 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
       isFirstTimeBuyer,
       titlePremiumOverride: prefill.title_premium_override ?? null,
       propertyTaxAdjustment: prefill.property_tax_adjustment ?? null,
+      // The firm's "Is estimate" answers, so the chips the client sees match
+      // the statement the firm issued. Undefined = never said → line default.
+      titlePremiumIsEstimate: prefill.title_premium_is_estimate ?? undefined,
+      teraviewIsEstimate: prefill.teraview_is_estimate ?? undefined,
+      sheriffIsEstimate: prefill.sheriff_is_estimate ?? undefined,
+      propertyTaxIsEstimate: prefill.property_tax_is_estimate ?? undefined,
     }),
     [price, prefill, mortgageAmount, isFirstTimeBuyer],
   );

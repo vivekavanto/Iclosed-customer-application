@@ -109,6 +109,11 @@ export async function POST(req: Request) {
     isFirstTimeBuyer: body.is_first_time_buyer === true,
     titlePremiumOverride: ctx.locked.titlePremiumOverride,
     propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
+    // null → undefined: the firm never said, so each line keeps its default.
+    titlePremiumIsEstimate: ctx.locked.titlePremiumIsEstimate ?? undefined,
+    teraviewIsEstimate: ctx.locked.teraviewIsEstimate ?? undefined,
+    sheriffIsEstimate: ctx.locked.sheriffIsEstimate ?? undefined,
+    propertyTaxIsEstimate: ctx.locked.propertyTaxIsEstimate ?? undefined,
   };
   const statement = computeStatement(inputs, ctx.rates);
 

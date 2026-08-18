@@ -64,6 +64,15 @@ export interface LockedEstimateInputs {
    * the real figure is settled at closing, not chosen by the buyer.
    */
   propertyTaxAdjustment: number | null;
+  /**
+   * Which provisional lines the firm marked as estimates, from the issued
+   * estimate's "Is estimate" checkboxes. NULL = the firm never said, and the
+   * calculation falls back to its own default — see ClosingCostInputs.
+   */
+  titlePremiumIsEstimate: boolean | null;
+  teraviewIsEstimate: boolean | null;
+  sheriffIsEstimate: boolean | null;
+  propertyTaxIsEstimate: boolean | null;
   fileNo: string | null;
   purchasers: string | null;
   propertyAddress: string | null;
@@ -269,6 +278,11 @@ export async function resolveClientEstimateContext(
   const optional = (raw: unknown): number | null =>
     raw === null || raw === undefined || raw === "" ? null : num(raw);
 
+  // The same shape for a stored "Is estimate" answer: absent stays NULL, which
+  // means the firm never said and the calculation keeps its own default.
+  const flagOf = (raw: unknown): boolean | null =>
+    raw === null || raw === undefined ? null : raw === true;
+
   const propertyTaxAdjustment =
     issued?.property_tax_adjustment !== null &&
     issued?.property_tax_adjustment !== undefined
@@ -318,6 +332,10 @@ export async function resolveClientEstimateContext(
           ? issued.is_toronto === true
           : isTorontoAddress(deal?.property_address),
       titlePremiumOverride: optional(issued?.title_premium_override),
+      titlePremiumIsEstimate: flagOf(issued?.title_premium_is_estimate),
+      teraviewIsEstimate: flagOf(issued?.teraview_is_estimate),
+      sheriffIsEstimate: flagOf(issued?.sheriff_is_estimate),
+      propertyTaxIsEstimate: flagOf(issued?.property_tax_is_estimate),
       propertyTaxAdjustment,
       fileNo: (issued?.file_no_display as string | null) ?? deal?.file_number ?? null,
       purchasers: (issued?.purchasers as string | null) ?? fullName ?? null,
