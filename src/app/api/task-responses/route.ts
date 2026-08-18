@@ -6,6 +6,7 @@ import {
   isCityField,
   isPostalCodeField,
   isUnitField,
+  normalizePostalCode,
   validateCity,
   validatePostalCode,
   validateUnit,
@@ -98,7 +99,11 @@ export async function POST(req: Request) {
       field_id: r.field_id ?? null,
       field_label: r.field_label,
       field_type: r.field_type,
-      value: r.value ?? null,
+      // Postal codes are stored uppercase regardless of how they were typed.
+      value:
+        typeof r.value === "string" && isPostalCodeField(r.field_label)
+          ? normalizePostalCode(r.value)
+          : (r.value ?? null),
       file_url: r.file_url ?? null,
       file_name: r.file_name ?? null,
     }));
