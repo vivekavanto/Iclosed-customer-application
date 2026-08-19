@@ -260,6 +260,24 @@ export async function POST(req: Request) {
             leadRow = data ?? null;
           }
 
+          // Keep the party's OWN lead in step. Every admin surface that shows a
+          // phone reads leads.phone (leads list, deal detail, its personal-info
+          // prefill), so without this the client's update would only ever land
+          // on the clients record and the admin would keep showing the number
+          // captured at intake.
+          if (phoneVal && dealRow?.lead_id) {
+            const { error: leadPhoneError } = await supabaseAdmin
+              .from("leads")
+              .update({ phone: phoneVal })
+              .eq("id", dealRow.lead_id);
+            if (leadPhoneError) {
+              console.error(
+                "[PersonalInfoMirror] Failed to mirror phone to leads:",
+                leadPhoneError.message,
+              );
+            }
+          }
+
           let clientId: string | null =
             leadRow?.client_id ?? dealRow?.client_id ?? null;
           if (!clientId && leadRow?.email) {

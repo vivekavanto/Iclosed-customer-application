@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { isPersonalInfoTask } from "@/lib/taskKinds";
 
 /**
  * GET /api/task-form-fields?task_id=xxx
@@ -91,16 +92,19 @@ export async function GET(req: Request) {
 
     let finalResponses = existingResponses ?? [];
 
-    // 5. Pre-fill ONLY the person's identity (name + email) from their own lead.
+    // 5. Pre-fill the person's identity (name + email) from their own lead, plus
+    // their phone on Personal Information — intake already asked every party for
+    // it, so re-typing it is busywork, and the admin panel pre-fills that same
+    // field from leads.phone (DealDetail.tsx), so this keeps the two in step.
     //
-    // Personal information — phone, street address, city, postal code, marital
-    // status, citizenship, occupation, employer phone — must NEVER be pre-filled
-    // from the lead. The lead's `address_*` fields are the PROPERTY/transaction
-    // address (captured at intake), not the person's home address, and the rest
-    // of intake data is not their saved personal info. Those fields autofill
-    // ONLY from the `clients` table (handled client-side in the drawer via
-    // /api/client-personal-info), so a first-time user with no saved client data
-    // correctly starts with blank personal-info fields.
+    // The REST of personal information — street address, city, postal code,
+    // marital status, citizenship, occupation, employer phone — must NEVER be
+    // pre-filled from the lead. The lead's `address_*` fields are the
+    // PROPERTY/transaction address (captured at intake), not the person's home
+    // address, and the rest of intake data is not their saved personal info.
+    // Those fields autofill ONLY from the `clients` table (handled client-side
+    // in the drawer via /api/client-personal-info), so a first-time user with no
+    // saved client data correctly starts with blank personal-info fields.
     if (task.deal_id && fields) {
       const { data: deal } = await supabaseAdmin
         .from("deals")
@@ -111,7 +115,7 @@ export async function GET(req: Request) {
       if (deal?.lead_id) {
         const { data: lead } = await supabaseAdmin
           .from("leads")
-          .select("first_name, last_name, email")
+          .select("first_name, last_name, email, phone")
           .eq("id", deal.lead_id)
           .single();
 
@@ -120,11 +124,20 @@ export async function GET(req: Request) {
             "First Name": lead.first_name,
             "Last Name": lead.last_name,
             "Email": lead.email,
+            // Scoped to this task: "Mortgage Representative/Agent Phone Number"
+            // and the like are somebody else's number, never the client's.
+            ...(isPersonalInfoTask(task.title)
+              ? { "Phone Number": lead.phone }
+              : {}),
           };
 
           fields.forEach((field) => {
-            // Skip fields that already have a saved response.
-            const hasAnswer = finalResponses.some(r => r.field_id === field.id);
+            // Skip fields that already have a saved ANSWER. A row whose value
+            // is blank (e.g. a field submitted empty) is not one — without this
+            // the pre-fill would be skipped for a field that shows as empty.
+            const hasAnswer = finalResponses.some(
+              r => r.field_id === field.id && String(r.value ?? "").trim() !== ""
+            );
             if (!hasAnswer) {
               const labelMatched = Object.keys(prefillMapping).find(
                 key => field.label.trim().toLowerCase() === key.toLowerCase()

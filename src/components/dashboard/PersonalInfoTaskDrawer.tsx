@@ -29,6 +29,7 @@ import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import {
   isCityField,
+  isMailSameAsPropertyField,
   isPostalCodeField,
   isStreetAddressField,
   isUnitField,
@@ -93,6 +94,31 @@ interface ExistingResponse {
   file_name: string | null;
 }
 
+// Section heading above the mail-forwarding fields. Doubles as an `attach_to`
+// target so a note can hang a "?" badge off it, exactly like a field label.
+const MAIL_FORWARDING_HEADING = "Mail forwarding address";
+
+export interface PurchaseAddress {
+  street: string | null;
+  unit: string | null;
+  city: string | null;
+  province: string | null;
+  postalCode: string | null;
+}
+
+// "24 Pettigrew Court, Unit 5B, Toronto, ON M1B 3C6"
+function formatPurchaseAddress(a: PurchaseAddress | undefined): string {
+  if (!a) return "";
+  return [
+    a.street,
+    a.unit ? `Unit ${a.unit}` : null,
+    a.city,
+    [a.province, a.postalCode].filter(Boolean).join(" ") || null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 interface PersonalInfoTaskDrawerProps {
   open: boolean;
   onClose: () => void;
@@ -111,6 +137,10 @@ interface PersonalInfoTaskDrawerProps {
   selectedBehalfLeadId?: string | null;
   onSelectBehalf?: (leadId: string) => void;
   onTaskCompleted?: (taskId: string) => void;
+  // The deal's purchase property. Feeds the "Mail address same as purchase
+  // property" checkbox: its subtitle, and the answers saved while it is ticked.
+  // Absent/empty → the checkbox is not offered and the address fields show.
+  purchaseAddress?: PurchaseAddress;
   // Embedded (section) mode: rendered as one party's accordion inside
   // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown, keeps
   // the form body + footer, and does NOT auto-close the surrounding modal on
@@ -193,6 +223,10 @@ function NoteBody({
 // A "?" next to a field label opening a popover. Closes on outside click or Esc.
 function HelpBadge({ label, content }: { label: string; content: NoteContent }) {
   const [open, setOpen] = useState(false);
+  // A note labelled the same as what it hangs off would just echo the heading
+  // it sits next to, so the popover shows the body alone.
+  const titleRepeatsTarget =
+    (content.attach_to ?? "").trim().toLowerCase() === label.trim().toLowerCase();
   const wrapRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -229,7 +263,9 @@ function HelpBadge({ label, content }: { label: string; content: NoteContent }) 
           className="absolute left-0 top-7 z-50 w-[min(30rem,78vw)] rounded-xl border border-gray-200 bg-white p-4 text-left font-normal shadow-xl"
           role="dialog"
         >
-          <p className="mb-3 text-sm font-semibold text-gray-900">{label}</p>
+          {!titleRepeatsTarget && (
+            <p className="mb-3 text-sm font-semibold text-gray-900">{label}</p>
+          )}
           <NoteBody label={label} content={content} palette={NOTE_STYLES.info} />
         </div>
       )}
@@ -889,6 +925,7 @@ export default function PersonalInfoTaskDrawer({
   selectedBehalfLeadId,
   onSelectBehalf,
   onTaskCompleted,
+  purchaseAddress,
   embedded = false,
   onSectionSaved,
 }: PersonalInfoTaskDrawerProps) {
@@ -1000,6 +1037,15 @@ export default function PersonalInfoTaskDrawer({
               }
             }
           });
+          // Starts ticked — most buyers forward mail to the property they are
+          // buying. A saved "false" from an earlier visit wins.
+          const mailSame = fetchedFields.find(
+            (f) =>
+              f.field_type === "checkbox" && isMailSameAsPropertyField(f.label),
+          );
+          if (mailSame && preValues[mailSame.id] === undefined) {
+            preValues[mailSame.id] = "true";
+          }
           setValues(preValues);
           setExistingFiles(preFiles);
           setExistingMultiFiles(preMultiFiles);
@@ -1206,12 +1252,50 @@ export default function PersonalInfoTaskDrawer({
     }));
   }
 
+  // ── "Mail address same as purchase property" (Purchase template only) ──
+  // The checkbox lives in the template; we only offer it when the property
+  // address is actually known, so a missing address falls back to the plain
+  // address form rather than a checkbox with nothing under it.
+  const mailAddressText = formatPurchaseAddress(purchaseAddress);
+  const mailSameField =
+    fields.find(
+      (f) => f.field_type === "checkbox" && isMailSameAsPropertyField(f.label),
+    ) ?? null;
+  const mailSameOffered = !!mailSameField && !!mailAddressText;
+  const mailSameChecked =
+    mailSameOffered && values[mailSameField?.id ?? ""] === "true";
+
+  // The four fields the checkbox stands in for.
+  function isMailForwardingField(field: FormField): boolean {
+    return (
+      field.field_type === "text" &&
+      (isStreetAddressField(field.label) ||
+        isUnitField(field.label) ||
+        isCityField(field.label) ||
+        isPostalCodeField(field.label))
+    );
+  }
+
+  // What each of those fields is submitted as while the box is ticked.
+  function mailForwardingValue(field: FormField): string {
+    if (!purchaseAddress) return "";
+    if (isStreetAddressField(field.label)) return purchaseAddress.street ?? "";
+    if (isUnitField(field.label)) return purchaseAddress.unit ?? "";
+    if (isCityField(field.label)) return purchaseAddress.city ?? "";
+    if (isPostalCodeField(field.label))
+      return normalizePostalCode(purchaseAddress.postalCode);
+    return "";
+  }
+
   // Resolve whether a field should currently be shown, based on its (optional)
   // visible_when rule and the live answer of the parent field it depends on.
   // Matching the parent is done by label (case-insensitive) and the comparison
   // is case-insensitive so "Rented"/"rented" both work. Fails open: if there's
   // no rule, or the parent can't be found, the field stays visible.
   function isFieldVisible(field: FormField): boolean {
+    // No property address to offer → hide the checkbox, keep the fields.
+    if (isMailSameAsPropertyField(field.label)) return mailSameOffered;
+    if (mailSameChecked && isMailForwardingField(field)) return false;
     const rule = getVisibleWhen(field.options);
     if (!rule) return true;
     const parent = fields.find(
@@ -1483,8 +1567,13 @@ export default function PersonalInfoTaskDrawer({
           field_label: f.label,
           field_type: f.field_type,
           // Submit hidden (condition-not-met) fields as blank so we never
-          // persist a stale answer the user can no longer see.
-          value: isFieldVisible(f) ? (values[f.id] ?? "") : "",
+          // persist a stale answer the user can no longer see — except the
+          // mail-forwarding block, which the ticked checkbox answers for.
+          value: isFieldVisible(f)
+            ? (values[f.id] ?? "")
+            : mailSameChecked && isMailForwardingField(f)
+              ? mailForwardingValue(f)
+              : "",
         }));
 
       // ── 3. Checkbox responses ──
@@ -1717,11 +1806,25 @@ export default function PersonalInfoTaskDrawer({
         },
       );
 
+      // Drafts skip checkboxes, but this one decides whether the address block
+      // is even shown — without it, reopening a draft flips back to "same as".
+      const mailSameDraftResponse = mailSameField
+        ? [
+            {
+              field_id: mailSameField.id,
+              field_label: mailSameField.label,
+              field_type: "checkbox",
+              value: mailSameChecked ? "true" : "false",
+            },
+          ]
+        : [];
+
       const allResponses = [
         ...textResponses,
         ...fileResponses,
         ...existingFileResponses,
         ...existingMultiResponses,
+        ...mailSameDraftResponse,
       ];
 
       if (allResponses.length > 0) {
@@ -2397,10 +2500,21 @@ export default function PersonalInfoTaskDrawer({
 
               if (field.field_type === "checkbox") {
                 const isChecked = values[field.id] === "true";
+                const isMailSame = isMailSameAsPropertyField(field.label);
                 return (
-                  <div key={field.id} id={`field-${field.id}`}>
+                  <Fragment key={field.id}>
+                  {isMailSame && (
+                    <p className="text-sm font-bold text-gray-900">
+                      {MAIL_FORWARDING_HEADING}
+                      {renderLabelBadges(MAIL_FORWARDING_HEADING)}
+                    </p>
+                  )}
+                  <div id={`field-${field.id}`}>
                     <label
-                      className="flex items-start gap-3 cursor-pointer group select-none"
+                      className={[
+                        "flex items-start gap-3 cursor-pointer group select-none",
+                        isMailSame ? "bg-gray-50 rounded-lg px-4 py-3.5" : "",
+                      ].join(" ")}
                     >
                       <div className="relative flex-shrink-0 mt-0.5">
                         <input
@@ -2437,16 +2551,27 @@ export default function PersonalInfoTaskDrawer({
                           )}
                         </div>
                       </div>
-                      <span
-                        className={[
-                          "text-sm leading-snug pt-0.5",
-                          isChecked
-                            ? "text-gray-800 font-medium"
-                            : "text-gray-500",
-                        ].join(" ")}
-                      >
-                        {field.placeholder || field.label}
-                      </span>
+                      {isMailSame ? (
+                        <span className="leading-snug">
+                          <span className="block text-sm font-semibold text-gray-900">
+                            {field.placeholder || field.label}
+                          </span>
+                          <span className="block mt-0.5 text-sm text-gray-500">
+                            {mailAddressText}
+                          </span>
+                        </span>
+                      ) : (
+                        <span
+                          className={[
+                            "text-sm leading-snug pt-0.5",
+                            isChecked
+                              ? "text-gray-800 font-medium"
+                              : "text-gray-500",
+                          ].join(" ")}
+                        >
+                          {field.placeholder || field.label}
+                        </span>
+                      )}
                     </label>
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
@@ -2454,6 +2579,7 @@ export default function PersonalInfoTaskDrawer({
                       </p>
                     )}
                   </div>
+                  </Fragment>
                 );
               }
 
@@ -2468,6 +2594,14 @@ export default function PersonalInfoTaskDrawer({
                       f.label.trim().toLowerCase() === attach.trim().toLowerCase()
                   );
                   if (target?.field_type === "select") return null;
+                  // Badges on the mail-forwarding heading are drawn beside it.
+                  if (
+                    getNoteContent(field.options).display === "badge" &&
+                    attach.trim().toLowerCase() ===
+                      MAIL_FORWARDING_HEADING.toLowerCase()
+                  ) {
+                    return null;
+                  }
                 }
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
@@ -2561,12 +2695,14 @@ export default function PersonalInfoTaskDrawer({
 
               // text / phone / email / date
               const isMailForwardingStart =
-                field.label.trim().toLowerCase() === "street address";
+                field.label.trim().toLowerCase() === "street address" &&
+                !mailSameOffered;
               return (
                 <Fragment key={field.id}>
                   {isMailForwardingStart && (
                     <p className="text-sm font-bold text-gray-900">
-                      Mail forwarding address
+                      {MAIL_FORWARDING_HEADING}
+                      {renderLabelBadges(MAIL_FORWARDING_HEADING)}
                     </p>
                   )}
                   <div id={`field-${field.id}`}>

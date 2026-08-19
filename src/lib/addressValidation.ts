@@ -34,6 +34,13 @@ export function isUnitField(label: string | null | undefined): boolean {
   return /\b(unit|apartment|apt|suite)\b/i.test(label ?? "");
 }
 
+// The Purchase-side "Mail address same as purchase property" checkbox. Only
+// that template carries it, so its presence is what turns the collapsed
+// mail-forwarding block on.
+export function isMailSameAsPropertyField(label: string | null | undefined): boolean {
+  return /mail address same as/i.test(label ?? "");
+}
+
 // Matches "Street Address" / "Mailing street address". Anchored on "street" so
 // it can't match "Email Address".
 export function isStreetAddressField(label: string | null | undefined): boolean {
