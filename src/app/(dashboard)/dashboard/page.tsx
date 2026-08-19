@@ -1393,6 +1393,13 @@ export default function DashboardPage() {
         behalfTargets={behalfTargets}
         selectedBehalfLeadId={selectedBehalfLeadId}
         onSelectBehalf={setSelectedBehalfLeadId}
+        purchaseAddress={{
+          street: activeProperty?.address_street ?? null,
+          unit: activeProperty?.address_unit ?? null,
+          city: activeProperty?.address_city ?? null,
+          province: activeProperty?.address_province ?? null,
+          postalCode: activeProperty?.address_postal_code ?? null,
+        }}
         onTaskCompleted={(id) =>
           handleDrawerCompleted(id, () => setPersonalInfoDrawerOpen(false))
         }
