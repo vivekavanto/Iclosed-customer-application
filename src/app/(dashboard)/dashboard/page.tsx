@@ -19,14 +19,14 @@ import {
   FileText,
   Users,
 } from "lucide-react";
-// Hidden for now — see the commented-out <ClosingCostEstimateCard /> below.
-// import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
+import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
 import ClosingCostEstimateModal from "@/components/dashboard/ClosingCostEstimateModal";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
+import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
 import { useToast } from "@/components/ui/Toast";
 
@@ -1587,14 +1587,13 @@ export default function DashboardPage() {
             loading={milestonesLoading}
           />
 
-          {/* ── Estimate your closing cost — HIDDEN FOR NOW ──
-              Temporarily commented out on request. Restore by un-commenting the
-              card below AND its import at the top of this file. The modal it
-              opens (estimateOpen, further up) is left in place, just unreachable
-              while this is the only entry point to it. */}
-          {/* <ClosingCostEstimateCard
-            onEstimate={() => setEstimateOpen(true)}
-          /> */}
+          {/* ── Estimate your closing cost — dev deploys only ──
+              Gated by SHOW_CLOSING_COST_ESTIMATE so this code can live on main
+              without appearing on the production portal. See
+              src/lib/featureFlags.ts to flip it on for production. */}
+          {SHOW_CLOSING_COST_ESTIMATE && (
+            <ClosingCostEstimateCard onEstimate={() => setEstimateOpen(true)} />
+          )}
 
           {/* ── Need Assistance ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
