@@ -1343,8 +1343,7 @@ export default function DashboardPage() {
   const drawerFirstName = directTarget?.first_name ?? activeBehalfTarget?.first_name ?? activeProperty?.first_name;
   const drawerLastName = directTarget?.last_name ?? activeBehalfTarget?.last_name ?? activeProperty?.last_name;
 
-  // Everyone on the transaction, for the drawer's ownership-shares box — one
-  // roster per family, so the opened party's status names them all.
+  // One roster per family, so the opened party's status names everyone.
   const drawerPartyNames = (
     activeTask ? (familyStatus[activeTask.id]?.members ?? []) : []
   )

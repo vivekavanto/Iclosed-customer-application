@@ -18,7 +18,6 @@ function parseOptions(opts: unknown): Record<string, unknown> {
     : {};
 }
 
-/** A question that only makes sense when the transaction has co-parties. */
 function isMultiPartyOnly(field: { label: string; options: unknown }): boolean {
   return (
     parseOptions(field.options).multi_party_only === true ||
@@ -26,8 +25,6 @@ function isMultiPartyOnly(field: { label: string; options: unknown }): boolean {
   );
 }
 
-// Drops multi-party-only questions on a single-party transaction, along with
-// the notes hanging off them (attach_to) or revealed by them (visible_when).
 // Fails open: an unresolvable party count keeps every field.
 async function dropMultiPartyOnlyFields<T extends { label: string; options: unknown }>(
   fields: T[],
@@ -134,8 +131,6 @@ export async function GET(req: Request) {
 
     console.log(`[task-form-fields] Found ${fields?.length ?? 0} fields for template ${templateId}`);
 
-    // The person this task belongs to — sizes the transaction, and pre-fills
-    // their identity in step 5.
     let leadId: string | null = null;
     if (task.deal_id) {
       const { data: deal } = await supabaseAdmin

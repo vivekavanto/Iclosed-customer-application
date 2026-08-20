@@ -142,7 +142,7 @@ interface PersonalInfoTaskDrawerProps {
   // property" checkbox: its subtitle, and the answers saved while it is ticked.
   // Absent/empty → the checkbox is not offered and the address fields show.
   purchaseAddress?: PurchaseAddress;
-  // Everyone on the transaction, "First Last". Seeds the ownership-share rows.
+  // Everyone on the transaction, "First Last" — seeds the ownership-share rows.
   partyNames?: string[];
   // Embedded (section) mode: rendered as one party's accordion inside
   // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown, keeps
@@ -488,8 +488,7 @@ const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
 /* ─────────────────────────────────────────────
    OWNERSHIP SHARES ("Tenants in Common")
 ───────────────────────────────────────────── */
-// Kept in one task_responses row as "Jane Doe — 60%; John Doe — 40%" so the
-// admin panel reads it as plain text, and parsed back for editing.
+// One task_responses row, "Jane Doe — 60%; John Doe — 40%", so the admin panel reads it as text.
 interface ShareRow {
   name: string;
   percent: string;
@@ -537,8 +536,7 @@ function SharesEditor({
   onChange: (value: string) => void;
   onBlur: () => void;
 }) {
-  // One row per party on the deal — never added or removed. A saved answer
-  // wins; two blank rows when the names aren't known.
+  // One row per party on the deal — never added or removed.
   const [rows, setRows] = useState<ShareRow[]>(() => {
     const saved = parseShares(value);
     if (saved.length > 0) return saved;
