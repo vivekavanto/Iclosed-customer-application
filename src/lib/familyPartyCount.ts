@@ -1,7 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
-// People on a transaction: the primary lead plus every co-person. Takes any
-// lead in the family. Null when unresolvable, so callers can fail open.
+// Takes any lead in the family. Null when unresolvable, so callers can fail open.
 export async function getFamilyPartyCount(
   anyFamilyLeadId: string
 ): Promise<number | null> {

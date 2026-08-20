@@ -37,8 +37,8 @@ export function isPerPartyTask(title: string | null | undefined): boolean {
 /** Number of verified IDs a party must upload (the drawer enforces "two verified IDs"). */
 export const REQUIRED_ID_DOCS = 2;
 
-/** The hold-title question. Matched by label: a select's `options` holds its
- * choice list, leaving nowhere on it for a multi_party_only flag. */
+/** Matched by label: a select's `options` holds its choice list, so there is
+ * nowhere on it for a multi_party_only flag. */
 export function isHoldTitleField(label: string | null | undefined): boolean {
   const l = (label ?? "").toLowerCase();
   return l.includes("hold title") && l.includes("tenants in common");
