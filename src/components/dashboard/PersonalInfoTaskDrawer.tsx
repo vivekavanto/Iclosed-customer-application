@@ -74,7 +74,8 @@ interface FormField {
     | "file"
     | "checkbox"
     | "date"
-    | "note";
+    | "note"
+    | "shares";
   label: string;
   placeholder: string | null;
   required: boolean;
@@ -141,6 +142,8 @@ interface PersonalInfoTaskDrawerProps {
   // property" checkbox: its subtitle, and the answers saved while it is ticked.
   // Absent/empty → the checkbox is not offered and the address fields show.
   purchaseAddress?: PurchaseAddress;
+  // Everyone on the transaction, "First Last". Seeds the ownership-share rows.
+  partyNames?: string[];
   // Embedded (section) mode: rendered as one party's accordion inside
   // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown, keeps
   // the form body + footer, and does NOT auto-close the surrounding modal on
@@ -481,6 +484,135 @@ const inputWithIcon =
 const inputNormal =
   "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10";
 const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
+
+/* ─────────────────────────────────────────────
+   OWNERSHIP SHARES ("Tenants in Common")
+───────────────────────────────────────────── */
+// Kept in one task_responses row as "Jane Doe — 60%; John Doe — 40%" so the
+// admin panel reads it as plain text, and parsed back for editing.
+interface ShareRow {
+  name: string;
+  percent: string;
+}
+
+function parseShares(value: string): ShareRow[] {
+  return (value ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const m = part.match(/^(.*?)\s*[—–-]?\s*([\d.]+)\s*%$/);
+      return m
+        ? { name: m[1].trim(), percent: m[2] }
+        : { name: part, percent: "" };
+    });
+}
+
+function formatShares(rows: ShareRow[]): string {
+  return rows
+    .filter((r) => r.name.trim() || r.percent.trim())
+    .map((r) => `${r.name.trim()} — ${r.percent.trim()}%`)
+    .join("; ");
+}
+
+function sharesTotal(rows: ShareRow[]): number {
+  return rows.reduce((sum, r) => sum + (parseFloat(r.percent) || 0), 0);
+}
+
+// So 33.33 + 33.33 + 33.34 reads as "100%", not "100.00000000000001%".
+function formatPercent(n: number): string {
+  return String(Math.round(n * 100) / 100);
+}
+
+function SharesEditor({
+  value,
+  defaultNames,
+  invalid,
+  onChange,
+  onBlur,
+}: {
+  value: string;
+  defaultNames: string[];
+  invalid: boolean;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+}) {
+  // One row per party on the deal — never added or removed. A saved answer
+  // wins; two blank rows when the names aren't known.
+  const [rows, setRows] = useState<ShareRow[]>(() => {
+    const saved = parseShares(value);
+    if (saved.length > 0) return saved;
+    const names = defaultNames.length > 0 ? defaultNames : ["", ""];
+    return names.map((name) => ({ name, percent: "" }));
+  });
+
+  function update(next: ShareRow[]) {
+    setRows(next);
+    onChange(formatShares(next));
+  }
+
+  const total = sharesTotal(rows);
+  const totalOk = Math.abs(total - 100) < 0.01;
+
+  return (
+    <div
+      // Validate on leaving the box, not on tabbing between its inputs.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onBlur();
+      }}
+      className={`rounded-lg border bg-gray-50/70 p-3 ${
+        invalid ? "border-[#C10007]" : "border-gray-200"
+      }`}
+    >
+      <div className="space-y-2">
+        {rows.map((row, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={row.name}
+              onChange={(e) =>
+                update(rows.map((r, j) => (j === i ? { ...r, name: e.target.value } : r)))
+              }
+              placeholder="Owner's full name"
+              className={`${inputBase} ${inputNormal} flex-1 py-2.5`}
+            />
+            <div className="relative w-24 flex-shrink-0">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={row.percent}
+                onChange={(e) =>
+                  update(
+                    rows.map((r, j) =>
+                      j === i
+                        ? { ...r, percent: e.target.value.replace(/[^\d.]/g, "") }
+                        : r,
+                    ),
+                  )
+                }
+                placeholder="0"
+                className={`${inputBase} ${inputNormal} py-2.5 pr-7 text-right`}
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                %
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center justify-end">
+        <span
+          className={`text-sm font-semibold ${
+            totalOk ? "text-green-700" : "text-gray-500"
+          }`}
+        >
+          Total: {formatPercent(total)}%
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /* ─────────────────────────────────────────────
    SINGLE FILE UPLOAD SLOT
@@ -926,6 +1058,7 @@ export default function PersonalInfoTaskDrawer({
   onSelectBehalf,
   onTaskCompleted,
   purchaseAddress,
+  partyNames,
   embedded = false,
   onSectionSaved,
 }: PersonalInfoTaskDrawerProps) {
@@ -1401,6 +1534,22 @@ export default function PersonalInfoTaskDrawer({
       return required && values[field.id] !== "true"
         ? `${field.label} is required.`
         : null;
+    }
+    if (field.field_type === "shares") {
+      const rows = parseShares(val);
+      if (rows.length === 0) {
+        return required ? `${field.label} is required.` : null;
+      }
+      if (rows.some((r) => !r.name.trim())) {
+        return "Enter a name for every owner.";
+      }
+      if (rows.some((r) => !(parseFloat(r.percent) > 0))) {
+        return "Enter each owner's share as a percentage.";
+      }
+      const total = sharesTotal(rows);
+      return Math.abs(total - 100) < 0.01
+        ? null
+        : `Shares must add up to 100% — they currently add up to ${formatPercent(total)}%.`;
     }
     if (field.field_type === "email") {
       if (required && !val) return `${field.label} is required.`;
@@ -2609,6 +2758,33 @@ export default function PersonalInfoTaskDrawer({
                       label={field.label}
                       content={getNoteContent(field.options)}
                     />
+                  </div>
+                );
+              }
+
+              if (field.field_type === "shares") {
+                return (
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <label className="text-sm font-semibold text-gray-800 mb-2 block">
+                      {field.label}
+                      {fieldRequired(field) && (
+                        <span className="text-[#C10007] ml-1">*</span>
+                      )}
+                      {renderLabelBadges(field.label)}
+                    </label>
+                    {renderAttachedNotes(field.label)}
+                    <SharesEditor
+                      value={values[field.id] ?? ""}
+                      defaultNames={partyNames ?? []}
+                      invalid={!!errors[field.id]}
+                      onChange={(v) => setValue(field.id, v)}
+                      onBlur={() => blurField(field)}
+                    />
+                    {errors[field.id] && (
+                      <p className="mt-1.5 text-xs text-[#C10007]">
+                        {errors[field.id]}
+                      </p>
+                    )}
                   </div>
                 );
               }

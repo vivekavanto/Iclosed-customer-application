@@ -1,6 +1,56 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { isPersonalInfoTask } from "@/lib/taskKinds";
+import { isPersonalInfoTask, isHoldTitleField } from "@/lib/taskKinds";
+import { getFamilyPartyCount } from "@/lib/familyPartyCount";
+
+/** `options` arrives as parsed JSONB, or as a JSON string in some setups. */
+function parseOptions(opts: unknown): Record<string, unknown> {
+  let parsed: unknown = opts;
+  if (typeof opts === "string") {
+    try {
+      parsed = JSON.parse(opts);
+    } catch {
+      return {};
+    }
+  }
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+}
+
+/** A question that only makes sense when the transaction has co-parties. */
+function isMultiPartyOnly(field: { label: string; options: unknown }): boolean {
+  return (
+    parseOptions(field.options).multi_party_only === true ||
+    isHoldTitleField(field.label)
+  );
+}
+
+// Drops multi-party-only questions on a single-party transaction, along with
+// the notes hanging off them (attach_to) or revealed by them (visible_when).
+// Fails open: an unresolvable party count keeps every field.
+async function dropMultiPartyOnlyFields<T extends { label: string; options: unknown }>(
+  fields: T[],
+  leadId: string | null
+): Promise<T[]> {
+  const flagged = fields.filter(isMultiPartyOnly);
+  if (flagged.length === 0 || !leadId) return fields;
+
+  const partyCount = await getFamilyPartyCount(leadId);
+  if (partyCount == null || partyCount > 1) return fields;
+
+  const dropped = new Set(flagged.map((f) => f.label.trim().toLowerCase()));
+  return fields.filter((f) => {
+    if (isMultiPartyOnly(f)) return false;
+    const opts = parseOptions(f.options);
+    const attachTo = typeof opts.attach_to === "string" ? opts.attach_to : null;
+    if (attachTo && dropped.has(attachTo.trim().toLowerCase())) return false;
+    const parent = (opts.visible_when as { field_label?: string } | undefined)
+      ?.field_label;
+    if (parent && dropped.has(parent.trim().toLowerCase())) return false;
+    return true;
+  });
+}
 
 /**
  * GET /api/task-form-fields?task_id=xxx
@@ -84,6 +134,20 @@ export async function GET(req: Request) {
 
     console.log(`[task-form-fields] Found ${fields?.length ?? 0} fields for template ${templateId}`);
 
+    // The person this task belongs to — sizes the transaction, and pre-fills
+    // their identity in step 5.
+    let leadId: string | null = null;
+    if (task.deal_id) {
+      const { data: deal } = await supabaseAdmin
+        .from("deals")
+        .select("lead_id")
+        .eq("id", task.deal_id)
+        .single();
+      leadId = deal?.lead_id ?? null;
+    }
+
+    const formFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
+
     // 4. Fetch any existing responses so we can pre-fill the form
     const { data: existingResponses } = await supabaseAdmin
       .from("task_responses")
@@ -105,63 +169,55 @@ export async function GET(req: Request) {
     // Those fields autofill ONLY from the `clients` table (handled client-side
     // in the drawer via /api/client-personal-info), so a first-time user with no
     // saved client data correctly starts with blank personal-info fields.
-    if (task.deal_id && fields) {
-      const { data: deal } = await supabaseAdmin
-        .from("deals")
-        .select("lead_id")
-        .eq("id", task.deal_id)
+    if (leadId) {
+      const { data: lead } = await supabaseAdmin
+        .from("leads")
+        .select("first_name, last_name, email, phone")
+        .eq("id", leadId)
         .single();
 
-      if (deal?.lead_id) {
-        const { data: lead } = await supabaseAdmin
-          .from("leads")
-          .select("first_name, last_name, email, phone")
-          .eq("id", deal.lead_id)
-          .single();
+      if (lead) {
+        const prefillMapping: Record<string, string | null | undefined> = {
+          "First Name": lead.first_name,
+          "Last Name": lead.last_name,
+          "Email": lead.email,
+          // Scoped to this task: "Mortgage Representative/Agent Phone Number"
+          // and the like are somebody else's number, never the client's.
+          ...(isPersonalInfoTask(task.title)
+            ? { "Phone Number": lead.phone }
+            : {}),
+        };
 
-        if (lead) {
-          const prefillMapping: Record<string, string | null | undefined> = {
-            "First Name": lead.first_name,
-            "Last Name": lead.last_name,
-            "Email": lead.email,
-            // Scoped to this task: "Mortgage Representative/Agent Phone Number"
-            // and the like are somebody else's number, never the client's.
-            ...(isPersonalInfoTask(task.title)
-              ? { "Phone Number": lead.phone }
-              : {}),
-          };
-
-          fields.forEach((field) => {
-            // Skip fields that already have a saved ANSWER. A row whose value
-            // is blank (e.g. a field submitted empty) is not one — without this
-            // the pre-fill would be skipped for a field that shows as empty.
-            const hasAnswer = finalResponses.some(
-              r => r.field_id === field.id && String(r.value ?? "").trim() !== ""
+        formFields.forEach((field) => {
+          // Skip fields that already have a saved ANSWER. A row whose value
+          // is blank (e.g. a field submitted empty) is not one — without this
+          // the pre-fill would be skipped for a field that shows as empty.
+          const hasAnswer = finalResponses.some(
+            r => r.field_id === field.id && String(r.value ?? "").trim() !== ""
+          );
+          if (!hasAnswer) {
+            const labelMatched = Object.keys(prefillMapping).find(
+              key => field.label.trim().toLowerCase() === key.toLowerCase()
             );
-            if (!hasAnswer) {
-              const labelMatched = Object.keys(prefillMapping).find(
-                key => field.label.trim().toLowerCase() === key.toLowerCase()
-              );
 
-              if (labelMatched && prefillMapping[labelMatched]) {
-                finalResponses.push({
-                  field_id: field.id,
-                  field_label: field.label,
-                  value: String(prefillMapping[labelMatched]),
-                  file_url: null,
-                  file_name: null
-                });
-              }
+            if (labelMatched && prefillMapping[labelMatched]) {
+              finalResponses.push({
+                field_id: field.id,
+                field_label: field.label,
+                value: String(prefillMapping[labelMatched]),
+                file_url: null,
+                file_name: null
+              });
             }
-          });
-        }
+          }
+        });
       }
     }
 
     return NextResponse.json({
       success: true,
       task,
-      fields: fields ?? [],
+      fields: formFields,
       existing_responses: finalResponses,
     });
   } catch (err) {
