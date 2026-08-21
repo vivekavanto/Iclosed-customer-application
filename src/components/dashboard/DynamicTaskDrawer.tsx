@@ -1793,8 +1793,7 @@ export default function DynamicTaskDrawer({
           {isVoidChequeTask && (
             <>
               <p className="text-sm text-gray-600 leading-relaxed">
-                Please upload a void cheque / direct deposit form for the account
-                where you would like the sale proceeds deposited.
+              Please upload a void cheque / direct deposit form for each party involved in the sale. 
               </p>
               <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
                 <AlertTriangle
@@ -1803,9 +1802,7 @@ export default function DynamicTaskDrawer({
                   strokeWidth={2}
                 />
                 <p className="text-xs text-amber-800 leading-relaxed">
-                  If this is a sale of a matrimonial home, please upload a void
-                  cheque / direct deposit form for a joint account, or one for you
-                  and your spouse.
+                If you are married and this is a sale of a primary residence, please upload a void cheque / direct deposit form for your spouse as well, or a joint account. 
                 </p>
               </div>
             </>
