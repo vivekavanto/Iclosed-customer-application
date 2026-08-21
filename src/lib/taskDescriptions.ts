@@ -32,7 +32,7 @@ const RULES: TaskDescriptionRule[] = [
     match: "rental equipment information",
     sides: ["sale"],
     description:
-      "Many homes have rented equipment — a hot water tank, furnace, or water softener — often under a contract or lien. If any of yours are rented, please provide the details so they can either be taken over by the buyer or bought out (paid off) before closing.",
+      "Many homes have rental equipment e.g hot water tank, furnace, water softener, etc. If your property has rental equipment, please provide the details below.",
   },
   {
     match: "mortgage representative details",
