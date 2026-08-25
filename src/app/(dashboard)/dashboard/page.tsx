@@ -1343,6 +1343,13 @@ export default function DashboardPage() {
   const drawerFirstName = directTarget?.first_name ?? activeBehalfTarget?.first_name ?? activeProperty?.first_name;
   const drawerLastName = directTarget?.last_name ?? activeBehalfTarget?.last_name ?? activeProperty?.last_name;
 
+  // One roster per family, so the opened party's status names everyone.
+  const drawerPartyNames = (
+    activeTask ? (familyStatus[activeTask.id]?.members ?? []) : []
+  )
+    .map((m) => m.name.trim())
+    .filter(Boolean);
+
   // A co-person's task is already persisted + marked complete server-side by
   // /api/task-responses (keyed off the co-person's task_id). So on-behalf
   // submissions must NOT call markDone() (which would PATCH the primary's task
@@ -1400,6 +1407,7 @@ export default function DashboardPage() {
           province: activeProperty?.address_province ?? null,
           postalCode: activeProperty?.address_postal_code ?? null,
         }}
+        partyNames={drawerPartyNames}
         onTaskCompleted={(id) =>
           handleDrawerCompleted(id, () => setPersonalInfoDrawerOpen(false))
         }
