@@ -227,7 +227,7 @@ function Hero() {
         >
           Real Estate Closings
           <br />
-          <span className="text-[#C10007]">Made Simple.</span>
+          <span className="text-[#C10007]">Made Simple</span>
         </h1>
 
         
