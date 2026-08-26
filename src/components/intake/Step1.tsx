@@ -3,6 +3,7 @@ import { Home, FileText, Repeat, Check, ChevronRight, Info, ChevronDown } from "
 import { useState } from "react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { INTAKE_STEPS, STEP_AGREEMENT } from "@/components/intake/steps";
 
 interface Service {
   id: string;
@@ -58,15 +59,10 @@ export function Step1({
     if (!selected) return toastError("Please select a service to continue.");
     if (selected === "closing" && !selectedClosingOption)
       return toastError("Please select a closing option.");
-    setStep(2);
+    setStep(STEP_AGREEMENT);
   };
 
-  const leftSteps = [
-    { id: 1, label: "Select Service" },
-    { id: 2, label: "Price & Address" },
-    { id: 3, label: "Agreement" },
-    { id: 4, label: "Contact Info" },
-  ];
+  const leftSteps = INTAKE_STEPS;
 
   const closingCards = [
     {

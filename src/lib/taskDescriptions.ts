@@ -46,6 +46,17 @@ const RULES: TaskDescriptionRule[] = [
     description:
       "Before releasing your mortgage funds, your lender requires proof that your new home is insured as of the closing date, with them listed on the policy. Please upload a home insurance policy that matches the checklist below.",
   },
+  {
+    // The drawer renders DEPOSIT_TASK_DESCRIPTION itself (it needs the copy
+    // alongside the balance and the transfer instructions); this rule is what
+    // puts the same sentence on the task CARD in the dashboard list, so the
+    // client knows what the task is before opening it. Kept identical on
+    // purpose — see src/lib/depositTask.ts.
+    match: "deposit funds into our trust account",
+    sides: ["purchase"],
+    description:
+      "Your closing funds must be in our trust account before we can complete your transaction. Please send us the balance due on closing using any of the three options below, then upload your proof of deposit here.",
+  },
 ];
 
 export function getTaskCopy(

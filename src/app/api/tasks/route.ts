@@ -176,10 +176,39 @@ export async function GET(req: Request) {
         .eq("deal_id", dId)
         .order("order_index", { ascending: true });
 
+      // Which switched-off templates the FAMILY has already had activated.
+      //
+      // The closing-funds task is activated once, by an admin, on the primary
+      // deal's row. A co-purchaser whose own row is created by the self-heal
+      // below — which happens the first time they sign in, possibly long after
+      // that activation — must inherit it, or the task would sit invisible on
+      // their dashboard forever while their co-purchaser could see it.
+      const activatedByTemplate = new Map<string, string>();
+      try {
+        const familyDealIds = [dId, ...(await getLinkedDealIds(dId))];
+        const { data: activatedPeers } = await supabaseAdmin
+          .from("tasks")
+          .select("task_template_id, activated_at")
+          .in("deal_id", familyDealIds)
+          .eq("is_deleted", false)
+          .not("activated_at", "is", null);
+        for (const p of activatedPeers ?? []) {
+          if (p.task_template_id && p.activated_at) {
+            activatedByTemplate.set(p.task_template_id, p.activated_at);
+          }
+        }
+      } catch (err) {
+        // Fails closed on purpose: without this the new row stays switched off,
+        // which is the safe direction — an invisible task, not a premature one.
+        console.warn(`[tasks] Could not resolve family activation for deal ${dId}:`, err);
+      }
+
       for (const { side, templateType } of sides) {
         const { data: taskTemplates } = await supabaseAdmin
           .from("task_templates")
-          .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
+          .select(
+            "id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared, activation_required",
+          )
           .eq("lead_type", templateType)
           .eq("is_default", true)
           .eq("is_deleted", false)
@@ -214,6 +243,14 @@ export async function GET(req: Request) {
             completed: false,
             role_type: tt.role_type ?? "client",
             is_shared: tt.is_shared ?? false,
+            // Self-healing insert must respect the template's switched-off flag,
+            // or a task the admin hasn't activated would be created here and
+            // then immediately filtered out of the very response that made it —
+            // carrying across the family's activation when there is one.
+            activation_required: tt.activation_required ?? false,
+            activated_at: tt.activation_required
+              ? (activatedByTemplate.get(tt.id) ?? null)
+              : null,
             side,
           }));
 
@@ -239,6 +276,15 @@ export async function GET(req: Request) {
           .select("*, task_template:task_templates(order_index)")
           .in("deal_id", dealIds)
           .eq("is_deleted", false)
+          // Tasks awaiting an admin's activation are not the client's work yet:
+          // the closing-funds task sits on the file from conversion but only
+          // becomes real once the firm has drawn up the Final Statement of
+          // Account. Filtered in the QUERY rather than after it, so neither the
+          // milestone auto-sync nor the shared-peer reconciliation below can
+          // silently complete one. See src/lib/depositTask.ts.
+          .or(
+            "activation_required.is.null,activation_required.eq.false,activated_at.not.is.null",
+          )
           // Primary sort is the per-deal tasks.order_index (kept in sync with the
           // template order, and overridable per-deal from the admin deal page).
           // due_date stays as a tiebreaker for rows that lack an order_index.

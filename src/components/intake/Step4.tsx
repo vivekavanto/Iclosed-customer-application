@@ -4,6 +4,11 @@ import React, { useState, useCallback } from "react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import {
+  INTAKE_STEPS,
+  STEP_SERVICE,
+  STEP_PRICE_ADDRESS,
+} from "@/components/intake/steps";
+import {
   ChevronLeft,
   ChevronRight,
   UploadCloud,
@@ -12,7 +17,15 @@ import {
   FileText,
   X,
   CheckCircle2,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
+import {
+  countExtractedValues,
+  hasAnyExtractedValue,
+  type ApsExtractionState,
+  type ApsSide,
+} from "@/lib/apsExtraction";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -43,13 +56,28 @@ interface ApsBlockProps {
   setSigned: (v: "yes" | "no") => void;
   files: File[];
   setFiles: (f: File[]) => void;
+  /** Fired for the files that passed validation, so the page can upload and read them. */
+  onFilesAdded?: (side: Side, files: File[]) => void;
+  onFileRemoved?: (side: Side, file: File) => void;
+  /** Upload / read progress for this side. */
+  extraction?: ApsExtractionState;
   // Show the per-side "APS for Purchasing/Sale Property" label beside the
   // toggle. Only needed in "both" mode to tell the two blocks apart — in a
   // single-side flow it just repeats the page heading, so it's hidden.
   showHeading: boolean;
 }
 
-const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, setFiles, showHeading }) => {
+const ApsBlock: React.FC<ApsBlockProps> = ({
+  side,
+  signed,
+  setSigned,
+  files,
+  setFiles,
+  onFilesAdded,
+  onFileRemoved,
+  extraction,
+  showHeading,
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const { error: toastError } = useToast();
 
@@ -76,16 +104,23 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, set
         }
         valid.push(f);
       }
-      if (valid.length > 0) setFiles([...files, ...valid]);
+      if (valid.length > 0) {
+        setFiles([...files, ...valid]);
+        // Upload + read happen on the page, which owns the draft id and the
+        // form state the read prefills.
+        onFilesAdded?.(side, valid);
+      }
     },
-    [files, setFiles, toastError]
+    [files, setFiles, toastError, onFilesAdded, side]
   );
 
   const removeFile = useCallback(
     (index: number) => {
+      const removed = files[index];
       setFiles(files.filter((_, i) => i !== index));
+      if (removed) onFileRemoved?.(side, removed);
     },
-    [files, setFiles]
+    [files, setFiles, onFileRemoved, side]
   );
 
   const handleDrop = useCallback(
@@ -205,6 +240,62 @@ const ApsBlock: React.FC<ApsBlockProps> = ({ side, signed, setSigned, files, set
               ))}
             </div>
           )}
+
+          {/* Read status. Never blocks Continue — if the read is slow, still
+              running, or fails outright, the next steps just come up blank and
+              the client fills them in as they always have. */}
+          {extraction && extraction.status !== "idle" && (
+            <div className="mt-3">
+              {(extraction.status === "uploading" || extraction.status === "reading") && (
+                <p className="flex items-center gap-2 text-xs text-gray-500">
+                  <Loader2 size={13} className="animate-spin text-[#C10007]" />
+                  {extraction.status === "uploading"
+                    ? "Uploading your agreement…"
+                    : "Reading your agreement — you can continue while we do."}
+                </p>
+              )}
+
+              {extraction.status === "error" && (
+                <p className="flex items-start gap-2 text-xs text-gray-500">
+                  <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                  {extraction.error}
+                </p>
+              )}
+
+              {extraction.status === "done" && extraction.result && (
+                <>
+                  {!extraction.result.is_aps ? (
+                    <p className="flex items-start gap-2 text-xs text-gray-500">
+                      <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                      That doesn&apos;t look like an Agreement of Purchase and Sale, so we
+                      haven&apos;t filled anything in. We&apos;ve kept the file with your
+                      submission.
+                    </p>
+                  ) : hasAnyExtractedValue(extraction.result) ? (
+                    <p className="flex items-start gap-2 text-xs text-green-700">
+                      <CheckCircle2 size={13} className="mt-0.5 flex-shrink-0" />
+                      We read {countExtractedValues(extraction.result)} details from your
+                      agreement. They&apos;re filled in on the next steps — please check
+                      them before you submit.
+                    </p>
+                  ) : (
+                    <p className="flex items-start gap-2 text-xs text-gray-500">
+                      <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                      We couldn&apos;t pull any details out of that file. You can enter them
+                      yourself on the next step.
+                    </p>
+                  )}
+                </>
+              )}
+
+              {files.length > 1 && (
+                <p className="mt-1.5 text-[11px] text-gray-400">
+                  We read the first file only. Amendments and schedules are stored with
+                  your file for our team to review.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -221,6 +312,10 @@ interface Step4Props {
   setPurchaseFiles: (f: File[]) => void;
   saleFiles: File[];
   setSaleFiles: (f: File[]) => void;
+  /** Upload + read are driven by the page, which owns the draft id and form state. */
+  onFilesAdded?: (side: ApsSide, files: File[]) => void;
+  onFileRemoved?: (side: ApsSide, file: File) => void;
+  extraction?: Record<ApsSide, ApsExtractionState>;
   setStep: (step: number) => void;
   step: number;
 }
@@ -235,6 +330,9 @@ const Step4: React.FC<Step4Props> = ({
   setPurchaseFiles,
   saleFiles,
   setSaleFiles,
+  onFilesAdded,
+  onFileRemoved,
+  extraction,
   setStep,
   step,
 }) => {
@@ -243,12 +341,7 @@ const Step4: React.FC<Step4Props> = ({
   const showPurchase = closingOption === "buying" || closingOption === "both";
   const showSale = closingOption === "selling" || closingOption === "both";
 
-  const leftSteps = [
-    { id: 1, label: "Select Service" },
-    { id: 2, label: "Price & Address" },
-    { id: 3, label: "Agreement" },
-    { id: 4, label: "Contact Info" },
-  ];
+  const leftSteps = INTAKE_STEPS;
 
   const handleNext = () => {
     if (showPurchase && !apsPurchaseSigned) {
@@ -259,7 +352,7 @@ const Step4: React.FC<Step4Props> = ({
       toastError("Please select whether you've signed the APS for the sale property.");
       return;
     }
-    setStep(4);
+    setStep(STEP_PRICE_ADDRESS);
   };
 
   const sideHeading =
@@ -353,6 +446,9 @@ const Step4: React.FC<Step4Props> = ({
                     setSigned={setApsPurchaseSigned}
                     files={purchaseFiles}
                     setFiles={setPurchaseFiles}
+                    onFilesAdded={onFilesAdded}
+                    onFileRemoved={onFileRemoved}
+                    extraction={extraction?.purchase}
                     showHeading={showPurchase && showSale}
                   />
                 </div>
@@ -365,6 +461,9 @@ const Step4: React.FC<Step4Props> = ({
                     setSigned={setApsSaleSigned}
                     files={saleFiles}
                     setFiles={setSaleFiles}
+                    onFilesAdded={onFilesAdded}
+                    onFileRemoved={onFileRemoved}
+                    extraction={extraction?.sale}
                     showHeading={showPurchase && showSale}
                   />
                 </div>
@@ -373,7 +472,7 @@ const Step4: React.FC<Step4Props> = ({
 
             {/* Desktop button row */}
             <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
-              <Button onClick={() => setStep(2)} variant="secondary" size="md">
+              <Button onClick={() => setStep(STEP_SERVICE)} variant="secondary" size="md">
                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
               </Button>
               <Button onClick={handleNext} variant="primary" size="md">
@@ -383,7 +482,7 @@ const Step4: React.FC<Step4Props> = ({
 
             {/* Mobile fixed bottom buttons */}
             <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
-              <Button onClick={() => setStep(2)} variant="secondary" size="lg" className="flex-1">
+              <Button onClick={() => setStep(STEP_SERVICE)} variant="secondary" size="lg" className="flex-1">
                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
               </Button>
               <Button onClick={handleNext} variant="primary" size="lg" className="flex-1">

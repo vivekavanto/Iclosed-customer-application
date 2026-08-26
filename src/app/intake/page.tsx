@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Home, Briefcase, FileText } from "lucide-react";
 import HorizontalProgress, {
   Step,
@@ -17,10 +17,37 @@ import Step5Contact, {
   AppliedReferral,
   ReferralAgentInfo,
 } from "@/components/intake/Step5Contact";
+import { INTAKE_STEPS } from "@/components/intake/steps";
 import { useRouter } from "next/navigation";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { useToast } from "@/components/ui/Toast";
+import {
+  EMPTY_EXTRACTION_STATE,
+  type ApsExtractionResult,
+  type ApsExtractionState,
+  type ApsSide,
+} from "@/lib/apsExtraction";
+import {
+  agentForSide,
+  buildPrefillEntries,
+  keysForSide,
+  partiesForSide,
+  type PrefillKey,
+} from "@/lib/apsPrefill";
+
+/** An APS file already written to Blob, waiting for a lead to attach it to. */
+interface ApsBlob {
+  side: ApsSide;
+  url: string;
+  fileName: string;
+}
+
+/** Names read off an agreement, offered as co-person cards on the contact step. */
+export interface ApsParties {
+  purchaser: string[];
+  seller: string[];
+}
 
 export default function ServiceSelection() {
   const [selected, setSelected] = useState<string | null>(null);
@@ -32,6 +59,10 @@ export default function ServiceSelection() {
   // Optional deposit held under the agreement — captured per property side.
   const [depositAmount, setDepositAmount] = useState("");
   const [sellingDepositAmount, setSellingDepositAmount] = useState("");
+  // Closing (completion) date — on the APS, so it prefills from an upload.
+  // Optional: an unsigned client won't know it yet. ISO "YYYY-MM-DD".
+  const [closingDate, setClosingDate] = useState("");
+  const [sellingClosingDate, setSellingClosingDate] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
   const [apsPurchaseSigned, setApsPurchaseSigned] = useState<"yes" | "no" | null>(null);
@@ -85,6 +116,58 @@ export default function ServiceSelection() {
   });
   const [documentUploadChoice, setDocumentUploadChoice] = useState("");
   const authPrefillAppliedRef = useRef(false);
+
+  // ── APS upload & extraction ────────────────────────────────
+  // Files now reach Blob at step 2, before any lead exists, so their contents
+  // can prefill steps 3 and 4. They're namespaced under a per-page draft id;
+  // the lead-scoped metadata rows are still written at submit.
+  const draftIdRef = useRef<string | null>(null);
+  const getDraftId = () => {
+    // Generated lazily inside an event handler, never during render — a
+    // randomUUID() in a lazy useState initializer would differ between the
+    // server and client renders and trip hydration.
+    if (!draftIdRef.current) draftIdRef.current = crypto.randomUUID();
+    return draftIdRef.current;
+  };
+
+  const [apsBlobs, setApsBlobs] = useState<ApsBlob[]>([]);
+  const [extraction, setExtraction] = useState<Record<ApsSide, ApsExtractionState>>({
+    purchase: EMPTY_EXTRACTION_STATE,
+    sale: EMPTY_EXTRACTION_STATE,
+  });
+  // Only the first file per side is read. The upload also accepts amendments,
+  // waivers and schedules, and merging those over the base agreement is a
+  // follow-up — step 2 says as much on screen.
+  const readSideRef = useRef<Record<ApsSide, boolean>>({ purchase: false, sale: false });
+  // Which file each side's prefill actually came from, so removing an
+  // amendment doesn't retract the agreement's values.
+  const readSourceRef = useRef<Record<ApsSide, string | null>>({
+    purchase: null,
+    sale: null,
+  });
+
+  // Fields the client has edited themselves. A read that lands afterwards must
+  // never overwrite these — this is what makes background extraction safe when
+  // the client clicks Continue before the read finishes.
+  const touchedRef = useRef<Set<PrefillKey>>(new Set());
+  // Fields currently holding a read value, per side, so removing a file undoes
+  // exactly what that file filled in.
+  const [prefilled, setPrefilled] = useState<Record<ApsSide, PrefillKey[]>>({
+    purchase: [],
+    sale: [],
+  });
+  // Medium/low-confidence reads. Offered as a tap-to-accept suggestion rather
+  // than written into the field.
+  const [suggestions, setSuggestions] = useState<Partial<Record<PrefillKey, string>>>({});
+  const [apsParties, setApsParties] = useState<ApsParties>({ purchaser: [], seller: [] });
+  const [apsAgent, setApsAgent] = useState<{ name: string; company: string | null } | null>(null);
+
+  // Flattened for the "from your agreement" markers — Step2 only cares whether
+  // a field is prefilled, not which agreement filled it.
+  const prefilledFieldSet = useMemo(
+    () => new Set<PrefillKey>([...prefilled.purchase, ...prefilled.sale]),
+    [prefilled],
+  );
 
   const router = useRouter();
   const { error: toastError } = useToast();
@@ -155,6 +238,322 @@ export default function ServiceSelection() {
     postalCode: "",
   });
 
+  // ── Prefill plumbing ───────────────────────────────────────
+
+  /** Write a single read value into the field it belongs to. */
+  const setPrefillField = useCallback((key: PrefillKey, value: string) => {
+    switch (key) {
+      case "purchasePrice":
+        setPurchasePrice(value);
+        break;
+      case "sellingPrice":
+        setSellingPrice(value);
+        break;
+      case "depositAmount":
+        setDepositAmount(value);
+        break;
+      case "sellingDepositAmount":
+        setSellingDepositAmount(value);
+        break;
+      case "closingDate":
+        setClosingDate(value);
+        break;
+      case "sellingClosingDate":
+        setSellingClosingDate(value);
+        break;
+      case "address.street":
+        setAddressData((prev) => ({ ...prev, street: value }));
+        break;
+      case "address.unit":
+        setAddressData((prev) => ({ ...prev, unit: value }));
+        break;
+      case "address.city":
+        setAddressData((prev) => ({ ...prev, city: value }));
+        break;
+      case "address.postalCode":
+        setAddressData((prev) => ({ ...prev, postalCode: value }));
+        break;
+      case "sellingAddress.street":
+        setSellingAddressData((prev) => ({ ...prev, street: value }));
+        break;
+      case "sellingAddress.unit":
+        setSellingAddressData((prev) => ({ ...prev, unit: value }));
+        break;
+      case "sellingAddress.city":
+        setSellingAddressData((prev) => ({ ...prev, city: value }));
+        break;
+      case "sellingAddress.postalCode":
+        setSellingAddressData((prev) => ({ ...prev, postalCode: value }));
+        break;
+    }
+  }, []);
+
+  /** Step2 calls this on every edit. Once touched, a field is the client's. */
+  const markFieldTouched = useCallback((key: PrefillKey) => {
+    touchedRef.current.add(key);
+    // A field the client has taken over no longer shows the "from your
+    // agreement" marker, and its suggestion is no longer relevant.
+    //
+    // Both updaters return `prev` unchanged when there's nothing to drop —
+    // this runs on every keystroke, and a fresh object each time would
+    // re-render the whole step for no reason.
+    setPrefilled((prev) => {
+      if (!prev.purchase.includes(key) && !prev.sale.includes(key)) return prev;
+      return {
+        purchase: prev.purchase.filter((k) => k !== key),
+        sale: prev.sale.filter((k) => k !== key),
+      };
+    });
+    setSuggestions((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
+  /** Tap-to-accept for a medium/low-confidence read. */
+  const acceptSuggestion = useCallback(
+    (key: PrefillKey) => {
+      const value = suggestions[key];
+      if (!value) return;
+      setPrefillField(key, value);
+      // The client chose it, so it counts as theirs from here on.
+      markFieldTouched(key);
+    },
+    [suggestions, setPrefillField, markFieldTouched],
+  );
+
+  /** Apply a completed read to the form. */
+  const applyExtraction = useCallback(
+    (side: ApsSide, result: ApsExtractionResult) => {
+      const entries = buildPrefillEntries(result, side, selectedClosingOption);
+
+      const appliedKeys: PrefillKey[] = [];
+      const newSuggestions: Partial<Record<PrefillKey, string>> = {};
+
+      for (const entry of entries) {
+        // The guard that makes a late-arriving read safe.
+        if (touchedRef.current.has(entry.key)) continue;
+
+        if (entry.confidence === "high") {
+          setPrefillField(entry.key, entry.value);
+          appliedKeys.push(entry.key);
+        } else {
+          newSuggestions[entry.key] = entry.value;
+        }
+      }
+
+      setPrefilled((prev) => ({ ...prev, [side]: appliedKeys }));
+      setSuggestions((prev) => ({ ...prev, ...newSuggestions }));
+
+      const { role, names } = partiesForSide(result, side);
+      if (names.length > 0) {
+        setApsParties((prev) => ({ ...prev, [role]: names }));
+      }
+
+      // First agreement to name an agent wins; a second one doesn't overwrite.
+      const agent = agentForSide(result, side);
+      if (agent) setApsAgent((prev) => prev ?? agent);
+    },
+    [selectedClosingOption, setPrefillField],
+  );
+
+  /** Undo everything an agreement on this side filled in, sparing client edits. */
+  const clearSidePrefill = useCallback(
+    (side: ApsSide) => {
+      for (const key of keysForSide(side, selectedClosingOption)) {
+        if (touchedRef.current.has(key)) continue;
+        setPrefillField(key, "");
+        setSuggestions((prev) => {
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+
+      setPrefilled((prev) => ({ ...prev, [side]: [] }));
+      setApsParties((prev) => ({
+        ...prev,
+        [side === "sale" ? "seller" : "purchaser"]: [],
+      }));
+      setApsAgent(null);
+      setExtraction((prev) => ({ ...prev, [side]: EMPTY_EXTRACTION_STATE }));
+      readSideRef.current[side] = false;
+      readSourceRef.current[side] = null;
+    },
+    [selectedClosingOption, setPrefillField],
+  );
+
+  // ── Upload & read, at step 2 ───────────────────────────────
+
+  const readAgreement = useCallback(
+    async (side: ApsSide, fileUrl: string, fileName: string) => {
+      readSourceRef.current[side] = fileName;
+      setExtraction((prev) => ({
+        ...prev,
+        [side]: { status: "reading", fileName, result: null, error: null },
+      }));
+
+      try {
+        const res = await fetch("/api/intake/extract-aps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_url: fileUrl, side, file_name: fileName }),
+        });
+        const data = await res.json();
+
+        if (!data?.success || !data?.result) {
+          // A failed read is not an error the client has to deal with — the
+          // form still works, they just fill it in themselves.
+          setExtraction((prev) => ({
+            ...prev,
+            [side]: {
+              status: "error",
+              fileName,
+              result: null,
+              error:
+                data?.error ??
+                "We couldn't read your agreement. You can enter the details yourself.",
+            },
+          }));
+          // Let the next file uploaded on this side try again.
+          readSideRef.current[side] = false;
+          readSourceRef.current[side] = null;
+          return;
+        }
+
+        const result = data.result as ApsExtractionResult;
+        setExtraction((prev) => ({
+          ...prev,
+          [side]: { status: "done", fileName, result, error: null },
+        }));
+        applyExtraction(side, result);
+      } catch (err) {
+        console.error(`[intake] APS read failed (${side}):`, err);
+        setExtraction((prev) => ({
+          ...prev,
+          [side]: {
+            status: "error",
+            fileName,
+            result: null,
+            error: "We couldn't read your agreement. You can enter the details yourself.",
+          },
+        }));
+        readSideRef.current[side] = false;
+        readSourceRef.current[side] = null;
+      }
+    },
+    [applyExtraction],
+  );
+
+  const handleApsFilesAdded = useCallback(
+    async (side: ApsSide, files: File[]) => {
+      const draftId = getDraftId();
+
+      for (const file of files) {
+        setExtraction((prev) => ({
+          ...prev,
+          [side]: {
+            status: "uploading",
+            // Keep any result already read from an earlier file on this side —
+            // uploading an amendment shouldn't blank what the agreement gave
+            // us, and fileName has to keep naming the file the result came
+            // from or the stored audit record points at the wrong document.
+            fileName: prev[side].result ? prev[side].fileName : file.name,
+            result: prev[side].result,
+            error: null,
+          },
+        }));
+
+        try {
+          const blob = await upload(
+            `corporate-docs/pending/${draftId}/${Date.now()}-${file.name}`,
+            file,
+            {
+              access: BLOB_ACCESS,
+              handleUploadUrl: "/api/blob/aps-upload",
+              clientPayload: JSON.stringify({
+                draft_id: draftId,
+                doc_type: side === "sale" ? "aps_sale" : "aps_purchase",
+              }),
+            },
+          );
+
+          setApsBlobs((prev) => [
+            ...prev,
+            { side, url: blob.url, fileName: file.name },
+          ]);
+
+          // Only the first file per side is read; the rest are amendments and
+          // schedules that ride along with the submission.
+          if (!readSideRef.current[side]) {
+            readSideRef.current[side] = true;
+            await readAgreement(side, blob.url, file.name);
+          } else {
+            setExtraction((prev) => ({
+              ...prev,
+              [side]: { ...prev[side], status: prev[side].result ? "done" : "idle" },
+            }));
+          }
+        } catch (err) {
+          console.error(`[intake] APS upload failed (${side}):`, err);
+          setExtraction((prev) => ({
+            ...prev,
+            [side]: {
+              status: "error",
+              fileName: file.name,
+              result: prev[side].result,
+              error: "That file couldn't be uploaded. Please try again.",
+            },
+          }));
+        }
+      }
+    },
+    [readAgreement],
+  );
+
+  const handleApsFileRemoved = useCallback(
+    (side: ApsSide, file: File) => {
+      setApsBlobs((prev) => {
+        // Drop the first blob recorded under this name — files are appended in
+        // pick order, so the first match is the one being removed.
+        const index = prev.findIndex(
+          (b) => b.side === side && b.fileName === file.name,
+        );
+        if (index === -1) return prev;
+        return [...prev.slice(0, index), ...prev.slice(index + 1)];
+      });
+
+      // Only undo the prefill if the file being removed is the one it came
+      // from — removing an amendment shouldn't blank the agreement's values.
+      if (readSourceRef.current[side] === file.name) {
+        clearSidePrefill(side);
+      }
+    },
+    [clearSidePrefill],
+  );
+
+  /**
+   * Answering "No" (or switching sides) retracts that agreement's prefill.
+   * Wrapped around the raw setters so Step4 doesn't have to know about it.
+   */
+  const handleApsSignedChange = useCallback(
+    (side: ApsSide, value: "yes" | "no") => {
+      if (side === "sale") setApsSaleSigned(value);
+      else setApsPurchaseSigned(value);
+
+      if (value === "no") {
+        clearSidePrefill(side);
+        if (side === "sale") setSaleFiles([]);
+        else setPurchaseFiles([]);
+        setApsBlobs((prev) => prev.filter((b) => b.side !== side));
+      }
+    },
+    [clearSidePrefill],
+  );
+
   const services = [
     {
       id: "closing",
@@ -179,12 +578,11 @@ export default function ServiceSelection() {
     },
   ];
 
-  const progressSteps: Step[] = [
-    { id: 1, label: "Service", status: getStatus(step, 1) },
-    { id: 2, label: "Price & Address", status: getStatus(step, 2) },
-    { id: 3, label: "Agreement", status: getStatus(step, 3) },
-    { id: 4, label: "Contact", status: getStatus(step, 4) },
-  ];
+  const progressSteps: Step[] = INTAKE_STEPS.map((s) => ({
+    id: s.id,
+    label: s.label,
+    status: getStatus(step, s.id),
+  }));
 
   const resetForm = () => {
     setStep(1);
@@ -194,6 +592,8 @@ export default function ServiceSelection() {
     setSellingPrice("");
     setDepositAmount("");
     setSellingDepositAmount("");
+    setClosingDate("");
+    setSellingClosingDate("");
     setApsPurchaseSigned(null);
     setApsSaleSigned(null);
     setPurchaseFiles([]);
@@ -217,6 +617,19 @@ export default function ServiceSelection() {
     setReferralOther("");
     setDocumentUploadChoice("");
     authPrefillAppliedRef.current = false;
+
+    // APS upload / extraction
+    setApsBlobs([]);
+    setExtraction({ purchase: EMPTY_EXTRACTION_STATE, sale: EMPTY_EXTRACTION_STATE });
+    setPrefilled({ purchase: [], sale: [] });
+    setSuggestions({});
+    setApsParties({ purchaser: [], seller: [] });
+    setApsAgent(null);
+    touchedRef.current = new Set();
+    readSideRef.current = { purchase: false, sale: false };
+    readSourceRef.current = { purchase: null, sale: null };
+    // A fresh submission is a fresh draft — new blob namespace.
+    draftIdRef.current = null;
   };
 
   return (
@@ -240,8 +653,10 @@ export default function ServiceSelection() {
           />
         )}
 
-        {/* STEP 2 — Price & Address */}
-        {step === 2 && (
+        {/* STEP 3 — Price & Address.
+            Sits AFTER the agreement step so anything read off an uploaded APS
+            can prefill these fields before the client ever sees them. */}
+        {step === 3 && (
           <Step2
             purchasePrice={purchasePrice}
             setPurchasePrice={setPurchasePrice}
@@ -251,6 +666,14 @@ export default function ServiceSelection() {
             setDepositAmount={setDepositAmount}
             sellingDepositAmount={sellingDepositAmount}
             setSellingDepositAmount={setSellingDepositAmount}
+            closingDate={closingDate}
+            setClosingDate={setClosingDate}
+            sellingClosingDate={sellingClosingDate}
+            setSellingClosingDate={setSellingClosingDate}
+            prefilledFields={prefilledFieldSet}
+            suggestions={suggestions}
+            onFieldTouched={markFieldTouched}
+            onAcceptSuggestion={acceptSuggestion}
             formData={addressData}
             setFormData={setAddressData}
             sellingFormData={sellingAddressData}
@@ -262,18 +685,24 @@ export default function ServiceSelection() {
           />
         )}
 
-        {/* STEP 3 — Agreement & Upload */}
-        {step === 3 && (
+        {/* STEP 2 — Agreement & Upload.
+            Moved ahead of Price & Address: the APS is the document that holds
+            the price, deposit, address and closing date, so it has to arrive
+            before the fields it can answer. */}
+        {step === 2 && (
           <Step4
             closingOption={selectedClosingOption as "buying" | "selling" | "both" | null}
             apsPurchaseSigned={apsPurchaseSigned}
-            setApsPurchaseSigned={setApsPurchaseSigned}
+            setApsPurchaseSigned={(v) => handleApsSignedChange("purchase", v)}
             apsSaleSigned={apsSaleSigned}
-            setApsSaleSigned={setApsSaleSigned}
+            setApsSaleSigned={(v) => handleApsSignedChange("sale", v)}
             purchaseFiles={purchaseFiles}
             setPurchaseFiles={setPurchaseFiles}
             saleFiles={saleFiles}
             setSaleFiles={setSaleFiles}
+            onFilesAdded={handleApsFilesAdded}
+            onFileRemoved={handleApsFileRemoved}
+            extraction={extraction}
             setStep={setStep}
             step={step}
           />
@@ -309,6 +738,8 @@ export default function ServiceSelection() {
             setReferralAgent={setReferralAgent}
             documentUploadChoice={documentUploadChoice}
             setDocumentUploadChoice={setDocumentUploadChoice}
+            apsParties={apsParties}
+            apsAgent={apsAgent}
             onComplete={async (contactData) => {
               try {
                 const [firstName, ...rest] = contactData.fullName.split(" ");
@@ -332,6 +763,9 @@ export default function ServiceSelection() {
                     deposit_amount: depositAmount,
                     selling_deposit_amount:
                       selectedClosingOption === "both" ? sellingDepositAmount : null,
+                    closing_date: closingDate,
+                    selling_closing_date:
+                      selectedClosingOption === "both" ? sellingClosingDate : null,
 
                     address_street: addressData.street,
                     address_unit: addressData.unit,
@@ -347,6 +781,28 @@ export default function ServiceSelection() {
                         sellingAddressData.postalCode,
                       selling_address_province: "Ontario",
                     }),
+
+                    // What the reader actually returned, kept alongside what the
+                    // client accepted — the only way to tell a bad read from a
+                    // deliberate correction after the fact.
+                    aps_extraction: {
+                      ...(extraction.purchase.result
+                        ? {
+                            purchase: {
+                              file_name: extraction.purchase.fileName,
+                              result: extraction.purchase.result,
+                            },
+                          }
+                        : {}),
+                      ...(extraction.sale.result
+                        ? {
+                            sale: {
+                              file_name: extraction.sale.fileName,
+                              result: extraction.sale.result,
+                            },
+                          }
+                        : {}),
+                    },
 
                     aps_signed_purchase:
                       apsPurchaseSigned === null ? null : apsPurchaseSigned === "yes",
@@ -373,32 +829,18 @@ export default function ServiceSelection() {
 
                 const leadId = intakeResult.lead_id;
 
-                const uploads: Array<{ file: File; side: "purchase" | "sale"; docType: string }> = [];
-                if (apsPurchaseSigned === "yes") {
-                  for (const file of purchaseFiles) {
-                    uploads.push({ file, side: "purchase", docType: "aps_purchase" });
-                  }
-                }
-                if (apsSaleSigned === "yes") {
-                  for (const file of saleFiles) {
-                    uploads.push({ file, side: "sale", docType: "aps_sale" });
-                  }
-                }
+                // The files are already in Blob — they were uploaded at step 2
+                // so their contents could prefill this form. All that's left is
+                // to attach them to the lead that now exists.
+                const attachable = apsBlobs.filter((b) =>
+                  b.side === "sale"
+                    ? apsSaleSigned === "yes"
+                    : apsPurchaseSigned === "yes",
+                );
 
-                for (const u of uploads) {
+                for (const b of attachable) {
                   try {
-                    const blob = await upload(
-                      `corporate-docs/${leadId}/${Date.now()}-${u.file.name}`,
-                      u.file,
-                      {
-                        access: BLOB_ACCESS,
-                        handleUploadUrl: "/api/blob/aps-upload",
-                        clientPayload: JSON.stringify({
-                          lead_id: leadId,
-                          doc_type: u.docType,
-                        }),
-                      }
-                    );
+                    const docType = b.side === "sale" ? "aps_sale" : "aps_purchase";
 
                     const metadataResponse = await fetch(
                       "/api/intake/save-aps-metadata",
@@ -407,26 +849,26 @@ export default function ServiceSelection() {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           lead_id: leadId,
-                          doc_type: u.docType,
-                          file_name: u.file.name,
-                          file_url: blob.url,
+                          doc_type: docType,
+                          file_name: b.fileName,
+                          file_url: b.url,
                         }),
                       }
                     );
 
                     const metadataResult = await metadataResponse.json();
                     if (!metadataResult.success) {
-                      console.error(`Metadata save failed (${u.side}):`, metadataResult.error);
+                      console.error(`Metadata save failed (${b.side}):`, metadataResult.error);
                       continue;
                     }
 
                     await fetch("/api/intake/mark-aps-uploaded", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ lead_id: leadId, side: u.side }),
+                      body: JSON.stringify({ lead_id: leadId, side: b.side }),
                     });
                   } catch (err) {
-                    console.error(`Upload failed (${u.side}):`, err);
+                    console.error(`Attaching APS failed (${b.side}):`, err);
                   }
                 }
 

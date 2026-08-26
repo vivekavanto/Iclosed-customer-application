@@ -5,6 +5,7 @@ import React from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
+import { INTAKE_STEPS, STEP_PRICE_ADDRESS } from "@/components/intake/steps";
 
 interface ContactData {
     fullName: string;
@@ -330,14 +331,20 @@ interface Step5ContactProps {
     setReferralNoCode: React.Dispatch<React.SetStateAction<boolean>>;
     referralAgent: ReferralAgentInfo;
     setReferralAgent: React.Dispatch<React.SetStateAction<ReferralAgentInfo>>;
+    /**
+     * Names read off the uploaded agreement, offered as co-person cards.
+     * Names only — the APS carries no contact details, so the client still
+     * supplies email and phone.
+     */
+    apsParties?: { purchaser: string[]; seller: string[] };
+    /** Agent named on the agreement, seeded into the partner search. */
+    apsAgent?: { name: string; company: string | null } | null;
     documentUploadChoice: string;
     setDocumentUploadChoice: React.Dispatch<React.SetStateAction<string>>;
 }
 
 export default function Step5Contact({
     setStep,
-    agreementSigned,
-    setAgreementSigned,
     setShowSuccessModal,
     step,
     onComplete,
@@ -361,6 +368,8 @@ export default function Step5Contact({
     setReferralNoCode,
     referralAgent,
     setReferralAgent,
+    apsParties,
+    apsAgent,
     documentUploadChoice,
     setDocumentUploadChoice,
 }: Step5ContactProps) {
@@ -553,12 +562,7 @@ export default function Step5Contact({
         getSetter(which)(prev => prev.filter(p => p.id !== id));
     };
 
-    const leftSteps = [
-        { id: 1, label: "Select Service" },
-        { id: 2, label: "Price & Address" },
-        { id: 3, label: "Agreement" },
-        { id: 4, label: "Contact Info" },
-    ];
+    const leftSteps = INTAKE_STEPS;
 
     const formatPhone = (value: string): string => {
         const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -612,6 +616,117 @@ export default function Step5Contact({
         }
     }, [activeCoCards, documentUploadChoice, setDocumentUploadChoice]);
 
+    // ── Prefill from the uploaded agreement ────────────────────
+    // The APS names every buyer and seller. Those names seed the co-person
+    // cards so the client completes contact details rather than transcribing
+    // names — email stays required, because the agreement doesn't carry one.
+
+    // Every name the agreement named, lowercased. A card matching one of these
+    // came off the document rather than out of the client's keyboard — which is
+    // all the render and the de-duplication below need to know, so there's no
+    // extra state to keep in sync.
+    const apsNameSet = React.useMemo(
+        () =>
+            new Set(
+                [...(apsParties?.purchaser ?? []), ...(apsParties?.seller ?? [])].map(
+                    (n) => n.trim().toLowerCase(),
+                ),
+            ),
+        [apsParties],
+    );
+
+    const apsPartiesAppliedRef = React.useRef(false);
+
+    React.useEffect(() => {
+        if (apsPartiesAppliedRef.current) return;
+
+        const purchasers = apsParties?.purchaser ?? [];
+        const sellers = apsParties?.seller ?? [];
+        if (purchasers.length === 0 && sellers.length === 0) return;
+
+        apsPartiesAppliedRef.current = true;
+
+        // The client is one of the parties on the agreement. Whichever name
+        // they've given as their own is theirs, not a co-person's.
+        const selfName = formData.fullName.trim().toLowerCase();
+        const toCards = (names: string[]): CoPersonCard[] =>
+            names
+                .filter((n) => n.trim().toLowerCase() !== selfName)
+                .map((n) => ({ ...makeEmptyCard(), fullName: n }));
+
+        // Never disturb cards the client has already started filling in.
+        if (
+            showPurchaserStack &&
+            purchasers.length > 0 &&
+            !coPurchaserCards.some((c) => !isCardEmpty(c))
+        ) {
+            const cards = toCards(purchasers);
+            if (cards.length > 0) setCoPurchaserCards(cards);
+        }
+
+        if (
+            showSellerStack &&
+            sellers.length > 0 &&
+            !coSellerCards.some((c) => !isCardEmpty(c))
+        ) {
+            const cards = toCards(sellers);
+            if (cards.length > 0) setCoSellerCards(cards);
+        }
+        // Seeds exactly once. The ref guard above is what stops a re-run, not
+        // the dep list — adding the card arrays here would re-enter on every
+        // keystroke the client makes in a card.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apsParties, showPurchaserStack, showSellerStack]);
+
+    // If the client types their own name after the cards were seeded, drop the
+    // seeded card that duplicates them. Only ever touches cards the prefill
+    // created — a card the client typed is left alone.
+    React.useEffect(() => {
+        const selfName = formData.fullName.trim().toLowerCase();
+        if (!selfName || !apsNameSet.has(selfName)) return;
+
+        // Only a card that is purely a seeded name goes — the moment the client
+        // has typed an email or phone into it, it's their data and it stays.
+        const drop = (cards: CoPersonCard[]) =>
+            cards.filter(
+                (c) =>
+                    !(
+                        c.fullName.trim().toLowerCase() === selfName &&
+                        !c.email.trim() &&
+                        !c.phone.trim()
+                    ),
+            );
+
+        setCoPurchaserCards((prev) => {
+            const next = drop(prev);
+            return next.length === prev.length ? prev : next;
+        });
+        setCoSellerCards((prev) => {
+            const next = drop(prev);
+            return next.length === prev.length ? prev : next;
+        });
+    }, [formData.fullName, apsNameSet, setCoPurchaserCards, setCoSellerCards]);
+
+    // Seed the agent search with the name printed on the agreement. This only
+    // fills the field — the client still picks an existing partner or confirms
+    // a new one, and nothing is attributed until they do.
+    const apsAgentAppliedRef = React.useRef(false);
+    React.useEffect(() => {
+        if (apsAgentAppliedRef.current) return;
+        const name = apsAgent?.name?.trim();
+        if (!name) return;
+
+        apsAgentAppliedRef.current = true;
+        setReferralAgent((prev) =>
+            prev.name.trim()
+                ? prev
+                : {
+                      ...prev,
+                      name,
+                      company: prev.company.trim() || apsAgent?.company || "",
+                  },
+        );
+    }, [apsAgent, setReferralAgent]);
 
     React.useEffect(() => {
         const newErrors: typeof errors = {};
@@ -843,6 +958,15 @@ export default function Step5Contact({
 
                 {/* Card body */}
                 <div className="px-5 py-5 space-y-4 bg-white">
+                    {cards.some(
+                        (c) => c.fullName.trim() && apsNameSet.has(c.fullName.trim().toLowerCase()),
+                    ) && (
+                        <p className="flex items-start gap-1.5 text-xs text-green-700">
+                            <CheckCircle2 size={13} strokeWidth={2} className="mt-0.5 flex-shrink-0" />
+                            We found these names on your agreement. Add their contact details
+                            so we can reach them.
+                        </p>
+                    )}
                     {cards.map((card, index) => (
                         <div key={card.id} className="rounded-lg border border-gray-200 p-4 sm:p-5 space-y-4 bg-gray-50 relative">
                             {/* Card number badge and remove button */}
@@ -1358,12 +1482,11 @@ export default function Step5Contact({
                             <Button
                                 variant="secondary"
                                 size="md"
-                                onClick={() => {
-                                    if (agreementSigned === "no") {
-                                        setAgreementSigned(null);
-                                    }
-                                    setStep(3);
-                                }}
+                                // Back goes to Price & Address. It must NOT clear the
+                                // APS answer: that question now lives two steps back
+                                // (step 2), so resetting it here would wipe the answer
+                                // with nothing on screen to re-answer it.
+                                onClick={() => setStep(STEP_PRICE_ADDRESS)}
                             >
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
@@ -1378,12 +1501,11 @@ export default function Step5Contact({
                                 variant="secondary"
                                 size="lg"
                                 className="flex-1"
-                                onClick={() => {
-                                    if (agreementSigned === "no") {
-                                        setAgreementSigned(null);
-                                    }
-                                    setStep(3);
-                                }}
+                                // Back goes to Price & Address. It must NOT clear the
+                                // APS answer: that question now lives two steps back
+                                // (step 2), so resetting it here would wipe the answer
+                                // with nothing on screen to re-answer it.
+                                onClick={() => setStep(STEP_PRICE_ADDRESS)}
                             >
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
                             </Button>

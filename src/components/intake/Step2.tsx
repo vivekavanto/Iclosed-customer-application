@@ -10,14 +10,63 @@ import {
   validateUnit,
   validateStreet,
 } from "@/lib/addressValidation";
-import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Home, FileText, Sparkles } from "lucide-react";
+import type { PrefillKey } from "@/lib/apsPrefill";
 import { useToast } from "@/components/ui/Toast";
+import {
+    INTAKE_STEPS,
+    STEP_AGREEMENT,
+    STEP_CONTACT,
+} from "@/components/intake/steps";
 
 interface AddressData {
     street: string;
     unit: string;
     city: string;
     postalCode: string;
+}
+
+/**
+ * Shown under a field the APS filled in, or offered as a tap-to-accept
+ * suggestion when the read wasn't confident enough to write it outright.
+ *
+ * Nothing here is ever silent: a value that came off the document says so, and
+ * stays fully editable.
+ */
+function PrefillNote({
+    fieldKey,
+    isPrefilled,
+    suggestion,
+    onAccept,
+}: {
+    fieldKey: PrefillKey;
+    isPrefilled: boolean;
+    suggestion?: string;
+    onAccept: (key: PrefillKey) => void;
+}) {
+    if (isPrefilled) {
+        return (
+            <p className="flex items-center gap-1 text-[11px] text-green-700 -mt-2.5">
+                <Sparkles size={11} strokeWidth={2} className="flex-shrink-0" />
+                From your agreement — please check it&apos;s right.
+            </p>
+        );
+    }
+
+    if (suggestion) {
+        return (
+            <button
+                type="button"
+                onClick={() => onAccept(fieldKey)}
+                className="self-start flex items-center gap-1 -mt-2.5 text-[11px] text-[#C10007] hover:underline cursor-pointer"
+            >
+                <Sparkles size={11} strokeWidth={2} className="flex-shrink-0" />
+                Your agreement may say {suggestion} — use it
+            </button>
+        );
+    }
+
+    return null;
 }
 
 interface Step2Props {
@@ -29,6 +78,10 @@ interface Step2Props {
     setDepositAmount: (value: string) => void;
     sellingDepositAmount: string;
     setSellingDepositAmount: (value: string) => void;
+    closingDate: string;
+    setClosingDate: (value: string) => void;
+    sellingClosingDate: string;
+    setSellingClosingDate: (value: string) => void;
     formData: AddressData;
     setFormData: (data: AddressData) => void;
     sellingFormData: AddressData;
@@ -37,7 +90,18 @@ interface Step2Props {
     setStep: (step: number) => void;
     step: number;
     agreementSigned: "yes" | "no" | null;
+    /** Fields currently holding a value read off the uploaded agreement. */
+    prefilledFields?: Set<PrefillKey>;
+    /** Medium/low-confidence reads, offered rather than written. */
+    suggestions?: Partial<Record<PrefillKey, string>>;
+    /** Reported on every edit so a late-arriving read can't overwrite the client. */
+    onFieldTouched?: (key: PrefillKey) => void;
+    onAcceptSuggestion?: (key: PrefillKey) => void;
 }
+
+const NO_PREFILLED_FIELDS: Set<PrefillKey> = new Set();
+const NO_SUGGESTIONS: Partial<Record<PrefillKey, string>> = {};
+const noop = () => {};
 
 function validateAddress(formData: AddressData) {
     const errors: Partial<Record<keyof AddressData, string>> = {};
@@ -73,7 +137,14 @@ function PropertyDetailsForm({
     priceError,
     depositValue,
     onDepositChange,
+    closingDateValue,
+    onClosingDateChange,
     formatCurrency,
+    slot,
+    prefilledFields,
+    suggestions,
+    onFieldTouched,
+    onAcceptSuggestion,
 }: {
     label: string;
     icon: React.ElementType;
@@ -89,13 +160,44 @@ function PropertyDetailsForm({
     priceError: string;
     depositValue: string;
     onDepositChange: (value: string) => void;
+    closingDateValue: string;
+    onClosingDateChange: (value: string) => void;
     formatCurrency: (value: string) => string;
+    /** Which half of a Buy & Sell this card is — decides which prefill keys it owns. */
+    slot: "primary" | "selling";
+    prefilledFields: Set<PrefillKey>;
+    suggestions: Partial<Record<PrefillKey, string>>;
+    onFieldTouched: (key: PrefillKey) => void;
+    onAcceptSuggestion: (key: PrefillKey) => void;
 }) {
     const errors = validateAddress(formData);
     const touch = (field: keyof AddressData) =>
         setTouched((prev) => ({ ...prev, [field]: true }));
     const showError = (field: keyof AddressData) =>
         touched[field] || submitAttempted ? errors[field] : undefined;
+
+    // Prefill keys this card is responsible for.
+    const selling = slot === "selling";
+    const KEY = {
+        price: (selling ? "sellingPrice" : "purchasePrice") as PrefillKey,
+        deposit: (selling ? "sellingDepositAmount" : "depositAmount") as PrefillKey,
+        closingDate: (selling ? "sellingClosingDate" : "closingDate") as PrefillKey,
+        street: (selling ? "sellingAddress.street" : "address.street") as PrefillKey,
+        unit: (selling ? "sellingAddress.unit" : "address.unit") as PrefillKey,
+        city: (selling ? "sellingAddress.city" : "address.city") as PrefillKey,
+        postalCode: (selling
+            ? "sellingAddress.postalCode"
+            : "address.postalCode") as PrefillKey,
+    };
+
+    const note = (key: PrefillKey) => (
+        <PrefillNote
+            fieldKey={key}
+            isPrefilled={prefilledFields.has(key)}
+            suggestion={suggestions[key]}
+            onAccept={onAcceptSuggestion}
+        />
+    );
 
     return (
         <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -118,12 +220,14 @@ function PropertyDetailsForm({
                     onChange={(e) => {
                         const formattedValue = formatCurrency(e.target.value);
                         onPriceChange(formattedValue);
+                        onFieldTouched(KEY.price);
                     }}
                     placeholder="$1,250,000"
                 />
                 {priceError && (
                     <p className="text-sm text-red-600 -mt-2">{priceError}</p>
                 )}
+                {note(KEY.price)}
 
                 {/* Deposit. Still not REQUIRED to submit — it just isn't
                     labelled as optional: the hint invited people to skip a
@@ -134,9 +238,29 @@ function PropertyDetailsForm({
                     id={`${prefix}-deposit`}
                     type="text"
                     value={depositValue}
-                    onChange={(e) => onDepositChange(formatCurrency(e.target.value))}
+                    onChange={(e) => {
+                        onDepositChange(formatCurrency(e.target.value));
+                        onFieldTouched(KEY.deposit);
+                    }}
                     placeholder="$50,000"
                 />
+                {note(KEY.deposit)}
+
+                {/* Closing date. Printed on the APS, so it prefills from an
+                    uploaded agreement — but it stays optional: anyone who
+                    hasn't signed yet genuinely doesn't know it. */}
+                <Input
+                    label="Closing Date"
+                    id={`${prefix}-closing-date`}
+                    type="date"
+                    value={closingDateValue}
+                    onChange={(e) => {
+                        onClosingDateChange(e.target.value);
+                        onFieldTouched(KEY.closingDate);
+                    }}
+                    hint="The completion date on your agreement, if you have one."
+                />
+                {note(KEY.closingDate)}
 
                 {/* Divider between price and address */}
                 <div className="border-t border-dashed border-gray-200 pt-4" />
@@ -148,21 +272,30 @@ function PropertyDetailsForm({
                     </label>
                     <AddressAutocomplete
                         value={formData.street}
-                        onChange={(val) => setFormData({ ...formData, street: val })}
-                        onSelect={({ street, city, postalCode }) =>
+                        onChange={(val) => {
+                            setFormData({ ...formData, street: val });
+                            onFieldTouched(KEY.street);
+                        }}
+                        onSelect={({ street, city, postalCode }) => {
                             setFormData({
                                 ...formData,
                                 street,
                                 city: city || formData.city,
                                 postalCode: postalCode || formData.postalCode,
-                            })
-                        }
+                            });
+                            // Picking from Places replaces whatever the agreement
+                            // said for all three, so all three become the client's.
+                            onFieldTouched(KEY.street);
+                            if (city) onFieldTouched(KEY.city);
+                            if (postalCode) onFieldTouched(KEY.postalCode);
+                        }}
                         onBlur={() => touch("street")}
                         hasError={!!showError("street")}
                     />
                     {showError("street") && (
                         <p className="text-xs text-red-600 mt-0.5">{showError("street")}</p>
                     )}
+                    {note(KEY.street)}
                 </div>
 
                 {/* Unit */}
@@ -171,10 +304,14 @@ function PropertyDetailsForm({
                     id={`${prefix}-unit`}
                     placeholder="e.g. 4B"
                     value={formData.unit}
-                    onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                    onChange={(e) => {
+                        setFormData({ ...formData, unit: e.target.value });
+                        onFieldTouched(KEY.unit);
+                    }}
                     onBlur={() => touch("unit")}
                     error={showError("unit")}
                 />
+                {note(KEY.unit)}
 
                 {/* City */}
                 <Input
@@ -183,10 +320,14 @@ function PropertyDetailsForm({
                     placeholder="Toronto"
                     required
                     value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    onChange={(e) => {
+                        setFormData({ ...formData, city: e.target.value });
+                        onFieldTouched(KEY.city);
+                    }}
                     onBlur={() => touch("city")}
                     error={showError("city")}
                 />
+                {note(KEY.city)}
 
                 {/* Postal Code */}
                 <Input
@@ -195,12 +336,14 @@ function PropertyDetailsForm({
                     placeholder="M5V 3A8"
                     required
                     value={formData.postalCode}
-                    onChange={(e) =>
-                        setFormData({ ...formData, postalCode: e.target.value.toUpperCase() })
-                    }
+                    onChange={(e) => {
+                        setFormData({ ...formData, postalCode: e.target.value.toUpperCase() });
+                        onFieldTouched(KEY.postalCode);
+                    }}
                     onBlur={() => touch("postalCode")}
                     error={showError("postalCode")}
                 />
+                {note(KEY.postalCode)}
 
                 {/* Province (locked) */}
                 <div className="flex flex-col gap-1.5 w-full">
@@ -227,6 +370,10 @@ const Step2: React.FC<Step2Props> = ({
     setDepositAmount,
     sellingDepositAmount,
     setSellingDepositAmount,
+    closingDate,
+    setClosingDate,
+    sellingClosingDate,
+    setSellingClosingDate,
     formData,
     setFormData,
     sellingFormData,
@@ -235,6 +382,10 @@ const Step2: React.FC<Step2Props> = ({
     setStep,
     step,
     agreementSigned,
+    prefilledFields = NO_PREFILLED_FIELDS,
+    suggestions = NO_SUGGESTIONS,
+    onFieldTouched = noop,
+    onAcceptSuggestion = noop,
 }) => {
     const isSelling = selectedClosingOption === "selling";
     const isBoth = selectedClosingOption === "both";
@@ -302,12 +453,7 @@ const Step2: React.FC<Step2Props> = ({
 
     const isValid = pricesValid && addressValid;
 
-    const leftSteps = [
-        { id: 1, label: "Select Service" },
-        { id: 2, label: "Price & Address" },
-        { id: 3, label: "Agreement" },
-        { id: 4, label: "Contact Info" },
-    ];
+    const leftSteps = INTAKE_STEPS;
 
     const formatCurrency = (value: string) => {
         const numeric = value.replace(/[^0-9]/g, "");
@@ -342,7 +488,7 @@ const Step2: React.FC<Step2Props> = ({
             setSubmitAttempted(true);
             return;
         }
-        setStep(3);
+        setStep(STEP_CONTACT);
     };
 
     return (
@@ -438,7 +584,14 @@ const Step2: React.FC<Step2Props> = ({
                                     priceError={priceError}
                                     depositValue={depositAmount}
                                     onDepositChange={setDepositAmount}
+                                    closingDateValue={closingDate}
+                                    onClosingDateChange={setClosingDate}
                                     formatCurrency={formatCurrency}
+                                    slot="primary"
+                                    prefilledFields={prefilledFields}
+                                    suggestions={suggestions}
+                                    onFieldTouched={onFieldTouched}
+                                    onAcceptSuggestion={onAcceptSuggestion}
                                 />
 
                                 <PropertyDetailsForm
@@ -456,7 +609,14 @@ const Step2: React.FC<Step2Props> = ({
                                     priceError={sellingPriceError}
                                     depositValue={sellingDepositAmount}
                                     onDepositChange={setSellingDepositAmount}
+                                    closingDateValue={sellingClosingDate}
+                                    onClosingDateChange={setSellingClosingDate}
                                     formatCurrency={formatCurrency}
+                                    slot="selling"
+                                    prefilledFields={prefilledFields}
+                                    suggestions={suggestions}
+                                    onFieldTouched={onFieldTouched}
+                                    onAcceptSuggestion={onAcceptSuggestion}
                                 />
                             </>
                         ) : (
@@ -475,13 +635,20 @@ const Step2: React.FC<Step2Props> = ({
                                 priceError={priceError}
                                 depositValue={depositAmount}
                                 onDepositChange={setDepositAmount}
+                                closingDateValue={closingDate}
+                                onClosingDateChange={setClosingDate}
                                 formatCurrency={formatCurrency}
+                                slot="primary"
+                                prefilledFields={prefilledFields}
+                                suggestions={suggestions}
+                                onFieldTouched={onFieldTouched}
+                                onAcceptSuggestion={onAcceptSuggestion}
                             />
                         )}
 
                         {/* Desktop button row */}
                         <div className="hidden lg:flex items-center justify-between pt-6 border-t border-gray-100">
-                            <Button onClick={() => setStep(1)} variant="secondary" size="md">
+                            <Button onClick={() => setStep(STEP_AGREEMENT)} variant="secondary" size="md">
                                 <ChevronLeft size={16} strokeWidth={2.5} /> Back
                             </Button>
                             <Button onClick={handleContinue} variant="primary" size="md">
@@ -491,7 +658,7 @@ const Step2: React.FC<Step2Props> = ({
 
                         {/* Mobile fixed bottom buttons */}
                         <div className="lg:hidden fixed bottom-0 left-0 w-full px-5 py-4 bg-white border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] flex gap-3">
-                            <Button onClick={() => setStep(1)} variant="secondary" size="lg" className="flex-1">
+                            <Button onClick={() => setStep(STEP_AGREEMENT)} variant="secondary" size="lg" className="flex-1">
                                 <ChevronLeft size={18} strokeWidth={2.5} /> Back
                             </Button>
                             <Button onClick={handleContinue} variant="primary" size="lg" className="flex-1">

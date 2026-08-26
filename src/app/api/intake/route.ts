@@ -26,6 +26,8 @@ export async function POST(req: Request) {
       selling_price,
       deposit_amount,
       selling_deposit_amount,
+      closing_date,
+      selling_closing_date,
       address_street,
       address_unit,
       address_city,
@@ -39,6 +41,7 @@ export async function POST(req: Request) {
       aps_signed,
       aps_signed_purchase,
       aps_signed_sale,
+      aps_extraction,
       co_persons,
       document_upload_mode,
       document_uploader_co_person_id,
@@ -96,6 +99,36 @@ export async function POST(req: Request) {
     const cleanDeposit = cleanAmount(deposit_amount);
     const cleanSellingDeposit =
       sub_service === "both" ? cleanAmount(selling_deposit_amount) : null;
+
+    // Closing date is optional and arrives as an ISO "YYYY-MM-DD" string from
+    // the date input (or from an APS read, normalized to the same shape).
+    // Anything that isn't a real calendar date is dropped rather than rejected
+    // — a garbled date must never cost the client their whole submission.
+    const cleanClosingDate = (value: unknown): string | null => {
+      if (typeof value !== "string") return null;
+      const trimmed = value.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+      const parsed = new Date(`${trimmed}T00:00:00Z`);
+      if (Number.isNaN(parsed.getTime())) return null;
+      // Round-trip guards against "2026-02-31" style overflow, which Date
+      // silently rolls forward into March.
+      if (parsed.toISOString().slice(0, 10) !== trimmed) return null;
+      return trimmed;
+    };
+    const closingDate = cleanClosingDate(closing_date);
+    const sellingClosingDate =
+      sub_service === "both" ? cleanClosingDate(selling_closing_date) : null;
+
+    // Audit trail of what the APS reader returned, kept next to what the client
+    // accepted. Stored as-is; nothing here is trusted as a value — every field
+    // on the lead comes from the form the client submitted.
+    const apsExtraction =
+      aps_extraction &&
+      typeof aps_extraction === "object" &&
+      !Array.isArray(aps_extraction) &&
+      Object.keys(aps_extraction).length > 0
+        ? aps_extraction
+        : null;
     const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
     const uploadMode =
       document_upload_mode === "me" ||
@@ -395,6 +428,12 @@ export async function POST(req: Request) {
         // intake working before the deposit migration is applied.
         ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
         ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+        // Optional closing date. Same conditional-spread convention as the
+        // deposit above, so an intake without one never references the column
+        // and keeps working before the migration is applied.
+        ...(closingDate ? { closing_date: closingDate } : {}),
+        ...(sellingClosingDate ? { selling_closing_date: sellingClosingDate } : {}),
+        ...(apsExtraction ? { aps_extraction: apsExtraction } : {}),
         address_street,
         address_unit,
         address_city,
@@ -468,6 +507,8 @@ export async function POST(req: Request) {
               selling_price: cleanSellingPrice,
               ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
               ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+              ...(closingDate ? { closing_date: closingDate } : {}),
+              ...(sellingClosingDate ? { selling_closing_date: sellingClosingDate } : {}),
               address_street,
               address_unit,
               address_city,

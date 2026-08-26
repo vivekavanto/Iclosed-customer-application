@@ -3058,7 +3058,13 @@ export default function PersonalInfoTaskDrawer({
                           audio={false}
                           screenshotFormat="image/jpeg"
                           screenshotQuality={0.95}
-                          videoConstraints={{ facingMode: "environment" }}
+                          // Capture at the CAMERA's resolution, not the preview box's. Without
+                          // forceScreenshotSourceSize react-webcam sizes its screenshot canvas to
+                          // the video element's clientWidth, so an ID was stored a few hundred
+                          // pixels wide and its fine print was gone before the file ever left the
+                          // browser. `ideal` degrades on its own where 1920 isn't available.
+                          forceScreenshotSourceSize
+                          videoConstraints={{ facingMode: "environment", width: { ideal: 1920 } }}
                           onUserMediaError={() =>
                             setCameraError("Unable to access camera. Please allow camera permissions.")
                           }
