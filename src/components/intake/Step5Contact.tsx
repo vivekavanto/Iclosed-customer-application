@@ -335,8 +335,19 @@ interface Step5ContactProps {
      * Names read off the uploaded agreement, offered as co-person cards.
      * Names only — the APS carries no contact details, so the client still
      * supplies email and phone.
+     *
+     * For a signed-in client this list already EXCLUDES them: the page matched
+     * their account name to a party and consumed it, so two buyers on the
+     * agreement arrive here as one co-purchaser, not two.
      */
     apsParties?: { purchaser: string[]; seller: string[] };
+    /**
+     * One entry per agreement that named the signed-in client as a party. Empty
+     * on a logged-out intake, where there's no account name to match. Buy & Sell
+     * yields two — the client is the purchaser on one agreement, the seller on
+     * the other — which is why this is a list and not a single value.
+     */
+    apsSelfMatches?: Array<{ role: "purchaser" | "seller"; name: string }>;
     /** Agent named on the agreement, seeded into the partner search. */
     apsAgent?: { name: string; company: string | null } | null;
     documentUploadChoice: string;
@@ -369,6 +380,7 @@ export default function Step5Contact({
     referralAgent,
     setReferralAgent,
     apsParties,
+    apsSelfMatches,
     apsAgent,
     documentUploadChoice,
     setDocumentUploadChoice,
@@ -620,6 +632,11 @@ export default function Step5Contact({
     // The APS names every buyer and seller. Those names seed the co-person
     // cards so the client completes contact details rather than transcribing
     // names — email stays required, because the agreement doesn't carry one.
+    //
+    // For a signed-in client the page has already removed them from these
+    // lists (see ApsSelfMatch), so what arrives here is co-parties only. The
+    // self-name filtering below still runs: it's what handles the logged-out
+    // intake, where the client's own name isn't known until they type it.
 
     // Every name the agreement named, lowercased. A card matching one of these
     // came off the document rather than out of the client's keyboard — which is
@@ -1160,6 +1177,24 @@ export default function Step5Contact({
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Matched to a party on the agreement. Worth saying
+                                    out loud: it's the reason the client isn't ALSO
+                                    listed below as their own co-purchaser. */}
+                                {(apsSelfMatches ?? []).map((match) => (
+                                    <div
+                                        key={match.role}
+                                        className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3"
+                                    >
+                                        <CheckCircle2 size={16} className="text-green-700 mt-0.5 flex-shrink-0" strokeWidth={2} />
+                                        <div className="text-[13px] leading-relaxed text-green-900">
+                                            We matched you to <strong>{match.name}</strong> on your
+                                            agreement — you are the <strong>{match.role}</strong>. Anyone
+                                            else named on it is listed below as a{" "}
+                                            {match.role === "purchaser" ? "co-purchaser" : "co-seller"}.
+                                        </div>
+                                    </div>
+                                ))}
 
                                 {/* Contact Form */}
                                 <Input

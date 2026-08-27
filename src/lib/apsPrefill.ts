@@ -165,3 +165,104 @@ export function agentForSide(
   const match = named.find((a) => a.role === wanted) ?? named[0];
   return { name: match.full_name as string, company: match.brokerage };
 }
+
+// ── Who on the agreement is the signed-in client? ──────────────────────────
+//
+// An APS with two buyers names the purchaser AND one co-purchaser — never two
+// co-purchasers. Before this check the intake had no way to tell which of the
+// two was the person filling the form, so it seeded a card for both and the
+// client ended up listed alongside themselves.
+//
+// Matching is exact and case-insensitive, by decision: a looser match risks
+// consuming a genuine co-purchaser as "you" and silently dropping them from
+// the file, which is worse than asking the client to check the document.
+
+/**
+ * Case/whitespace-insensitive form of a person's name.
+ *
+ * Only casing and run-together whitespace are normalized — a middle name, an
+ * initial or a "Smith, John" reversal is a real difference here and will not
+ * match, which is what "exact" means for this gate.
+ */
+export function normalizePartyName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * Splits an agreement's parties into the signed-in client and everyone else.
+ *
+ * Exactly one entry is consumed as `self`, even when the agreement names the
+ * same person twice — the rest stay co-parties, so N parties always yield
+ * N-1 cards once the client is matched.
+ */
+export function splitSelfFromParties(
+  names: string[],
+  selfName: string,
+): { self: string | null; others: string[] } {
+  const target = normalizePartyName(selfName);
+  if (!target) return { self: null, others: names };
+
+  const index = names.findIndex((n) => normalizePartyName(n) === target);
+  if (index === -1) return { self: null, others: names };
+
+  return {
+    self: names[index],
+    others: [...names.slice(0, index), ...names.slice(index + 1)],
+  };
+}
+
+/** Which role the client should hold on an agreement read from this side. */
+export type PartyRole = "purchaser" | "seller";
+
+export type SelfPartyCheck =
+  /** Nothing to check against — not signed in, or the account has no name. */
+  | { status: "unverifiable" }
+  /** The read found no parties on the client's side, so there is nothing to match. */
+  | { status: "no-parties"; role: PartyRole }
+  /** The client is named on the agreement. `others` are the co-parties. */
+  | { status: "match"; role: PartyRole; self: string; others: string[] }
+  /** The client is NOT named on their side of the agreement. */
+  | {
+      status: "mismatch";
+      role: PartyRole;
+      /** Names the agreement DID give for that role, so the error can list them. */
+      names: string[];
+      /** True when they were found on the far side instead (buyer vs seller mix-up). */
+      onOppositeSide: boolean;
+    };
+
+/**
+ * Is the signed-in client a party to this agreement, and if so which co-parties
+ * are left over?
+ *
+ * `no-parties` is deliberately NOT a mismatch: a read that pulled no names at
+ * all tells us nothing about who signed, and blocking on it would trap a client
+ * holding a perfectly valid agreement behind a bad OCR pass.
+ */
+export function checkSelfOnAgreement(
+  result: ApsExtractionResult,
+  side: ApsSide,
+  selfName: string | null | undefined,
+): SelfPartyCheck {
+  const target = normalizePartyName(selfName ?? "");
+  if (!target) return { status: "unverifiable" };
+
+  // Not an agreement at all — Step 2 already says so in its own words, and the
+  // party lists on a non-APS read mean nothing to check against.
+  if (!result.is_aps) return { status: "unverifiable" };
+
+  const { role, names } = partiesForSide(result, side);
+  if (names.length === 0) return { status: "no-parties", role };
+
+  const { self, others } = splitSelfFromParties(names, target);
+  if (self) return { status: "match", role, self, others };
+
+  // Named on the other side of the deal — a different problem from "not on the
+  // document at all", and worth saying so.
+  const opposite = side === "sale" ? result.buyers : result.sellers;
+  const onOppositeSide = opposite.some(
+    (p) => normalizePartyName(p.full_name) === target,
+  );
+
+  return { status: "mismatch", role, names, onOppositeSide };
+}

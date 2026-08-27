@@ -31,6 +31,7 @@ import {
 import {
   agentForSide,
   buildPrefillEntries,
+  checkSelfOnAgreement,
   keysForSide,
   partiesForSide,
   type PrefillKey,
@@ -47,6 +48,31 @@ interface ApsBlob {
 export interface ApsParties {
   purchaser: string[];
   seller: string[];
+}
+
+/**
+ * The signed-in client, matched to the party of the same name on an agreement.
+ * Drives the confirmation line on the contact step and — the point of it —
+ * keeps that party OUT of the co-person cards. An APS with two buyers names the
+ * purchaser and ONE co-purchaser, never two co-purchasers.
+ */
+export interface ApsSelfMatch {
+  role: "purchaser" | "seller";
+  name: string;
+}
+
+/**
+ * A blocking read outcome: the agreement doesn't name the signed-in client.
+ * Held per side so a Buy & Sell can fail one agreement and keep the other.
+ */
+export interface ApsPartyMismatch {
+  role: "purchaser" | "seller";
+  /** The name we looked for — the signed-in account's. */
+  selfName: string;
+  /** The names the agreement gave for that role. */
+  names: string[];
+  /** They ARE on the document, just on the far side of the deal. */
+  onOppositeSide: boolean;
 }
 
 export default function ServiceSelection() {
@@ -161,6 +187,37 @@ export default function ServiceSelection() {
   const [suggestions, setSuggestions] = useState<Partial<Record<PrefillKey, string>>>({});
   const [apsParties, setApsParties] = useState<ApsParties>({ purchaser: [], seller: [] });
   const [apsAgent, setApsAgent] = useState<{ name: string; company: string | null } | null>(null);
+  // The party on each agreement that IS the signed-in client. Per side, because
+  // a Buy & Sell client is the purchaser on one agreement and the seller on the
+  // other. All-null is the logged-out case, where there's no name to match.
+  const [apsSelfMatch, setApsSelfMatch] = useState<
+    Record<ApsSide, ApsSelfMatch | null>
+  >({ purchase: null, sale: null });
+  // Per side: the agreement named other people, but not the signed-in client.
+  // Blocks Continue on step 2 until the right document is uploaded.
+  const [apsPartyMismatch, setApsPartyMismatch] = useState<
+    Record<ApsSide, ApsPartyMismatch | null>
+  >({ purchase: null, sale: null });
+
+  // The signed-in client's name, as the APS gate looks for it. Held in a ref so
+  // applyExtraction always sees the latest one without being re-created (and
+  // re-running) every time the profile fetch settles.
+  const selfNameRef = useRef<string>("");
+  selfNameRef.current = authProfile?.fullName ?? "";
+  // A read that finished before /api/auth/me did, parked here until there's a
+  // name to check it against. Without this, uploading fast enough would slip
+  // past the gate on a page load where the profile was slow.
+  const pendingVerifyRef = useRef<Record<ApsSide, ApsExtractionResult | null>>({
+    purchase: null,
+    sale: null,
+  });
+
+  // One entry per agreement that named the client, for the confirmation lines
+  // on the contact step. Buy & Sell yields two — purchaser and seller.
+  const apsSelfMatches = useMemo(
+    () => [apsSelfMatch.purchase, apsSelfMatch.sale].filter((m): m is ApsSelfMatch => m !== null),
+    [apsSelfMatch],
+  );
 
   // Flattened for the "from your agreement" markers — Step2 only cares whether
   // a field is prefilled, not which agreement filled it.
@@ -327,6 +384,36 @@ export default function ServiceSelection() {
   /** Apply a completed read to the form. */
   const applyExtraction = useCallback(
     (side: ApsSide, result: ApsExtractionResult) => {
+      // Who is the signed-in client on this agreement? Everything below hangs
+      // off the answer: a document that doesn't name them is the wrong
+      // document, and one that does tells us which party NOT to turn into a
+      // co-person card.
+      const check = checkSelfOnAgreement(result, side, selfNameRef.current);
+
+      if (check.status === "mismatch") {
+        // Refuse the agreement whole rather than half-filling the form from a
+        // file that belongs to someone else. Step 2 blocks Continue on this.
+        pendingVerifyRef.current[side] = null;
+        setApsPartyMismatch((prev) => ({
+          ...prev,
+          [side]: {
+            role: check.role,
+            selfName: selfNameRef.current,
+            names: check.names,
+            onOppositeSide: check.onOppositeSide,
+          },
+        }));
+        return;
+      }
+
+      // The read landed before /api/auth/me did, so there was no name to check
+      // against. Hold the result for the effect below to re-check once the
+      // profile arrives — otherwise a fast upload would skip the gate entirely.
+      pendingVerifyRef.current[side] =
+        check.status === "unverifiable" ? result : null;
+
+      setApsPartyMismatch((prev) => (prev[side] ? { ...prev, [side]: null } : prev));
+
       const entries = buildPrefillEntries(result, side, selectedClosingOption);
 
       const appliedKeys: PrefillKey[] = [];
@@ -347,9 +434,23 @@ export default function ServiceSelection() {
       setPrefilled((prev) => ({ ...prev, [side]: appliedKeys }));
       setSuggestions((prev) => ({ ...prev, ...newSuggestions }));
 
-      const { role, names } = partiesForSide(result, side);
-      if (names.length > 0) {
-        setApsParties((prev) => ({ ...prev, [role]: names }));
+      if (check.status === "match") {
+        // N parties on the agreement means 1 client + N-1 co-parties. The
+        // matched party is the client themselves, whose details are already
+        // locked into the contact step from their account.
+        setApsSelfMatch((prev) => ({
+          ...prev,
+          [side]: { role: check.role, name: check.self },
+        }));
+        setApsParties((prev) => ({ ...prev, [check.role]: check.others }));
+      } else {
+        // No signed-in name to match against (logged-out intake) or the read
+        // found no parties at all. Seed every name and let the contact step
+        // drop the one matching whatever the client types as their own.
+        const { role, names } = partiesForSide(result, side);
+        if (names.length > 0) {
+          setApsParties((prev) => ({ ...prev, [role]: names }));
+        }
       }
 
       // First agreement to name an agent wins; a second one doesn't overwrite.
@@ -358,6 +459,21 @@ export default function ServiceSelection() {
     },
     [selectedClosingOption, setPrefillField],
   );
+
+  // Re-run the party gate on any agreement that was read before the signed-in
+  // profile arrived. Re-applying is safe: touchedRef still protects anything
+  // the client has typed since.
+  useEffect(() => {
+    const name = authProfile?.fullName?.trim();
+    if (!name) return;
+
+    for (const side of ["purchase", "sale"] as ApsSide[]) {
+      const pending = pendingVerifyRef.current[side];
+      if (!pending) continue;
+      pendingVerifyRef.current[side] = null;
+      applyExtraction(side, pending);
+    }
+  }, [authProfile, applyExtraction]);
 
   /** Undo everything an agreement on this side filled in, sparing client edits. */
   const clearSidePrefill = useCallback(
@@ -379,6 +495,9 @@ export default function ServiceSelection() {
         [side === "sale" ? "seller" : "purchaser"]: [],
       }));
       setApsAgent(null);
+      setApsPartyMismatch((prev) => ({ ...prev, [side]: null }));
+      setApsSelfMatch((prev) => ({ ...prev, [side]: null }));
+      pendingVerifyRef.current[side] = null;
       setExtraction((prev) => ({ ...prev, [side]: EMPTY_EXTRACTION_STATE }));
       readSideRef.current[side] = false;
       readSourceRef.current[side] = null;
@@ -625,6 +744,9 @@ export default function ServiceSelection() {
     setSuggestions({});
     setApsParties({ purchaser: [], seller: [] });
     setApsAgent(null);
+    setApsSelfMatch({ purchase: null, sale: null });
+    setApsPartyMismatch({ purchase: null, sale: null });
+    pendingVerifyRef.current = { purchase: null, sale: null };
     touchedRef.current = new Set();
     readSideRef.current = { purchase: false, sale: false };
     readSourceRef.current = { purchase: null, sale: null };
@@ -703,6 +825,7 @@ export default function ServiceSelection() {
             onFilesAdded={handleApsFilesAdded}
             onFileRemoved={handleApsFileRemoved}
             extraction={extraction}
+            partyMismatch={apsPartyMismatch}
             setStep={setStep}
             step={step}
           />
@@ -739,6 +862,7 @@ export default function ServiceSelection() {
             documentUploadChoice={documentUploadChoice}
             setDocumentUploadChoice={setDocumentUploadChoice}
             apsParties={apsParties}
+            apsSelfMatches={apsSelfMatches}
             apsAgent={apsAgent}
             onComplete={async (contactData) => {
               try {

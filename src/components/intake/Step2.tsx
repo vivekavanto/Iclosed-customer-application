@@ -27,11 +27,26 @@ interface AddressData {
 }
 
 /**
+ * Groups a field with the notes that belong to it — the prefill marker, the
+ * validation error — so the pair is a single child of the card's `space-y-4`.
+ *
+ * Without this the notes sit at the card's own 16px rhythm, which reads as
+ * captioning the NEXT label rather than the field above them. The gap here is
+ * the same 1.5 the Input uses between its own label and box.
+ */
+function Field({ children }: { children: React.ReactNode }) {
+    return <div className="flex flex-col gap-1.5 w-full">{children}</div>;
+}
+
+/**
  * Shown under a field the APS filled in, or offered as a tap-to-accept
  * suggestion when the read wasn't confident enough to write it outright.
  *
  * Nothing here is ever silent: a value that came off the document says so, and
  * stays fully editable.
+ *
+ * Spacing is the parent Field's job — no margins here, or the note lands at a
+ * different height depending on which wrapper it happens to be nested in.
  */
 function PrefillNote({
     fieldKey,
@@ -46,7 +61,7 @@ function PrefillNote({
 }) {
     if (isPrefilled) {
         return (
-            <p className="flex items-center gap-1 text-[11px] text-green-700 -mt-2.5">
+            <p className="flex items-center gap-1 text-[11px] text-green-700">
                 <Sparkles size={11} strokeWidth={2} className="flex-shrink-0" />
                 From your agreement — please check it&apos;s right.
             </p>
@@ -58,7 +73,7 @@ function PrefillNote({
             <button
                 type="button"
                 onClick={() => onAccept(fieldKey)}
-                className="self-start flex items-center gap-1 -mt-2.5 text-[11px] text-[#C10007] hover:underline cursor-pointer"
+                className="self-start flex items-center gap-1 text-[11px] text-[#C10007] hover:underline cursor-pointer"
             >
                 <Sparkles size={11} strokeWidth={2} className="flex-shrink-0" />
                 Your agreement may say {suggestion} — use it
@@ -212,61 +227,65 @@ function PropertyDetailsForm({
             {/* Card body */}
             <div className="px-5 py-5 space-y-4 bg-white">
                 {/* Price field */}
-                <Input
-                    label={priceLabel}
-                    required
-                    type="text"
-                    value={priceValue}
-                    onChange={(e) => {
-                        const formattedValue = formatCurrency(e.target.value);
-                        onPriceChange(formattedValue);
-                        onFieldTouched(KEY.price);
-                    }}
-                    placeholder="$1,250,000"
-                />
-                {priceError && (
-                    <p className="text-sm text-red-600 -mt-2">{priceError}</p>
-                )}
-                {note(KEY.price)}
+                <Field>
+                    <Input
+                        label={priceLabel}
+                        required
+                        type="text"
+                        value={priceValue}
+                        onChange={(e) => {
+                            const formattedValue = formatCurrency(e.target.value);
+                            onPriceChange(formattedValue);
+                            onFieldTouched(KEY.price);
+                        }}
+                        placeholder="$1,250,000"
+                    />
+                    {priceError && <p className="text-xs text-red-600">{priceError}</p>}
+                    {note(KEY.price)}
+                </Field>
 
                 {/* Deposit. Still not REQUIRED to submit — it just isn't
                     labelled as optional: the hint invited people to skip a
                     figure the firm wants, and the closing-cost estimator
                     prefills "Deposit already paid" from it. */}
-                <Input
-                    label="Deposit Amount"
-                    id={`${prefix}-deposit`}
-                    type="text"
-                    value={depositValue}
-                    onChange={(e) => {
-                        onDepositChange(formatCurrency(e.target.value));
-                        onFieldTouched(KEY.deposit);
-                    }}
-                    placeholder="$50,000"
-                />
-                {note(KEY.deposit)}
+                <Field>
+                    <Input
+                        label="Deposit Amount"
+                        id={`${prefix}-deposit`}
+                        type="text"
+                        value={depositValue}
+                        onChange={(e) => {
+                            onDepositChange(formatCurrency(e.target.value));
+                            onFieldTouched(KEY.deposit);
+                        }}
+                        placeholder="$50,000"
+                    />
+                    {note(KEY.deposit)}
+                </Field>
 
                 {/* Closing date. Printed on the APS, so it prefills from an
                     uploaded agreement — but it stays optional: anyone who
                     hasn't signed yet genuinely doesn't know it. */}
-                <Input
-                    label="Closing Date"
-                    id={`${prefix}-closing-date`}
-                    type="date"
-                    value={closingDateValue}
-                    onChange={(e) => {
-                        onClosingDateChange(e.target.value);
-                        onFieldTouched(KEY.closingDate);
-                    }}
-                    hint="The completion date on your agreement, if you have one."
-                />
-                {note(KEY.closingDate)}
+                <Field>
+                    <Input
+                        label="Closing Date"
+                        id={`${prefix}-closing-date`}
+                        type="date"
+                        value={closingDateValue}
+                        onChange={(e) => {
+                            onClosingDateChange(e.target.value);
+                            onFieldTouched(KEY.closingDate);
+                        }}
+                        hint="The completion date on your agreement, if you have one."
+                    />
+                    {note(KEY.closingDate)}
+                </Field>
 
                 {/* Divider between price and address */}
                 <div className="border-t border-dashed border-gray-200 pt-4" />
 
                 {/* Street */}
-                <div className="flex flex-col gap-1.5 w-full">
+                <Field>
                     <label className="text-sm font-medium text-[var(--color-text-heading)]">
                         Street Address <span className="text-red-600 ml-1">*</span>
                     </label>
@@ -293,57 +312,63 @@ function PropertyDetailsForm({
                         hasError={!!showError("street")}
                     />
                     {showError("street") && (
-                        <p className="text-xs text-red-600 mt-0.5">{showError("street")}</p>
+                        <p className="text-xs text-red-600">{showError("street")}</p>
                     )}
                     {note(KEY.street)}
-                </div>
+                </Field>
 
                 {/* Unit */}
-                <Input
-                    label="Unit / Apartment / Suite"
-                    id={`${prefix}-unit`}
-                    placeholder="e.g. 4B"
-                    value={formData.unit}
-                    onChange={(e) => {
-                        setFormData({ ...formData, unit: e.target.value });
-                        onFieldTouched(KEY.unit);
-                    }}
-                    onBlur={() => touch("unit")}
-                    error={showError("unit")}
-                />
-                {note(KEY.unit)}
+                <Field>
+                    <Input
+                        label="Unit / Apartment / Suite"
+                        id={`${prefix}-unit`}
+                        placeholder="e.g. 4B"
+                        value={formData.unit}
+                        onChange={(e) => {
+                            setFormData({ ...formData, unit: e.target.value });
+                            onFieldTouched(KEY.unit);
+                        }}
+                        onBlur={() => touch("unit")}
+                        error={showError("unit")}
+                    />
+                    {note(KEY.unit)}
+                </Field>
 
                 {/* City */}
-                <Input
-                    label="City"
-                    id={`${prefix}-city`}
-                    placeholder="Toronto"
-                    required
-                    value={formData.city}
-                    onChange={(e) => {
-                        setFormData({ ...formData, city: e.target.value });
-                        onFieldTouched(KEY.city);
-                    }}
-                    onBlur={() => touch("city")}
-                    error={showError("city")}
-                />
-                {note(KEY.city)}
+                <Field>
+                    <Input
+                        label="City"
+                        id={`${prefix}-city`}
+                        placeholder="Toronto"
+                        required
+                        value={formData.city}
+                        onChange={(e) => {
+                            setFormData({ ...formData, city: e.target.value });
+                            onFieldTouched(KEY.city);
+                        }}
+                        onBlur={() => touch("city")}
+                        error={showError("city")}
+                    />
+                    {note(KEY.city)}
+                </Field>
 
                 {/* Postal Code */}
-                <Input
-                    label="Postal Code"
-                    id={`${prefix}-postal`}
-                    placeholder="M5V 3A8"
-                    required
-                    value={formData.postalCode}
-                    onChange={(e) => {
-                        setFormData({ ...formData, postalCode: e.target.value.toUpperCase() });
-                        onFieldTouched(KEY.postalCode);
-                    }}
-                    onBlur={() => touch("postalCode")}
-                    error={showError("postalCode")}
-                />
-                {note(KEY.postalCode)}
+                <Field>
+                    <Input
+                        label="Postal Code"
+                        id={`${prefix}-postal`}
+                        placeholder="M5V 3A8"
+                        required
+                        value={formData.postalCode}
+                        onChange={(e) => {
+                            setFormData({ ...formData, postalCode: e.target.value.toUpperCase() });
+                            onFieldTouched(KEY.postalCode);
+                        }}
+                        onBlur={() => touch("postalCode")}
+                        error={showError("postalCode")}
+                    />
+                    {note(KEY.postalCode)}
+                </Field>
 
                 {/* Province (locked) */}
                 <div className="flex flex-col gap-1.5 w-full">
