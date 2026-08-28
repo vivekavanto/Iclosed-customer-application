@@ -35,7 +35,7 @@ const steps = [
 const plans = [
   {
     tag: "Purchase",
-    price: "$1229",
+    price: "$1199",
     extra: "+ Disbursements",
     blurb: "Close on a property you are buying",
     cta: "Start your closing",
@@ -43,7 +43,7 @@ const plans = [
   },
   {
     tag: "Sale",
-    price: "$1129",
+    price: "$1099",
     extra: "+ Disbursements",
     blurb: "Close on a property you are selling",
     cta: "Start your closing",
@@ -51,7 +51,7 @@ const plans = [
   },
   {
     tag: "Mortgage Refinance or Transfer",
-    price: "$2099",
+    price: "$999",
     extra: "+ Disbursements",
     blurb: "Refinance a mortgage on a property",
     cta: "Start your refinance",

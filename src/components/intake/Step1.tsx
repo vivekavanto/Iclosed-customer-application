@@ -75,7 +75,7 @@ export function Step1({
       title: "I am buying a property",
       description:
         "Buying a property? We'll handle the legal steps to complete your purchase securely.",
-      price: "$1229",
+      price: "$1199",
     },
     {
       id: "selling",
@@ -83,7 +83,7 @@ export function Step1({
       title: "I am selling a property",
       description:
         "Selling a property? We'll prepare your documents and manage the legal side of your sale.",
-      price: "$1129",
+      price: "$1099",
     },
     {
       id: "both",
@@ -91,7 +91,7 @@ export function Step1({
       title: "I am buying and selling a property",
       description:
         "Doing both? iClosed will coordinate both ends to ensure a smooth and connected closing.",
-      price: "$2099",
+      price: "$999",
     },
   ];
 
