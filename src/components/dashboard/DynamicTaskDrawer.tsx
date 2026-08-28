@@ -966,6 +966,9 @@ export default function DynamicTaskDrawer({
   function setFile(fieldId: string, file: File) {
     setFiles((prev) => ({ ...prev, [fieldId]: file }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    // Also drop the "is required" validation error, the way setValue does —
+    // picking a file is what satisfies it.
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
 
   function clearFile(fieldId: string) {
@@ -985,6 +988,7 @@ export default function DynamicTaskDrawer({
   function addMultiFiles(fieldId: string, picked: File[]) {
     setMultiFiles((prev) => ({ ...prev, [fieldId]: [...(prev[fieldId] ?? []), ...picked] }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
   function removeMultiNewFile(fieldId: string, index: number) {
     setMultiFiles((prev) => ({
