@@ -105,3 +105,14 @@ header a:visited {
   outline: 2px solid var(--color-primary-ring);
   outline-offset: 2px;
 }
+/* ...but not on a value the viewer cannot edit — a red ring there reads as an
+   error. Must live here, unlayered: Tailwind utilities are in @layer utilities
+   and lose to unlayered rules whatever their specificity. box-shadow is killed
+   too, so a Tailwind focus:ring-* on the same field can't draw one either. */
+input[readonly]:focus,
+input[readonly]:focus-visible,
+textarea[readonly]:focus,
+textarea[readonly]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
