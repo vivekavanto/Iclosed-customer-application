@@ -75,6 +75,27 @@ export interface ApsPartyMismatch {
   onOppositeSide: boolean;
 }
 
+/**
+ * Shown when an agreement couldn't be read. Deliberately flat: the form works
+ * either way, and the thing a client actually worries about at this point is
+ * whether their upload was lost, so the copy says it wasn't.
+ */
+const READ_FAILED_MESSAGE =
+  "We couldn't read your agreement automatically. You can enter the details yourself — your file is still saved with your submission.";
+
+/**
+ * How hard the page tries before it says that.
+ *
+ * Nothing waits on an extraction — it runs behind the client while they fill
+ * the form in — so repeating costs them nothing, and the failures worth
+ * repeating over (an overloaded model tier, a rate-limited minute) are the ones
+ * that clear on their own. The wall clock is what stops it: a read still going
+ * after this long has stopped being background work.
+ */
+const READ_MAX_PASSES = 3;
+const READ_PASS_BACKOFF_MS = [3_000, 8_000];
+const READ_TOTAL_BUDGET_MS = 6 * 60 * 1000;
+
 export default function ServiceSelection() {
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedClosingOption, setSelectedClosingOption] = useState<
@@ -171,6 +192,11 @@ export default function ServiceSelection() {
     purchase: null,
     sale: null,
   });
+  // The blob a side's read was last aimed at, kept across a failure so the
+  // client can ask for another go without re-uploading the agreement.
+  const lastReadTargetRef = useRef<
+    Record<ApsSide, { url: string; fileName: string } | null>
+  >({ purchase: null, sale: null });
 
   // Fields the client has edited themselves. A read that lands afterwards must
   // never overwrite these — this is what makes background extraction safe when
@@ -501,6 +527,7 @@ export default function ServiceSelection() {
       setExtraction((prev) => ({ ...prev, [side]: EMPTY_EXTRACTION_STATE }));
       readSideRef.current[side] = false;
       readSourceRef.current[side] = null;
+      lastReadTargetRef.current[side] = null;
     },
     [selectedClosingOption, setPrefillField],
   );
@@ -510,61 +537,87 @@ export default function ServiceSelection() {
   const readAgreement = useCallback(
     async (side: ApsSide, fileUrl: string, fileName: string) => {
       readSourceRef.current[side] = fileName;
+      // Kept even if the read fails, so "Try again" doesn't make the client
+      // upload the agreement a second time.
+      lastReadTargetRef.current[side] = { url: fileUrl, fileName };
       setExtraction((prev) => ({
         ...prev,
         [side]: { status: "reading", fileName, result: null, error: null },
       }));
 
-      try {
-        const res = await fetch("/api/intake/extract-aps", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_url: fileUrl, side, file_name: fileName }),
-        });
-        const data = await res.json();
+      // The route walks a ladder of models before it reports a failure, so one
+      // failed pass means every tier was slow, overloaded or rate-limited at the
+      // same moment. That is exactly the kind of thing that clears on its own,
+      // so the page simply goes round again rather than handing the client an
+      // error to deal with. The status line stays on "reading" throughout —
+      // from where they're sitting it's still working, because it is.
+      //
+      // Bounded by a wall clock as well as a pass count: a client who reaches
+      // the contact step should not still have a spinner running behind them.
+      let lastError = READ_FAILED_MESSAGE;
+      const giveUpAt = Date.now() + READ_TOTAL_BUDGET_MS;
 
-        if (!data?.success || !data?.result) {
-          // A failed read is not an error the client has to deal with — the
-          // form still works, they just fill it in themselves.
-          setExtraction((prev) => ({
-            ...prev,
-            [side]: {
-              status: "error",
-              fileName,
-              result: null,
-              error:
-                data?.error ??
-                "We couldn't read your agreement. You can enter the details yourself.",
-            },
-          }));
-          // Let the next file uploaded on this side try again.
-          readSideRef.current[side] = false;
-          readSourceRef.current[side] = null;
-          return;
+      for (let pass = 1; pass <= READ_MAX_PASSES; pass++) {
+        try {
+          const res = await fetch("/api/intake/extract-aps", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file_url: fileUrl, side, file_name: fileName }),
+          });
+          const data = await res.json().catch(() => null);
+
+          if (data?.success && data?.result) {
+            const result = data.result as ApsExtractionResult;
+            setExtraction((prev) => ({
+              ...prev,
+              [side]: { status: "done", fileName, result, error: null },
+            }));
+            applyExtraction(side, result);
+            return;
+          }
+
+          if (typeof data?.error === "string" && data.error) lastError = data.error;
+
+          // 415 is a verdict on the file itself and 429 means we're already
+          // asking too often — going round again would only make both worse.
+          if (res.status === 415 || res.status === 429) break;
+        } catch (err) {
+          console.error(`[intake] APS read failed (${side}, pass ${pass}):`, err);
         }
 
-        const result = data.result as ApsExtractionResult;
-        setExtraction((prev) => ({
-          ...prev,
-          [side]: { status: "done", fileName, result, error: null },
-        }));
-        applyExtraction(side, result);
-      } catch (err) {
-        console.error(`[intake] APS read failed (${side}):`, err);
-        setExtraction((prev) => ({
-          ...prev,
-          [side]: {
-            status: "error",
-            fileName,
-            result: null,
-            error: "We couldn't read your agreement. You can enter the details yourself.",
-          },
-        }));
-        readSideRef.current[side] = false;
-        readSourceRef.current[side] = null;
+        const backoff = READ_PASS_BACKOFF_MS[pass - 1] ?? 0;
+        if (pass === READ_MAX_PASSES || Date.now() + backoff >= giveUpAt) break;
+        await new Promise((resolve) => setTimeout(resolve, backoff));
       }
+
+      // A failed read is not an error the client has to deal with — the form
+      // still works, they just fill it in themselves.
+      setExtraction((prev) => ({
+        ...prev,
+        [side]: { status: "error", fileName, result: null, error: lastError },
+      }));
+      // Let the next file uploaded on this side try again.
+      readSideRef.current[side] = false;
+      readSourceRef.current[side] = null;
     },
     [applyExtraction],
+  );
+
+  /**
+   * Read the same agreement again, at the client's request.
+   *
+   * The blob is already uploaded, so this costs them nothing but the wait — and
+   * a read that timed out on a forty-page scan often lands on a second pass,
+   * because the route drops to a condensed copy once it knows the size.
+   */
+  const retryRead = useCallback(
+    (side: ApsSide) => {
+      const target = lastReadTargetRef.current[side];
+      if (!target) return;
+      readSideRef.current[side] = true;
+      void readAgreement(side, target.url, target.fileName);
+    },
+    [readAgreement],
   );
 
   const handleApsFilesAdded = useCallback(
@@ -825,6 +878,7 @@ export default function ServiceSelection() {
             onFilesAdded={handleApsFilesAdded}
             onFileRemoved={handleApsFileRemoved}
             extraction={extraction}
+            onRetryRead={retryRead}
             partyMismatch={apsPartyMismatch}
             setStep={setStep}
             step={step}

@@ -104,6 +104,8 @@ interface ApsBlockProps {
   onFileRemoved?: (side: Side, file: File) => void;
   /** Upload / read progress for this side. */
   extraction?: ApsExtractionState;
+  /** Read the already-uploaded agreement again. Offered after a failed read. */
+  onRetryRead?: (side: Side) => void;
   /** Set when the read succeeded but didn't name the signed-in client. */
   partyMismatch?: ApsPartyMismatch | null;
   // Show the per-side "APS for Purchasing/Sale Property" label beside the
@@ -121,6 +123,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
   onFilesAdded,
   onFileRemoved,
   extraction,
+  onRetryRead,
   partyMismatch,
   showHeading,
 }) => {
@@ -305,7 +308,24 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
               {extraction.status === "error" && (
                 <p className="flex items-start gap-2 text-xs text-gray-500">
                   <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                  {extraction.error}
+                  <span>
+                    {extraction.error}
+                    {/* The file is already uploaded, so another go costs the
+                        client nothing but the wait — and a read that ran out of
+                        time on a long scan usually lands on the second pass. */}
+                    {onRetryRead && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          onClick={() => onRetryRead(side)}
+                          className="underline underline-offset-2 text-[#C10007] hover:text-[#a00006]"
+                        >
+                          Try reading it again
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </p>
               )}
 
@@ -365,6 +385,8 @@ interface Step4Props {
   onFilesAdded?: (side: ApsSide, files: File[]) => void;
   onFileRemoved?: (side: ApsSide, file: File) => void;
   extraction?: Record<ApsSide, ApsExtractionState>;
+  /** Read a side's already-uploaded agreement again, after a failed read. */
+  onRetryRead?: (side: ApsSide) => void;
   /** Per side: the agreement read fine but didn't name the signed-in client. */
   partyMismatch?: Record<ApsSide, ApsPartyMismatch | null>;
   setStep: (step: number) => void;
@@ -384,6 +406,7 @@ const Step4: React.FC<Step4Props> = ({
   onFilesAdded,
   onFileRemoved,
   extraction,
+  onRetryRead,
   partyMismatch,
   setStep,
   step,
@@ -518,6 +541,7 @@ const Step4: React.FC<Step4Props> = ({
                     onFilesAdded={onFilesAdded}
                     onFileRemoved={onFileRemoved}
                     extraction={extraction?.purchase}
+                    onRetryRead={onRetryRead}
                     partyMismatch={partyMismatch?.purchase}
                     showHeading={showPurchase && showSale}
                   />
@@ -534,6 +558,7 @@ const Step4: React.FC<Step4Props> = ({
                     onFilesAdded={onFilesAdded}
                     onFileRemoved={onFileRemoved}
                     extraction={extraction?.sale}
+                    onRetryRead={onRetryRead}
                     partyMismatch={partyMismatch?.sale}
                     showHeading={showPurchase && showSale}
                   />

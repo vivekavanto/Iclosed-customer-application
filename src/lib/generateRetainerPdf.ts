@@ -80,14 +80,29 @@ export async function generateRetainerPdf(
   }
 
   // ── Header with logo ──
+  //
+  // logo-full.png is the brand LOCKUP - the iClosed wordmark stacked above
+  // "POWERED BY NAVA WILSON" - and it is not a drop-in swap for the old bare
+  // logo.png. The two files are cropped completely differently:
+  //
+  //            file            size      wordmark is...  padding above/below
+  //   old      logo.png        90x29     79% of height   14% / 7%
+  //   current  logo-full.png   1108x480  41% of height   16% / 21%
+  //
+  // Drawn at the old logoHeight of 28 the wordmark would come out ~11.5pt,
+  // roughly half the ~22pt it has rendered at since this document existed, and
+  // the tagline would be illegible. 54pt restores the wordmark to ~22pt
+  // (54 * 0.41), and the two offsets below cancel the new file's much larger
+  // built-in whitespace so the header block still sits where it always has.
+  // Re-measure all three numbers if the logo file is ever re-cropped.
   try {
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
+    const logoPath = path.join(process.cwd(), "public", "logo-full.png");
     const logoBytes = fs.readFileSync(logoPath);
     const logoImage = await doc.embedPng(logoBytes);
-    const logoHeight = 28;
+    const logoHeight = 54;
     const logoWidth = logoImage.width * (logoHeight / logoImage.height);
-    page.drawImage(logoImage, { x: margin, y: y - logoHeight + 8, width: logoWidth, height: logoHeight });
-    y -= logoHeight + 16;
+    page.drawImage(logoImage, { x: margin, y: y - logoHeight + 13, width: logoWidth, height: logoHeight });
+    y -= logoHeight + 2;
   } catch {
     // Fallback to text if logo file not available
     page.drawText("iClosed", { x: margin, y, font: bold, size: 22, color: brandColor });

@@ -15,45 +15,72 @@
 // account yet at step 2. That makes this a paid model endpoint anyone can POST
 // to, so it is rate-limited per IP below and inherits the 10 MB / MIME-allowlist
 // caps the upload token already enforces.
+//
+// The whole document is always sent. An earlier version trimmed long PDFs down
+// to their first and last pages on the theory that page count drove the reads
+// that timed out; measurement said otherwise (see MODEL_LADDER), and a legal
+// document the client uploaded should be read in full.
 
 import { NextResponse } from "next/server";
 import { readBlobDocument, BlobDocumentError } from "@/lib/blobDocument";
-import { parseApsExtraction, type ApsSide } from "@/lib/apsExtraction";
+import {
+  parseApsExtraction,
+  type ApsExtractionResult,
+  type ApsSide,
+} from "@/lib/apsExtraction";
 
-// A full OREA agreement is six to ten pages of dense form text with handwritten
-// inserts and schedules attached — materially harder than the single-page ID
-// photo /api/identify-document classifies, so this runs a full flash tier
-// rather than the flash-lite that route uses.
+// ── Models ────────────────────────────────────────────────────
+// Reads were failing on the model, not on the document — a 700 KB agreement
+// failed exactly like a 7.5 MB one. Measured against the same twelve-page PDF
+// on our own key, gemini-3.5-flash returned in 7.6s, 10s and 94s on three runs,
+// answered "503 high demand" on several more, and — the part that actually
+// broke us — took 47 to 115 SECONDS to deliver that 503. A single-model call
+// behind one timeout could not survive that no matter how the timeout was set.
 //
-// Pinned to a specific version on purpose. A moving alias (gemini-flash-latest)
-// would silently change how a legal document is read between deploys, and this
-// output prefills a client's price, deposit and closing date.
+// So the read walks a ladder instead. Quality first: the strongest tier gets
+// the first look, and an ordinary read never sees the rest. Any failure — slow,
+// overloaded, rate-limited, malformed — hands the same document straight to the
+// next model rather than giving up, and the last rung is the flash-lite tier
+// that answered the identical prompt in ~2s on every attempt. In practice that
+// makes "we couldn't read it" require every tier to fail at once.
 //
-// Verify a change with:
+// Re-measure before reordering, and verify a new id exists first with:
 //   curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
-const GEMINI_MODEL = "gemini-3.5-flash";
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const MODEL_LADDER = [
+  { id: "gemini-3.5-flash", timeoutMs: 55_000 },
+  { id: "gemini-3.6-flash", timeoutMs: 45_000 },
+  { id: "gemini-3.1-flash-lite", timeoutMs: 40_000 },
+] as const;
 
-// Reading a real agreement is SLOW — an OREA form with amendments is ~700 KB
-// and 20+ pages, and measured round-trips on one run at 3.9s (flash-lite),
-// 16.9s (3.5-flash) and 25.6s (3.6-flash). The original 45s ceiling sat close
-// enough to that spread that a longer document tripped it. Nothing is waiting
-// on this — extraction runs in the background while the client fills the form
-// in — so the ceiling is set well clear of the measured range instead.
-const GEMINI_TIMEOUT_MS = 60_000;
-const GEMINI_MAX_ATTEMPTS = 2;
-const GEMINI_RETRY_DELAY_MS = 1_200;
-// Don't start a second attempt unless it can finish inside maxDuration below.
-const GEMINI_RETRY_CUTOFF_MS = 45_000;
+function endpointFor(model: string): string {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
 
+// NOTE: do not add generationConfig.thinkingConfig here. Capping the thinking
+// budget looks like an obvious latency win, but the tiers on this ladder don't
+// agree on it — gemini-3.6-flash and the flash-lite tiers answer
+// `thinkingBudget: 0` with "400 Request contains an invalid argument", which
+// would take out the fallback rungs and leave nothing to fall back TO. The
+// ladder is what buys the latency instead.
+
+// ── Time budget ───────────────────────────────────────────────
 // Vercel kills a function at its plan default (as low as 10s) unless the route
-// says otherwise, which would cut a read off long before the timeout above ever
-// fired — a failure that would only appear once deployed. Bounds the worst case
-// at roughly 45s (attempt 1) + 1.2s + 60s (attempt 2) = ~107s.
-export const maxDuration = 130;
+// says otherwise, which would cut a read off long before our own timeouts ever
+// fired — a failure that only appears once deployed, and one that comes back as
+// a gateway HTML 504 the form can't even parse. This is the one ceiling we
+// can't remove: it's the platform's, not ours. Everything below is budgeted to
+// finish inside it with room to serialize a response.
+export const maxDuration = 180;
 // Buffer and the Blob SDK need the Node runtime, not Edge. Set explicitly, as
 // the other blob-reading routes in this repo do.
 export const runtime = "nodejs";
+
+/** Hard wall for the whole ladder, comfortably inside maxDuration. */
+const TOTAL_BUDGET_MS = 165_000;
+/** Never start a call that can't plausibly finish in the time left. */
+const MIN_ATTEMPT_MS = 8_000;
+/** Only for a connection that dropped — see the loop for why nothing else. */
+const NETWORK_RETRY_DELAY_MS = 1_000;
 
 const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf",
@@ -69,8 +96,12 @@ const SUPPORTED_MIME_TYPES = new Set([
 // In-memory and therefore per-instance — a coarse abuse brake, not a quota.
 // It costs nothing and stops a single client hammering the model endpoint in a
 // loop; anything stricter belongs at the edge.
+//
+// The allowance covers the form's own automatic re-reads: a client whose first
+// pass fails spends several calls getting a result, and must not be throttled
+// for the retries we ourselves asked the page to make.
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const RATE_LIMIT_MAX_CALLS = 12;
+const RATE_LIMIT_MAX_CALLS = 24;
 const recentCalls = new Map<string, number[]>();
 
 function clientKey(req: Request): string {
@@ -206,9 +237,105 @@ function stripCodeFences(text: string): string {
     .trim();
 }
 
+// ── One model call ────────────────────────────────────────────
+
+type ReadOutcome =
+  | { kind: "ok"; result: ApsExtractionResult }
+  | { kind: "timeout" }
+  | { kind: "network" }
+  | { kind: "upstream"; status: number }
+  /** Answered, but with nothing we could parse. */
+  | { kind: "unusable" };
+
+async function readWithModel(
+  apiKey: string,
+  model: string,
+  side: ApsSide,
+  bytes: Buffer,
+  mimeType: string,
+  timeoutMs: number,
+): Promise<ReadOutcome> {
+  const payload = {
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: buildPrompt(side) },
+          { inline_data: { mime_type: mimeType, data: bytes.toString("base64") } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+    },
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${endpointFor(model)}?key=${encodeURIComponent(apiKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (err: unknown) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    console.error(
+      `[extract-aps] ${model}: fetch ${aborted ? "timed out" : "failed"}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return aborted ? { kind: "timeout" } : { kind: "network" };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  const json = (await res.json().catch(() => ({}))) as GeminiResponse;
+
+  if (!res.ok) {
+    // The upstream message can carry key/quota detail — log it, don't return it.
+    console.error(
+      `[extract-aps] ${model}: ${res.status} — ${json?.error?.message ?? "unknown"}`,
+    );
+    return { kind: "upstream", status: res.status };
+  }
+
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  if (!text) {
+    console.error(`[extract-aps] ${model}: empty response text`);
+    return { kind: "unusable" };
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stripCodeFences(text));
+  } catch {
+    console.error(`[extract-aps] ${model}: could not parse model JSON`);
+    return { kind: "unusable" };
+  }
+
+  // parseApsExtraction never throws — a partial or malformed payload degrades
+  // to a result with nothing in it, which the form treats as "couldn't read".
+  return { kind: "ok", result: parseApsExtraction(raw) };
+}
+
 // ── Handler ───────────────────────────────────────────────────
 
+/**
+ * One line of copy for every read failure. The form works either way — the
+ * client just types the details in — so this stays matter-of-fact and says the
+ * file is still going with the submission, which is the thing they'd worry
+ * about. `retryable` tells the page it may quietly go round again.
+ */
+const FALLBACK_MESSAGE =
+  "We couldn't read your agreement automatically. You can enter the details yourself — your file is still saved with your submission.";
+
 export async function POST(req: Request) {
+  const startedAt = Date.now();
+
   try {
     const apiKey =
       process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
@@ -270,7 +397,9 @@ export async function POST(req: Request) {
       throw err;
     }
 
-    if (!SUPPORTED_MIME_TYPES.has(mimeType.toLowerCase())) {
+    mimeType = mimeType.toLowerCase();
+
+    if (!SUPPORTED_MIME_TYPES.has(mimeType)) {
       return NextResponse.json(
         {
           success: false,
@@ -281,155 +410,79 @@ export async function POST(req: Request) {
     }
 
     console.log(
-      `[extract-aps] Reading side="${side}" file="${fileName}" mime="${mimeType}" size=${bytes.byteLength}B model="${GEMINI_MODEL}"`,
+      `[extract-aps] Reading side="${side}" file="${fileName}" mime="${mimeType}" size=${bytes.byteLength}B`,
     );
 
-    const payload = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: buildPrompt(side) },
-            { inline_data: { mime_type: mimeType, data: bytes.toString("base64") } },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: "application/json",
-      },
-    };
+    const deadline = startedAt + TOTAL_BUDGET_MS;
+    let attempts = 0;
+    let sawTimeout = false;
 
-    // The flash tiers return 503 UNAVAILABLE under load often enough that a
-    // single-shot call would surface a transient spike to the client as "we
-    // couldn't read it". One retry costs a second and recovers most of them;
-    // beyond that, the form falls back to manual entry, which always works.
-    let res: Response | null = null;
-    let json: GeminiResponse = {};
-    const startedAt = Date.now();
-
-    for (let attempt = 0; attempt < GEMINI_MAX_ATTEMPTS; attempt++) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-
-      try {
-        res = await fetch(`${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
-      } catch (err: unknown) {
-        clearTimeout(timeoutId);
-        const aborted = err instanceof Error && err.name === "AbortError";
-        console.error(
-          `[extract-aps] fetch error (attempt ${attempt + 1}):`,
-          err instanceof Error ? err.message : err,
-        );
-        // A timeout means the document is slow to read, not that the service is
-        // flaky — retrying just burns another 45 seconds of the client's time.
-        if (aborted) {
-          return NextResponse.json(
-            {
-              success: false,
-              error:
-                "Reading your agreement took too long. You can enter the details yourself.",
-            },
-            { status: 504 },
-          );
-        }
-        if (attempt < GEMINI_MAX_ATTEMPTS - 1) continue;
-        return NextResponse.json(
-          {
-            success: false,
-            error: "We couldn't read your agreement just now. You can enter the details yourself.",
-          },
-          { status: 504 },
-        );
+    for (const model of MODEL_LADDER) {
+      const timeLeft = deadline - Date.now();
+      if (timeLeft < MIN_ATTEMPT_MS) {
+        console.error(`[extract-aps] out of budget before ${model.id}`);
+        break;
       }
-      clearTimeout(timeoutId);
 
-      json = (await res.json().catch(() => ({}))) as GeminiResponse;
-      if (res.ok) break;
-
-      // The upstream message can carry key/quota detail — log it, don't return it.
-      console.error(
-        `[extract-aps] Gemini ${res.status} (attempt ${attempt + 1}): ${json?.error?.message ?? "unknown"}`,
+      attempts++;
+      let outcome = await readWithModel(
+        apiKey,
+        model.id,
+        side,
+        bytes,
+        mimeType,
+        Math.min(model.timeoutMs, timeLeft),
       );
 
-      // 429/5xx are worth a second try; a 400 or 404 is a bug in our request
-      // and will fail identically however many times we send it. And only if
-      // there's time left for the retry to actually complete.
-      const retriable = res.status === 429 || res.status >= 500;
-      const timeLeft = Date.now() - startedAt < GEMINI_RETRY_CUTOFF_MS;
-      if (!retriable || !timeLeft || attempt === GEMINI_MAX_ATTEMPTS - 1) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "We couldn't read your agreement just now. You can enter the details yourself.",
-          },
-          { status: 502 },
+      // A dropped connection is the one failure where the SAME model deserves
+      // an immediate second look — nothing reached it, so nothing about it is
+      // known to be wrong. Every other failure (slow, overloaded, rate-limited,
+      // 400, unparsable) is a verdict on this model right now, and the next
+      // rung is a better use of the budget than asking it again.
+      if (outcome.kind === "network" && deadline - Date.now() > MIN_ATTEMPT_MS) {
+        await new Promise((resolve) => setTimeout(resolve, NETWORK_RETRY_DELAY_MS));
+        attempts++;
+        outcome = await readWithModel(
+          apiKey,
+          model.id,
+          side,
+          bytes,
+          mimeType,
+          Math.min(model.timeoutMs, deadline - Date.now()),
         );
       }
 
-      await new Promise((resolve) => setTimeout(resolve, GEMINI_RETRY_DELAY_MS));
+      if (outcome.kind === "ok") {
+        const result = outcome.result;
+        console.log(
+          `[extract-aps] side="${side}" model="${model.id}" attempts=${attempts} ` +
+            `ms=${Date.now() - startedAt} is_aps=${result.is_aps} ` +
+            `price=${result.purchase_price.value ?? "-"} deposit=${result.deposit.value ?? "-"} ` +
+            `closing=${result.closing_date.value ?? "-"} buyers=${result.buyers.length} ` +
+            `sellers=${result.sellers.length} agents=${result.agents.length}`,
+        );
+        return NextResponse.json({ success: true, result });
+      }
+
+      if (outcome.kind === "timeout") sawTimeout = true;
     }
 
-    if (!res || !res.ok) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "We couldn't read your agreement just now. You can enter the details yourself.",
-        },
-        { status: 502 },
-      );
-    }
-
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    if (!text) {
-      console.error("[extract-aps] Empty response text from Gemini");
-      return NextResponse.json(
-        {
-          success: false,
-          error: "We couldn't read your agreement just now. You can enter the details yourself.",
-        },
-        { status: 502 },
-      );
-    }
-
-    let raw: unknown;
-    try {
-      raw = JSON.parse(stripCodeFences(text));
-    } catch {
-      console.error("[extract-aps] Could not parse model JSON");
-      return NextResponse.json(
-        {
-          success: false,
-          error: "We couldn't read your agreement just now. You can enter the details yourself.",
-        },
-        { status: 502 },
-      );
-    }
-
-    // parseApsExtraction never throws — a partial or malformed payload degrades
-    // to a result with nothing in it, which the form treats as "couldn't read".
-    const result = parseApsExtraction(raw);
-
-    console.log(
-      `[extract-aps] side="${side}" is_aps=${result.is_aps} price=${result.purchase_price.value ?? "-"} deposit=${result.deposit.value ?? "-"} closing=${result.closing_date.value ?? "-"} buyers=${result.buyers.length} sellers=${result.sellers.length} agents=${result.agents.length}`,
+    console.error(
+      `[extract-aps] every model failed after ${attempts} attempt(s) in ${Date.now() - startedAt}ms ` +
+        `(file="${fileName}" size=${bytes.byteLength}B)`,
     );
 
-    return NextResponse.json({ success: true, result });
+    return NextResponse.json(
+      { success: false, error: FALLBACK_MESSAGE, retryable: true },
+      { status: sawTimeout ? 504 : 502 },
+    );
   } catch (err: unknown) {
     console.error(
       "[extract-aps] error:",
       err instanceof Error ? err.message : err,
     );
     return NextResponse.json(
-      {
-        success: false,
-        error: "We couldn't read your agreement just now. You can enter the details yourself.",
-      },
+      { success: false, error: FALLBACK_MESSAGE, retryable: true },
       { status: 500 },
     );
   }
