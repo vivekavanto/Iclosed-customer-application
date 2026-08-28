@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
+import { getVisibleWhen, isVisibleByRules } from "@/lib/visibleWhen";
 import { getTaskCopy, type TaskSide } from "@/lib/taskDescriptions";
 import {
   isCityField,
@@ -137,9 +138,6 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
-// Reads a conditional-visibility rule out of a field's `options` JSON.
-// Shape (set in the DB, not hardcoded here):
-//   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
 // Amber callout — used for task-description notes and "note" fields.
 function InfoNote({ text }: { text: string }) {
   return (
@@ -148,33 +146,6 @@ function InfoNote({ text }: { text: string }) {
       <p className="text-sm leading-relaxed text-amber-800">{text}</p>
     </div>
   );
-}
-
-// Matches one value (`equals`) or any of several (`equals_any`).
-function getVisibleWhen(
-  opts: unknown,
-): { field_label: string; values: string[] } | null {
-  if (
-    opts &&
-    typeof opts === "object" &&
-    !Array.isArray(opts) &&
-    "visible_when" in opts
-  ) {
-    const vw = (
-      opts as {
-        visible_when?: { field_label?: string; equals?: string; equals_any?: unknown };
-      }
-    ).visible_when;
-    if (!vw?.field_label) return null;
-    const values = Array.isArray(vw.equals_any)
-      ? vw.equals_any.map((v) => String(v))
-      : vw.equals != null
-        ? [String(vw.equals)]
-        : [];
-    if (values.length === 0) return null;
-    return { field_label: String(vw.field_label), values };
-  }
-  return null;
 }
 
 // Format phone as (416) 555-1234
@@ -995,6 +966,9 @@ export default function DynamicTaskDrawer({
   function setFile(fieldId: string, file: File) {
     setFiles((prev) => ({ ...prev, [fieldId]: file }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    // Also drop the "is required" validation error, the way setValue does —
+    // picking a file is what satisfies it.
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
 
   function clearFile(fieldId: string) {
@@ -1014,6 +988,7 @@ export default function DynamicTaskDrawer({
   function addMultiFiles(fieldId: string, picked: File[]) {
     setMultiFiles((prev) => ({ ...prev, [fieldId]: [...(prev[fieldId] ?? []), ...picked] }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
   function removeMultiNewFile(fieldId: string, index: number) {
     setMultiFiles((prev) => ({
@@ -1028,21 +1003,10 @@ export default function DynamicTaskDrawer({
     }));
   }
 
-  // Resolve whether a field should currently be shown, based on its (optional)
-  // visible_when rule and the live answer of the parent field it depends on.
-  // Matching the parent is done by label (case-insensitive) and the comparison
-  // is case-insensitive so "Rented"/"rented" both work. Fails open: if there's
-  // no rule, or the parent can't be found, the field stays visible.
+  // Resolve whether a field should currently be shown from its (optional)
+  // visible_when rule — see isVisibleByRules for the matching semantics.
   function isFieldVisible(field: FormField): boolean {
-    const rule = getVisibleWhen(field.options);
-    if (!rule) return true;
-    const parent = fields.find(
-      (f) =>
-        f.label.trim().toLowerCase() === rule.field_label.trim().toLowerCase(),
-    );
-    if (!parent) return true;
-    const current = (values[parent.id] ?? "").trim().toLowerCase();
-    return rule.values.some((v) => v.trim().toLowerCase() === current);
+    return isVisibleByRules(field.options, fields, values);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required

@@ -42,9 +42,15 @@ async function dropMultiPartyOnlyFields<T extends { label: string; options: unkn
     const opts = parseOptions(f.options);
     const attachTo = typeof opts.attach_to === "string" ? opts.attach_to : null;
     if (attachTo && dropped.has(attachTo.trim().toLowerCase())) return false;
-    const parent = (opts.visible_when as { field_label?: string } | undefined)
-      ?.field_label;
-    if (parent && dropped.has(parent.trim().toLowerCase())) return false;
+    // visible_when is either one clause or an `all` array of them; a field is
+    // dropped when ANY clause points at a dropped parent.
+    const vw = opts.visible_when as
+      | { field_label?: string; all?: { field_label?: string }[] }
+      | undefined;
+    const parents = (Array.isArray(vw?.all) ? vw.all : [vw])
+      .map((c) => c?.field_label)
+      .filter((l): l is string => !!l);
+    if (parents.some((l) => dropped.has(l.trim().toLowerCase()))) return false;
     return true;
   });
 }

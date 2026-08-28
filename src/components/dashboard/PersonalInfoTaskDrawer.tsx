@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
+import { getVisibleWhen, isVisibleByRules } from "@/lib/visibleWhen";
 import {
   X,
   Upload,
@@ -319,36 +320,6 @@ function NoteBlock({
   );
 }
 
-// Reads a conditional-visibility rule out of a field's `options` JSON.
-// Shape (set in the DB, not hardcoded here):
-//   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
-// Matches one value (`equals`) or any of several (`equals_any`).
-function getVisibleWhen(
-  opts: unknown,
-): { field_label: string; values: string[] } | null {
-  if (
-    opts &&
-    typeof opts === "object" &&
-    !Array.isArray(opts) &&
-    "visible_when" in opts
-  ) {
-    const vw = (
-      opts as {
-        visible_when?: { field_label?: string; equals?: string; equals_any?: unknown };
-      }
-    ).visible_when;
-    if (!vw?.field_label) return null;
-    const values = Array.isArray(vw.equals_any)
-      ? vw.equals_any.map((v) => String(v))
-      : vw.equals != null
-        ? [String(vw.equals)]
-        : [];
-    if (values.length === 0) return null;
-    return { field_label: String(vw.field_label), values };
-  }
-  return null;
-}
-
 // Format phone as (416) 555-1234
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -372,6 +343,7 @@ function getFileConfig(opts: unknown): {
   max_mb: number;
   doc_type: string;
   multiple: boolean;
+  description: string | null;
 } {
   // options can arrive as an object (JSONB parsed by supabase-js) or, in some
   // setups, as a JSON string — handle both defensively.
@@ -388,6 +360,7 @@ function getFileConfig(opts: unknown): {
     max_mb?: number;
     doc_type?: string;
     multiple?: boolean;
+    description?: string;
   };
   return {
     accept: safeOpts.accept ?? ".pdf,.jpg,.jpeg,.png",
@@ -395,6 +368,8 @@ function getFileConfig(opts: unknown): {
     doc_type: safeOpts.doc_type ?? "document",
     // Explicit opt-in via options.multiple (set on the APS field).
     multiple: safeOpts.multiple === true,
+    // Sub-description shown under the label, above the drop zone.
+    description: safeOpts.description?.trim() || null,
   };
 }
 
@@ -1350,6 +1325,9 @@ export default function PersonalInfoTaskDrawer({
   function setFile(fieldId: string, file: File) {
     setFiles((prev) => ({ ...prev, [fieldId]: file }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    // Also drop the "is required" validation error, the way setValue does —
+    // picking a file is what satisfies it.
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
 
   function clearFile(fieldId: string) {
@@ -1369,6 +1347,7 @@ export default function PersonalInfoTaskDrawer({
   function addMultiFiles(fieldId: string, picked: File[]) {
     setMultiFiles((prev) => ({ ...prev, [fieldId]: [...(prev[fieldId] ?? []), ...picked] }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
   function removeMultiNewFile(fieldId: string, index: number) {
     setMultiFiles((prev) => ({
@@ -1418,24 +1397,13 @@ export default function PersonalInfoTaskDrawer({
     return "";
   }
 
-  // Resolve whether a field should currently be shown, based on its (optional)
-  // visible_when rule and the live answer of the parent field it depends on.
-  // Matching the parent is done by label (case-insensitive) and the comparison
-  // is case-insensitive so "Rented"/"rented" both work. Fails open: if there's
-  // no rule, or the parent can't be found, the field stays visible.
+  // Resolve whether a field should currently be shown from its (optional)
+  // visible_when rule — see isVisibleByRules for the matching semantics.
   function isFieldVisible(field: FormField): boolean {
     // No property address to offer → hide the checkbox, keep the fields.
     if (isMailSameAsPropertyField(field.label)) return mailSameOffered;
     if (mailSameChecked && isMailForwardingField(field)) return false;
-    const rule = getVisibleWhen(field.options);
-    if (!rule) return true;
-    const parent = fields.find(
-      (f) =>
-        f.label.trim().toLowerCase() === rule.field_label.trim().toLowerCase(),
-    );
-    if (!parent) return true;
-    const current = (values[parent.id] ?? "").trim().toLowerCase();
-    return rule.values.some((v) => v.trim().toLowerCase() === current);
+    return isVisibleByRules(field.options, fields, values);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
@@ -1479,21 +1447,16 @@ export default function PersonalInfoTaskDrawer({
     );
   }
 
-  // A conditional note can render below the fold, leaving Submit reachable
+  // A conditional field can render below the fold, leaving Submit reachable
   // before it is ever seen. Scroll each newly revealed one into view.
-  const revealedNoteIds = useRef<Set<string>>(new Set());
+  const revealedFieldIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     const visible = fields
-      .filter(
-        (f) =>
-          f.field_type === "note" &&
-          !!getVisibleWhen(f.options) &&
-          isFieldVisible(f)
-      )
+      .filter((f) => !!getVisibleWhen(f.options) && isFieldVisible(f))
       .map((f) => f.id);
 
-    const newly = visible.filter((id) => !revealedNoteIds.current.has(id));
-    revealedNoteIds.current = new Set(visible);
+    const newly = visible.filter((id) => !revealedFieldIds.current.has(id));
+    revealedFieldIds.current = new Set(visible);
     if (newly.length === 0) return;
 
     document
@@ -1611,6 +1574,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => f.field_type === "file")) {
         const file = workingFiles[field.id];
         if (!file) continue; // no new file for this slot
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -1659,6 +1623,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -1736,6 +1701,12 @@ export default function PersonalInfoTaskDrawer({
       // ── 4. Keep existing file responses that weren't replaced ──
       const existingFileResponses = Object.entries(existingFiles)
         .filter(([fieldId]) => !workingFiles[fieldId]) // not replaced by new file
+        // Drop files on fields the answers now hide, mirroring how their text
+        // answers are blanked above.
+        .filter(([fieldId]) => {
+          const field = fields.find((f) => f.id === fieldId);
+          return !field || isFieldVisible(field);
+        })
         .map(([fieldId, info]) => {
           const field = fields.find((f) => f.id === fieldId);
           return {
@@ -1753,6 +1724,7 @@ export default function PersonalInfoTaskDrawer({
       const existingMultiResponses = Object.entries(existingMultiFiles).flatMap(
         ([fieldId, list]) => {
           const field = fields.find((f) => f.id === fieldId);
+          if (field && !isFieldVisible(field)) return [];
           return (list ?? []).map((info) => ({
             field_id: fieldId,
             field_label: field?.label ?? "",
@@ -1823,6 +1795,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => f.field_type === "file")) {
         const file = activeFiles[field.id];
         if (!file) continue;
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -1871,6 +1844,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -2604,14 +2578,22 @@ export default function PersonalInfoTaskDrawer({
                 }
 
                 // Non-ID task file fields render normally
+                const fileDesc = getFileConfig(field.options).description;
                 return (
-                  <div key={field.id}>
+                  <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
                       {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
+                      {renderLabelBadges(field.label)}
                     </label>
+                    {fileDesc && (
+                      <p className="-mt-1 mb-2 text-xs leading-relaxed text-gray-500">
+                        {fileDesc}
+                      </p>
+                    )}
+                    {renderAttachedNotes(field.label)}
                     {fileFieldAllowsMultiple(field) ? (
                       <MultiFileSlot
                         field={field}
