@@ -335,12 +335,22 @@ export async function POST(req: Request) {
       console.warn("Client fetch failed:", e);
     }
 
-    // ── 1b. Name-identity validation ──────────────────────────
-    // Logged-in users: name MUST match their account's current name or aliases.
-    // Mismatch is hard-blocked — they should rename via /profile first if their
-    // name has changed.
-    // Anonymous users: name mismatch falls back to creating a separate clients
-    // row so two real people sharing an email don't get merged.
+    // ── 1b. Name-identity ─────────────────────────────────────
+    // The name on an intake is the name of the person the FILE is for, which is
+    // not necessarily the person filling the form in. The intake takes its
+    // primary contact from the first purchaser named on the uploaded agreement,
+    // so a co-purchaser, a spouse or a family member may well be the one at the
+    // keyboard — signed in under their own account.
+    //
+    // A submitted name that doesn't match the client we resolved therefore is
+    // not an error to reject. It means we resolved the WRONG client, and the
+    // lead belongs to whoever the submitted name identifies: an existing
+    // clients row where there is one, a fresh row where there isn't.
+    //
+    // This used to hard-block a signed-in submitter ("The name you entered does
+    // not match your account"), which made it impossible to open a file for
+    // anybody but yourself — and impossible to submit at all after a name
+    // change until the account had been renamed.
     if (clientId && (first_name || last_name)) {
       const { data: resolvedClient } = await supabaseAdmin
         .from("clients")
@@ -352,37 +362,51 @@ export async function POST(req: Request) {
         resolvedClient &&
         !nameMatchesClient(resolvedClient, first_name ?? "", last_name ?? "")
       ) {
-        if (isLoggedIn) {
-          return NextResponse.json(
-            {
-              success: false,
-              error:
-                "The name you entered does not match your account. Please use your registered name or update your profile.",
-            },
-            { status: 400 }
-          );
+        const wrongClientId = clientId;
+
+        // Does the submitted name already belong to somebody? Asked before
+        // inserting, or every intake opened for the same person would leave
+        // behind another duplicate clients row. The resolution above never got
+        // this far: it stops at the first match, which was the wrong one.
+        const byName = await findClientByName(first_name ?? "", last_name ?? "");
+        const existing = byName?.merged_into_client_id
+          ? await followMergedClient(byName.merged_into_client_id)
+          : byName;
+
+        if (existing) {
+          clientId = existing.id;
+        } else {
+          const { data: newClient, error: newClientErr } = await supabaseAdmin
+            .from("clients")
+            .insert({
+              email: email ?? null,
+              first_name: first_name ?? "",
+              last_name: last_name ?? "",
+              phone: phone ?? null,
+            })
+            .select("id")
+            .single();
+
+          if (!newClientErr && newClient) {
+            clientId = newClient.id;
+          } else {
+            console.warn(
+              "[Intake] Failed to split client on name mismatch:",
+              newClientErr?.message
+            );
+            clientId = null;
+          }
         }
 
-        // Anonymous: split into a fresh clients row.
-        const { data: newClient, error: newClientErr } = await supabaseAdmin
-          .from("clients")
-          .insert({
-            email: email ?? null,
-            first_name: first_name ?? "",
-            last_name: last_name ?? "",
-            phone: phone ?? null,
-          })
-          .select("id")
-          .single();
-        if (!newClientErr && newClient) {
-          console.log(
-            `[Intake] Email ${email} matched client ${clientId} (${resolvedClient.first_name} ${resolvedClient.last_name}) but submitted name was "${first_name} ${last_name}" — created separate client ${newClient.id}`
-          );
-          clientId = newClient.id;
-        } else {
-          console.warn("[Intake] Failed to split client on name mismatch:", newClientErr?.message);
-          clientId = null;
-        }
+        // Logged either way, because the one case this can't tell apart is a
+        // signed-in client whose own name simply changed — which looks exactly
+        // like one opening a file for someone else. If the two rows turn out to
+        // be the same person, an admin merges them.
+        console.log(
+          `[Intake] Submitted name "${first_name} ${last_name}" does not match client ` +
+            `${wrongClientId} (${resolvedClient.first_name} ${resolvedClient.last_name})` +
+            `${isLoggedIn ? " — signed-in submitter" : ""} → attached to ${clientId ?? "no client"}`
+        );
       }
     }
 

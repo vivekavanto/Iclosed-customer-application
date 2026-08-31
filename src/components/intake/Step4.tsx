@@ -26,49 +26,6 @@ import {
   type ApsExtractionState,
   type ApsSide,
 } from "@/lib/apsExtraction";
-import type { ApsPartyMismatch } from "@/app/intake/page";
-
-/** Human label for the role the client should hold on an agreement. */
-const roleLabel = (role: "purchaser" | "seller") =>
-  role === "purchaser" ? "purchaser" : "seller";
-
-/**
- * The agreement names other people, but not the signed-in client.
- *
- * Loud and blocking on purpose: every downstream step — the prices, the
- * co-purchaser cards, the parties we open the file for — is derived from this
- * document, so accepting one that belongs to a different buyer would build the
- * whole file around the wrong person.
- */
-const PartyMismatchNotice: React.FC<{ mismatch: ApsPartyMismatch }> = ({ mismatch }) => (
-  <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-    <p className="flex items-start gap-2 text-xs font-semibold text-red-800">
-      <AlertCircle size={14} className="mt-px flex-shrink-0" />
-      This agreement doesn&apos;t name you as the {roleLabel(mismatch.role)}.
-    </p>
-    <div className="mt-2 pl-6 text-xs leading-relaxed text-red-700">
-      {mismatch.onOppositeSide ? (
-        <p>
-          You&apos;re named on this agreement, but as the{" "}
-          {mismatch.role === "purchaser" ? "seller" : "purchaser"} — not the{" "}
-          {roleLabel(mismatch.role)}. Please check you&apos;ve uploaded it under the
-          right property.
-        </p>
-      ) : (
-        <p>
-          You&apos;re signed in as <strong>{mismatch.selfName}</strong>, and the{" "}
-          {mismatch.role === "purchaser" ? "buyers" : "sellers"} on this document are{" "}
-          <strong>{mismatch.names.join(", ")}</strong>.
-        </p>
-      )}
-      <p className="mt-1.5">
-        Remove the file and upload your own agreement. If the name on the agreement
-        is spelled differently from your account, contact us and we&apos;ll sort it
-        out.
-      </p>
-    </div>
-  </div>
-);
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -106,8 +63,6 @@ interface ApsBlockProps {
   extraction?: ApsExtractionState;
   /** Read the already-uploaded agreement again. Offered after a failed read. */
   onRetryRead?: (side: Side) => void;
-  /** Set when the read succeeded but didn't name the signed-in client. */
-  partyMismatch?: ApsPartyMismatch | null;
   // Show the per-side "APS for Purchasing/Sale Property" label beside the
   // toggle. Only needed in "both" mode to tell the two blocks apart — in a
   // single-side flow it just repeats the page heading, so it's hidden.
@@ -124,7 +79,6 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
   onFileRemoved,
   extraction,
   onRetryRead,
-  partyMismatch,
   showHeading,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -290,10 +244,9 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
             </div>
           )}
 
-          {/* Read status. A slow, still-running or failed read never blocks
-              Continue — the next steps just come up blank and the client fills
-              them in as they always have. The ONE blocking outcome is a read
-              that succeeded and named someone else: see PartyMismatchNotice. */}
+          {/* Read status. Nothing here ever blocks Continue: a slow, failed or
+              unhelpful read just leaves the next steps blank and the client
+              fills them in as they always have. */}
           {extraction && extraction.status !== "idle" && (
             <div className="mt-3">
               {(extraction.status === "uploading" || extraction.status === "reading") && (
@@ -331,9 +284,7 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
 
               {extraction.status === "done" && extraction.result && (
                 <>
-                  {partyMismatch ? (
-                    <PartyMismatchNotice mismatch={partyMismatch} />
-                  ) : !extraction.result.is_aps ? (
+                  {!extraction.result.is_aps ? (
                     <p className="flex items-start gap-2 text-xs text-gray-500">
                       <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
                       That doesn&apos;t look like an Agreement of Purchase and Sale, so we
@@ -343,9 +294,12 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
                   ) : hasAnyExtractedValue(extraction.result) ? (
                     <p className="flex items-start gap-2 text-xs text-green-700">
                       <CheckCircle2 size={13} className="mt-0.5 flex-shrink-0" />
-                      We read {countExtractedValues(extraction.result)} details from your
-                      agreement. They&apos;re filled in on the next steps — please check
-                      them before you submit.
+                      We read {countExtractedValues(extraction.result)} details from your{" "}
+                      {files.length > 1
+                        ? `${files.length} documents, amendments included`
+                        : "agreement"}
+                      . They&apos;re filled in on the next steps — please check them
+                      before you submit.
                     </p>
                   ) : (
                     <p className="flex items-start gap-2 text-xs text-gray-500">
@@ -357,12 +311,6 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
                 </>
               )}
 
-              {files.length > 1 && (
-                <p className="mt-1.5 text-[11px] text-gray-400">
-                  We read the first file only. Amendments and schedules are stored with
-                  your file for our team to review.
-                </p>
-              )}
             </div>
           )}
         </div>
@@ -387,8 +335,6 @@ interface Step4Props {
   extraction?: Record<ApsSide, ApsExtractionState>;
   /** Read a side's already-uploaded agreement again, after a failed read. */
   onRetryRead?: (side: ApsSide) => void;
-  /** Per side: the agreement read fine but didn't name the signed-in client. */
-  partyMismatch?: Record<ApsSide, ApsPartyMismatch | null>;
   setStep: (step: number) => void;
   step: number;
 }
@@ -407,7 +353,6 @@ const Step4: React.FC<Step4Props> = ({
   onFileRemoved,
   extraction,
   onRetryRead,
-  partyMismatch,
   setStep,
   step,
 }) => {
@@ -425,22 +370,6 @@ const Step4: React.FC<Step4Props> = ({
     }
     if (showSale && !apsSaleSigned) {
       toastError("Please select whether you've signed the APS for the sale property.");
-      return;
-    }
-
-    // An agreement that doesn't name the signed-in client is the wrong file,
-    // and every step after this one is built out of it. Hard stop until it's
-    // removed — the on-screen notice explains why.
-    if (showPurchase && partyMismatch?.purchase) {
-      toastError(
-        "The agreement you uploaded for the purchasing property doesn't name you. Please remove it and upload your own.",
-      );
-      return;
-    }
-    if (showSale && partyMismatch?.sale) {
-      toastError(
-        "The agreement you uploaded for the sale property doesn't name you. Please remove it and upload your own.",
-      );
       return;
     }
 
@@ -542,7 +471,6 @@ const Step4: React.FC<Step4Props> = ({
                     onFileRemoved={onFileRemoved}
                     extraction={extraction?.purchase}
                     onRetryRead={onRetryRead}
-                    partyMismatch={partyMismatch?.purchase}
                     showHeading={showPurchase && showSale}
                   />
                 </div>
@@ -559,7 +487,6 @@ const Step4: React.FC<Step4Props> = ({
                     onFileRemoved={onFileRemoved}
                     extraction={extraction?.sale}
                     onRetryRead={onRetryRead}
-                    partyMismatch={partyMismatch?.sale}
                     showHeading={showPurchase && showSale}
                   />
                 </div>

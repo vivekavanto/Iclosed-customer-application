@@ -10,7 +10,7 @@ import {
   validateUnit,
   validateStreet,
 } from "@/lib/addressValidation";
-import { ChevronLeft, ChevronRight, Home, FileText, Sparkles } from "lucide-react";
+import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
 import type { PrefillKey } from "@/lib/apsPrefill";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -38,52 +38,6 @@ function Field({ children }: { children: React.ReactNode }) {
     return <div className="flex flex-col gap-1.5 w-full">{children}</div>;
 }
 
-/**
- * Shown under a field the APS filled in, or offered as a tap-to-accept
- * suggestion when the read wasn't confident enough to write it outright.
- *
- * Nothing here is ever silent: a value that came off the document says so, and
- * stays fully editable.
- *
- * Spacing is the parent Field's job — no margins here, or the note lands at a
- * different height depending on which wrapper it happens to be nested in.
- */
-function PrefillNote({
-    fieldKey,
-    isPrefilled,
-    suggestion,
-    onAccept,
-}: {
-    fieldKey: PrefillKey;
-    isPrefilled: boolean;
-    suggestion?: string;
-    onAccept: (key: PrefillKey) => void;
-}) {
-    if (isPrefilled) {
-        return (
-            <p className="flex items-center gap-1 text-[11px] text-green-700">
-                <Sparkles size={11} strokeWidth={2} className="flex-shrink-0" />
-                From your agreement — please check it&apos;s right.
-            </p>
-        );
-    }
-
-    if (suggestion) {
-        return (
-            <button
-                type="button"
-                onClick={() => onAccept(fieldKey)}
-                className="self-start flex items-center gap-1 text-[11px] text-[#C10007] hover:underline cursor-pointer"
-            >
-                <Sparkles size={11} strokeWidth={2} className="flex-shrink-0" />
-                Your agreement may say {suggestion} — use it
-            </button>
-        );
-    }
-
-    return null;
-}
-
 interface Step2Props {
     purchasePrice: string;
     setPurchasePrice: (value: string) => void;
@@ -105,17 +59,10 @@ interface Step2Props {
     setStep: (step: number) => void;
     step: number;
     agreementSigned: "yes" | "no" | null;
-    /** Fields currently holding a value read off the uploaded agreement. */
-    prefilledFields?: Set<PrefillKey>;
-    /** Medium/low-confidence reads, offered rather than written. */
-    suggestions?: Partial<Record<PrefillKey, string>>;
     /** Reported on every edit so a late-arriving read can't overwrite the client. */
     onFieldTouched?: (key: PrefillKey) => void;
-    onAcceptSuggestion?: (key: PrefillKey) => void;
 }
 
-const NO_PREFILLED_FIELDS: Set<PrefillKey> = new Set();
-const NO_SUGGESTIONS: Partial<Record<PrefillKey, string>> = {};
 const noop = () => {};
 
 function validateAddress(formData: AddressData) {
@@ -156,10 +103,7 @@ function PropertyDetailsForm({
     onClosingDateChange,
     formatCurrency,
     slot,
-    prefilledFields,
-    suggestions,
     onFieldTouched,
-    onAcceptSuggestion,
 }: {
     label: string;
     icon: React.ElementType;
@@ -180,10 +124,7 @@ function PropertyDetailsForm({
     formatCurrency: (value: string) => string;
     /** Which half of a Buy & Sell this card is — decides which prefill keys it owns. */
     slot: "primary" | "selling";
-    prefilledFields: Set<PrefillKey>;
-    suggestions: Partial<Record<PrefillKey, string>>;
     onFieldTouched: (key: PrefillKey) => void;
-    onAcceptSuggestion: (key: PrefillKey) => void;
 }) {
     const errors = validateAddress(formData);
     const touch = (field: keyof AddressData) =>
@@ -204,15 +145,6 @@ function PropertyDetailsForm({
             ? "sellingAddress.postalCode"
             : "address.postalCode") as PrefillKey,
     };
-
-    const note = (key: PrefillKey) => (
-        <PrefillNote
-            fieldKey={key}
-            isPrefilled={prefilledFields.has(key)}
-            suggestion={suggestions[key]}
-            onAccept={onAcceptSuggestion}
-        />
-    );
 
     return (
         <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -241,7 +173,6 @@ function PropertyDetailsForm({
                         placeholder="$1,250,000"
                     />
                     {priceError && <p className="text-xs text-red-600">{priceError}</p>}
-                    {note(KEY.price)}
                 </Field>
 
                 {/* Deposit. Still not REQUIRED to submit — it just isn't
@@ -260,7 +191,6 @@ function PropertyDetailsForm({
                         }}
                         placeholder="$50,000"
                     />
-                    {note(KEY.deposit)}
                 </Field>
 
                 {/* Closing date. Printed on the APS, so it prefills from an
@@ -278,7 +208,6 @@ function PropertyDetailsForm({
                         }}
                         hint="The completion date on your agreement, if you have one."
                     />
-                    {note(KEY.closingDate)}
                 </Field>
 
                 {/* Divider between price and address */}
@@ -314,7 +243,6 @@ function PropertyDetailsForm({
                     {showError("street") && (
                         <p className="text-xs text-red-600">{showError("street")}</p>
                     )}
-                    {note(KEY.street)}
                 </Field>
 
                 {/* Unit */}
@@ -331,7 +259,6 @@ function PropertyDetailsForm({
                         onBlur={() => touch("unit")}
                         error={showError("unit")}
                     />
-                    {note(KEY.unit)}
                 </Field>
 
                 {/* City */}
@@ -349,7 +276,6 @@ function PropertyDetailsForm({
                         onBlur={() => touch("city")}
                         error={showError("city")}
                     />
-                    {note(KEY.city)}
                 </Field>
 
                 {/* Postal Code */}
@@ -367,7 +293,6 @@ function PropertyDetailsForm({
                         onBlur={() => touch("postalCode")}
                         error={showError("postalCode")}
                     />
-                    {note(KEY.postalCode)}
                 </Field>
 
                 {/* Province (locked) */}
@@ -407,10 +332,7 @@ const Step2: React.FC<Step2Props> = ({
     setStep,
     step,
     agreementSigned,
-    prefilledFields = NO_PREFILLED_FIELDS,
-    suggestions = NO_SUGGESTIONS,
     onFieldTouched = noop,
-    onAcceptSuggestion = noop,
 }) => {
     const isSelling = selectedClosingOption === "selling";
     const isBoth = selectedClosingOption === "both";
@@ -613,10 +535,7 @@ const Step2: React.FC<Step2Props> = ({
                                     onClosingDateChange={setClosingDate}
                                     formatCurrency={formatCurrency}
                                     slot="primary"
-                                    prefilledFields={prefilledFields}
-                                    suggestions={suggestions}
                                     onFieldTouched={onFieldTouched}
-                                    onAcceptSuggestion={onAcceptSuggestion}
                                 />
 
                                 <PropertyDetailsForm
@@ -638,10 +557,7 @@ const Step2: React.FC<Step2Props> = ({
                                     onClosingDateChange={setSellingClosingDate}
                                     formatCurrency={formatCurrency}
                                     slot="selling"
-                                    prefilledFields={prefilledFields}
-                                    suggestions={suggestions}
                                     onFieldTouched={onFieldTouched}
-                                    onAcceptSuggestion={onAcceptSuggestion}
                                 />
                             </>
                         ) : (
@@ -664,10 +580,7 @@ const Step2: React.FC<Step2Props> = ({
                                 onClosingDateChange={setClosingDate}
                                 formatCurrency={formatCurrency}
                                 slot="primary"
-                                prefilledFields={prefilledFields}
-                                suggestions={suggestions}
                                 onFieldTouched={onFieldTouched}
-                                onAcceptSuggestion={onAcceptSuggestion}
                             />
                         )}
 

@@ -147,6 +147,26 @@ export function partiesForSide(
 }
 
 /**
+ * The first party named on the agreement is the person the file is opened for;
+ * everyone after them is a co-party.
+ *
+ * This is the whole rule, and it is deliberately not clever. The intake used to
+ * try to work out which party was the signed-in account holder and treat THAT
+ * one as "you" — which meant a client submitting on behalf of the first
+ * purchaser, or one signed in under a slightly different spelling, ended up
+ * absent from their own file while every purchaser on the document was listed
+ * as a co-purchaser. Reading order is what the document itself says, needs no
+ * account to interpret, and is what the client sees when they check it.
+ */
+export function splitPrimaryParty(names: string[]): {
+  primary: string | null;
+  others: string[];
+} {
+  if (names.length === 0) return { primary: null, others: [] };
+  return { primary: names[0], others: names.slice(1) };
+}
+
+/**
  * The agent to seed into the partner search — the one on the client's own side
  * where the roles are known, otherwise the first named agent.
  *
@@ -157,112 +177,94 @@ export function partiesForSide(
 export function agentForSide(
   result: ApsExtractionResult,
   side: ApsSide,
-): { name: string; company: string | null } | null {
+): ApsAgentDetails | null {
   const wanted = side === "sale" ? "listing" : "cooperating";
   const named = result.agents.filter((a) => a.full_name);
   if (named.length === 0) return null;
 
   const match = named.find((a) => a.role === wanted) ?? named[0];
-  return { name: match.full_name as string, company: match.brokerage };
-}
-
-// ── Who on the agreement is the signed-in client? ──────────────────────────
-//
-// An APS with two buyers names the purchaser AND one co-purchaser — never two
-// co-purchasers. Before this check the intake had no way to tell which of the
-// two was the person filling the form, so it seeded a card for both and the
-// client ended up listed alongside themselves.
-//
-// Matching is exact and case-insensitive, by decision: a looser match risks
-// consuming a genuine co-purchaser as "you" and silently dropping them from
-// the file, which is worse than asking the client to check the document.
-
-/**
- * Case/whitespace-insensitive form of a person's name.
- *
- * Only casing and run-together whitespace are normalized — a middle name, an
- * initial or a "Smith, John" reversal is a real difference here and will not
- * match, which is what "exact" means for this gate.
- */
-export function normalizePartyName(name: string): string {
-  return name.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
-/**
- * Splits an agreement's parties into the signed-in client and everyone else.
- *
- * Exactly one entry is consumed as `self`, even when the agreement names the
- * same person twice — the rest stay co-parties, so N parties always yield
- * N-1 cards once the client is matched.
- */
-export function splitSelfFromParties(
-  names: string[],
-  selfName: string,
-): { self: string | null; others: string[] } {
-  const target = normalizePartyName(selfName);
-  if (!target) return { self: null, others: names };
-
-  const index = names.findIndex((n) => normalizePartyName(n) === target);
-  if (index === -1) return { self: null, others: names };
-
   return {
-    self: names[index],
-    others: [...names.slice(0, index), ...names.slice(index + 1)],
+    name: match.full_name as string,
+    company: match.brokerage,
+    // Only ever what was printed on the document. The contact step shows these
+    // in editable fields, so a blank one costs the client a line of typing —
+    // a wrong one costs someone else our emails about a file they aren't on.
+    email: match.email,
+    phone: match.phone,
   };
 }
 
-/** Which role the client should hold on an agreement read from this side. */
-export type PartyRole = "purchaser" | "seller";
+/** The agent details the contact step seeds its referral fields from. */
+export interface ApsAgentDetails {
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+}
 
-export type SelfPartyCheck =
-  /** Nothing to check against — not signed in, or the account has no name. */
-  | { status: "unverifiable" }
-  /** The read found no parties on the client's side, so there is nothing to match. */
-  | { status: "no-parties"; role: PartyRole }
-  /** The client is named on the agreement. `others` are the co-parties. */
-  | { status: "match"; role: PartyRole; self: string; others: string[] }
-  /** The client is NOT named on their side of the agreement. */
-  | {
-      status: "mismatch";
-      role: PartyRole;
-      /** Names the agreement DID give for that role, so the error can list them. */
-      names: string[];
-      /** True when they were found on the far side instead (buyer vs seller mix-up). */
-      onOppositeSide: boolean;
-    };
+
+// ── Is the signed-in visitor named on this agreement? ──────────────────────
+//
+// Asked for one reason only: a visitor who is signed in as one person and
+// uploading another person's agreement is signed out, with an explanation. The
+// intake itself takes its parties from the document either way — the account
+// plays no part in filling the form in.
+//
+// The comparison is deliberately TOLERANT, because the two failure modes cost
+// wildly different amounts. A false mismatch signs a real client out of their
+// own account over a middle initial. A false match just leaves a session alone.
 
 /**
- * Is the signed-in client a party to this agreement, and if so which co-parties
- * are left over?
+ * The parts of a name that actually identify a person.
  *
- * `no-parties` is deliberately NOT a mismatch: a read that pulled no names at
- * all tells us nothing about who signed, and blocking on it would trap a client
- * holding a perfectly valid agreement behind a bad OCR pass.
+ * Punctuation goes, so "Mohammed, Haneef Mugdi" reads as three names rather
+ * than a surname glued to a comma. Case goes. Single letters go with them: an
+ * initial is not a name, which is what makes "Rehana M Haneef" and "Rehana
+ * Haneef" the same person.
  */
-export function checkSelfOnAgreement(
-  result: ApsExtractionResult,
-  side: ApsSide,
-  selfName: string | null | undefined,
-): SelfPartyCheck {
-  const target = normalizePartyName(selfName ?? "");
-  if (!target) return { status: "unverifiable" };
+export function nameTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\s]/gu, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 1);
+}
 
-  // Not an agreement at all — Step 2 already says so in its own words, and the
-  // party lists on a non-APS read mean nothing to check against.
-  if (!result.is_aps) return { status: "unverifiable" };
+/**
+ * Plausibly the same person, named twice?
+ *
+ * The shorter name has to be wholly contained in the longer one, order
+ * ignored — which is what handles a middle name on one side, a surname-first
+ * entry on the other, and a document that prints a name in full where an
+ * account holds it short.
+ *
+ * One shared token is not a match: "John" and "John Smith" are as likely to be
+ * two people as one, and signing the wrong one out is the expensive mistake.
+ * The exception is a name that genuinely has one part, which some do.
+ */
+export function isSamePerson(a: string, b: string): boolean {
+  const first = new Set(nameTokens(a));
+  const second = new Set(nameTokens(b));
+  if (first.size === 0 || second.size === 0) return false;
 
-  const { role, names } = partiesForSide(result, side);
-  if (names.length === 0) return { status: "no-parties", role };
+  const [smaller, larger] =
+    first.size <= second.size ? [first, second] : [second, first];
 
-  const { self, others } = splitSelfFromParties(names, target);
-  if (self) return { status: "match", role, self, others };
+  for (const token of smaller) {
+    if (!larger.has(token)) return false;
+  }
 
-  // Named on the other side of the deal — a different problem from "not on the
-  // document at all", and worth saying so.
-  const opposite = side === "sale" ? result.buyers : result.sellers;
-  const onOppositeSide = opposite.some(
-    (p) => normalizePartyName(p.full_name) === target,
-  );
+  return smaller.size >= 2 || larger.size === 1;
+}
 
-  return { status: "mismatch", role, names, onOppositeSide };
+/**
+ * Is the signed-in visitor one of the parties named here?
+ *
+ * True when there is nobody to check against — an empty party list says the
+ * read found no names, which tells us nothing about who signed the agreement
+ * and is no reason to end anybody's session.
+ */
+export function accountIsAParty(names: string[], accountName: string): boolean {
+  if (!accountName.trim() || names.length === 0) return true;
+  return names.some((name) => isSamePerson(name, accountName));
 }

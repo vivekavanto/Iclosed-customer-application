@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { INTAKE_STEPS, STEP_PRICE_ADDRESS } from "@/components/intake/steps";
+import type { ApsAgentDetails } from "@/lib/apsPrefill";
 
 interface ContactData {
     fullName: string;
@@ -95,6 +96,20 @@ export interface ContactInfo {
     email: string;
     phone: string;
 }
+
+/**
+ * A person's name, as a real document writes one.
+ *
+ * Letters, plus the punctuation that turns up in names people actually have:
+ * hyphens (Anne-Marie), apostrophes (O'Brien), periods (J. R. Smith) and the
+ * comma of a surname-first entry. Accented and non-Latin letters count as
+ * letters. Digits and symbols still don't.
+ *
+ * Letters-and-spaces-only was rejecting names read straight off the uploaded
+ * agreement — the form filled the field in and then refused its own value.
+ */
+const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M}\s'’.,-]*$/u;
+const NAME_ERROR = "Enter a name using letters only.";
 
 const makeEmptyCard = (): CoPersonCard => ({
     id: crypto.randomUUID(),
@@ -306,8 +321,6 @@ interface Step5ContactProps {
     setShowSuccessModal: (show: boolean) => void;
     step: number;
     onComplete: (data: ContactData) => Promise<void> | void;
-    /** Pre-fill contact fields when user is already logged in */
-    initialData?: { fullName: string; email: string; phone: string };
     /** Determines which co-person sections render: buying→Co-Purchaser, selling→Co-Seller, both→both sections */
     selectedClosingOption?: string | null;
     // Lifted state — owned by the intake page so values persist when the user
@@ -332,24 +345,21 @@ interface Step5ContactProps {
     referralAgent: ReferralAgentInfo;
     setReferralAgent: React.Dispatch<React.SetStateAction<ReferralAgentInfo>>;
     /**
-     * Names read off the uploaded agreement, offered as co-person cards.
-     * Names only — the APS carries no contact details, so the client still
-     * supplies email and phone.
+     * The CO-parties read off the uploaded agreement, offered as co-person
+     * cards. Names only — the APS carries no contact details, so the client
+     * still supplies email and phone.
      *
-     * For a signed-in client this list already EXCLUDES them: the page matched
-     * their account name to a party and consumed it, so two buyers on the
-     * agreement arrive here as one co-purchaser, not two.
+     * The first party on the agreement is NOT in this list: they are the person
+     * the file is being opened for, and arrive as apsPrimaryName below.
      */
     apsParties?: { purchaser: string[]; seller: string[] };
     /**
-     * One entry per agreement that named the signed-in client as a party. Empty
-     * on a logged-out intake, where there's no account name to match. Buy & Sell
-     * yields two — the client is the purchaser on one agreement, the seller on
-     * the other — which is why this is a list and not a single value.
+     * The first party named on the client's side of the agreement, seeded into
+     * "Your Information". Null when nothing was uploaded or no name was read.
      */
-    apsSelfMatches?: Array<{ role: "purchaser" | "seller"; name: string }>;
-    /** Agent named on the agreement, seeded into the partner search. */
-    apsAgent?: { name: string; company: string | null } | null;
+    apsPrimaryName?: string | null;
+    /** Agent named on the agreement, seeded into the referral fields. */
+    apsAgent?: ApsAgentDetails | null;
     documentUploadChoice: string;
     setDocumentUploadChoice: React.Dispatch<React.SetStateAction<string>>;
 }
@@ -359,7 +369,6 @@ export default function Step5Contact({
     setShowSuccessModal,
     step,
     onComplete,
-    initialData,
     selectedClosingOption,
     contactInfo,
     setContactInfo,
@@ -380,7 +389,7 @@ export default function Step5Contact({
     referralAgent,
     setReferralAgent,
     apsParties,
-    apsSelfMatches,
+    apsPrimaryName,
     apsAgent,
     documentUploadChoice,
     setDocumentUploadChoice,
@@ -396,6 +405,10 @@ export default function Step5Contact({
     const setFormData = setContactInfo;
 
     const [submitting, setSubmitting] = React.useState(false);
+
+    // True while the agent showing in the referral fields is the one we read off
+    // the agreement. Cleared the moment the client picks a source themselves.
+    const [agentFromAgreement, setAgentFromAgreement] = React.useState(false);
 
     // Referral code flow — shown only when the referral source is an agent/broker.
     const isReferralPartner =
@@ -485,6 +498,11 @@ export default function Step5Contact({
     // Name and email identify the referrer (email is also the dedup key used to
     // find-or-create their Partner record), so both are required. Company and
     // phone are nice-to-have and stay optional.
+    // The agent section is only opened by us — rather than by the client
+    // choosing "Real estate agent" — when the uploaded agreement named one.
+    // That distinction is what decides whether the email is required below.
+    const agentEmailRequired = !agentFromAgreement;
+
     const validateReferralAgent = (
         agent: ReferralAgentInfo,
     ): { name?: string; email?: string; phone?: string } => {
@@ -499,8 +517,14 @@ export default function Step5Contact({
         }
         if (!agent.name.trim()) errs.name = `${partnerNoun} name is required.`;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!agent.email.trim()) errs.email = `${partnerNoun} email is required.`;
-        else if (!emailRegex.test(agent.email.trim())) errs.email = "Enter a valid email address.";
+        // Required when the client chose to credit an agent, optional when WE
+        // put the agent there off their agreement: an APS names the salesperson
+        // and often not their email, and we must not make a client hunt down an
+        // address for a section they never asked to fill in.
+        if (!agent.email.trim()) {
+            if (agentEmailRequired) errs.email = `${partnerNoun} email is required.`;
+        } else if (!emailRegex.test(agent.email.trim()))
+            errs.email = "Enter a valid email address.";
         // Optional — but if they typed something, it must be a full number.
         if (agent.phone.trim() && !phoneRegex.test(agent.phone.trim()))
             errs.phone = "Enter phone in (416) 555-1234 format.";
@@ -529,7 +553,7 @@ export default function Step5Contact({
     const validateCoCard = (card: CoPersonCard): { fullName?: string; email?: string; phone?: string } => {
         const errs: { fullName?: string; email?: string; phone?: string } = {};
         if (!card.fullName.trim()) errs.fullName = "Full name is required.";
-        else if (!/^[A-Za-z\s]+$/.test(card.fullName.trim())) errs.fullName = "Name can only contain letters.";
+        else if (!NAME_PATTERN.test(card.fullName.trim())) errs.fullName = NAME_ERROR;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!card.email.trim()) errs.email = "Email is required.";
         else if (!emailRegex.test(card.email.trim())) errs.email = "Enter a valid email address.";
@@ -593,8 +617,6 @@ export default function Step5Contact({
     ];
     const [isValid, setIsValid] = React.useState(false);
 
-    const isLoggedIn = !!initialData?.email;
-
     const [errors, setErrors] = React.useState<{
         fullName?: string;
         email?: string;
@@ -629,14 +651,27 @@ export default function Step5Contact({
     }, [activeCoCards, documentUploadChoice, setDocumentUploadChoice]);
 
     // ── Prefill from the uploaded agreement ────────────────────
-    // The APS names every buyer and seller. Those names seed the co-person
-    // cards so the client completes contact details rather than transcribing
+    // The APS names every buyer and seller, in the order they appear on the
+    // document. The page has already taken the FIRST of them as the person the
+    // file is for (apsPrimaryName, seeded into Your Information below), so what
+    // arrives in apsParties is the co-parties. Those names seed the co-person
+    // cards, so the client completes contact details rather than transcribing
     // names — email stays required, because the agreement doesn't carry one.
-    //
-    // For a signed-in client the page has already removed them from these
-    // lists (see ApsSelfMatch), so what arrives here is co-parties only. The
-    // self-name filtering below still runs: it's what handles the logged-out
-    // intake, where the client's own name isn't known until they type it.
+
+    // The name on the agreement goes into Your Information, once, and only into
+    // an empty field: a client who has already typed their own details has said
+    // everything we need to know about who they are.
+    const apsPrimaryAppliedRef = React.useRef(false);
+    React.useEffect(() => {
+        if (apsPrimaryAppliedRef.current) return;
+        const primary = apsPrimaryName?.trim();
+        if (!primary) return;
+
+        apsPrimaryAppliedRef.current = true;
+        setFormData((prev) =>
+            prev.fullName.trim() ? prev : { ...prev, fullName: primary },
+        );
+    }, [apsPrimaryName, setFormData]);
 
     // Every name the agreement named, lowercased. A card matching one of these
     // came off the document rather than out of the client's keyboard — which is
@@ -652,16 +687,23 @@ export default function Step5Contact({
         [apsParties],
     );
 
-    const apsPartiesAppliedRef = React.useRef(false);
+    // The names last seeded into each stack, per stack. Re-seeding is keyed off
+    // this rather than a fires-once ref: an amendment read finishing AFTER the
+    // client reached this step adds a purchaser, and a once-only seed would
+    // leave that person off the file entirely — which is exactly what happened
+    // to the co-purchaser added by amendment on a three-buyer agreement.
+    const seededNamesRef = React.useRef<Record<"purchaser" | "seller", string>>({
+        purchaser: "",
+        seller: "",
+    });
 
     React.useEffect(() => {
-        if (apsPartiesAppliedRef.current) return;
-
-        const purchasers = apsParties?.purchaser ?? [];
-        const sellers = apsParties?.seller ?? [];
-        if (purchasers.length === 0 && sellers.length === 0) return;
-
-        apsPartiesAppliedRef.current = true;
+        // A card the client has started filling in — or typed from scratch —
+        // is theirs. Re-seeding replaces cards, so it must never run over one.
+        const isSeededCard = (c: CoPersonCard) =>
+            !c.email.trim() &&
+            !c.phone.trim() &&
+            (isCardEmpty(c) || apsNameSet.has(c.fullName.trim().toLowerCase()));
 
         // The client is one of the parties on the agreement. Whichever name
         // they've given as their own is theirs, not a co-person's.
@@ -671,29 +713,47 @@ export default function Step5Contact({
                 .filter((n) => n.trim().toLowerCase() !== selfName)
                 .map((n) => ({ ...makeEmptyCard(), fullName: n }));
 
-        // Never disturb cards the client has already started filling in.
-        if (
-            showPurchaserStack &&
-            purchasers.length > 0 &&
-            !coPurchaserCards.some((c) => !isCardEmpty(c))
-        ) {
-            const cards = toCards(purchasers);
-            if (cards.length > 0) setCoPurchaserCards(cards);
-        }
+        const seed = (
+            which: "purchaser" | "seller",
+            show: boolean,
+            names: string[],
+            current: CoPersonCard[],
+            setCards: React.Dispatch<React.SetStateAction<CoPersonCard[]>>,
+        ) => {
+            if (!show || names.length === 0) return;
 
-        if (
-            showSellerStack &&
-            sellers.length > 0 &&
-            !coSellerCards.some((c) => !isCardEmpty(c))
-        ) {
-            const cards = toCards(sellers);
-            if (cards.length > 0) setCoSellerCards(cards);
-        }
-        // Seeds exactly once. The ref guard above is what stops a re-run, not
-        // the dep list — adding the card arrays here would re-enter on every
-        // keystroke the client makes in a card.
+            // Same names as last time — leave the cards alone. They carry
+            // generated ids that the "who uploads documents" picker refers to,
+            // so replacing them for no reason would clear that answer.
+            const signature = names.join("|");
+            if (seededNamesRef.current[which] === signature) return;
+            if (!current.every(isSeededCard)) return;
+
+            const cards = toCards(names);
+            if (cards.length === 0) return;
+            seededNamesRef.current[which] = signature;
+            setCards(cards);
+        };
+
+        seed(
+            "purchaser",
+            showPurchaserStack,
+            apsParties?.purchaser ?? [],
+            coPurchaserCards,
+            setCoPurchaserCards,
+        );
+        seed(
+            "seller",
+            showSellerStack,
+            apsParties?.seller ?? [],
+            coSellerCards,
+            setCoSellerCards,
+        );
+        // The card arrays are read, not depended on: including them would
+        // re-enter this on every keystroke the client makes in a card. What
+        // decides whether to re-seed is the name list, which is in the deps.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [apsParties, showPurchaserStack, showSellerStack]);
+    }, [apsParties, apsNameSet, formData.fullName, showPurchaserStack, showSellerStack]);
 
     // If the client types their own name after the cards were seeded, drop the
     // seeded card that duplicates them. Only ever touches cards the prefill
@@ -724,10 +784,22 @@ export default function Step5Contact({
         });
     }, [formData.fullName, apsNameSet, setCoPurchaserCards, setCoSellerCards]);
 
-    // Seed the agent search with the name printed on the agreement. This only
-    // fills the field — the client still picks an existing partner or confirms
-    // a new one, and nothing is attributed until they do.
+    // Seed the agent fields from the agent printed on the agreement — and open
+    // the section that holds them.
+    //
+    // The details were being filled into a block folded away behind "I don't
+    // have a code" and a source dropdown, so the client never saw the agent we
+    // had read for them, and staff got a file with no referrer on it. If the
+    // agreement named an agent, that section is the answer to "how did you hear
+    // about us?", and it stays open with the real details in it.
+    //
+    // This only fills the fields — the client still picks an existing partner or
+    // confirms a new one, and nothing is attributed until they do.
     const apsAgentAppliedRef = React.useRef(false);
+    // The setState calls here are the point of the effect, not a side effect of
+    // it: the agent arrives from a background document read that finishes long
+    // after this component mounted, and the form has to take it up when it does.
+    // It runs at most once, guarded by the ref.
     React.useEffect(() => {
         if (apsAgentAppliedRef.current) return;
         const name = apsAgent?.name?.trim();
@@ -741,16 +813,32 @@ export default function Step5Contact({
                       ...prev,
                       name,
                       company: prev.company.trim() || apsAgent?.company || "",
+                      email: prev.email.trim() || apsAgent?.email || "",
+                      phone: prev.phone.trim() || apsAgent?.phone || "",
                   },
         );
-    }, [apsAgent, setReferralAgent]);
+
+        // A code the client has already applied outranks a name off the
+        // document — that code is an explicit attribution, this is an inference.
+        if (appliedReferral) return;
+        setReferralNoCode(true);
+        setReferralSource((prev) => prev || "Real estate agent");
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setAgentFromAgreement(true);
+    }, [
+        apsAgent,
+        appliedReferral,
+        setReferralAgent,
+        setReferralNoCode,
+        setReferralSource,
+    ]);
 
     React.useEffect(() => {
         const newErrors: typeof errors = {};
         if (!formData.fullName.trim()) {
             newErrors.fullName = "Full name is required.";
-        } else if (!/^[A-Za-z\s]+$/.test(formData.fullName.trim())) {
-            newErrors.fullName = "Name can only contain letters.";
+        } else if (!NAME_PATTERN.test(formData.fullName.trim())) {
+            newErrors.fullName = NAME_ERROR;
         } else if (formData.fullName.trim().length < 3) {
             newErrors.fullName = "Name is too short.";
         }
@@ -1160,41 +1248,21 @@ export default function Step5Contact({
 
                             {/* Card body */}
                             <div className="px-5 py-5 space-y-4 bg-white">
-                                {/* Logged-in notice — primary contact is locked to the signed-in account */}
-                                {isLoggedIn && (
-                                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-                                        <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <circle cx="12" cy="12" r="10" />
-                                                <line x1="12" y1="8" x2="12" y2="12" />
-                                                <line x1="12" y1="16" x2="12.01" y2="16" />
-                                            </svg>
-                                        </div>
-                                        <div className="text-[13px] leading-relaxed text-amber-900">
-                                            You are submitting as{" "}
-                                            <strong>{formData.fullName || initialData?.fullName || "your account"}</strong>.
-                                            To submit for someone else, please log out first and start a new intake.
+                                {/* Where the name came from. Said out loud because
+                                    the client did not type it: the agreement names
+                                    them first, so this file is opened in their name
+                                    and everyone else on it is a co-party below. */}
+                                {apsPrimaryName && (
+                                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
+                                        <CheckCircle2 size={16} className="text-green-700 mt-0.5 flex-shrink-0" strokeWidth={2} />
+                                        <div className="text-[13px] leading-relaxed text-green-900">
+                                            <strong>{apsPrimaryName}</strong> is the first{" "}
+                                            {isSelling ? "seller" : "purchaser"} named on your agreement, so
+                                            we have opened this file in that name. Anyone else named on it is
+                                            listed below. If that is not you, just type your own details over it.
                                         </div>
                                     </div>
                                 )}
-
-                                {/* Matched to a party on the agreement. Worth saying
-                                    out loud: it's the reason the client isn't ALSO
-                                    listed below as their own co-purchaser. */}
-                                {(apsSelfMatches ?? []).map((match) => (
-                                    <div
-                                        key={match.role}
-                                        className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3"
-                                    >
-                                        <CheckCircle2 size={16} className="text-green-700 mt-0.5 flex-shrink-0" strokeWidth={2} />
-                                        <div className="text-[13px] leading-relaxed text-green-900">
-                                            We matched you to <strong>{match.name}</strong> on your
-                                            agreement — you are the <strong>{match.role}</strong>. Anyone
-                                            else named on it is listed below as a{" "}
-                                            {match.role === "purchaser" ? "co-purchaser" : "co-seller"}.
-                                        </div>
-                                    </div>
-                                ))}
 
                                 {/* Contact Form */}
                                 <Input
@@ -1202,7 +1270,6 @@ export default function Step5Contact({
                                     required
                                     placeholder="John Doe"
                                     value={formData.fullName}
-                                    disabled={isLoggedIn}
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         const capitalized = val.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -1211,7 +1278,6 @@ export default function Step5Contact({
                                     onBlur={() =>
                                         setTouched((prev) => ({ ...prev, fullName: true }))
                                     }
-                                    className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
                                 />
                                 {touched.fullName && errors.fullName && (
                                     <p className="text-red-600 text-sm mt-1">{errors.fullName}</p>
@@ -1222,14 +1288,12 @@ export default function Step5Contact({
                                     required
                                     placeholder="john@doe.com"
                                     value={formData.email}
-                                    disabled={isLoggedIn}
                                     onChange={(e) =>
                                         setFormData({ ...formData, email: e.target.value })
                                     }
                                     onBlur={() =>
                                         setTouched((prev) => ({ ...prev, email: true }))
                                     }
-                                    className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
                                 />
                                 {touched.email && errors.email && (
                                     <p className="text-red-600 text-sm mt-1">{errors.email}</p>
@@ -1240,14 +1304,12 @@ export default function Step5Contact({
                                     required
                                     placeholder="(416) 555-1234"
                                     value={formData.phone}
-                                    disabled={isLoggedIn}
                                     onChange={(e) =>
                                         setFormData({ ...formData, phone: formatPhone(e.target.value) })
                                     }
                                     onBlur={() =>
                                         setTouched((prev) => ({ ...prev, phone: true }))
                                     }
-                                    className={isLoggedIn ? "bg-gray-50 cursor-not-allowed" : ""}
                                 />
                                 {touched.phone && errors.phone && (
                                     <p className="text-red-600 text-sm mt-1">{errors.phone}</p>
@@ -1400,6 +1462,9 @@ export default function Step5Contact({
                                     onChange={(e) => {
                                         const next = e.target.value;
                                         setReferralSource(next);
+                                        // Their choice now, not ours — so the
+                                        // agent email goes back to required.
+                                        setAgentFromAgreement(false);
                                         if (next !== "Other") setReferralOther("");
                                         const nextIsPartner =
                                             next === "Real estate agent" || next === "Mortgage broker";
@@ -1476,7 +1541,14 @@ export default function Step5Contact({
                                         <div className="flex flex-col gap-1.5">
                                             <label className="text-sm font-semibold text-gray-800">
                                                 {partnerNoun} email
-                                                <span className="text-red-600 ml-1">*</span>
+                                                {agentEmailRequired ? (
+                                                    <span className="text-red-600 ml-1">*</span>
+                                                ) : (
+                                                    <span className="text-gray-400 font-normal">
+                                                        {" "}
+                                                        (optional)
+                                                    </span>
+                                                )}
                                             </label>
                                             <input
                                                 type="email"

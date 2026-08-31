@@ -141,22 +141,56 @@ function buildPrompt(side: ApsSide): string {
       ? `This agreement is for a property the client is SELLING. The client is on the SELLER side.`
       : `This agreement is for a property the client is BUYING. The client is on the BUYER side.`;
 
-  return `You are extracting structured data from an Ontario real-estate Agreement of Purchase and Sale (APS) — typically an OREA Form 100 (resale) or Form 101 (condominium), possibly with amendments, waivers and schedules attached.
+  return `You are extracting structured data from ONE document out of an Ontario real-estate agreement package — the Agreement of Purchase and Sale itself (typically an OREA Form 100 for resale or Form 101 for a condominium), or one of the amendments, waivers, notices and schedules that go with it.
 
 ${sideNote}
 
-Extract ONLY what is actually written on the document. Never infer, estimate, or fill a plausible-looking value. A missing field must come back as null. A wrong value that looks right is far worse than a blank one, because the client may not catch it.
+Extract ONLY what is actually written on THIS document. Never infer, estimate, or fill a plausible-looking value. A missing field must come back as null. A wrong value that looks right is far worse than a blank one, because the client may not catch it.
+
+Each document in the package is read separately and the results are merged
+afterwards, with amendments layered over the agreement. So:
+  - Report what THIS document says, and nothing else.
+  - Do NOT leave a field blank because you think another document covers it.
+  - Do NOT carry a value over from what an attached page might have said.
+
+============================================================
+WHICH DOCUMENT IS THIS?
+============================================================
+Set "document_type" to one of:
+   - "aps"       — the Agreement of Purchase and Sale itself
+   - "amendment" — an Amendment to the Agreement of Purchase and Sale
+                   (OREA Form 120), or any document that changes an agreed
+                   term: price, deposit, closing/completion date, or the
+                   parties. A "Confirmation of Amendment" counts.
+   - "schedule"  — Schedule A/B/etc. attached to the agreement
+   - "waiver"    — a waiver or notice of fulfilment of condition (Form 123/124)
+   - "other"     — anything else that is still part of this package
+
+An amendment, schedule or waiver IS part of the agreement package: set
+"is_aps": true for it. Reserve "is_aps": false for a document that has nothing
+to do with this transaction — a mortgage commitment, a status certificate, an
+ID, a random photo.
 
 ============================================================
 WHAT TO EXTRACT
 ============================================================
 
-1. purchase_price — the total purchase/sale price stated in the agreement.
+1. purchase_price — the total purchase/sale price stated in the document.
    - Digits only, no currency symbol, no thousands separators: "1250000", not "$1,250,000.00".
    - This is the PRICE, not the deposit, not the balance due on closing.
+   - On an OREA Form 100/101 it is in the opening paragraph, printed as
+     "PURCHASE PRICE: Dollars CDN$ ______" with the amount ALSO written out in
+     words on the line above or below ("Eight Hundred Seventy Thousand").
+     Read both. If the figures are handwritten, struck through or hard to make
+     out, take the amount from the words — an amount written in words is still
+     the amount, and a null here means the client has to type it in themselves.
+   - On an amendment it is whatever new price the amendment states.
 
-2. deposit — the deposit amount held under the agreement.
+2. deposit — the deposit amount held under the document.
    - Same digits-only format.
+   - On an OREA Form 100/101 it is the "DEPOSIT" paragraph: "Buyer submits ...
+     $______", again usually with the amount in words as well. Same rule —
+     if the figures are unclear, use the words.
    - If several deposits are listed (initial plus increase), return their TOTAL.
 
 3. closing_date — the completion / closing date.
@@ -168,12 +202,20 @@ WHAT TO EXTRACT
    - "unit" is the unit / suite / apartment number alone, if there is one.
    - "postal_code" in "A1A 1A1" form if present.
 
-5. buyers — every BUYER named on the agreement, as full names.
-6. sellers — every SELLER named on the agreement, as full names.
+5. buyers — every BUYER named on this document, as full names.
+6. sellers — every SELLER named on this document, as full names.
+   - IN THE ORDER THEY APPEAR ON THE DOCUMENT. The first buyer listed is the
+     first entry in "buyers". This order is used to decide who the primary
+     contact on the file is, so do not re-order or alphabetize.
    - Names exactly as written, one entry per person. Do NOT split a single
      person's name across entries, and do not include corporate suffixes as
      separate people.
    - If the seller is a corporation or estate, return it as a single entry.
+   - On an AMENDMENT that adds a party, list the party it adds. On one that
+     only re-states the existing parties in its header, list those. Either way,
+     report the names printed on this document — the merge downstream takes
+     care of combining them with the agreement's.
+   - Witnesses, agents, brokers, lawyers and lenders are NOT buyers or sellers.
 
 7. agents — the real-estate agents / brokerages named on the agreement.
    - "full_name" is the individual salesperson, if named. "brokerage" is the firm.
@@ -189,17 +231,18 @@ Each extracted value carries a confidence:
    - "medium" — legible but handwritten, amended, or you had to choose between candidates
    - "low"    — barely legible, inferred from context, or possibly superseded by an amendment
 
-If an amendment changes a value (price, closing date), return the AMENDED value and mark it "medium" unless the amendment is unambiguous.
+Confidence records how sure you are; it does not decide whether to answer. If you can read a value, return it — a value you were only "medium" about is still far more use to the client than a null they have to replace by hand.
 
 ============================================================
-NOT AN APS
+NOT PART OF THIS TRANSACTION
 ============================================================
-If this document is not an Agreement of Purchase and Sale — a listing agreement, a mortgage commitment, a status certificate, an ID, a random photo — set "is_aps": false, return nulls and empty arrays throughout, and say what the document actually appears to be in "reason".
+If this document has nothing to do with the purchase or sale — a listing agreement, a mortgage commitment, a status certificate, an ID, a random photo — set "is_aps": false, "document_type": "other", return nulls and empty arrays throughout, and say what the document actually appears to be in "reason".
 
 Respond with ONLY a valid JSON object (no markdown, no code fences, no commentary) matching this exact shape:
 
 {
   "is_aps": boolean,
+  "document_type": "aps" | "amendment" | "schedule" | "waiver" | "other",
   "purchase_price": { "value": string | null, "confidence": "high" | "medium" | "low" },
   "deposit":        { "value": string | null, "confidence": "high" | "medium" | "low" },
   "closing_date":   { "value": string | null, "confidence": "high" | "medium" | "low" },
@@ -457,6 +500,7 @@ export async function POST(req: Request) {
         console.log(
           `[extract-aps] side="${side}" model="${model.id}" attempts=${attempts} ` +
             `ms=${Date.now() - startedAt} is_aps=${result.is_aps} ` +
+            `doc_type=${result.document_type} ` +
             `price=${result.purchase_price.value ?? "-"} deposit=${result.deposit.value ?? "-"} ` +
             `closing=${result.closing_date.value ?? "-"} buyers=${result.buyers.length} ` +
             `sellers=${result.sellers.length} agents=${result.agents.length}`,

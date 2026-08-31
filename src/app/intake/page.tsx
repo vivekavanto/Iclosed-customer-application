@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Home, Briefcase, FileText } from "lucide-react";
 import HorizontalProgress, {
   Step,
@@ -24,18 +24,24 @@ import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { useToast } from "@/components/ui/Toast";
 import {
   EMPTY_EXTRACTION_STATE,
+  mergeApsExtractions,
   type ApsExtractionResult,
   type ApsExtractionState,
   type ApsSide,
 } from "@/lib/apsExtraction";
 import {
+  accountIsAParty,
   agentForSide,
   buildPrefillEntries,
-  checkSelfOnAgreement,
   keysForSide,
   partiesForSide,
+  splitPrimaryParty,
+  type ApsAgentDetails,
   type PrefillKey,
 } from "@/lib/apsPrefill";
+import { createBrowserClient } from "@supabase/ssr";
+import { resetUser } from "@/lib/analytics";
+import { endClientSession } from "@/lib/sessionClient";
 
 /** An APS file already written to Blob, waiting for a lead to attach it to. */
 interface ApsBlob {
@@ -44,36 +50,18 @@ interface ApsBlob {
   fileName: string;
 }
 
-/** Names read off an agreement, offered as co-person cards on the contact step. */
+/**
+ * The CO-parties read off an agreement — everyone named on it except the first,
+ * who is the client the file is being opened for. Offered as co-person cards on
+ * the contact step.
+ */
 export interface ApsParties {
   purchaser: string[];
   seller: string[];
 }
 
-/**
- * The signed-in client, matched to the party of the same name on an agreement.
- * Drives the confirmation line on the contact step and — the point of it —
- * keeps that party OUT of the co-person cards. An APS with two buyers names the
- * purchaser and ONE co-purchaser, never two co-purchasers.
- */
-export interface ApsSelfMatch {
-  role: "purchaser" | "seller";
-  name: string;
-}
-
-/**
- * A blocking read outcome: the agreement doesn't name the signed-in client.
- * Held per side so a Buy & Sell can fail one agreement and keep the other.
- */
-export interface ApsPartyMismatch {
-  role: "purchaser" | "seller";
-  /** The name we looked for — the signed-in account's. */
-  selfName: string;
-  /** The names the agreement gave for that role. */
-  names: string[];
-  /** They ARE on the document, just on the far side of the deal. */
-  onOppositeSide: boolean;
-}
+/** How many documents we'll read per side before the rest just ride along. */
+const MAX_READS_PER_SIDE = 6;
 
 /**
  * Shown when an agreement couldn't be read. Deliberately flat: the form works
@@ -133,12 +121,45 @@ export default function ServiceSelection() {
     }
   };
 
-  // Pre-fill contact info for logged-in users
-  const [authProfile, setAuthProfile] = useState<{
-    fullName: string;
-    email: string;
-    phone: string;
-  } | undefined>(undefined);
+  // The signed-in account's name — held to answer ONE question, and nothing is
+  // ever prefilled from it: is the person at the keyboard named on the
+  // agreement they just uploaded?
+  //
+  // Who the parties are is a question the DOCUMENT answers, so the form fills
+  // itself the same whether anyone is signed in or not. But a visitor signed in
+  // as one person while filing another person's agreement is a session that
+  // should not still be open, so it is closed — out loud, see
+  // signOutForWrongParty() below.
+  // Held in a ref as well as state so applyExtraction can read the latest name
+  // without being re-created — and therefore re-running — when it arrives. The
+  // two are written together, never separately.
+  const [accountName, setAccountName] = useState("");
+  const accountNameRef = useRef("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        if (!res.ok) return;
+        const me = await res.json();
+        const name = [me?.user?.first_name, me?.user?.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (!cancelled && name) {
+          accountNameRef.current = name;
+          setAccountName(name);
+        }
+      } catch {
+        // Signed out, or /api/auth/me is unreachable. Either way there is no
+        // name to check against and the intake carries on exactly as it would.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Step 4 (Contact) state lives here so values survive when the user clicks
   // Back to step 3 and returns. Step5Contact owns only its validation UI state.
@@ -162,7 +183,6 @@ export default function ServiceSelection() {
     partnerId: null,
   });
   const [documentUploadChoice, setDocumentUploadChoice] = useState("");
-  const authPrefillAppliedRef = useRef(false);
 
   // ── APS upload & extraction ────────────────────────────────
   // Files now reach Blob at step 2, before any lead exists, so their contents
@@ -182,122 +202,103 @@ export default function ServiceSelection() {
     purchase: EMPTY_EXTRACTION_STATE,
     sale: EMPTY_EXTRACTION_STATE,
   });
-  // Only the first file per side is read. The upload also accepts amendments,
-  // waivers and schedules, and merging those over the base agreement is a
-  // follow-up — step 2 says as much on screen.
-  const readSideRef = useRef<Record<ApsSide, boolean>>({ purchase: false, sale: false });
-  // Which file each side's prefill actually came from, so removing an
-  // amendment doesn't retract the agreement's values.
-  const readSourceRef = useRef<Record<ApsSide, string | null>>({
-    purchase: null,
-    sale: null,
+  // Every document read for a side, in upload order, with the file it came
+  // from. The form is filled from these MERGED — an agreement and the
+  // amendments that changed it are one package, and reading only the first
+  // file meant an amended price, or a purchaser added by amendment, never
+  // reached the form at all. See mergeApsExtractions().
+  const readResultsRef = useRef<
+    Record<ApsSide, Array<{ fileName: string; result: ApsExtractionResult }>>
+  >({ purchase: [], sale: [] });
+  // Reads run one at a time per side, so a package of files queues behind
+  // itself rather than firing four model calls at once.
+  const readQueueRef = useRef<Record<ApsSide, Promise<void>>>({
+    purchase: Promise.resolve(),
+    sale: Promise.resolve(),
   });
-  // The blob a side's read was last aimed at, kept across a failure so the
-  // client can ask for another go without re-uploading the agreement.
-  const lastReadTargetRef = useRef<
-    Record<ApsSide, { url: string; fileName: string } | null>
-  >({ purchase: null, sale: null });
+  // Files whose read failed, kept so "Try again" doesn't make the client
+  // upload the package a second time.
+  const failedReadsRef = useRef<
+    Record<ApsSide, Array<{ url: string; fileName: string }>>
+  >({ purchase: [], sale: [] });
+  // Every file handed to the queue, whether or not it has been read yet — what
+  // the per-side cap counts. Counting finished reads instead would let a client
+  // who drops ten files at once queue all ten before the first one lands.
+  const queuedReadsRef = useRef<Record<ApsSide, Set<string>>>({
+    purchase: new Set(),
+    sale: new Set(),
+  });
 
   // Fields the client has edited themselves. A read that lands afterwards must
   // never overwrite these — this is what makes background extraction safe when
   // the client clicks Continue before the read finishes.
   const touchedRef = useRef<Set<PrefillKey>>(new Set());
-  // Fields currently holding a read value, per side, so removing a file undoes
-  // exactly what that file filled in.
-  const [prefilled, setPrefilled] = useState<Record<ApsSide, PrefillKey[]>>({
-    purchase: [],
-    sale: [],
-  });
-  // Medium/low-confidence reads. Offered as a tap-to-accept suggestion rather
-  // than written into the field.
-  const [suggestions, setSuggestions] = useState<Partial<Record<PrefillKey, string>>>({});
   const [apsParties, setApsParties] = useState<ApsParties>({ purchaser: [], seller: [] });
-  const [apsAgent, setApsAgent] = useState<{ name: string; company: string | null } | null>(null);
-  // The party on each agreement that IS the signed-in client. Per side, because
-  // a Buy & Sell client is the purchaser on one agreement and the seller on the
-  // other. All-null is the logged-out case, where there's no name to match.
-  const [apsSelfMatch, setApsSelfMatch] = useState<
-    Record<ApsSide, ApsSelfMatch | null>
-  >({ purchase: null, sale: null });
-  // Per side: the agreement named other people, but not the signed-in client.
-  // Blocks Continue on step 2 until the right document is uploaded.
-  const [apsPartyMismatch, setApsPartyMismatch] = useState<
-    Record<ApsSide, ApsPartyMismatch | null>
-  >({ purchase: null, sale: null });
+  // The first party named on the client's own side of the agreement — the
+  // person this file is being opened for, so their name goes in "Your
+  // Information" and everyone after them becomes a co-party card.
+  const [apsPrimaryName, setApsPrimaryName] = useState<string | null>(null);
+  const [apsAgent, setApsAgent] = useState<ApsAgentDetails | null>(null);
 
-  // The signed-in client's name, as the APS gate looks for it. Held in a ref so
-  // applyExtraction always sees the latest one without being re-created (and
-  // re-running) every time the profile fetch settles.
-  const selfNameRef = useRef<string>("");
-  selfNameRef.current = authProfile?.fullName ?? "";
-  // A read that finished before /api/auth/me did, parked here until there's a
-  // name to check it against. Without this, uploading fast enough would slip
-  // past the gate on a page load where the profile was slow.
-  const pendingVerifyRef = useRef<Record<ApsSide, ApsExtractionResult | null>>({
-    purchase: null,
-    sale: null,
-  });
+  // The agreement names somebody else. Drives the modal that says so — this
+  // must never happen silently — and the sign-out happens when it is dismissed.
+  const [signedOutNotice, setSignedOutNotice] = useState<{
+    names: string[];
+    accountName: string;
+  } | null>(null);
+  const signOutStartedRef = useRef(false);
 
-  // One entry per agreement that named the client, for the confirmation lines
-  // on the contact step. Buy & Sell yields two — purchaser and seller.
-  const apsSelfMatches = useMemo(
-    () => [apsSelfMatch.purchase, apsSelfMatch.sale].filter((m): m is ApsSelfMatch => m !== null),
-    [apsSelfMatch],
+  /** Raise the notice. The sign-out itself waits for the client to acknowledge it. */
+  const signOutForWrongParty = useCallback(
+    (names: string[], name: string) => {
+      if (signOutStartedRef.current) return;
+      signOutStartedRef.current = true;
+      setSignedOutNotice({ names, accountName: name });
+    },
+    [],
   );
 
-  // Flattened for the "from your agreement" markers — Step2 only cares whether
-  // a field is prefilled, not which agreement filled it.
-  const prefilledFieldSet = useMemo(
-    () => new Set<PrefillKey>([...prefilled.purchase, ...prefilled.sale]),
-    [prefilled],
-  );
+  /**
+   * End the session, once the client has read why, and send them to the login
+   * page.
+   *
+   * The redirect is the point: signing out in place changed nothing a person
+   * could see — /intake carries no header, so the page sat there looking as if
+   * the button had done nothing at all. Landing on /login is unambiguous, and
+   * it is also where they need to be to come back as the right person.
+   *
+   * The intake in progress goes with it. Anything already uploaded is safe in
+   * Blob, but the form is not carried across.
+   */
+  const [signingOut, setSigningOut] = useState(false);
+
+  const confirmSignOut = useCallback(async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {}
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      );
+      await supabase.auth.signOut();
+    } catch {}
+    // The idle/session clocks go too. Left behind, the NEXT login reads an
+    // hours-old activity stamp and expires itself immediately.
+    endClientSession();
+    resetUser();
+    accountNameRef.current = "";
+
+    // A full navigation, not router.push: the session cookies have just been
+    // cleared and every cached client-side view of them has to go with them.
+    window.location.href = "/login";
+  }, [signingOut]);
 
   const router = useRouter();
   const { error: toastError } = useToast();
-
-  useEffect(() => {
-    const loadAuthProfile = async () => {
-      const meRes = await fetch("/api/auth/me", { cache: "no-store" });
-      if (!meRes.ok) return;
-
-      const me = await meRes.json();
-      const email = me?.user?.email;
-      if (!email) return;
-
-      const res = await fetch("/api/deals", { cache: "no-store" });
-      const data = res.ok ? await res.json() : null;
-      const first = data?.deals?.[0];
-
-      const serverName = [me.user.first_name, me.user.last_name]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-
-      setAuthProfile({
-        fullName:
-          serverName ||
-          (first ? `${first.first_name ?? ""} ${first.last_name ?? ""}`.trim() : ""),
-        email,
-        phone: me.user.phone ?? first?.phone ?? "",
-      });
-    };
-    loadAuthProfile();
-  }, []);
-
-  // Prefill contact form from the signed-in profile exactly once per page
-  // load. Running this here (rather than inside Step5Contact) means the
-  // prefill doesn't re-fire if the user navigates Back and forward again,
-  // which would overwrite anything they had typed.
-  useEffect(() => {
-    if (authProfile && !authPrefillAppliedRef.current) {
-      setContactInfo({
-        fullName: authProfile.fullName,
-        email: authProfile.email,
-        phone: authProfile.phone,
-      });
-      authPrefillAppliedRef.current = true;
-    }
-  }, [authProfile]);
 
   const getStatus = (currentStep: number, stepId: number): StepStatus => {
     return currentStep === stepId
@@ -374,110 +375,47 @@ export default function ServiceSelection() {
   /** Step2 calls this on every edit. Once touched, a field is the client's. */
   const markFieldTouched = useCallback((key: PrefillKey) => {
     touchedRef.current.add(key);
-    // A field the client has taken over no longer shows the "from your
-    // agreement" marker, and its suggestion is no longer relevant.
-    //
-    // Both updaters return `prev` unchanged when there's nothing to drop —
-    // this runs on every keystroke, and a fresh object each time would
-    // re-render the whole step for no reason.
-    setPrefilled((prev) => {
-      if (!prev.purchase.includes(key) && !prev.sale.includes(key)) return prev;
-      return {
-        purchase: prev.purchase.filter((k) => k !== key),
-        sale: prev.sale.filter((k) => k !== key),
-      };
-    });
-    setSuggestions((prev) => {
-      if (!(key in prev)) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
   }, []);
 
-  /** Tap-to-accept for a medium/low-confidence read. */
-  const acceptSuggestion = useCallback(
-    (key: PrefillKey) => {
-      const value = suggestions[key];
-      if (!value) return;
-      setPrefillField(key, value);
-      // The client chose it, so it counts as theirs from here on.
-      markFieldTouched(key);
-    },
-    [suggestions, setPrefillField, markFieldTouched],
-  );
-
-  /** Apply a completed read to the form. */
+  /**
+   * Fill the form from everything read for this side.
+   *
+   * Called with the MERGED result each time a document finishes reading, so
+   * the form always shows the package as it currently stands — an amendment
+   * that lands after the agreement moves the price to the amended one rather
+   * than leaving whichever value happened to be read first.
+   *
+   * A key the merged read has nothing for is cleared, not left behind: that is
+   * what makes re-applying after a file is removed correct. Fields the client
+   * has edited are never touched, either way.
+   */
   const applyExtraction = useCallback(
     (side: ApsSide, result: ApsExtractionResult) => {
-      // Who is the signed-in client on this agreement? Everything below hangs
-      // off the answer: a document that doesn't name them is the wrong
-      // document, and one that does tells us which party NOT to turn into a
-      // co-person card.
-      const check = checkSelfOnAgreement(result, side, selfNameRef.current);
-
-      if (check.status === "mismatch") {
-        // Refuse the agreement whole rather than half-filling the form from a
-        // file that belongs to someone else. Step 2 blocks Continue on this.
-        pendingVerifyRef.current[side] = null;
-        setApsPartyMismatch((prev) => ({
-          ...prev,
-          [side]: {
-            role: check.role,
-            selfName: selfNameRef.current,
-            names: check.names,
-            onOppositeSide: check.onOppositeSide,
-          },
-        }));
-        return;
-      }
-
-      // The read landed before /api/auth/me did, so there was no name to check
-      // against. Hold the result for the effect below to re-check once the
-      // profile arrives — otherwise a fast upload would skip the gate entirely.
-      pendingVerifyRef.current[side] =
-        check.status === "unverifiable" ? result : null;
-
-      setApsPartyMismatch((prev) => (prev[side] ? { ...prev, [side]: null } : prev));
-
       const entries = buildPrefillEntries(result, side, selectedClosingOption);
+      const values = new Map(entries.map((e) => [e.key, e.value]));
 
-      const appliedKeys: PrefillKey[] = [];
-      const newSuggestions: Partial<Record<PrefillKey, string>> = {};
-
-      for (const entry of entries) {
-        // The guard that makes a late-arriving read safe.
-        if (touchedRef.current.has(entry.key)) continue;
-
-        if (entry.confidence === "high") {
-          setPrefillField(entry.key, entry.value);
-          appliedKeys.push(entry.key);
-        } else {
-          newSuggestions[entry.key] = entry.value;
-        }
+      // Everything the read found goes in. Confidence is still recorded with
+      // the submission for our own audit, but it no longer decides whether the
+      // client sees the value: a figure we read as "medium" is still the figure
+      // printed on their agreement, and offering it as a suggestion to accept
+      // only asked them to do the typing we had already done for them.
+      for (const key of keysForSide(side, selectedClosingOption)) {
+        if (touchedRef.current.has(key)) continue;
+        setPrefillField(key, values.get(key) ?? "");
       }
 
-      setPrefilled((prev) => ({ ...prev, [side]: appliedKeys }));
-      setSuggestions((prev) => ({ ...prev, ...newSuggestions }));
+      // The first party on the client's side of the agreement is the client;
+      // everyone after them is a co-party. No account is consulted — see the
+      // note on splitPrimaryParty().
+      const { role, names } = partiesForSide(result, side);
+      const { primary, others } = splitPrimaryParty(names);
+      setApsParties((prev) => ({ ...prev, [role]: others }));
 
-      if (check.status === "match") {
-        // N parties on the agreement means 1 client + N-1 co-parties. The
-        // matched party is the client themselves, whose details are already
-        // locked into the contact step from their account.
-        setApsSelfMatch((prev) => ({
-          ...prev,
-          [side]: { role: check.role, name: check.self },
-        }));
-        setApsParties((prev) => ({ ...prev, [check.role]: check.others }));
-      } else {
-        // No signed-in name to match against (logged-out intake) or the read
-        // found no parties at all. Seed every name and let the contact step
-        // drop the one matching whatever the client types as their own.
-        const { role, names } = partiesForSide(result, side);
-        if (names.length > 0) {
-          setApsParties((prev) => ({ ...prev, [role]: names }));
-        }
-      }
+      // In a Buy & Sell the client is the first party on BOTH agreements, so
+      // the purchase side names them and the sale side would only repeat it.
+      const primarySide: ApsSide =
+        selectedClosingOption === "selling" ? "sale" : "purchase";
+      if (primary && side === primarySide) setApsPrimaryName(primary);
 
       // First agreement to name an agent wins; a second one doesn't overwrite.
       const agent = agentForSide(result, side);
@@ -486,20 +424,77 @@ export default function ServiceSelection() {
     [selectedClosingOption, setPrefillField],
   );
 
-  // Re-run the party gate on any agreement that was read before the signed-in
-  // profile arrived. Re-applying is safe: touchedRef still protects anything
-  // the client has typed since.
-  useEffect(() => {
-    const name = authProfile?.fullName?.trim();
-    if (!name) return;
+  /**
+   * Re-fill a side from every document still uploaded under it.
+   *
+   * The single path by which reads reach the form: one document or six, added
+   * or removed, it always ends up applying the merge of what is currently
+   * there.
+   */
+  const applySideResults = useCallback(
+    (side: ApsSide) => {
+      const reads = readResultsRef.current[side];
+      if (reads.length === 0) return;
 
-    for (const side of ["purchase", "sale"] as ApsSide[]) {
-      const pending = pendingVerifyRef.current[side];
-      if (!pending) continue;
-      pendingVerifyRef.current[side] = null;
-      applyExtraction(side, pending);
-    }
-  }, [authProfile, applyExtraction]);
+      const merged = mergeApsExtractions(reads.map((r) => r.result));
+      setExtraction((prev) => ({
+        ...prev,
+        [side]: {
+          status: "done",
+          // Names the agreement itself, not the last amendment read — this is
+          // what the status line and the stored audit record point at.
+          fileName: reads[0].fileName,
+          result: merged,
+          error: null,
+        },
+      }));
+      applyExtraction(side, merged);
+    },
+    [applyExtraction],
+  );
+
+  /**
+   * Is the signed-in visitor named on this side's agreement — and if not, end
+   * their session.
+   *
+   * Asked only once every document queued for the side has come back, read or
+   * failed. Mid-package is the wrong moment: an amendment on its own names just
+   * the party it adds, so a client who IS on the agreement would be signed out
+   * over the file that happened to be read first.
+   *
+   * accountIsAParty() answers true whenever there is nothing to go on — nobody
+   * signed in, or a read that produced no names — so a poor read can never cost
+   * anyone their session.
+   */
+  const checkAccountOnSide = useCallback(
+    (side: ApsSide) => {
+      const account = accountNameRef.current.trim();
+      if (!account || signOutStartedRef.current) return;
+
+      const reads = readResultsRef.current[side];
+      const settled =
+        queuedReadsRef.current[side].size ===
+        reads.length + failedReadsRef.current[side].length;
+      if (!settled || reads.length === 0) return;
+
+      const merged = mergeApsExtractions(reads.map((r) => r.result));
+      if (!merged.is_aps) return;
+
+      const { names } = partiesForSide(merged, side);
+      if (!accountIsAParty(names, account)) {
+        signOutForWrongParty(names, account);
+      }
+    },
+    [signOutForWrongParty],
+  );
+
+  // Run the check on anything read before /api/auth/me answered. Without this,
+  // uploading fast enough on a slow page load would slip past it entirely.
+  useEffect(() => {
+    if (!accountName.trim()) return;
+    checkAccountOnSide("purchase");
+    checkAccountOnSide("sale");
+  }, [accountName, checkAccountOnSide]);
 
   /** Undo everything an agreement on this side filled in, sparing client edits. */
   const clearSidePrefill = useCallback(
@@ -507,42 +502,42 @@ export default function ServiceSelection() {
       for (const key of keysForSide(side, selectedClosingOption)) {
         if (touchedRef.current.has(key)) continue;
         setPrefillField(key, "");
-        setSuggestions((prev) => {
-          if (!(key in prev)) return prev;
-          const next = { ...prev };
-          delete next[key];
-          return next;
-        });
       }
 
-      setPrefilled((prev) => ({ ...prev, [side]: [] }));
       setApsParties((prev) => ({
         ...prev,
         [side === "sale" ? "seller" : "purchaser"]: [],
       }));
+      setApsPrimaryName(null);
       setApsAgent(null);
-      setApsPartyMismatch((prev) => ({ ...prev, [side]: null }));
-      setApsSelfMatch((prev) => ({ ...prev, [side]: null }));
-      pendingVerifyRef.current[side] = null;
       setExtraction((prev) => ({ ...prev, [side]: EMPTY_EXTRACTION_STATE }));
-      readSideRef.current[side] = false;
-      readSourceRef.current[side] = null;
-      lastReadTargetRef.current[side] = null;
+      readResultsRef.current[side] = [];
+      failedReadsRef.current[side] = [];
+      queuedReadsRef.current[side] = new Set();
     },
     [selectedClosingOption, setPrefillField],
   );
 
   // ── Upload & read, at step 2 ───────────────────────────────
 
+  /**
+   * Read one uploaded document and fold it into its side.
+   *
+   * Every file in the package gets its own read: an amendment is a separate
+   * document that says separate things, and asking a single call to reason
+   * across a stack of PDFs reads them all worse than reading each on its own.
+   */
   const readAgreement = useCallback(
     async (side: ApsSide, fileUrl: string, fileName: string) => {
-      readSourceRef.current[side] = fileName;
-      // Kept even if the read fails, so "Try again" doesn't make the client
-      // upload the agreement a second time.
-      lastReadTargetRef.current[side] = { url: fileUrl, fileName };
       setExtraction((prev) => ({
         ...prev,
-        [side]: { status: "reading", fileName, result: null, error: null },
+        [side]: {
+          status: "reading",
+          // Keep naming the agreement while an amendment behind it is read.
+          fileName: prev[side].result ? prev[side].fileName : fileName,
+          result: prev[side].result,
+          error: null,
+        },
       }));
 
       // The route walks a ladder of models before it reports a failure, so one
@@ -567,12 +562,15 @@ export default function ServiceSelection() {
           const data = await res.json().catch(() => null);
 
           if (data?.success && data?.result) {
-            const result = data.result as ApsExtractionResult;
-            setExtraction((prev) => ({
-              ...prev,
-              [side]: { status: "done", fileName, result, error: null },
-            }));
-            applyExtraction(side, result);
+            readResultsRef.current[side] = [
+              ...readResultsRef.current[side].filter((r) => r.fileName !== fileName),
+              { fileName, result: data.result as ApsExtractionResult },
+            ];
+            failedReadsRef.current[side] = failedReadsRef.current[side].filter(
+              (f) => f.fileName !== fileName,
+            );
+            applySideResults(side);
+            checkAccountOnSide(side);
             return;
           }
 
@@ -590,34 +588,62 @@ export default function ServiceSelection() {
         await new Promise((resolve) => setTimeout(resolve, backoff));
       }
 
+      // Kept so "Try again" doesn't make the client upload the file twice.
+      failedReadsRef.current[side] = [
+        ...failedReadsRef.current[side].filter((f) => f.fileName !== fileName),
+        { url: fileUrl, fileName },
+      ];
+
       // A failed read is not an error the client has to deal with — the form
-      // still works, they just fill it in themselves.
+      // still works, they just fill it in themselves. And one file failing out
+      // of several never discards what the others already gave us.
       setExtraction((prev) => ({
         ...prev,
-        [side]: { status: "error", fileName, result: null, error: lastError },
+        [side]: {
+          status: "error",
+          fileName: prev[side].result ? prev[side].fileName : fileName,
+          result: prev[side].result,
+          error: lastError,
+        },
       }));
-      // Let the next file uploaded on this side try again.
-      readSideRef.current[side] = false;
-      readSourceRef.current[side] = null;
+
+      // The file that just failed may have been the last one outstanding, and
+      // the package is only judged once nothing is still in flight.
+      checkAccountOnSide(side);
     },
-    [applyExtraction],
+    [applySideResults, checkAccountOnSide],
+  );
+
+  /** Queue a read behind whatever this side is already reading. */
+  const queueRead = useCallback(
+    (side: ApsSide, fileUrl: string, fileName: string) => {
+      queuedReadsRef.current[side].add(fileName);
+      const next = readQueueRef.current[side].then(() =>
+        readAgreement(side, fileUrl, fileName),
+      );
+      readQueueRef.current[side] = next.catch(() => {});
+      return next;
+    },
+    [readAgreement],
   );
 
   /**
-   * Read the same agreement again, at the client's request.
+   * Read the documents whose reads failed, at the client's request.
    *
-   * The blob is already uploaded, so this costs them nothing but the wait — and
-   * a read that timed out on a forty-page scan often lands on a second pass,
-   * because the route drops to a condensed copy once it knows the size.
+   * The blobs are already uploaded, so this costs them nothing but the wait —
+   * and a read that ran out of time on a forty-page scan often lands on a
+   * second pass, because the route drops to a lighter model once it retries.
    */
   const retryRead = useCallback(
     (side: ApsSide) => {
-      const target = lastReadTargetRef.current[side];
-      if (!target) return;
-      readSideRef.current[side] = true;
-      void readAgreement(side, target.url, target.fileName);
+      const targets = failedReadsRef.current[side];
+      if (targets.length === 0) return;
+      failedReadsRef.current[side] = [];
+      for (const target of targets) {
+        void queueRead(side, target.url, target.fileName);
+      }
     },
-    [readAgreement],
+    [queueRead],
   );
 
   const handleApsFilesAdded = useCallback(
@@ -631,8 +657,8 @@ export default function ServiceSelection() {
             status: "uploading",
             // Keep any result already read from an earlier file on this side —
             // uploading an amendment shouldn't blank what the agreement gave
-            // us, and fileName has to keep naming the file the result came
-            // from or the stored audit record points at the wrong document.
+            // us, and fileName has to keep naming the agreement or the stored
+            // audit record points at the wrong document.
             fileName: prev[side].result ? prev[side].fileName : file.name,
             result: prev[side].result,
             error: null,
@@ -658,11 +684,11 @@ export default function ServiceSelection() {
             { side, url: blob.url, fileName: file.name },
           ]);
 
-          // Only the first file per side is read; the rest are amendments and
-          // schedules that ride along with the submission.
-          if (!readSideRef.current[side]) {
-            readSideRef.current[side] = true;
-            await readAgreement(side, blob.url, file.name);
+          // Every document in the package is read and merged. The cap is an
+          // abuse brake, not a product decision — past it the files still go
+          // with the submission for our team to read.
+          if (queuedReadsRef.current[side].size < MAX_READS_PER_SIDE) {
+            void queueRead(side, blob.url, file.name);
           } else {
             setExtraction((prev) => ({
               ...prev,
@@ -683,7 +709,7 @@ export default function ServiceSelection() {
         }
       }
     },
-    [readAgreement],
+    [queueRead],
   );
 
   const handleApsFileRemoved = useCallback(
@@ -698,13 +724,20 @@ export default function ServiceSelection() {
         return [...prev.slice(0, index), ...prev.slice(index + 1)];
       });
 
-      // Only undo the prefill if the file being removed is the one it came
-      // from — removing an amendment shouldn't blank the agreement's values.
-      if (readSourceRef.current[side] === file.name) {
-        clearSidePrefill(side);
-      }
+      readResultsRef.current[side] = readResultsRef.current[side].filter(
+        (r) => r.fileName !== file.name,
+      );
+      failedReadsRef.current[side] = failedReadsRef.current[side].filter(
+        (f) => f.fileName !== file.name,
+      );
+      queuedReadsRef.current[side].delete(file.name);
+
+      // Re-fill from what's left, so removing an amendment takes its changes
+      // back out without disturbing what the agreement itself said.
+      if (readResultsRef.current[side].length === 0) clearSidePrefill(side);
+      else applySideResults(side);
     },
-    [clearSidePrefill],
+    [clearSidePrefill, applySideResults],
   );
 
   /**
@@ -788,21 +821,27 @@ export default function ServiceSelection() {
     setReferralSource("");
     setReferralOther("");
     setDocumentUploadChoice("");
-    authPrefillAppliedRef.current = false;
+    setReferralCode("");
+    setAppliedReferral(null);
+    setReferralNoCode(false);
+    setReferralAgent({ name: "", company: "", email: "", phone: "", partnerId: null });
 
     // APS upload / extraction
     setApsBlobs([]);
     setExtraction({ purchase: EMPTY_EXTRACTION_STATE, sale: EMPTY_EXTRACTION_STATE });
-    setPrefilled({ purchase: [], sale: [] });
-    setSuggestions({});
     setApsParties({ purchaser: [], seller: [] });
+    setApsPrimaryName(null);
     setApsAgent(null);
-    setApsSelfMatch({ purchase: null, sale: null });
-    setApsPartyMismatch({ purchase: null, sale: null });
-    pendingVerifyRef.current = { purchase: null, sale: null };
     touchedRef.current = new Set();
-    readSideRef.current = { purchase: false, sale: false };
-    readSourceRef.current = { purchase: null, sale: null };
+    readResultsRef.current = { purchase: [], sale: [] };
+    failedReadsRef.current = { purchase: [], sale: [] };
+    queuedReadsRef.current = { purchase: new Set(), sale: new Set() };
+    readQueueRef.current = { purchase: Promise.resolve(), sale: Promise.resolve() };
+    // The session stays ended — this only clears the notice about it, so a
+    // second intake started from the success modal isn't greeted by the last
+    // one's message.
+    setSignedOutNotice(null);
+    signOutStartedRef.current = false;
     // A fresh submission is a fresh draft — new blob namespace.
     draftIdRef.current = null;
   };
@@ -845,10 +884,7 @@ export default function ServiceSelection() {
             setClosingDate={setClosingDate}
             sellingClosingDate={sellingClosingDate}
             setSellingClosingDate={setSellingClosingDate}
-            prefilledFields={prefilledFieldSet}
-            suggestions={suggestions}
             onFieldTouched={markFieldTouched}
-            onAcceptSuggestion={acceptSuggestion}
             formData={addressData}
             setFormData={setAddressData}
             sellingFormData={sellingAddressData}
@@ -879,7 +915,6 @@ export default function ServiceSelection() {
             onFileRemoved={handleApsFileRemoved}
             extraction={extraction}
             onRetryRead={retryRead}
-            partyMismatch={apsPartyMismatch}
             setStep={setStep}
             step={step}
           />
@@ -893,7 +928,6 @@ export default function ServiceSelection() {
             agreementSigned={agreementSigned}
             setAgreementSigned={setAgreementSigned}
             setShowSuccessModal={setShowSuccessModal}
-            initialData={authProfile}
             selectedClosingOption={selectedClosingOption}
             contactInfo={contactInfo}
             setContactInfo={setContactInfo}
@@ -916,7 +950,7 @@ export default function ServiceSelection() {
             documentUploadChoice={documentUploadChoice}
             setDocumentUploadChoice={setDocumentUploadChoice}
             apsParties={apsParties}
-            apsSelfMatches={apsSelfMatches}
+            apsPrimaryName={apsPrimaryName}
             apsAgent={apsAgent}
             onComplete={async (contactData) => {
               try {
@@ -968,6 +1002,15 @@ export default function ServiceSelection() {
                         ? {
                             purchase: {
                               file_name: extraction.purchase.fileName,
+                              // Every document that fed the merge, and what each
+                              // one said on its own. Without the per-file reads
+                              // there is no telling afterwards whether a value
+                              // came off the agreement or an amendment.
+                              documents: readResultsRef.current.purchase.map((r) => ({
+                                file_name: r.fileName,
+                                document_type: r.result.document_type,
+                                result: r.result,
+                              })),
                               result: extraction.purchase.result,
                             },
                           }
@@ -976,6 +1019,11 @@ export default function ServiceSelection() {
                         ? {
                             sale: {
                               file_name: extraction.sale.fileName,
+                              documents: readResultsRef.current.sale.map((r) => ({
+                                file_name: r.fileName,
+                                document_type: r.result.document_type,
+                                result: r.result,
+                              })),
                               result: extraction.sale.result,
                             },
                           }
@@ -1058,6 +1106,44 @@ export default function ServiceSelection() {
             }}
           />
         ) : null}
+
+        {/* The agreement names someone other than the signed-in account.
+            Dismissing this is what signs them out — including via the X, so
+            there is no way to be told and stay signed in anyway. */}
+        <Modal
+          open={signedOutNotice !== null}
+          onClose={() => void confirmSignOut()}
+          title="Name doesn't match"
+          size="md"
+        >
+          {signedOutNotice && (
+            <div className="py-2">
+              <p className="text-sm leading-relaxed text-[var(--color-text-muted)]">
+                You&apos;re signed in as{" "}
+                <strong className="text-gray-900">{signedOutNotice.accountName}</strong>,
+                but the agreement names{" "}
+                <strong className="text-gray-900">
+                  {signedOutNotice.names.join(", ")}
+                </strong>
+                .
+              </p>
+              <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-muted)]">
+                We&apos;ll sign you out and take you to the login page. Start again
+                with the correct details.
+              </p>
+
+              <div className="mt-6 flex justify-end">
+                <Button
+                  onClick={() => void confirmSignOut()}
+                  loading={signingOut}
+                  className="px-6 py-2.5 bg-[#C10007] text-white rounded-md hover:opacity-90 transition cursor-pointer"
+                >
+                  OK
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
 
         <Modal
           open={showSuccessModal}
