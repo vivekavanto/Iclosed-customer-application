@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
+import { getVisibleWhen, isVisibleByRules } from "@/lib/visibleWhen";
 import {
   X,
   Upload,
@@ -85,6 +86,9 @@ interface FormField {
     | { accept?: string; max_mb?: number; doc_type?: string }
     | NoteContent
     | null;
+  /** Set by /api/task-form-fields for a co-party on a field the primary owns. */
+  read_only?: boolean;
+  read_only_note?: string;
 }
 
 interface ExistingResponse {
@@ -319,36 +323,6 @@ function NoteBlock({
   );
 }
 
-// Reads a conditional-visibility rule out of a field's `options` JSON.
-// Shape (set in the DB, not hardcoded here):
-//   { "visible_when": { "field_label": "<parent label>", "equals": "<value>" } }
-// Matches one value (`equals`) or any of several (`equals_any`).
-function getVisibleWhen(
-  opts: unknown,
-): { field_label: string; values: string[] } | null {
-  if (
-    opts &&
-    typeof opts === "object" &&
-    !Array.isArray(opts) &&
-    "visible_when" in opts
-  ) {
-    const vw = (
-      opts as {
-        visible_when?: { field_label?: string; equals?: string; equals_any?: unknown };
-      }
-    ).visible_when;
-    if (!vw?.field_label) return null;
-    const values = Array.isArray(vw.equals_any)
-      ? vw.equals_any.map((v) => String(v))
-      : vw.equals != null
-        ? [String(vw.equals)]
-        : [];
-    if (values.length === 0) return null;
-    return { field_label: String(vw.field_label), values };
-  }
-  return null;
-}
-
 // Format phone as (416) 555-1234
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -372,6 +346,7 @@ function getFileConfig(opts: unknown): {
   max_mb: number;
   doc_type: string;
   multiple: boolean;
+  description: string | null;
 } {
   // options can arrive as an object (JSONB parsed by supabase-js) or, in some
   // setups, as a JSON string — handle both defensively.
@@ -388,6 +363,7 @@ function getFileConfig(opts: unknown): {
     max_mb?: number;
     doc_type?: string;
     multiple?: boolean;
+    description?: string;
   };
   return {
     accept: safeOpts.accept ?? ".pdf,.jpg,.jpeg,.png",
@@ -395,6 +371,8 @@ function getFileConfig(opts: unknown): {
     doc_type: safeOpts.doc_type ?? "document",
     // Explicit opt-in via options.multiple (set on the APS field).
     multiple: safeOpts.multiple === true,
+    // Sub-description shown under the label, above the drop zone.
+    description: safeOpts.description?.trim() || null,
   };
 }
 
@@ -484,6 +462,13 @@ const inputWithIcon =
 const inputNormal =
   "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10";
 const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
+// inputBase greyed out, for a value the viewer may see but not edit. Spelled
+// out rather than appended, for the same stylesheet-order reason as above.
+// The red focus ring is suppressed in globals.css, not here: a Tailwind utility
+// sits in @layer utilities and cannot override the unlayered *:focus-visible.
+const inputReadOnly =
+  "w-full px-4 py-3 text-sm text-gray-500 bg-gray-50 border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs cursor-not-allowed";
+const inputReadOnlyBorder = "border-gray-200";
 
 /* ─────────────────────────────────────────────
    OWNERSHIP SHARES ("Tenants in Common")
@@ -527,12 +512,14 @@ function SharesEditor({
   value,
   defaultNames,
   invalid,
+  readOnly = false,
   onChange,
   onBlur,
 }: {
   value: string;
   defaultNames: string[];
   invalid: boolean;
+  readOnly?: boolean;
   onChange: (value: string) => void;
   onBlur: () => void;
 }) {
@@ -572,7 +559,10 @@ function SharesEditor({
                 update(rows.map((r, j) => (j === i ? { ...r, name: e.target.value } : r)))
               }
               placeholder="Owner's full name"
-              className={`${inputBase} ${inputNormal} flex-1 py-2.5`}
+              readOnly={readOnly}
+              className={`${readOnly ? inputReadOnly : inputBase} ${
+                readOnly ? inputReadOnlyBorder : inputNormal
+              } flex-1 py-2.5`}
             />
             <div className="relative w-24 flex-shrink-0">
               <input
@@ -589,7 +579,10 @@ function SharesEditor({
                   )
                 }
                 placeholder="0"
-                className={`${inputBase} ${inputNormal} py-2.5 pr-7 text-right`}
+                readOnly={readOnly}
+                className={`${readOnly ? inputReadOnly : inputBase} ${
+                  readOnly ? inputReadOnlyBorder : inputNormal
+                } py-2.5 pr-7 text-right`}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
                 %
@@ -1350,6 +1343,9 @@ export default function PersonalInfoTaskDrawer({
   function setFile(fieldId: string, file: File) {
     setFiles((prev) => ({ ...prev, [fieldId]: file }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    // Also drop the "is required" validation error, the way setValue does —
+    // picking a file is what satisfies it.
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
 
   function clearFile(fieldId: string) {
@@ -1369,6 +1365,7 @@ export default function PersonalInfoTaskDrawer({
   function addMultiFiles(fieldId: string, picked: File[]) {
     setMultiFiles((prev) => ({ ...prev, [fieldId]: [...(prev[fieldId] ?? []), ...picked] }));
     setFileErrors((prev) => ({ ...prev, [fieldId]: "" }));
+    if (errors[fieldId]) setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   }
   function removeMultiNewFile(fieldId: string, index: number) {
     setMultiFiles((prev) => ({
@@ -1418,30 +1415,22 @@ export default function PersonalInfoTaskDrawer({
     return "";
   }
 
-  // Resolve whether a field should currently be shown, based on its (optional)
-  // visible_when rule and the live answer of the parent field it depends on.
-  // Matching the parent is done by label (case-insensitive) and the comparison
-  // is case-insensitive so "Rented"/"rented" both work. Fails open: if there's
-  // no rule, or the parent can't be found, the field stays visible.
+  // Resolve whether a field should currently be shown from its (optional)
+  // visible_when rule — see isVisibleByRules for the matching semantics.
   function isFieldVisible(field: FormField): boolean {
     // No property address to offer → hide the checkbox, keep the fields.
     if (isMailSameAsPropertyField(field.label)) return mailSameOffered;
     if (mailSameChecked && isMailForwardingField(field)) return false;
-    const rule = getVisibleWhen(field.options);
-    if (!rule) return true;
-    const parent = fields.find(
-      (f) =>
-        f.label.trim().toLowerCase() === rule.field_label.trim().toLowerCase(),
-    );
-    if (!parent) return true;
-    const current = (values[parent.id] ?? "").trim().toLowerCase();
-    return rule.values.some((v) => v.trim().toLowerCase() === current);
+    return isVisibleByRules(field.options, fields, values);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
+    // Read-only fields belong to the primary — never block a co-party on one,
+    // including while the primary has yet to answer.
+    if (field.read_only) return false;
     return field.required || !!getVisibleWhen(field.options);
   }
 
@@ -1465,6 +1454,15 @@ export default function PersonalInfoTaskDrawer({
       ));
   }
 
+  function renderReadOnlyNote(field: FormField) {
+    if (!field.read_only || !field.read_only_note) return null;
+    return (
+      <p className="-mt-1 mb-2 text-xs leading-relaxed text-gray-500">
+        {field.read_only_note}
+      </p>
+    );
+  }
+
   function renderAttachedNotes(label: string) {
     const notes = attachedNotes(label).filter(
       (n) => getNoteContent(n.options).display !== "badge"
@@ -1479,21 +1477,16 @@ export default function PersonalInfoTaskDrawer({
     );
   }
 
-  // A conditional note can render below the fold, leaving Submit reachable
+  // A conditional field can render below the fold, leaving Submit reachable
   // before it is ever seen. Scroll each newly revealed one into view.
-  const revealedNoteIds = useRef<Set<string>>(new Set());
+  const revealedFieldIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     const visible = fields
-      .filter(
-        (f) =>
-          f.field_type === "note" &&
-          !!getVisibleWhen(f.options) &&
-          isFieldVisible(f)
-      )
+      .filter((f) => !!getVisibleWhen(f.options) && isFieldVisible(f))
       .map((f) => f.id);
 
-    const newly = visible.filter((id) => !revealedNoteIds.current.has(id));
-    revealedNoteIds.current = new Set(visible);
+    const newly = visible.filter((id) => !revealedFieldIds.current.has(id));
+    revealedFieldIds.current = new Set(visible);
     if (newly.length === 0) return;
 
     document
@@ -1611,6 +1604,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => f.field_type === "file")) {
         const file = workingFiles[field.id];
         if (!file) continue; // no new file for this slot
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -1659,6 +1653,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -1736,6 +1731,12 @@ export default function PersonalInfoTaskDrawer({
       // ── 4. Keep existing file responses that weren't replaced ──
       const existingFileResponses = Object.entries(existingFiles)
         .filter(([fieldId]) => !workingFiles[fieldId]) // not replaced by new file
+        // Drop files on fields the answers now hide, mirroring how their text
+        // answers are blanked above.
+        .filter(([fieldId]) => {
+          const field = fields.find((f) => f.id === fieldId);
+          return !field || isFieldVisible(field);
+        })
         .map(([fieldId, info]) => {
           const field = fields.find((f) => f.id === fieldId);
           return {
@@ -1753,6 +1754,7 @@ export default function PersonalInfoTaskDrawer({
       const existingMultiResponses = Object.entries(existingMultiFiles).flatMap(
         ([fieldId, list]) => {
           const field = fields.find((f) => f.id === fieldId);
+          if (field && !isFieldVisible(field)) return [];
           return (list ?? []).map((info) => ({
             field_id: fieldId,
             field_label: field?.label ?? "",
@@ -1823,6 +1825,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => f.field_type === "file")) {
         const file = activeFiles[field.id];
         if (!file) continue;
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -1871,6 +1874,7 @@ export default function PersonalInfoTaskDrawer({
       for (const field of fields.filter((f) => fileFieldAllowsMultiple(f))) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
+        if (!isFieldVisible(field)) continue; // condition no longer met
 
         const cfg = getFileConfig(field.options);
         const safeLeadId = leadId ?? "unknown";
@@ -2604,14 +2608,22 @@ export default function PersonalInfoTaskDrawer({
                 }
 
                 // Non-ID task file fields render normally
+                const fileDesc = getFileConfig(field.options).description;
                 return (
-                  <div key={field.id}>
+                  <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
                       {field.label}
                       {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
+                      {renderLabelBadges(field.label)}
                     </label>
+                    {fileDesc && (
+                      <p className="-mt-1 mb-2 text-xs leading-relaxed text-gray-500">
+                        {fileDesc}
+                      </p>
+                    )}
+                    {renderAttachedNotes(field.label)}
                     {fileFieldAllowsMultiple(field) ? (
                       <MultiFileSlot
                         field={field}
@@ -2770,11 +2782,13 @@ export default function PersonalInfoTaskDrawer({
                       )}
                       {renderLabelBadges(field.label)}
                     </label>
+                    {renderReadOnlyNote(field)}
                     {renderAttachedNotes(field.label)}
                     <SharesEditor
                       value={values[field.id] ?? ""}
                       defaultNames={partyNames ?? []}
                       invalid={!!errors[field.id]}
+                      readOnly={!!field.read_only}
                       onChange={(v) => setValue(field.id, v)}
                       onBlur={() => blurField(field)}
                     />
@@ -2800,19 +2814,33 @@ export default function PersonalInfoTaskDrawer({
                       )}
                       {renderLabelBadges(field.label)}
                     </label>
+                    {renderReadOnlyNote(field)}
                     {renderAttachedNotes(field.label)}
                     <select
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
                       onBlur={() => blurField(field)}
+                      disabled={!!field.read_only}
                       className={[
-                        inputBase,
-                        errors[field.id] ? inputError : inputNormal,
-                        "appearance-none cursor-pointer",
-                        !values[field.id] ? "text-gray-400 text-xs" : "text-gray-900 text-sm",
+                        // appearance-none stays on either way: without it the
+                        // native arrow renders alongside the one drawn below.
+                        "appearance-none",
+                        field.read_only ? inputReadOnly : inputBase,
+                        field.read_only
+                          ? inputReadOnlyBorder
+                          : errors[field.id]
+                            ? inputError
+                            : inputNormal,
+                        field.read_only
+                          ? ""
+                          : !values[field.id]
+                            ? "cursor-pointer text-gray-400 text-xs"
+                            : "cursor-pointer text-gray-900 text-sm",
                       ].join(" ")}
                       style={{
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23${
+                          field.read_only ? "9ca3af" : "6b7280"
+                        }' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
                         backgroundRepeat: "no-repeat",
                         backgroundPosition: "right 14px center",
                         paddingRight: "40px",
@@ -3058,7 +3086,13 @@ export default function PersonalInfoTaskDrawer({
                           audio={false}
                           screenshotFormat="image/jpeg"
                           screenshotQuality={0.95}
-                          videoConstraints={{ facingMode: "environment" }}
+                          // Capture at the CAMERA's resolution, not the preview box's. Without
+                          // forceScreenshotSourceSize react-webcam sizes its screenshot canvas to
+                          // the video element's clientWidth, so an ID was stored a few hundred
+                          // pixels wide and its fine print was gone before the file ever left the
+                          // browser. `ideal` degrades on its own where 1920 isn't available.
+                          forceScreenshotSourceSize
+                          videoConstraints={{ facingMode: "environment", width: { ideal: 1920 } }}
                           onUserMediaError={() =>
                             setCameraError("Unable to access camera. Please allow camera permissions.")
                           }

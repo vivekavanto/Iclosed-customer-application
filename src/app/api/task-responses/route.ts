@@ -12,6 +12,7 @@ import {
   validateUnit,
 } from "@/lib/addressValidation";
 import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert";
+import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
@@ -365,6 +366,12 @@ export async function POST(req: Request) {
         wasCompleted,
         source: "task-responses",
       });
+
+      // The closing-funds task also goes to the conveyancing clerks and to
+      // bookkeeping, with the client's proof of deposit attached — money
+      // reaching the trust account is what those two are waiting on, and it
+      // can't wait for the whole file to finish. No-ops for every other task.
+      await requestDepositProofAlert({ taskId: task.id, taskTitle: task.title });
 
       // Routed through the admin app so the alert carries the file's documents;
       // falls back to sending from here if it can't be reached.

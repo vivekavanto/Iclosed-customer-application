@@ -198,10 +198,19 @@ export async function convertSingleLead(params: {
       type: lead.lead_type ?? "Purchase",
       status: "Active",
       property_address: lead.address_street ?? "Address TBD",
-      closing_date: closingDate ?? null,
+      // The date an admin typed into the conversion dialog wins. When they
+      // leave it blank, fall back to what the client gave at intake (typed on
+      // step 3, or read off their uploaded APS) rather than creating the deal
+      // with no closing date and making someone re-key a date we already have.
+      closing_date: closingDate ?? lead.closing_date ?? null,
       price: cleanPrice ?? 0,
       selling_price: cleanSellingPrice,
       selling_property_address: lead.selling_address_street ?? null,
+      // Buy & Sell carries a second closing date. Conditionally spread so
+      // conversion keeps working before the deals migration is applied.
+      ...(lead.selling_closing_date
+        ? { selling_closing_date: lead.selling_closing_date }
+        : {}),
     })
     .select("id")
     .single();
@@ -287,7 +296,7 @@ export async function convertSingleLead(params: {
     // ── Tasks for this side ──
     const { data: taskTemplates } = await supabaseAdmin
       .from("task_templates")
-      .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared")
+      .select("id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared, activation_required")
       .eq("lead_type", templateType)
       .eq("is_deleted", false)
       .order("order_index", { ascending: true });
@@ -307,6 +316,9 @@ export async function convertSingleLead(params: {
           completed: false,
           role_type: t.role_type ?? "client",
           is_shared: t.is_shared ?? false,
+          // Templates that start switched off (the closing-funds task) must seed
+          // switched-off task rows — see the admin repo's 2026-08-26 migration.
+          activation_required: t.activation_required ?? false,
           side,
         }));
 

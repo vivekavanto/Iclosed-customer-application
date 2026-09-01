@@ -1,6 +1,6 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { blobToken } from "@/lib/blobPrivacy";
+import { blobToken, PRIVATE_BLOB_ENABLED } from "@/lib/blobPrivacy";
 import { MAX_DOCUMENT_UPLOAD_BYTES } from "@/lib/uploadValidation";
 
 // Generic client-upload token endpoint used by DynamicTaskDrawer and other
@@ -24,12 +24,28 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as HandleUploadBody;
 
+    // Fail loudly on a half-configured rollout. Without this the SDK silently
+    // falls back to BLOB_READ_WRITE_TOKEN (the PUBLIC store) while the client
+    // asks for private access, and the upload dies at the blob API instead.
+    const token = blobToken();
+    if (PRIVATE_BLOB_ENABLED && !token) {
+      return NextResponse.json(
+        {
+          error:
+            "Blob storage misconfigured: NEXT_PUBLIC_PRIVATE_BLOB is true but " +
+            "BLOB_PRIVATE_READ_WRITE_TOKEN is not set. Run `vercel env pull`, " +
+            "or set NEXT_PUBLIC_PRIVATE_BLOB=false to use the public store.",
+        },
+        { status: 500 }
+      );
+    }
+
     const jsonResponse = await handleUpload({
       body,
       request: req,
       // Client sends access: BLOB_ACCESS; the generated token must target the
       // matching store — private store's token once the flag is on (SEC-003).
-      token: blobToken(),
+      token,
       onBeforeGenerateToken: async (_pathname, clientPayload) => {
         // Identification documents carry the app's advertised 10 MB ceiling
         // (MAX_DOCUMENT_UPLOAD_BYTES). Everything else keeps the historical

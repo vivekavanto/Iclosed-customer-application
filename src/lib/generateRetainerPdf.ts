@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fs from "fs";
 import path from "path";
+import { retainerFaqItems } from "@/lib/retainerFaq";
 
 interface RetainerPdfParams {
   fullName: string;
@@ -15,69 +16,6 @@ interface RetainerPdfParams {
   purchaseAddress?: string;
   saleAddress?: string;
 }
-
-const FAQ_ITEMS = [
-  {
-    question: "Who are we?",
-    answer:
-      "We are iClosed, powered by Nava Wilson PC, an Ontario law firm focused exclusively on real estate transactions. We handle purchases, sales, refinances, and title transfers — all through secure digital platforms, including video signing.",
-  },
-  {
-    question: "Who is the lawyer or law firm representing me?",
-    answer:
-      "Your transaction will be handled by a licensed Ontario lawyer at Nava Wilson PC.",
-  },
-  {
-    question: "What legal services are included in this retainer?",
-    answer:
-      "Our retainer covers the full scope of legal work needed to close your real estate transaction, including title search, document preparation, registration, and trust account management.",
-  },
-  {
-    question: "How much will it cost?",
-    answer:
-      "Our fees are transparent and competitive. The exact cost depends on the type and complexity of your transaction. A detailed fee breakdown will be provided before you proceed.",
-  },
-  {
-    question: "Are there any additional costs I should know about?",
-    answer:
-      "In addition to legal fees, there may be disbursements such as title insurance, registration fees, and land transfer tax. We will provide a full estimate of all costs upfront so there are no surprises.",
-  },
-  {
-    question: "How do I sign documents and communicate with you?",
-    answer:
-      "All documents can be signed electronically through our secure platform. You can communicate with our team via email, phone, or through your client portal at any time.",
-  },
-  {
-    question: "How do I provide my ID and documents?",
-    answer:
-      "You can securely upload your identification and documents through your iClosed client portal. We accept standard government-issued photo ID and will guide you through the process.",
-  },
-  {
-    question: "How long does this retainer last?",
-    answer:
-      "This retainer remains in effect until your real estate transaction is completed and all related legal matters are resolved. You may terminate the retainer at any time by providing written notice.",
-  },
-  {
-    question: "What are your obligations as our client?",
-    answer:
-      "As our client, you are expected to provide accurate information, respond to requests in a timely manner, and ensure funds are available when required for closing.",
-  },
-  {
-    question: "What happens if I want to cancel?",
-    answer:
-      "You have the right to cancel this retainer at any time. If you cancel, you will only be responsible for fees and disbursements incurred up to the date of cancellation.",
-  },
-  {
-    question: "Is this agreement legally binding?",
-    answer:
-      "Yes, once you sign and submit this retainer agreement, it becomes a legally binding contract between you and iClosed for the provision of legal services related to your transaction.",
-  },
-  {
-    question: "Who can I contact with questions?",
-    answer:
-      "You can reach our team through your client portal, by email, or by phone during business hours. Your assigned closing manager will be your primary point of contact.",
-  },
-];
 
 /** Wrap long text into lines that fit within maxWidth */
 function wrapText(
@@ -142,14 +80,29 @@ export async function generateRetainerPdf(
   }
 
   // ── Header with logo ──
+  //
+  // logo-full.png is the brand LOCKUP - the iClosed wordmark stacked above
+  // "POWERED BY NAVA WILSON" - and it is not a drop-in swap for the old bare
+  // logo.png. The two files are cropped completely differently:
+  //
+  //            file            size      wordmark is...  padding above/below
+  //   old      logo.png        90x29     79% of height   14% / 7%
+  //   current  logo-full.png   1108x480  41% of height   16% / 21%
+  //
+  // Drawn at the old logoHeight of 28 the wordmark would come out ~11.5pt,
+  // roughly half the ~22pt it has rendered at since this document existed, and
+  // the tagline would be illegible. 54pt restores the wordmark to ~22pt
+  // (54 * 0.41), and the two offsets below cancel the new file's much larger
+  // built-in whitespace so the header block still sits where it always has.
+  // Re-measure all three numbers if the logo file is ever re-cropped.
   try {
-    const logoPath = path.join(process.cwd(), "public", "logo.png");
+    const logoPath = path.join(process.cwd(), "public", "logo-full.png");
     const logoBytes = fs.readFileSync(logoPath);
     const logoImage = await doc.embedPng(logoBytes);
-    const logoHeight = 28;
+    const logoHeight = 54;
     const logoWidth = logoImage.width * (logoHeight / logoImage.height);
-    page.drawImage(logoImage, { x: margin, y: y - logoHeight + 8, width: logoWidth, height: logoHeight });
-    y -= logoHeight + 16;
+    page.drawImage(logoImage, { x: margin, y: y - logoHeight + 13, width: logoWidth, height: logoHeight });
+    y -= logoHeight + 2;
   } catch {
     // Fallback to text if logo file not available
     page.drawText("iClosed", { x: margin, y, font: bold, size: 22, color: brandColor });
@@ -194,7 +147,7 @@ export async function generateRetainerPdf(
   y -= 24;
 
   // ── FAQ Sections ──
-  for (const item of FAQ_ITEMS) {
+  for (const item of retainerFaqItems) {
     // Question
     const qLines = wrapText(item.question, bold, 10, contentWidth);
     ensureSpace(qLines.length * lineHeight + 10);

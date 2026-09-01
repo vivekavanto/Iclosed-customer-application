@@ -26,6 +26,8 @@ export async function POST(req: Request) {
       selling_price,
       deposit_amount,
       selling_deposit_amount,
+      closing_date,
+      selling_closing_date,
       address_street,
       address_unit,
       address_city,
@@ -39,6 +41,7 @@ export async function POST(req: Request) {
       aps_signed,
       aps_signed_purchase,
       aps_signed_sale,
+      aps_extraction,
       co_persons,
       document_upload_mode,
       document_uploader_co_person_id,
@@ -96,6 +99,36 @@ export async function POST(req: Request) {
     const cleanDeposit = cleanAmount(deposit_amount);
     const cleanSellingDeposit =
       sub_service === "both" ? cleanAmount(selling_deposit_amount) : null;
+
+    // Closing date is optional and arrives as an ISO "YYYY-MM-DD" string from
+    // the date input (or from an APS read, normalized to the same shape).
+    // Anything that isn't a real calendar date is dropped rather than rejected
+    // — a garbled date must never cost the client their whole submission.
+    const cleanClosingDate = (value: unknown): string | null => {
+      if (typeof value !== "string") return null;
+      const trimmed = value.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+      const parsed = new Date(`${trimmed}T00:00:00Z`);
+      if (Number.isNaN(parsed.getTime())) return null;
+      // Round-trip guards against "2026-02-31" style overflow, which Date
+      // silently rolls forward into March.
+      if (parsed.toISOString().slice(0, 10) !== trimmed) return null;
+      return trimmed;
+    };
+    const closingDate = cleanClosingDate(closing_date);
+    const sellingClosingDate =
+      sub_service === "both" ? cleanClosingDate(selling_closing_date) : null;
+
+    // Audit trail of what the APS reader returned, kept next to what the client
+    // accepted. Stored as-is; nothing here is trusted as a value — every field
+    // on the lead comes from the form the client submitted.
+    const apsExtraction =
+      aps_extraction &&
+      typeof aps_extraction === "object" &&
+      !Array.isArray(aps_extraction) &&
+      Object.keys(aps_extraction).length > 0
+        ? aps_extraction
+        : null;
     const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
     const uploadMode =
       document_upload_mode === "me" ||
@@ -302,12 +335,22 @@ export async function POST(req: Request) {
       console.warn("Client fetch failed:", e);
     }
 
-    // ── 1b. Name-identity validation ──────────────────────────
-    // Logged-in users: name MUST match their account's current name or aliases.
-    // Mismatch is hard-blocked — they should rename via /profile first if their
-    // name has changed.
-    // Anonymous users: name mismatch falls back to creating a separate clients
-    // row so two real people sharing an email don't get merged.
+    // ── 1b. Name-identity ─────────────────────────────────────
+    // The name on an intake is the name of the person the FILE is for, which is
+    // not necessarily the person filling the form in. The intake takes its
+    // primary contact from the first purchaser named on the uploaded agreement,
+    // so a co-purchaser, a spouse or a family member may well be the one at the
+    // keyboard — signed in under their own account.
+    //
+    // A submitted name that doesn't match the client we resolved therefore is
+    // not an error to reject. It means we resolved the WRONG client, and the
+    // lead belongs to whoever the submitted name identifies: an existing
+    // clients row where there is one, a fresh row where there isn't.
+    //
+    // This used to hard-block a signed-in submitter ("The name you entered does
+    // not match your account"), which made it impossible to open a file for
+    // anybody but yourself — and impossible to submit at all after a name
+    // change until the account had been renamed.
     if (clientId && (first_name || last_name)) {
       const { data: resolvedClient } = await supabaseAdmin
         .from("clients")
@@ -319,37 +362,51 @@ export async function POST(req: Request) {
         resolvedClient &&
         !nameMatchesClient(resolvedClient, first_name ?? "", last_name ?? "")
       ) {
-        if (isLoggedIn) {
-          return NextResponse.json(
-            {
-              success: false,
-              error:
-                "The name you entered does not match your account. Please use your registered name or update your profile.",
-            },
-            { status: 400 }
-          );
+        const wrongClientId = clientId;
+
+        // Does the submitted name already belong to somebody? Asked before
+        // inserting, or every intake opened for the same person would leave
+        // behind another duplicate clients row. The resolution above never got
+        // this far: it stops at the first match, which was the wrong one.
+        const byName = await findClientByName(first_name ?? "", last_name ?? "");
+        const existing = byName?.merged_into_client_id
+          ? await followMergedClient(byName.merged_into_client_id)
+          : byName;
+
+        if (existing) {
+          clientId = existing.id;
+        } else {
+          const { data: newClient, error: newClientErr } = await supabaseAdmin
+            .from("clients")
+            .insert({
+              email: email ?? null,
+              first_name: first_name ?? "",
+              last_name: last_name ?? "",
+              phone: phone ?? null,
+            })
+            .select("id")
+            .single();
+
+          if (!newClientErr && newClient) {
+            clientId = newClient.id;
+          } else {
+            console.warn(
+              "[Intake] Failed to split client on name mismatch:",
+              newClientErr?.message
+            );
+            clientId = null;
+          }
         }
 
-        // Anonymous: split into a fresh clients row.
-        const { data: newClient, error: newClientErr } = await supabaseAdmin
-          .from("clients")
-          .insert({
-            email: email ?? null,
-            first_name: first_name ?? "",
-            last_name: last_name ?? "",
-            phone: phone ?? null,
-          })
-          .select("id")
-          .single();
-        if (!newClientErr && newClient) {
-          console.log(
-            `[Intake] Email ${email} matched client ${clientId} (${resolvedClient.first_name} ${resolvedClient.last_name}) but submitted name was "${first_name} ${last_name}" — created separate client ${newClient.id}`
-          );
-          clientId = newClient.id;
-        } else {
-          console.warn("[Intake] Failed to split client on name mismatch:", newClientErr?.message);
-          clientId = null;
-        }
+        // Logged either way, because the one case this can't tell apart is a
+        // signed-in client whose own name simply changed — which looks exactly
+        // like one opening a file for someone else. If the two rows turn out to
+        // be the same person, an admin merges them.
+        console.log(
+          `[Intake] Submitted name "${first_name} ${last_name}" does not match client ` +
+            `${wrongClientId} (${resolvedClient.first_name} ${resolvedClient.last_name})` +
+            `${isLoggedIn ? " — signed-in submitter" : ""} → attached to ${clientId ?? "no client"}`
+        );
       }
     }
 
@@ -395,6 +452,12 @@ export async function POST(req: Request) {
         // intake working before the deposit migration is applied.
         ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
         ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+        // Optional closing date. Same conditional-spread convention as the
+        // deposit above, so an intake without one never references the column
+        // and keeps working before the migration is applied.
+        ...(closingDate ? { closing_date: closingDate } : {}),
+        ...(sellingClosingDate ? { selling_closing_date: sellingClosingDate } : {}),
+        ...(apsExtraction ? { aps_extraction: apsExtraction } : {}),
         address_street,
         address_unit,
         address_city,
@@ -468,6 +531,8 @@ export async function POST(req: Request) {
               selling_price: cleanSellingPrice,
               ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
               ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+              ...(closingDate ? { closing_date: closingDate } : {}),
+              ...(sellingClosingDate ? { selling_closing_date: sellingClosingDate } : {}),
               address_street,
               address_unit,
               address_city,

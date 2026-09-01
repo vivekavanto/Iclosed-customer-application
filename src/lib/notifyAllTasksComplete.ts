@@ -3,6 +3,7 @@ import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
 import { interpolateTokens, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { adminAppUrl } from "@/lib/adminAppUrl";
+import { isTaskInactive } from "@/lib/depositTask";
 
 /**
  * Tell the back office when a client AND their co-party have completed every
@@ -196,19 +197,26 @@ export async function notifyAllTasksComplete(
     const [{ data: sharedTasks }, { data: personalTasks }] = await Promise.all([
       supabaseAdmin
         .from("tasks")
-        .select("id, status")
+        .select("id, status, activation_required, activated_at")
         .eq("deal_id", primaryDealId)
         .eq("is_shared", true)
         .eq("is_deleted", false),
       supabaseAdmin
         .from("tasks")
-        .select("id, status")
+        .select("id, status, activation_required, activated_at")
         .in("deal_id", familyDealIds)
         .or("is_shared.is.null,is_shared.eq.false")
         .eq("is_deleted", false),
     ]);
 
-    const pooled = [...(sharedTasks ?? []), ...(personalTasks ?? [])];
+    // Tasks awaiting an admin's activation are dropped, not counted as
+    // outstanding: they are not on the client's dashboard at all (the
+    // closing-funds task is created switched off until the firm has drawn up the
+    // Final Statement of Account). Mirrors the admin repo — see its
+    // 2026-08-26 migration and src/lib/depositTask.ts.
+    const pooled = [...(sharedTasks ?? []), ...(personalTasks ?? [])].filter(
+      (t) => !isTaskInactive(t),
+    );
 
     // A file with no client-visible tasks hasn't "completed" anything.
     if (pooled.length === 0) {

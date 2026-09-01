@@ -22,10 +22,12 @@ import {
 import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
 import ClosingCostEstimateModal from "@/components/dashboard/ClosingCostEstimateModal";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
+import DepositFundsDrawer from "@/components/dashboard/DepositFundsDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
+import { isDepositTask } from "@/lib/depositTask";
 import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
 import { useToast } from "@/components/ui/Toast";
@@ -938,6 +940,7 @@ export default function DashboardPage() {
   const [dynamicDrawerOpen, setDynamicDrawerOpen] = useState(false);
   const [idDrawerOpen, setIdDrawerOpen] = useState(false);
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
+  const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   // ── Direct per-party target (inline multi-party accordion) ──
@@ -1046,6 +1049,13 @@ export default function DashboardPage() {
     if (isUploadIdTask(task.title)) {
       void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
+    } else if (isDepositTask(task.title)) {
+      // The closing-funds task is one file upload wrapped in a lot of reading:
+      // the balance, the statement it came from and three ways to send the
+      // money. Its own drawer presents those before the picker — see
+      // DepositFundsDrawer. Never on behalf of anyone: the money is the file's,
+      // not a particular purchaser's, so there is no per-party target.
+      setDepositDrawerOpen(true);
     } else if (isPersonalInfoTask(task.title)) {
       // Personal Information has its own dedicated drawer (PersonalInfoTaskDrawer)
       // so it can be customized independently of the generic task drawer. Uses the
@@ -1380,6 +1390,19 @@ export default function DashboardPage() {
         side={activeTask?.side ?? dealTypeToSide(activeDeal?.type)}
         onTaskCompleted={(id) => {
           setDynamicDrawerOpen(false);
+          markDone(id);
+        }}
+      />
+
+      {/* ── Deposit Funds Drawer (dedicated, standalone) ── */}
+      <DepositFundsDrawer
+        open={depositDrawerOpen}
+        onClose={() => setDepositDrawerOpen(false)}
+        taskId={activeTask?.id ?? null}
+        taskTitle={activeTask?.title ?? "Deposit Funds Into Our Trust Account"}
+        leadId={leadId ?? null}
+        onTaskCompleted={(id) => {
+          setDepositDrawerOpen(false);
           markDone(id);
         }}
       />
