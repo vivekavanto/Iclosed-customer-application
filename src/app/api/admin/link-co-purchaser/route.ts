@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     // Verify the matched lead exists
     const { data: matchedLead } = await supabaseAdmin
       .from("leads")
-      .select("id, first_name, last_name")
+      .select("id, first_name, last_name, firm_key")
       .eq("id", flag.matched_lead_id)
       .single();
 
@@ -57,6 +57,10 @@ export async function POST(req: Request) {
       .update({
         parent_lead_id: flag.matched_lead_id,
         address_match_flag: { ...flag, status: "approved" },
+        // Joining a family means joining its firm. The lead was standing on
+        // its own until now and may carry a different one; the root is what
+        // branding reads, so leaving this stale would only ever mislead.
+        ...(matchedLead.firm_key ? { firm_key: matchedLead.firm_key } : {}),
       })
       .eq("id", lead_id);
 

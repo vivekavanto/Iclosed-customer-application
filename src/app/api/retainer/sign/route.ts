@@ -4,9 +4,12 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
+import { getLeadFirmKey } from "@/lib/leadFirm";
+import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { brandEmailHtml } from "@/lib/emailBrand";
 import { BLOB_ACCESS, blobToken } from "@/lib/blobPrivacy";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend } from "@/lib/resend";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
 
@@ -297,6 +300,10 @@ export async function POST(req: Request) {
         side: displaySide,
         purchaseAddress: showCombined ? purchaseAddress : undefined,
         saleAddress: showCombined ? saleAddress : undefined,
+        // Resolved server-side from the lead, never taken from the request:
+        // this decides which firm the signed agreement names, and the client
+        // must not be able to choose that.
+        firmKey: await getLeadFirmKey(leadId),
       });
 
       // 2. Upload to Vercel Blob (combined PDF for P&S uses "main" segment)
@@ -353,12 +360,15 @@ export async function POST(req: Request) {
           saleAddress: showCombined ? saleAddress : undefined,
         });
 
+        // Same firm the agreement itself names — a confirmation from the
+        // other entity, carrying this PDF, would be alarming.
+        const firm = await getLeadFirmKey(leadId);
         await resend.emails.send({
-          from: EMAIL_FROM,
-          replyTo: EMAIL_REPLY_TO,
+          from: firmFrom(firm),
+          replyTo: firmReplyTo(firm),
           to: lead.email,
           subject,
-          html,
+          html: brandEmailHtml(html, firm),
           attachments: [
             {
               filename:

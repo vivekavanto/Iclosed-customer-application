@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
+import { getLeadFirmKey } from "@/lib/leadFirm";
 import { BLOB_ACCESS, blobToken } from "@/lib/blobPrivacy";
 
 /**
@@ -195,6 +196,10 @@ export async function POST(req: Request) {
           side,
           purchaseAddress: isPSCombined ? purchaseAddress : undefined,
           saleAddress: isPSCombined ? saleAddress : undefined,
+          // A backfilled PDF must name the firm the file is on TODAY, the
+          // same as a fresh signature would — these replace missing PDFs for
+          // signatures that already exist.
+          firmKey: await getLeadFirmKey(sig.lead_id),
         });
 
         // Upload to Vercel Blob (same path convention as the live sign route)

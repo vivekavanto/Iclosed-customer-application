@@ -4,7 +4,8 @@ import { useState, useEffect, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, MapPin, Tag, ArrowRight } from "lucide-react";
 import FAQAccordion from "@/components/retainer/FAQAccordion";
-import { retainerFaqItems } from "@/lib/retainerFaq";
+import { getRetainerFaqItems, retainerAgreementLine } from "@/lib/retainerFaq";
+import { resolveFirmKey, type FirmKey } from "@/lib/firms";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 
@@ -130,6 +131,10 @@ export default function RetainerPage() {
   const [saleAddress, setSaleAddress] = useState<string | null>(null);
   const [leadType, setLeadType] = useState("");
   const [side, setSide] = useState<"purchase" | "sale" | null>(null);
+  // Which firm this client is retaining. Starts at the default rather than
+  // null so the form never renders a blank firm name in the moment between
+  // first paint and /api/retainer/check answering.
+  const [firm, setFirm] = useState<FirmKey>(resolveFirmKey(null));
   const [retainerCurrent, setRetainerCurrent] = useState(1);
   const [retainerTotal, setRetainerTotal] = useState(1);
   const [isCoPerson, setIsCoPerson] = useState(false);
@@ -221,6 +226,7 @@ export default function RetainerPage() {
         setSide(
           data.side === "purchase" || data.side === "sale" ? data.side : null
         );
+        setFirm(resolveFirmKey(data.firm_key));
         setRetainerCurrent(data.retainer_current ?? 1);
         setRetainerTotal(data.retainer_total ?? 1);
         setIsCoPerson(Boolean(data.is_co_person));
@@ -689,7 +695,7 @@ export default function RetainerPage() {
 
       {/* FAQ Section */}
       <div className="px-6 sm:px-10 lg:px-16">
-        <FAQAccordion items={retainerFaqItems} />
+        <FAQAccordion items={getRetainerFaqItems(firm)} />
       </div>
 
       {/* ═══════════════════════════════════════
@@ -701,7 +707,7 @@ export default function RetainerPage() {
             Signature / Acceptance
           </h3>
           <p className="text-sm text-gray-500 mt-1 mb-6">
-            I agree to retain iClosed to represent me in my real estate transaction under the terms outlined above.
+            {retainerAgreementLine(firm)}
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

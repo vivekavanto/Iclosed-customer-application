@@ -168,6 +168,8 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   const [issued, setIssued] = useState<IssuedEstimate | null>(null);
   /** The file's firm — fixed server-side; there is no picker. */
   const [firmLabel, setFirmLabel] = useState<string | null>(null);
+  /** The firm's key, for the wording that differs between the two entities. */
+  const [firmKey, setFirmKey] = useState<string | null>(null);
   /** The firm's brand colour from Settings — never a literal on this screen. */
   const [brand, setBrand] = useState<string>(BRAND_FALLBACK);
   /**
@@ -183,7 +185,15 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     null,
   );
 
+  // What the client has TYPED, and what they have SUBMITTED with Calculate.
+  // Every figure on the right follows the submitted value alone: recomputing on
+  // each keystroke walked the balance through nonsense on the way to the real
+  // number ($5 → $50 → $500 …) and fired the background save at every step.
+  //
+  // The first-time-buyer checkbox is deliberately NOT held back — one click is
+  // already a complete answer, so there is nothing to commit.
   const [mortgage, setMortgage] = useState("");
+  const [submittedMortgage, setSubmittedMortgage] = useState("");
   const [isFirstTimeBuyer, setIsFirstTimeBuyer] = useState(false);
   // Open on arrival: the fee-by-fee breakdown is the substance of the estimate,
   // and a client who has to press "See the full breakdown" to reach it reads the
@@ -250,6 +260,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
         setActiveFileId((data.deal?.id as string | null) ?? null);
         setIssued((data.issued as IssuedEstimate | null) ?? null);
         setFirmLabel((data.firm?.label as string | null) ?? null);
+        setFirmKey((data.firm?.firm_key as string | null) ?? null);
         // Branding and wording both come from Settings → Closing costs. The
         // fallbacks only cover a config the migrations have not reached yet.
         setBrand((data.firm?.brand_color as string | null) || BRAND_FALLBACK);
@@ -257,11 +268,15 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
           setStatementType(data.statement_type as StatementTypeConfig);
         }
         const seededMortgage = Number(p.mortgage_amount ?? 0);
-        setMortgage(
+        // A figure the file already carries arrives ALREADY submitted — the
+        // client answered this before, so the estimate opens on their number
+        // rather than on a Calculate button they have to press to get it back.
+        const seededInput =
           Number.isFinite(seededMortgage) && seededMortgage > 0
             ? formatTypedAmount(String(seededMortgage))
-            : "",
-        );
+            : "";
+        setMortgage(seededInput);
+        setSubmittedMortgage(seededInput);
         setIsFirstTimeBuyer(Boolean(p.is_first_time_buyer));
       })
       .catch((err: unknown) => {
@@ -306,8 +321,23 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   );
 
   /** Blank is "not answered yet" — 0 is a cash deal and a valid answer. */
-  const mortgageAmount = parseAmountInput(mortgage);
+  const mortgageAmount = parseAmountInput(submittedMortgage);
   const answered = mortgageAmount !== null;
+
+  /** What is in the box right now, and whether it still needs submitting. */
+  const typedAmount = parseAmountInput(mortgage);
+  const pendingChange = typedAmount !== mortgageAmount;
+
+  /**
+   * Commit the typed amount. Blank is not submittable — it is the absence of an
+   * answer, not an answer of zero, and letting it through would silently
+   * retract a figure the client already gave.
+   */
+  const submitMortgage = () => {
+    if (typedAmount === null || !pendingChange) return;
+    setSubmittedMortgage(mortgage);
+    setNotice(null);
+  };
 
   const price = Number(prefill.purchase_price ?? 0) || 0;
 
@@ -357,9 +387,9 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   //
   // The back office wants to see what the client is planning around, so a
   // settled set of figures is saved to their deal as an admin-only task.
-  // Debounced and deduplicated because it runs while they are still typing, and
-  // silent in both directions — the client did not ask for this, so neither
-  // success nor failure interrupts them.
+  // Debounced and deduplicated because the checkbox and the file switcher can
+  // still move it several times in a row, and silent in both directions — the
+  // client did not ask for this, so neither success nor failure interrupts them.
   const savedSignature = useRef<string | null>(null);
 
   useEffect(() => {
@@ -551,6 +581,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
               totalClosingCosts={statement.total}
               balanceDue={statement.balance.balanceDue}
               brand={brand}
+              firmKey={firmKey}
               sending={sending}
               onSend={handleEmail}
               onCancel={() => setPreviewOpen(false)}
@@ -665,6 +696,14 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     placeholder="0"
                     aria-label="Mortgage amount"
                     className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-8 pr-3 text-sm tabular-nums text-gray-900 outline-none transition"
+                    // Enter is what people press in a one-field form, so it
+                    // does what the button does rather than nothing at all.
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submitMortgage();
+                      }
+                    }}
                     onFocus={(e) => {
                       e.currentTarget.style.borderColor = brand;
                       e.currentTarget.style.boxShadow = `0 0 0 1px ${brand}`;
@@ -675,6 +714,38 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     }}
                   />
                 </div>
+
+                {/* Two resting states rather than a dimmed one: a filled button
+                    while there is something to submit, a quiet outline once the
+                    figures already reflect the box. A 40%-opacity primary button
+                    on open — which is what a seeded amount would show — reads as
+                    broken rather than as "nothing to do". */}
+                <button
+                  type="button"
+                  onClick={submitMortgage}
+                  disabled={typedAmount === null || !pendingChange}
+                  className={`mt-3 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity ${
+                    typedAmount !== null && pendingChange
+                      ? "text-white hover:opacity-90 cursor-pointer"
+                      : "border border-gray-200 bg-white text-gray-400 cursor-not-allowed"
+                  }`}
+                  style={
+                    typedAmount !== null && pendingChange
+                      ? { backgroundColor: brand }
+                      : undefined
+                  }
+                >
+                  Calculate
+                </button>
+
+                {/* Says out loud that the figures on the right are still the
+                    previous answer — otherwise a typed-but-unsubmitted number
+                    reads as though it had already been counted. */}
+                {pendingChange && typedAmount !== null && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Press Calculate to update the figures.
+                  </p>
+                )}
               </div>
 
               {/* First-time buyer */}

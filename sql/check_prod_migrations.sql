@@ -56,4 +56,38 @@ UNION ALL SELECT 'sale_personal_info_remove_questions', NOT EXISTS (
     AND (f.label ILIKE '%occupation%' OR f.label ILIKE '%ever owned%'
          OR f.label ILIKE '%183%' OR f.label ILIKE '%employer%'
          OR f.label ILIKE '%source of funds%')
+)
+
+-- ── Schema-level migrations the checks above never covered ───────────────────
+UNION ALL SELECT 'add_lead_closing_date', (
+  SELECT count(*) = 2 FROM information_schema.columns
+  WHERE table_name = 'leads'
+    AND column_name IN ('closing_date', 'selling_closing_date')
+)
+UNION ALL SELECT 'add_deal_selling_closing_date', EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_name = 'deals' AND column_name = 'selling_closing_date'
+)
+UNION ALL SELECT 'add_lead_aps_extraction', EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_name = 'leads' AND column_name = 'aps_extraction'
+)
+-- Both halves must hold: the doc_type the upload saves under, and the field
+-- itself on at least one Personal Information template.
+UNION ALL SELECT 'add_separation_agreement_upload', EXISTS (
+  SELECT 1 FROM pg_constraint
+  WHERE conname = 'lead_corporate_docs_doc_type_check'
+    AND pg_get_constraintdef(oid) ILIKE '%separation_agreement%'
+) AND EXISTS (
+  SELECT 1 FROM task_form_fields
+  WHERE options ->> 'doc_type' = 'separation_agreement'
+)
+UNION ALL SELECT 'add_aps_multiple_files', EXISTS (
+  SELECT 1 FROM task_form_fields
+  WHERE field_type = 'file' AND options ->> 'multiple' = 'true'
+    AND (options ->> 'doc_type' = 'aps' OR label ILIKE '%agreement of purchase%')
+)
+UNION ALL SELECT 'create_calculator_estimates', EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_schema = 'public' AND table_name = 'calculator_estimates'
 );

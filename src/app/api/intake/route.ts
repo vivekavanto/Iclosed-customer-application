@@ -549,6 +549,12 @@ export async function POST(req: Request) {
               co_persons: [],
               co_person_role: cpRole,
               parent_lead_id: lead.id,
+              // Inherit the primary's firm rather than taking the column
+              // default. Today intake is one shared URL, so both come out the
+              // same either way — but when intake URLs are split per firm the
+              // primary will arrive as iClosed LLP and its co-persons must
+              // follow it, not silently fall back to Nava Wilson.
+              firm_key: lead.firm_key ?? undefined,
               client_id: clientId,
             })
             .select("id")

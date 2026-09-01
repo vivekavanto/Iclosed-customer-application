@@ -47,13 +47,10 @@ function validateFile(f: File): string | null {
   return null;
 }
 
-type YesNo = "yes" | "no" | null;
 type Side = "purchase" | "sale";
 
 interface ApsBlockProps {
   side: Side;
-  signed: YesNo;
-  setSigned: (v: "yes" | "no") => void;
   files: File[];
   setFiles: (f: File[]) => void;
   /** Fired for the files that passed validation, so the page can upload and read them. */
@@ -63,16 +60,14 @@ interface ApsBlockProps {
   extraction?: ApsExtractionState;
   /** Read the already-uploaded agreement again. Offered after a failed read. */
   onRetryRead?: (side: Side) => void;
-  // Show the per-side "APS for Purchasing/Sale Property" label beside the
-  // toggle. Only needed in "both" mode to tell the two blocks apart — in a
+  // Show the per-side "APS for Purchasing/Sale Property" label above the
+  // upload box. Only needed in "both" mode to tell the two blocks apart — in a
   // single-side flow it just repeats the page heading, so it's hidden.
   showHeading: boolean;
 }
 
 const ApsBlock: React.FC<ApsBlockProps> = ({
   side,
-  signed,
-  setSigned,
   files,
   setFiles,
   onFilesAdded,
@@ -135,196 +130,157 @@ const ApsBlock: React.FC<ApsBlockProps> = ({
     [handlePickFiles]
   );
 
-  const segClass = (active: boolean) =>
-    `flex-1 px-4 py-2 text-sm font-medium rounded-md transition-all cursor-pointer ${
-      active
-        ? "bg-white text-[#C10007] shadow-sm"
-        : "text-gray-600 hover:text-gray-900"
-    }`;
-
   return (
     <div className="space-y-4">
-      <div className={`flex items-center gap-4 ${showHeading ? "justify-between" : ""}`}>
-        {showHeading && (
-          <div>
-            <h3 className="text-base font-semibold text-gray-900">{heading}</h3>
-            <p className="mt-0.5 text-gray-500 text-xs">{helper}</p>
-          </div>
-        )}
-        <div
-          role="radiogroup"
-          aria-label={heading}
-          className="inline-flex items-center bg-gray-100 rounded-lg p-1 w-44 flex-shrink-0"
-        >
-          <button
-            type="button"
-            role="radio"
-            aria-checked={signed === "yes"}
-            onClick={() => setSigned("yes")}
-            className={segClass(signed === "yes")}
-          >
-            Yes
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={signed === "no"}
-            onClick={() => setSigned("no")}
-            className={segClass(signed === "no")}
-          >
-            No
-          </button>
-        </div>
-      </div>
-
-      {signed === "yes" && (
+      {showHeading && (
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <p className="text-xs font-medium text-gray-700 uppercase tracking-wide">
-              Upload signed agreement & supporting documents
-            </p>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 uppercase tracking-wide">
-              Optional
-            </span>
-          </div>
-
-          <div
-            className={`border border-dashed rounded-lg p-5 flex flex-col items-center justify-center cursor-pointer transition-colors ${
-              isDragging
-                ? "border-[#C10007] bg-red-50/50"
-                : "border-gray-300 bg-gray-50/50 hover:border-[#C10007] hover:bg-white"
-            }`}
-            onClick={() => document.getElementById(inputId)?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-          >
-            <UploadCloud size={20} className="text-gray-400 mb-1.5" />
-            <p className="text-gray-600 text-sm text-center">
-              <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
-            </p>
-            <p className="text-gray-400 text-xs mt-0.5">
-              {files.length > 0 ? "Add more files · " : ""}PDF, JPG, PNG — max 10 MB each
-            </p>
-            <input
-              id={inputId}
-              type="file"
-              multiple
-              accept=".pdf,.jpg,.jpeg,.png"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.length) handlePickFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
-          </div>
-
-          {files.length > 0 && (
-            <div className="space-y-2 mt-3">
-              {files.map((f, idx) => (
-                <div
-                  key={`${f.name}-${idx}`}
-                  className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2"
-                >
-                  <p className="text-green-700 text-xs font-medium truncate">
-                    ✓ {f.name}{" "}
-                    <span className="text-green-600/70 font-normal">({formatBytes(f.size)})</span>
-                  </p>
-                  <button
-                    onClick={() => removeFile(idx)}
-                    className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Read status. Nothing here ever blocks Continue: a slow, failed or
-              unhelpful read just leaves the next steps blank and the client
-              fills them in as they always have. */}
-          {extraction && extraction.status !== "idle" && (
-            <div className="mt-3">
-              {(extraction.status === "uploading" || extraction.status === "reading") && (
-                <p className="flex items-center gap-2 text-xs text-gray-500">
-                  <Loader2 size={13} className="animate-spin text-[#C10007]" />
-                  {extraction.status === "uploading"
-                    ? "Uploading your agreement…"
-                    : "Reading your agreement — you can continue while we do."}
-                </p>
-              )}
-
-              {extraction.status === "error" && (
-                <p className="flex items-start gap-2 text-xs text-gray-500">
-                  <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                  <span>
-                    {extraction.error}
-                    {/* The file is already uploaded, so another go costs the
-                        client nothing but the wait — and a read that ran out of
-                        time on a long scan usually lands on the second pass. */}
-                    {onRetryRead && (
-                      <>
-                        {" "}
-                        <button
-                          type="button"
-                          onClick={() => onRetryRead(side)}
-                          className="underline underline-offset-2 text-[#C10007] hover:text-[#a00006]"
-                        >
-                          Try reading it again
-                        </button>
-                      </>
-                    )}
-                  </span>
-                </p>
-              )}
-
-              {extraction.status === "done" && extraction.result && (
-                <>
-                  {!extraction.result.is_aps ? (
-                    <p className="flex items-start gap-2 text-xs text-gray-500">
-                      <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                      That doesn&apos;t look like an Agreement of Purchase and Sale, so we
-                      haven&apos;t filled anything in. We&apos;ve kept the file with your
-                      submission.
-                    </p>
-                  ) : hasAnyExtractedValue(extraction.result) ? (
-                    <p className="flex items-start gap-2 text-xs text-green-700">
-                      <CheckCircle2 size={13} className="mt-0.5 flex-shrink-0" />
-                      We read {countExtractedValues(extraction.result)} details from your{" "}
-                      {files.length > 1
-                        ? `${files.length} documents, amendments included`
-                        : "agreement"}
-                      . They&apos;re filled in on the next steps — please check them
-                      before you submit.
-                    </p>
-                  ) : (
-                    <p className="flex items-start gap-2 text-xs text-gray-500">
-                      <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                      We couldn&apos;t pull any details out of that file. You can enter them
-                      yourself on the next step.
-                    </p>
-                  )}
-                </>
-              )}
-
-            </div>
-          )}
+          <h3 className="text-base font-semibold text-gray-900">{heading}</h3>
+          <p className="mt-0.5 text-gray-500 text-xs">{helper}</p>
         </div>
       )}
+
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <p className="text-xs font-medium text-gray-700 uppercase tracking-wide">
+            Upload signed agreement & supporting documents
+          </p>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 uppercase tracking-wide">
+            Optional
+          </span>
+        </div>
+
+        <div
+          className={`border border-dashed rounded-lg p-5 flex flex-col items-center justify-center cursor-pointer transition-colors ${
+            isDragging
+              ? "border-[#C10007] bg-red-50/50"
+              : "border-gray-300 bg-gray-50/50 hover:border-[#C10007] hover:bg-white"
+          }`}
+          onClick={() => document.getElementById(inputId)?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+        >
+          <UploadCloud size={20} className="text-gray-400 mb-1.5" />
+          <p className="text-gray-600 text-sm text-center">
+            <span className="text-[#C10007] font-medium">Click to browse</span> or drag & drop
+          </p>
+          <p className="text-gray-400 text-xs mt-0.5">
+            {files.length > 0 ? "Add more files · " : ""}PDF, JPG, PNG — max 10 MB each
+          </p>
+          <input
+            id={inputId}
+            type="file"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) handlePickFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        {files.length > 0 && (
+          <div className="space-y-2 mt-3">
+            {files.map((f, idx) => (
+              <div
+                key={`${f.name}-${idx}`}
+                className="flex items-center justify-between bg-green-50 border border-green-100 rounded-lg px-3 py-2"
+              >
+                <p className="text-green-700 text-xs font-medium truncate">
+                  ✓ {f.name}{" "}
+                  <span className="text-green-600/70 font-normal">({formatBytes(f.size)})</span>
+                </p>
+                <button
+                  onClick={() => removeFile(idx)}
+                  className="text-xs text-gray-400 hover:text-red-500 ml-3 flex-shrink-0 cursor-pointer transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Read status. Nothing here ever blocks Continue: a slow, failed or
+            unhelpful read just leaves the next steps blank and the client
+            fills them in as they always have. */}
+        {extraction && extraction.status !== "idle" && (
+          <div className="mt-3">
+            {(extraction.status === "uploading" || extraction.status === "reading") && (
+              <p className="flex items-center gap-2 text-xs text-gray-500">
+                <Loader2 size={13} className="animate-spin text-[#C10007]" />
+                {extraction.status === "uploading"
+                  ? "Uploading your agreement…"
+                  : "Reading your agreement — you can continue while we do."}
+              </p>
+            )}
+
+            {extraction.status === "error" && (
+              <p className="flex items-start gap-2 text-xs text-gray-500">
+                <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <span>
+                  {extraction.error}
+                  {/* The file is already uploaded, so another go costs the
+                      client nothing but the wait — and a read that ran out of
+                      time on a long scan usually lands on the second pass. */}
+                  {onRetryRead && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => onRetryRead(side)}
+                        className="underline underline-offset-2 text-[#C10007] hover:text-[#a00006]"
+                      >
+                        Try reading it again
+                      </button>
+                    </>
+                  )}
+                </span>
+              </p>
+            )}
+
+            {extraction.status === "done" && extraction.result && (
+              <>
+                {!extraction.result.is_aps ? (
+                  <p className="flex items-start gap-2 text-xs text-gray-500">
+                    <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                    That doesn&apos;t look like an Agreement of Purchase and Sale, so we
+                    haven&apos;t filled anything in. We&apos;ve kept the file with your
+                    submission.
+                  </p>
+                ) : hasAnyExtractedValue(extraction.result) ? (
+                  <p className="flex items-start gap-2 text-xs text-green-700">
+                    <CheckCircle2 size={13} className="mt-0.5 flex-shrink-0" />
+                    We read {countExtractedValues(extraction.result)} details from your{" "}
+                    {files.length > 1
+                      ? `${files.length} documents, amendments included`
+                      : "agreement"}
+                    . They&apos;re filled in on the next steps — please check them
+                    before you submit.
+                  </p>
+                ) : (
+                  <p className="flex items-start gap-2 text-xs text-gray-500">
+                    <AlertCircle size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                    We couldn&apos;t pull any details out of that file. You can enter them
+                    yourself on the next step.
+                  </p>
+                )}
+              </>
+            )}
+
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
 interface Step4Props {
   closingOption: "buying" | "selling" | "both" | null;
-  apsPurchaseSigned: YesNo;
-  setApsPurchaseSigned: (v: "yes" | "no") => void;
-  apsSaleSigned: YesNo;
-  setApsSaleSigned: (v: "yes" | "no") => void;
   purchaseFiles: File[];
   setPurchaseFiles: (f: File[]) => void;
   saleFiles: File[];
@@ -341,10 +297,6 @@ interface Step4Props {
 
 const Step4: React.FC<Step4Props> = ({
   closingOption,
-  apsPurchaseSigned,
-  setApsPurchaseSigned,
-  apsSaleSigned,
-  setApsSaleSigned,
   purchaseFiles,
   setPurchaseFiles,
   saleFiles,
@@ -356,32 +308,22 @@ const Step4: React.FC<Step4Props> = ({
   setStep,
   step,
 }) => {
-  const { error: toastError } = useToast();
-
   const showPurchase = closingOption === "buying" || closingOption === "both";
   const showSale = closingOption === "selling" || closingOption === "both";
 
   const leftSteps = INTAKE_STEPS;
 
+  // The upload is optional — nothing here blocks the client from moving on.
   const handleNext = () => {
-    if (showPurchase && !apsPurchaseSigned) {
-      toastError("Please select whether you've signed the APS for the purchasing property.");
-      return;
-    }
-    if (showSale && !apsSaleSigned) {
-      toastError("Please select whether you've signed the APS for the sale property.");
-      return;
-    }
-
     setStep(STEP_PRICE_ADDRESS);
   };
 
   const sideHeading =
     closingOption === "both"
-      ? "Have you signed the APS?"
+      ? "Please upload your APS for your properties"
       : closingOption === "selling"
-        ? "Have you signed the APS for the sale property?"
-        : "Have you signed the APS for the purchasing property?";
+        ? "Please upload your APS for your sale property"
+        : "Please upload your APS for your purchasing property";
 
   return (
     <div className="min-h-screen bg-white w-full">
@@ -454,7 +396,7 @@ const Step4: React.FC<Step4Props> = ({
                 {sideHeading}
               </h2>
               <p className="mt-3 text-gray-500 text-sm leading-relaxed">
-                Let us know which Agreements of Purchase and Sale (APS), amendments and schedules you've signed so we can prepare your file accordingly.
+                Upload the signed Agreement of Purchase and Sale (APS) along with any amendments and schedules — we&apos;ll pull the details straight from your documents.
               </p>
             </div>
 
@@ -463,8 +405,6 @@ const Step4: React.FC<Step4Props> = ({
                 <div className={showPurchase && showSale ? "" : ""}>
                   <ApsBlock
                     side="purchase"
-                    signed={apsPurchaseSigned}
-                    setSigned={setApsPurchaseSigned}
                     files={purchaseFiles}
                     setFiles={setPurchaseFiles}
                     onFilesAdded={onFilesAdded}
@@ -479,8 +419,6 @@ const Step4: React.FC<Step4Props> = ({
                 <div className={showPurchase && showSale ? "pt-6" : ""}>
                   <ApsBlock
                     side="sale"
-                    signed={apsSaleSigned}
-                    setSigned={setApsSaleSigned}
                     files={saleFiles}
                     setFiles={setSaleFiles}
                     onFilesAdded={onFilesAdded}

@@ -10,16 +10,12 @@
 // and src/lib/resend.ts throws on import when RESEND_API_KEY is unset, which
 // must never take out a read-only screen.
 
-/**
- * Mirrors EMAIL_FROM in src/lib/resend.ts.
- *
- * Deliberately duplicated rather than imported: resend.ts constructs the Resend
- * client at module scope and throws without an API key, so importing it here
- * would make the preview endpoint fail closed for a cosmetic "From" line.
- * Both read the same env var, so they cannot disagree in a real deployment.
- */
-export const EMAIL_FROM_LABEL =
-  process.env.EMAIL_FROM || "iClosed <noreply@iclosed.ca>";
+// The "From" line the preview shows is now the FIRM's address, and it is
+// resolved by the route (firmEmail.ts) and handed to the preview as a prop.
+// It cannot be computed here: this module is imported by the browser, and
+// firmEmail.ts reads process.env. The old EMAIL_FROM_LABEL const lived here
+// only to avoid importing resend.ts, which throws at module scope without an
+// API key — that hazard is unchanged, and firmEmail.ts sidesteps it too.
 
 /** Shown under the figures, in the email and in the preview. */
 export const DRAFT_NOTICE_LEAD =
@@ -27,10 +23,22 @@ export const DRAFT_NOTICE_LEAD =
 export const DRAFT_NOTICE_REST =
   "Final figures are confirmed once we receive your lender's mortgage instructions.";
 
-/** Sign-off line. Matches the contact details on the dashboard. */
-export const EMAIL_FOOTER = "Nava Wilson Professional Corporation · 416-321-1100";
+/**
+ * Sign-off line. Matches the contact details on the dashboard.
+ *
+ * The entity is the FILE's firm; the phone number is not, because the two
+ * firms share it (iClosed is seeded with Nava Wilson's address, telephone and
+ * HST number — see the closing-cost firms migration).
+ */
+export function emailFooter(firm: FirmKey | null | undefined): string {
+  return `${getFirm(firm).footerName} · 416-321-1100`;
+}
+
+import { getFirm, type FirmKey } from "@/lib/firms";
 
 export interface EstimateEmailContent {
+  /** The file's firm — decides the sign-off. Null means the default. */
+  firmKey?: FirmKey | null;
   /** Client's first name, or null for the impersonal fallback. */
   firstName?: string | null;
   propertyAddress?: string | null;
@@ -172,7 +180,7 @@ export function estimateEmailHtml(content: EstimateEmailContent): string {
         </p>
       </div>
 
-      <p style="font-size:12px;line-height:1.6;color:#64748b;">${esc(EMAIL_FOOTER)}</p>
+      <p style="font-size:12px;line-height:1.6;color:#64748b;">${esc(emailFooter(content.firmKey))}</p>
     </div>
   `;
 }

@@ -1,7 +1,8 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fs from "fs";
 import path from "path";
-import { retainerFaqItems } from "@/lib/retainerFaq";
+import { getRetainerFaqItems, retainerAgreementLine } from "@/lib/retainerFaq";
+import { DEFAULT_FIRM_KEY, FIRMS, getFirm, type FirmKey } from "@/lib/firms";
 
 interface RetainerPdfParams {
   fullName: string;
@@ -15,6 +16,13 @@ interface RetainerPdfParams {
   // "Purchase Property" and "Sale Property" (used for combined P&S retainers).
   purchaseAddress?: string;
   saleAddress?: string;
+  /**
+   * Which firm the client is retaining. Sets the lockup, the FAQ wording and
+   * the entity on the "I agree to retain ___" line. Omitted / unrecognised
+   * means Nava Wilson — what every retainer said before firms existed, so an
+   * un-migrated caller reproduces the old document exactly.
+   */
+  firmKey?: FirmKey | string | null;
 }
 
 /** Wrap long text into lines that fit within maxWidth */
@@ -55,6 +63,8 @@ export async function generateRetainerPdf(
     saleAddress,
   } = params;
 
+  const firm = getFirm(params.firmKey);
+
   const isCombined = Boolean(purchaseAddress && saleAddress);
 
   const doc = await PDFDocument.create();
@@ -81,31 +91,51 @@ export async function generateRetainerPdf(
 
   // ── Header with logo ──
   //
-  // logo-full.png is the brand LOCKUP - the iClosed wordmark stacked above
-  // "POWERED BY NAVA WILSON" - and it is not a drop-in swap for the old bare
-  // logo.png. The two files are cropped completely differently:
+  // The two firms ship DIFFERENT artwork, and it is not interchangeable — the
+  // files are cropped completely differently:
   //
-  //            file            size      wordmark is...  padding above/below
-  //   old      logo.png        90x29     79% of height   14% / 7%
-  //   current  logo-full.png   1108x480  41% of height   16% / 21%
+  //     firm         file            size      wordmark is...  padding above/below
+  //     Nava Wilson  logo-full.png   1108x480  41% of height   16% / 21%
+  //     iClosed LLP  logo.png          90x29   79% of height   14% /  7%
   //
-  // Drawn at the old logoHeight of 28 the wordmark would come out ~11.5pt,
-  // roughly half the ~22pt it has rendered at since this document existed, and
-  // the tagline would be illegible. 54pt restores the wordmark to ~22pt
-  // (54 * 0.41), and the two offsets below cancel the new file's much larger
-  // built-in whitespace so the header block still sits where it always has.
-  // Re-measure all three numbers if the logo file is ever re-cropped.
-  try {
-    const logoPath = path.join(process.cwd(), "public", "logo-full.png");
-    const logoBytes = fs.readFileSync(logoPath);
-    const logoImage = await doc.embedPng(logoBytes);
-    const logoHeight = 54;
-    const logoWidth = logoImage.width * (logoHeight / logoImage.height);
-    page.drawImage(logoImage, { x: margin, y: y - logoHeight + 13, width: logoWidth, height: logoHeight });
-    y -= logoHeight + 2;
-  } catch {
-    // Fallback to text if logo file not available
-    page.drawText("iClosed", { x: margin, y, font: bold, size: 22, color: brandColor });
+  // So the height, the lift and the gap all travel WITH the file, on the firm
+  // profile (see FirmProfile.pdfLogo). Drawing logo.png at logo-full.png's
+  // 54pt would render the wordmark at ~43pt, double the ~22pt this document
+  // has always used; drawing logo-full.png at logo.png's 28pt would halve it
+  // and leave the tagline illegible.
+  //
+  // The firm's own lockup first, the Nava Wilson one as a fallback — each with
+  // ITS OWN geometry, because a fallback drawn to the wrong file's numbers is
+  // barely better than no fallback. Both files ship today, so this only covers
+  // a deploy that lost one: a wrong-tagline letterhead beats a generation
+  // failure that blocks a client from signing.
+  const logoCandidates = [firm.pdfLogo, FIRMS[DEFAULT_FIRM_KEY].pdfLogo].filter(
+    (candidate, i, all) => all.findIndex((c) => c.file === candidate.file) === i,
+  );
+  let logoDrawn = false;
+  for (const candidate of logoCandidates) {
+    try {
+      const logoPath = path.join(process.cwd(), "public", candidate.file);
+      const logoBytes = fs.readFileSync(logoPath);
+      const logoImage = await doc.embedPng(logoBytes);
+      const logoHeight = candidate.height;
+      const logoWidth = logoImage.width * (logoHeight / logoImage.height);
+      page.drawImage(logoImage, {
+        x: margin,
+        y: y - logoHeight + candidate.lift,
+        width: logoWidth,
+        height: logoHeight,
+      });
+      y -= logoHeight + candidate.gap;
+      logoDrawn = true;
+      break;
+    } catch {
+      // Missing or unreadable — try the next candidate.
+    }
+  }
+  if (!logoDrawn) {
+    // Neither file could be read: fall back to the firm's name as a wordmark.
+    page.drawText(firm.legalName, { x: margin, y, font: bold, size: 22, color: brandColor });
     y -= 30;
   }
 
@@ -147,7 +177,7 @@ export async function generateRetainerPdf(
   y -= 24;
 
   // ── FAQ Sections ──
-  for (const item of retainerFaqItems) {
+  for (const item of getRetainerFaqItems(firm)) {
     // Question
     const qLines = wrapText(item.question, bold, 10, contentWidth);
     ensureSpace(qLines.length * lineHeight + 10);
@@ -175,7 +205,7 @@ export async function generateRetainerPdf(
   page.drawText("Signature / Acceptance", { x: margin, y, font: bold, size: 12, color: rgb(0.1, 0.1, 0.1) });
   y -= 16;
   const agreementLines = wrapText(
-    "I agree to retain iClosed to represent me in my real estate transaction under the terms outlined above.",
+    retainerAgreementLine(firm),
     regular,
     9,
     contentWidth

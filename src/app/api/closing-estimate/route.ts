@@ -3,7 +3,8 @@ import {
   parseFileId,
   resolveClientEstimateContext,
 } from "@/lib/clientEstimateContext";
-import { EMAIL_FROM_LABEL } from "@/lib/closingEstimateEmail";
+import { firmFrom } from "@/lib/firmEmail";
+import { resolveFirmKey } from "@/lib/firms";
 
 // GET /api/closing-estimate
 //
@@ -93,7 +94,7 @@ export async function GET(req: Request) {
     // sends. Read-only: the route decides the real recipient itself.
     email_envelope: {
       to: ctx.emailTo ?? "",
-      from: EMAIL_FROM_LABEL,
+      from: firmFrom(resolveFirmKey(ctx.firmKey)),
     },
     prefill: {
       // Locked — shown, never sent back. The POST routes read these from the

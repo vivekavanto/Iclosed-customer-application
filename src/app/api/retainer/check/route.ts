@@ -4,6 +4,7 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
+import { getLeadFirmKey } from "@/lib/leadFirm";
 
 type Side = "purchase" | "sale" | null;
 
@@ -230,6 +231,10 @@ export async function GET(req: Request) {
       sale_address: showCombined ? saleAddress : null,
       lead_type: displayLeadType,
       side: displaySide,
+      // Which entity this client is retaining. The page uses it for the FAQ
+      // wording and the agreement line; the sign route resolves it again
+      // server-side for the PDF rather than trusting what comes back in.
+      firm_key: await getLeadFirmKey(nextSlot.leadId),
       retainer_current: signedCount + 1,
       retainer_total: totalRetainers,
       is_co_person: isCoPerson,

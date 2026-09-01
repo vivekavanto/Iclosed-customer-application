@@ -1,5 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend } from "@/lib/resend";
+import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { getLeadFirmKey } from "@/lib/leadFirm";
+import { brandEmailHtml } from "@/lib/emailBrand";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import {
   buildLeadAddressPartsForEmail,
@@ -190,12 +193,13 @@ export async function sendInviteEmail(
     const html = splitCombinedAddressPhrase(rawHtml, addressParts);
     const subject = resolveTemplateSubject(template, variables, fallbackSubject);
 
+    const firm = await getLeadFirmKey(leadId);
     const { error: sendError } = await resend.emails.send({
-      from: EMAIL_FROM,
-      replyTo: EMAIL_REPLY_TO,
+      from: firmFrom(firm),
+      replyTo: firmReplyTo(firm),
       to: lead.email,
       subject,
-      html,
+      html: brandEmailHtml(html, firm),
     });
 
     if (sendError) {

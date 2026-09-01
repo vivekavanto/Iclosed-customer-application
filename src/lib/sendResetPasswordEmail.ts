@@ -1,5 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend } from "@/lib/resend";
+import { DEFAULT_FIRM_KEY, type FirmKey } from "@/lib/firms";
+import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { getLeadFirmKey } from "@/lib/leadFirm";
 
 export interface SendResetPasswordEmailResult {
   success: boolean;
@@ -64,23 +67,32 @@ export async function sendResetPasswordEmail(
     };
   }
 
-  // Best-effort first name for the greeting.
+  // Best-effort first name for the greeting, and the firm to send as.
+  //
+  // Unlike every other send in this repo, a password reset is addressed to a
+  // PERSON rather than to a file, and a person could in principle hold files
+  // at both firms. Their most recent file is the best available answer and a
+  // far better one than always using the default — but it IS a guess, so it
+  // only ever affects which address the mail comes from, never the link.
   let firstName = "";
+  let firm: FirmKey = DEFAULT_FIRM_KEY;
   try {
     const { data: lead } = await supabaseAdmin
       .from("leads")
-      .select("first_name")
+      .select("id, first_name")
       .eq("email", email)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     firstName = lead?.first_name ?? "";
+    firm = await getLeadFirmKey(lead?.id ?? null);
   } catch {
-    /* greeting is optional */
+    /* greeting and firm are both optional — the reset link is not */
   }
 
   const { error: sendError } = await resend.emails.send({
-    from: EMAIL_FROM,
-    replyTo: EMAIL_REPLY_TO,
+    from: firmFrom(firm),
+    replyTo: firmReplyTo(firm),
     to: email,
     subject: "Reset your iClosed password",
     html: buildResetEmailHtml(actionLink, firstName),

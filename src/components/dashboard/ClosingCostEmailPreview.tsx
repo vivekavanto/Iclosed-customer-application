@@ -5,7 +5,7 @@ import { FileText, Loader2, Send } from "lucide-react";
 import {
   DRAFT_NOTICE_LEAD,
   DRAFT_NOTICE_REST,
-  EMAIL_FOOTER,
+  emailFooter,
   estimateEmailGreeting,
   estimateEmailIntroParts,
   estimateEmailRows,
@@ -13,6 +13,7 @@ import {
   estimatePdfFileName,
   money,
 } from "@/lib/closingEstimateEmail";
+import { resolveFirmKey } from "@/lib/firms";
 
 /* ════════════════════════════════════════════
    CLOSING COST EMAIL PREVIEW
@@ -39,6 +40,8 @@ const ClosingCostEmailPreview: React.FC<{
   balanceDue: number;
   /** The firm's brand colour, from Settings → Closing costs. */
   brand: string;
+  /** The file's firm — decides the sign-off, exactly as the sent email will. */
+  firmKey?: string | null;
   sending: boolean;
   onSend: () => void;
   onCancel: () => void;
@@ -52,6 +55,7 @@ const ClosingCostEmailPreview: React.FC<{
   totalClosingCosts,
   balanceDue,
   brand,
+  firmKey,
   sending,
   onSend,
   onCancel,
@@ -172,7 +176,7 @@ const ClosingCostEmailPreview: React.FC<{
             </span>
           </div>
 
-          <p className="mt-5 text-xs text-gray-400">{EMAIL_FOOTER}</p>
+          <p className="mt-5 text-xs text-gray-400">{emailFooter(resolveFirmKey(firmKey))}</p>
         </div>
       </div>
 

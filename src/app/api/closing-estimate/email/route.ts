@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { resend } from "@/lib/resend";
+import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { resolveFirmKey } from "@/lib/firms";
 import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
 import { generateClosingCostPdf } from "@/lib/closingCostPdf";
 import {
@@ -153,7 +155,9 @@ export async function POST(req: Request) {
   // Built from the SAME module the client previewed on screen, so the message
   // that lands in their inbox is the one they approved. See
   // src/lib/closingEstimateEmail.ts.
+  const firm = resolveFirmKey(ctx.firmKey);
   const html = estimateEmailHtml({
+    firmKey: firm,
     firstName: ctx.client.firstName,
     propertyAddress: ctx.locked.propertyAddress,
     fileNo: ctx.locked.fileNo,
@@ -164,9 +168,11 @@ export async function POST(req: Request) {
   });
 
   try {
+    // The firm on the client's own file — the same one whose letterhead is on
+    // the attached PDF and whose name signs off the body.
     await resend.emails.send({
-      from: EMAIL_FROM,
-      replyTo: EMAIL_REPLY_TO,
+      from: firmFrom(firm),
+      replyTo: firmReplyTo(firm),
       to: [to],
       subject: estimateEmailSubject(ctx.locked.fileNo),
       html,

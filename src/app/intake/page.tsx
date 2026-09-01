@@ -100,24 +100,23 @@ export default function ServiceSelection() {
   const [sellingClosingDate, setSellingClosingDate] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [step, setStep] = useState(1);
-  const [apsPurchaseSigned, setApsPurchaseSigned] = useState<"yes" | "no" | null>(null);
-  const [apsSaleSigned, setApsSaleSigned] = useState<"yes" | "no" | null>(null);
   const [purchaseFiles, setPurchaseFiles] = useState<File[]>([]);
   const [saleFiles, setSaleFiles] = useState<File[]>([]);
 
+  // Step 2 no longer asks "have you signed the APS?" — it just asks for the
+  // document. An uploaded agreement is the answer; no upload leaves it unknown,
+  // which the API stores as null rather than a "no" nobody said.
+  const apsPurchaseSigned: "yes" | null = purchaseFiles.length > 0 ? "yes" : null;
+  const apsSaleSigned: "yes" | null = saleFiles.length > 0 ? "yes" : null;
+
   // Derived for back-compat with Step1/Step2/Step5Contact, which still expect a
   // single agreementSigned signal. "yes" if any active side is signed.
-  const agreementSigned: "yes" | "no" | null = (() => {
-    const hasYes = apsPurchaseSigned === "yes" || apsSaleSigned === "yes";
-    if (hasYes) return "yes";
-    const hasNo = apsPurchaseSigned === "no" || apsSaleSigned === "no";
-    if (hasNo) return "no";
-    return null;
-  })();
+  const agreementSigned: "yes" | "no" | null =
+    apsPurchaseSigned === "yes" || apsSaleSigned === "yes" ? "yes" : null;
   const setAgreementSigned = (v: "yes" | "no" | null) => {
     if (v === null) {
-      setApsPurchaseSigned(null);
-      setApsSaleSigned(null);
+      setPurchaseFiles([]);
+      setSaleFiles([]);
     }
   };
 
@@ -740,25 +739,6 @@ export default function ServiceSelection() {
     [clearSidePrefill, applySideResults],
   );
 
-  /**
-   * Answering "No" (or switching sides) retracts that agreement's prefill.
-   * Wrapped around the raw setters so Step4 doesn't have to know about it.
-   */
-  const handleApsSignedChange = useCallback(
-    (side: ApsSide, value: "yes" | "no") => {
-      if (side === "sale") setApsSaleSigned(value);
-      else setApsPurchaseSigned(value);
-
-      if (value === "no") {
-        clearSidePrefill(side);
-        if (side === "sale") setSaleFiles([]);
-        else setPurchaseFiles([]);
-        setApsBlobs((prev) => prev.filter((b) => b.side !== side));
-      }
-    },
-    [clearSidePrefill],
-  );
-
   const services = [
     {
       id: "closing",
@@ -799,8 +779,6 @@ export default function ServiceSelection() {
     setSellingDepositAmount("");
     setClosingDate("");
     setSellingClosingDate("");
-    setApsPurchaseSigned(null);
-    setApsSaleSigned(null);
     setPurchaseFiles([]);
     setSaleFiles([]);
     setAddressData({
@@ -903,10 +881,6 @@ export default function ServiceSelection() {
         {step === 2 && (
           <Step4
             closingOption={selectedClosingOption as "buying" | "selling" | "both" | null}
-            apsPurchaseSigned={apsPurchaseSigned}
-            setApsPurchaseSigned={(v) => handleApsSignedChange("purchase", v)}
-            apsSaleSigned={apsSaleSigned}
-            setApsSaleSigned={(v) => handleApsSignedChange("sale", v)}
             purchaseFiles={purchaseFiles}
             setPurchaseFiles={setPurchaseFiles}
             saleFiles={saleFiles}
