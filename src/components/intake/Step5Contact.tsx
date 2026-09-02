@@ -1063,15 +1063,6 @@ export default function Step5Contact({
 
                 {/* Card body */}
                 <div className="px-5 py-5 space-y-4 bg-white">
-                    {cards.some(
-                        (c) => c.fullName.trim() && apsNameSet.has(c.fullName.trim().toLowerCase()),
-                    ) && (
-                        <p className="flex items-start gap-1.5 text-xs text-green-700">
-                            <CheckCircle2 size={13} strokeWidth={2} className="mt-0.5 flex-shrink-0" />
-                            We found these names on your agreement. Add their contact details
-                            so we can reach them.
-                        </p>
-                    )}
                     {cards.map((card, index) => (
                         <div key={card.id} className="rounded-lg border border-gray-200 p-4 sm:p-5 space-y-4 bg-gray-50 relative">
                             {/* Card number badge and remove button */}
@@ -1248,22 +1239,6 @@ export default function Step5Contact({
 
                             {/* Card body */}
                             <div className="px-5 py-5 space-y-4 bg-white">
-                                {/* Where the name came from. Said out loud because
-                                    the client did not type it: the agreement names
-                                    them first, so this file is opened in their name
-                                    and everyone else on it is a co-party below. */}
-                                {apsPrimaryName && (
-                                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
-                                        <CheckCircle2 size={16} className="text-green-700 mt-0.5 flex-shrink-0" strokeWidth={2} />
-                                        <div className="text-[13px] leading-relaxed text-green-900">
-                                            <strong>{apsPrimaryName}</strong> is the first{" "}
-                                            {isSelling ? "seller" : "purchaser"} named on your agreement, so
-                                            we have opened this file in that name. Anyone else named on it is
-                                            listed below. If that is not you, just type your own details over it.
-                                        </div>
-                                    </div>
-                                )}
-
                                 {/* Contact Form */}
                                 <Input
                                     label="Full Name"
