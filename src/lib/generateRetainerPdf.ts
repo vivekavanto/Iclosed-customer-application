@@ -94,14 +94,22 @@ export async function generateRetainerPdf(
   // the tagline would be illegible. 54pt restores the wordmark to ~22pt
   // (54 * 0.41), and the two offsets below cancel the new file's much larger
   // built-in whitespace so the header block still sits where it always has.
-  // Re-measure all three numbers if the logo file is ever re-cropped.
+  // Re-measure all four numbers if the logo file is ever re-cropped.
+  //
+  // The file also carries transparent padding on its LEFT edge - the ink
+  // starts at pixel 87 of 1108, i.e. 7.85% of the width - so drawing it at
+  // x = margin puts the wordmark ~10pt right of the "Retainer Agreement"
+  // heading below it. LOGO_INK_LEFT_FRACTION pulls that padding back out so
+  // the two left edges line up.
   try {
     const logoPath = path.join(process.cwd(), "public", "logo-full.png");
     const logoBytes = fs.readFileSync(logoPath);
     const logoImage = await doc.embedPng(logoBytes);
     const logoHeight = 54;
     const logoWidth = logoImage.width * (logoHeight / logoImage.height);
-    page.drawImage(logoImage, { x: margin, y: y - logoHeight + 13, width: logoWidth, height: logoHeight });
+    const LOGO_INK_LEFT_FRACTION = 87 / 1108;
+    const logoX = margin - logoWidth * LOGO_INK_LEFT_FRACTION;
+    page.drawImage(logoImage, { x: logoX, y: y - logoHeight + 13, width: logoWidth, height: logoHeight });
     y -= logoHeight + 2;
   } catch {
     // Fallback to text if logo file not available
