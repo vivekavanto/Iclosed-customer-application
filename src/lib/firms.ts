@@ -71,7 +71,13 @@ export interface FirmProfile {
    * the cursor advances by afterwards — larger for the bare wordmark, which
    * carries no tagline of its own to fill the space.
    *
-   * Re-measure all three if either file is re-cropped.
+   * `inkLeft` is the transparent padding on the file’s LEFT edge as a
+   * fraction of its width. Both files carry some, so drawing either at
+   * x = margin would push the wordmark right of the heading under it; the
+   * renderer subtracts `logoWidth * inkLeft` to line the ink up with the
+   * left margin.
+   *
+   * Re-measure all four if either file is re-cropped.
    */
   pdfLogo: {
     file: string;
@@ -81,6 +87,8 @@ export interface FirmProfile {
     lift: number;
     /** Extra advance below the image, in points. */
     gap: number;
+    /** Left transparent padding, as a fraction of the file’s width. */
+    inkLeft: number;
   };
   /**
    * FILENAME of the firm's email lockup as it appears in the shared
@@ -111,7 +119,8 @@ export const FIRMS: Record<FirmKey, FirmProfile> = {
     footerName: "Nava Wilson Professional Corporation",
     fromEmail: "iClosed <iclosed@navawilson.law>",
     replyToEmail: "iclosed@navawilson.law",
-    pdfLogo: { file: "logo-full.png", height: 54, lift: 13, gap: 2 },
+    // Ink starts at pixel 87 of 1108 across, 16% down.
+    pdfLogo: { file: "logo-full.png", height: 54, lift: 13, gap: 2, inkLeft: 87 / 1108 },
     emailLogoFile: "email-logo.png",
     emailLogoWidth: 85,
     fromEnvVar: "EMAIL_FROM_NAVAWILSON",
@@ -129,7 +138,8 @@ export const FIRMS: Record<FirmKey, FirmProfile> = {
     // lockup carries the "POWERED BY NAVA WILSON" tagline, which is exactly
     // what an iClosed LLP retainer must not say. Note the artwork reads
     // "iClosed", not "iClosed LLP"; the entity is spelled out in the copy.
-    pdfLogo: { file: "logo.png", height: 28, lift: 8, gap: 16 },
+    // Ink starts at pixel 2 of 90 across.
+    pdfLogo: { file: "logo.png", height: 28, lift: 8, gap: 16, inkLeft: 2 / 90 },
     emailLogoFile: "logo.png",
     emailLogoWidth: 60,
     fromEnvVar: "EMAIL_FROM_ICLOSED",

@@ -98,11 +98,19 @@ export async function generateRetainerPdf(
   //     Nava Wilson  logo-full.png   1108x480  41% of height   16% / 21%
   //     iClosed LLP  logo.png          90x29   79% of height   14% /  7%
   //
-  // So the height, the lift and the gap all travel WITH the file, on the firm
-  // profile (see FirmProfile.pdfLogo). Drawing logo.png at logo-full.png's
-  // 54pt would render the wordmark at ~43pt, double the ~22pt this document
-  // has always used; drawing logo-full.png at logo.png's 28pt would halve it
-  // and leave the tagline illegible.
+  // So the height, the lift, the gap and the left-edge trim all travel WITH
+  // the file, on the firm profile (see FirmProfile.pdfLogo). Drawing logo.png
+  // at logo-full.png's 54pt would render the wordmark at ~43pt, double the
+  // ~22pt this document has always used; drawing logo-full.png at logo.png's
+  // 28pt would halve it and leave the tagline illegible.
+  //
+  // Both files also carry transparent padding on their LEFT edge — the ink
+  // starts at pixel 87 of 1108 (7.85%) in logo-full.png and at pixel 2 of 90
+  // (2.2%) in logo.png — so drawing either at x = margin pushes the wordmark
+  // right of the "Retainer Agreement" heading below it, by ~10pt for the Nava
+  // Wilson lockup. pdfLogo.inkLeft pulls that padding back out so the two left
+  // edges line up. Re-measure every number on the profile if either file is
+  // ever re-cropped.
   //
   // The firm's own lockup first, the Nava Wilson one as a fallback — each with
   // ITS OWN geometry, because a fallback drawn to the wrong file's numbers is
@@ -121,7 +129,7 @@ export async function generateRetainerPdf(
       const logoHeight = candidate.height;
       const logoWidth = logoImage.width * (logoHeight / logoImage.height);
       page.drawImage(logoImage, {
-        x: margin,
+        x: margin - logoWidth * candidate.inkLeft,
         y: y - logoHeight + candidate.lift,
         width: logoWidth,
         height: logoHeight,
