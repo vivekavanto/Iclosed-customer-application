@@ -36,7 +36,7 @@ const plans = [
   {
     tag: "Purchase",
     price: "$1199",
-    extra: "+ Disbursements",
+    extra: "+ Disbursements and HST",
     blurb: "Close on a property you are buying",
     cta: "Start your closing",
     dark: false,
@@ -44,15 +44,15 @@ const plans = [
   {
     tag: "Sale",
     price: "$1099",
-    extra: "+ Disbursements",
+    extra: "+ Disbursements and HST",
     blurb: "Close on a property you are selling",
     cta: "Start your closing",
     dark: true,
   },
   {
     tag: "Mortgage Refinance or Transfer",
-    price: "$999",
-    extra: "+ Disbursements",
+    price: "$1999",
+    extra: "+ Disbursements and HST",
     blurb: "Refinance a mortgage on a property",
     cta: "Start your refinance",
     dark: false,
@@ -626,12 +626,18 @@ function WhyChoose() {
         </div>
 
         {/* Bottom CTA */}
-        <div className="mt-14 sm:mt-16 text-center">
+        <div className="mt-14 sm:mt-16 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             href="/intake"
             className="inline-block rounded-lg bg-[#C10007] px-10 sm:px-12 py-3.5 sm:py-4 text-base font-semibold !text-white shadow-lg shadow-[#C10007]/20 transition-colors hover:bg-[#a00006]"
           >
             Start your closing today
+          </Link>
+          <Link
+            href="/contact"
+            className="inline-block rounded-lg border border-[#C10007] bg-white px-10 sm:px-12 py-3.5 sm:py-4 text-base font-semibold text-[#C10007] transition-colors hover:bg-[#C10007]/5"
+          >
+            Contact us
           </Link>
         </div>
       </div>

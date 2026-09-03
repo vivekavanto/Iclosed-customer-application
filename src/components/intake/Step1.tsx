@@ -37,22 +37,14 @@ export function Step1({
   const { error: toastError } = useToast();
   const [showDisbursements, setShowDisbursements] = useState(false);
 
-  const administrationFees = [
-    "Courier & postage",
-    "Paper & photocopying",
-    "File administration & storage",
-    "Fax transmission",
-    "All communication with us",
-  ];
-
-  const thirdPartyFees = [
-    "Title search fees",
+  const disbursementItems = [
     "Registration costs",
+    "Title search fees",
     "Execution search fees",
-    "Transaction levy surcharge",
-    "Tax certificate",
     "Title insurance",
     "Conveyancing software",
+    "Sheriff's Certificates",
+    "Storage, banking & courier fee",
   ];
 
   const handleNext = () => {
@@ -87,7 +79,7 @@ export function Step1({
       title: "I am buying and selling a property",
       description:
         "Doing both? iClosed will coordinate both ends to ensure a smooth and connected closing.",
-      price: "$999",
+      price: "$1999",
     },
   ];
 
@@ -273,7 +265,7 @@ export function Step1({
                           }}
                           className="text-xs text-[#C10007] underline underline-offset-2 hover:text-[#a30006] transition-colors cursor-pointer font-medium mt-0.5 inline-flex items-center gap-1"
                         >
-                          + Disbursements
+                          + Disbursements and HST
                           <ChevronDown
                             size={12}
                             className={`transition-transform duration-200 ${showDisbursements ? "rotate-180" : ""}`}
@@ -299,17 +291,13 @@ export function Step1({
                     {/* Body */}
                     <div className="px-5 sm:px-6 py-5 sm:py-6 space-y-5">
 
-                      {/* Administration fees */}
+                      {/* Disbursements list */}
                       <div>
-                        <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-[#C10007] bg-[#FEF2F2] px-2.5 py-1 rounded-full mb-3">
-                          Included in our fee
-                        </span>
-                        <h4 className="text-sm sm:text-base font-bold text-gray-900 mb-1">Administration fees</h4>
                         <p className="text-xs sm:text-sm text-gray-500 leading-relaxed mb-3">
-                        At iClosed, these are included in our flat fee — no add-ons, markups, or surprise charges.
+                          Costs charged by outside service providers that are directly tied to your closing. These vary by transaction, so they're billed as disbursements only when required.
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {administrationFees.map((fee) => (
+                          {disbursementItems.map((fee) => (
                             <div key={fee} className="flex items-center gap-2.5">
                               <div className="w-1.5 h-1.5 rounded-full bg-[#C10007] flex-shrink-0" />
                               <span className="text-xs sm:text-sm text-gray-700">{fee}</span>
@@ -318,37 +306,14 @@ export function Step1({
                         </div>
                       </div>
 
-                      <div className="border-t border-gray-100" />
-
-                      {/* Third-party fees */}
-                      <div>
-                        <span className="inline-block text-[10px] font-bold uppercase tracking-widest text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full mb-3">
-                          Billed separately
-                        </span>
-                        <h4 className="text-sm sm:text-base font-bold text-gray-900 mb-1">Third-party fees</h4>
-                        <p className="text-xs sm:text-sm text-gray-500 leading-relaxed mb-3">
-                          Costs charged by outside service providers that are directly tied to your closing. These vary by transaction, so they're billed as disbursements only when required.
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {thirdPartyFees.map((fee) => (
-                            <div key={fee} className="flex items-center gap-2.5">
-                              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-                              <span className="text-xs sm:text-sm text-gray-700">{fee}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="border-t border-gray-100" />
-
                       {/* Transparency note */}
-                      <div className="flex gap-3 bg-gray-50 rounded-xl p-3 sm:p-4">
+                      {/* <div className="flex gap-3 bg-gray-50 rounded-xl p-3 sm:p-4">
                         <Info size={14} className="text-gray-400 flex-shrink-0 mt-0.5" strokeWidth={2} />
                         <p className="text-[11px] sm:text-xs text-gray-500 leading-relaxed">
                           <span className="font-semibold text-gray-700">Why the transparency?</span>{" "}
                           We believe you should know exactly what you're paying for — and why. If you have questions about any disbursement on your statement, just ask.
                         </p>
-                      </div>
+                      </div> */}
                     </div>
 
                   </div>
