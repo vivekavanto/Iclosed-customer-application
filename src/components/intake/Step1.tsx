@@ -87,7 +87,7 @@ export function Step1({
       title: "I am buying and selling a property",
       description:
         "Doing both? iClosed will coordinate both ends to ensure a smooth and connected closing.",
-      price: "$999",
+      price: "$1999",
     },
   ];
 
