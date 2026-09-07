@@ -3,6 +3,12 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { sendNameChangeRequestEmail } from "@/lib/sendNameChangeRequestEmail";
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+
 /**
  * POST /api/name-change-request
  *

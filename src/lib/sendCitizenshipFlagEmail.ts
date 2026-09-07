@@ -1,4 +1,5 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO, INTERNAL_ALERT_TO } from "@/lib/resend";
+import { INTERNAL_ALERT_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate } from "@/lib/email-templates/milestone";
 
@@ -100,16 +101,16 @@ export async function sendCitizenshipFlagEmail(
 
     const subject = `Citizenship Flag: ${fullName} — Non-citizen / unsure`;
 
-    const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
-      replyTo: EMAIL_REPLY_TO,
-      to: INTERNAL_ALERT_TO,
-      subject,
-      html,
-    });
+    // Internal staff alert: firm-agnostic by design (firmEmail.ts reserves
+    // EMAIL_FROM for exactly these), so `firm: null` also pins it to Resend
+    // whatever the SMTP rollout does.
+    const result = await sendEmail(
+      { to: [INTERNAL_ALERT_TO], subject, html },
+      { firm: null, label: "citizenship-flag" },
+    );
 
-    if (error) {
-      console.error("[CitizenshipFlag] Resend error:", error);
+    if (!result.ok) {
+      console.error("[CitizenshipFlag] send failed:", result.error);
       return false;
     }
 

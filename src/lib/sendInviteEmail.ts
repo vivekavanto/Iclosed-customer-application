@@ -1,6 +1,6 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend } from "@/lib/resend";
-import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { sendEmail } from "@/lib/email/emailTransport";
+import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { getLeadFirmKey } from "@/lib/leadFirm";
 import { brandEmailHtml } from "@/lib/emailBrand";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
@@ -194,19 +194,20 @@ export async function sendInviteEmail(
     const subject = resolveTemplateSubject(template, variables, fallbackSubject);
 
     const firm = await getLeadFirmKey(leadId);
-    const { error: sendError } = await resend.emails.send({
-      from: firmFrom(firm),
-      replyTo: firmReplyTo(firm),
-      to: lead.email,
-      subject,
-      html: brandEmailHtml(html, firm),
-    });
+    const sendResult = await sendEmail(
+      {
+        to: [normalizeRecipientEmail(lead.email)],
+        subject,
+        html: brandEmailHtml(html, firm),
+      },
+      { firm, label: "invite" },
+    );
 
-    if (sendError) {
+    if (!sendResult.ok) {
       return {
         success: false,
         authUserId,
-        error: sendError.message ?? "Resend send failed",
+        error: sendResult.error ?? "Email send failed",
       };
     }
 

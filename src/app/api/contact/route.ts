@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { rateLimitOk, requestIp } from "@/lib/rateLimit";
 import { sendContactMessageEmail } from "@/lib/sendContactMessageEmail";
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+
 // POST /api/contact — the public "Contact us" form.
 //
 // PUBLIC BY DESIGN: middleware passes a cookie-less request straight through

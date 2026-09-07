@@ -6,6 +6,12 @@ import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
 import { notifyAdminActivation } from '@/lib/notifyAdminActivation';
 import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();

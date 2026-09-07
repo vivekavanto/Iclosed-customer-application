@@ -1,4 +1,5 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO, INTERNAL_ALERT_TO } from "@/lib/resend";
+import { INTERNAL_ALERT_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
 export interface NameChangeRequestPayload {
@@ -84,15 +85,17 @@ export async function sendNameChangeRequestEmail(
 
     const subject = `Name Change Request: ${currentName} → ${requestedName}`;
 
-    const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
-      // Staff reply straight to the client who asked for the change; only fall
-      // back to the shared inbox when we have no address for them.
-      replyTo: lead.email || EMAIL_REPLY_TO,
-      to: INTERNAL_ALERT_TO,
-      subject,
-      html,
-    });
+    // Staff reply straight to the client who asked for the change; only fall
+    // back to the shared inbox when we have no address for them.
+    const result = await sendEmail(
+      { to: [INTERNAL_ALERT_TO], subject, html },
+      {
+        firm: null,
+        label: "name-change-request",
+        replyTo: lead.email || undefined,
+      },
+    );
+    const error = result.ok ? null : result.error;
 
     if (error) {
       console.error("[NameChangeRequest] Resend error:", error);

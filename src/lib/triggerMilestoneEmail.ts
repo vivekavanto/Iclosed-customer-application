@@ -1,5 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
+import { normalizeRecipientEmail } from "@/lib/firmEmail";
+import { getLeadFirmKey } from "@/lib/leadFirm";
+import { brandEmailHtml } from "@/lib/emailBrand";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import {
@@ -81,6 +84,18 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
 
     if (!leads || leads.length === 0) return;
 
+    // Which firm this file is retained under decides the sender address and the
+    // brand lockup. Resolved ONCE, from the deal's own lead: a family is retained
+    // by one firm (getLeadFirmKey reads the ROOT lead), so resolving per-recipient
+    // would be N identical queries for one answer.
+    //
+    // Before this, the milestone email was the only client-facing send in this app
+    // that never resolved a firm: it went out from the generic EMAIL_FROM and
+    // skipped brandEmailHtml(), while rendering a shared email_templates row that
+    // DOES carry a logo <img>. Every milestone email therefore shipped the Nava
+    // Wilson lockup to iClosed LLP clients, from an iClosed address.
+    const firm = await getLeadFirmKey(deal.lead_id);
+
     // Send email to each lead (primary + co-purchasers)
     for (const lead of leads) {
       if (!lead.email) continue;
@@ -115,16 +130,20 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
         `Update: ${milestone.title}`,
       );
 
-      const { error } = await resend.emails.send({
-        from: EMAIL_FROM,
-        replyTo: EMAIL_REPLY_TO,
-        to: lead.email,
-        subject,
-        html,
-      });
+      const result = await sendEmail(
+        {
+          to: [normalizeRecipientEmail(lead.email)],
+          subject,
+          html: brandEmailHtml(html, firm),
+        },
+        { firm, label: "milestone" },
+      );
 
-      if (error) {
-        console.warn(`[MilestoneEmail] Resend error for "${milestone.title}" to ${lead.email}:`, error);
+      if (!result.ok) {
+        console.warn(
+          `[MilestoneEmail] send failed for "${milestone.title}" to ${lead.email}:`,
+          result.error,
+        );
       } else {
         console.log(`[MilestoneEmail] Sent "${milestone.title}" to ${lead.email}`);
       }

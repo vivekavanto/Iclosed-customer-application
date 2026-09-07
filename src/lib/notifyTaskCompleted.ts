@@ -1,5 +1,5 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import { interpolateTokens, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getAuthUser } from "@/lib/getAuthClient";
 import { adminAppUrl } from "@/lib/adminAppUrl";
@@ -351,16 +351,16 @@ export async function notifyClientTaskCompleted(
       fallbackSubject,
     );
 
-    const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
-      replyTo: EMAIL_REPLY_TO,
-      to: recipients,
-      subject,
-      html,
-    });
+    // Internal staff alert: firm-agnostic by design (firmEmail.ts reserves
+    // EMAIL_FROM for exactly these), so `firm: null` also pins it to Resend
+    // whatever the SMTP rollout does.
+    const result = await sendEmail(
+      { to: recipients, subject, html },
+      { firm: null, label: "task-completed" },
+    );
 
-    if (error) {
-      console.error("[TaskCompleted] Resend error (in-app notification was still created):", error);
+    if (!result.ok) {
+      console.error("[TaskCompleted] send failed (in-app notification was still created):", result.error);
       return;
     }
 

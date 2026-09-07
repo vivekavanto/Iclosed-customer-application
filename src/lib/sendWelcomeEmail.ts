@@ -1,5 +1,5 @@
-import { resend } from "@/lib/resend";
-import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { sendEmail } from "@/lib/email/emailTransport";
+import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { getLeadFirmKey } from "@/lib/leadFirm";
 import { brandEmailHtml } from "@/lib/emailBrand";
 import supabaseAdmin from "@/lib/supabaseAdmin";
@@ -27,16 +27,17 @@ export async function sendWelcomeEmail(leadId: string): Promise<boolean> {
     const { html, subject } = await buildWelcomeEmailHtml({ lead });
 
     const firm = await getLeadFirmKey(leadId);
-    const { error } = await resend.emails.send({
-      from: firmFrom(firm),
-      replyTo: firmReplyTo(firm),
-      to: lead.email,
-      subject,
-      html: brandEmailHtml(html, firm),
-    });
+    const result = await sendEmail(
+      {
+        to: [normalizeRecipientEmail(lead.email)],
+        subject,
+        html: brandEmailHtml(html, firm),
+      },
+      { firm, label: "welcome" },
+    );
 
-    if (error) {
-      console.error("[WelcomeEmail] Resend error for lead:", leadId, error);
+    if (!result.ok) {
+      console.error("[WelcomeEmail] send failed for lead:", leadId, result.error);
       return false;
     }
 

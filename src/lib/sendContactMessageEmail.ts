@@ -1,4 +1,5 @@
-import { resend, EMAIL_FROM, CONTACT_INBOX_TO } from "@/lib/resend";
+import { CONTACT_INBOX_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 
 export interface ContactMessagePayload {
   name: string;
@@ -59,16 +60,18 @@ export async function sendContactMessageEmail(
       </div>
     `;
 
-    const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
-      to: CONTACT_INBOX_TO,
-      replyTo: payload.email,
-      subject: `Contact form: ${payload.name}`,
-      html,
-    });
+    // Public contact form: no file, so no firm. The visitor is the reply-to.
+    const result = await sendEmail(
+      {
+        to: [CONTACT_INBOX_TO],
+        subject: `Contact form: ${payload.name}`,
+        html,
+      },
+      { firm: null, label: "contact-message", replyTo: payload.email },
+    );
 
-    if (error) {
-      console.error("[ContactMessage] Resend error:", error);
+    if (!result.ok) {
+      console.error("[ContactMessage] send failed:", result.error);
       return false;
     }
 
