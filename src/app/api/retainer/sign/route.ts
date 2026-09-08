@@ -363,7 +363,14 @@ export async function POST(req: Request) {
         // Same firm the agreement itself names — a confirmation from the
         // other entity, carrying this PDF, would be alarming.
         const firm = await getLeadFirmKey(leadId);
-        await resend.emails.send({
+        // Resend does NOT throw on an API error — it returns { data: null,
+        // error }. Ignoring that return value is why a rejected send looked
+        // exactly like a successful one here: the signature and the PDF were
+        // saved, the response said success, and this block logged "PDF emailed
+        // to" while Resend had actually refused the message (a `from` on an
+        // unverified sending domain returns 403). Every other sender in this
+        // repo checks `error`; this one must too.
+        const { error: emailErr } = await resend.emails.send({
           from: firmFrom(firm),
           replyTo: firmReplyTo(firm),
           to: lead.email,
@@ -382,7 +389,16 @@ export async function POST(req: Request) {
           ],
         });
 
-        console.log("[Retainer Sign] PDF emailed to:", lead.email);
+        if (emailErr) {
+          console.error("[Retainer Sign] Email send failed:", {
+            to: lead.email,
+            from: firmFrom(firm),
+            firm,
+            error: emailErr,
+          });
+        } else {
+          console.log("[Retainer Sign] PDF emailed to:", lead.email);
+        }
       }
 
       console.log(

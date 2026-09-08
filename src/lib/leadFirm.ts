@@ -25,11 +25,25 @@ export async function getLeadFirmKey(
 ): Promise<FirmKey> {
   if (!anyFamilyLeadId) return DEFAULT_FIRM_KEY;
 
-  const { data: lead } = await supabaseAdmin
+  const { data: lead, error } = await supabaseAdmin
     .from("leads")
     .select("id, parent_lead_id, firm_key")
     .eq("id", anyFamilyLeadId)
     .maybeSingle();
+
+  // Still defaults — this function must never throw — but a FAILED lookup and a
+  // MISSING lead are not the same thing and used to be indistinguishable here.
+  // In particular `column leads.firm_key does not exist` (the firm_key migration
+  // not having been run) routed EVERY file to the default firm, and with it to
+  // that firm's sending address, with nothing in the logs to say why.
+  if (error) {
+    console.error(
+      "[leadFirm] firm_key lookup failed, defaulting to",
+      DEFAULT_FIRM_KEY,
+      "-",
+      error.message,
+    );
+  }
 
   if (!lead) return DEFAULT_FIRM_KEY;
 
