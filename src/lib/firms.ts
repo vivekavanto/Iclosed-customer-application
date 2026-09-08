@@ -29,6 +29,19 @@ export type FirmKey = "navawilson" | "iclosed";
  * the retainer already named Nava Wilson PC and its lockup is the "iClosed —
  * POWERED BY NAVA WILSON" artwork. Anything else would silently re-brand every
  * live file, including retainers already signed.
+ *
+ * ⚠ SENDING ADDRESS — READ BEFORE CHANGING ANYTHING HERE.
+ * `leads.firm_key` does not exist in the database yet (see
+ * sql/add_lead_firm_key.sql), so getLeadFirmKey()'s lookup fails and EVERY lead
+ * falls back to this constant. That makes Nava Wilson's address the sender for
+ * all outbound client mail — and `navawilson.law` is NOT a verified sending
+ * domain in Resend, which answered 403 to every one of them (signed retainer,
+ * intake welcome, invites, password resets).
+ *
+ * The deployment therefore REQUIRES `EMAIL_FROM_NAVAWILSON` and
+ * `EMAIL_REPLY_TO_NAVAWILSON` to be set (to the verified support@iclosed.ca)
+ * until navawilson.law is verified in Resend. Without them, client email
+ * silently stops. See firmEmail.ts.
  */
 export const DEFAULT_FIRM_KEY: FirmKey = "navawilson";
 
