@@ -6,6 +6,28 @@ import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
 import { notifyAdminActivation } from '@/lib/notifyAdminActivation';
 import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
 
+/**
+ * Supabase's raw auth errors are written for developers ("Invalid login
+ * credentials"), and they are shown verbatim on the login form. Translate the
+ * ones a client can actually hit into something that tells them what to do.
+ * Anything unrecognised falls through unchanged rather than being flattened
+ * into a generic message that would hide a real fault.
+ */
+function friendlyAuthError(message: string): string {
+  const m = message.toLowerCase();
+
+  if (m.includes("invalid login credentials")) {
+    return "The email or password you entered is incorrect. Please check and try again.";
+  }
+  if (m.includes("email not confirmed")) {
+    return "Your account isn't activated yet. Please open the activation link we emailed you to set your password.";
+  }
+  if (m.includes("too many requests") || m.includes("rate limit")) {
+    return "Too many sign-in attempts. Please wait a minute and try again.";
+  }
+  return message;
+}
+
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
@@ -43,7 +65,7 @@ export async function POST(request: Request) {
 
     if (error) {
       return NextResponse.json(
-        { error: error.message },
+        { error: friendlyAuthError(error.message) },
         { status: 401 }
       );
     }
@@ -53,6 +75,84 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
+
+    // ── Portal gate ────────────────────────────────────────────────────────
+    // A valid Supabase credential is NOT by itself permission to use the
+    // CLIENT portal. Staff accounts live in `admin_users` and have no client
+    // file at all, and before this gate they signed in here perfectly happily:
+    // this route returned success, the login page sent them to /retainer, and
+    // they landed on a blank but signable retainer form reading "Address not
+    // available / Transaction Type: N/A".
+    //
+    // Nothing downstream caught it. getAuthClient() *correctly* refuses to
+    // resolve an admin_users email, so every portal API answered 401 — but a
+    // 401 that isn't flagged by the middleware is not treated as a session
+    // expiry (see IdleLogoutGuard.isSessionExpiry), so the failure was silent.
+    // The account must therefore be turned away at the door.
+    //
+    // signInWithPassword has already written the session cookies, so a refused
+    // account MUST be signed out here or it keeps a usable portal session.
+    const normalizedEmail = email.trim();
+
+    const { data: adminRow } = await supabaseAdmin
+      .from("admin_users")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .maybeSingle();
+
+    if (adminRow) {
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        {
+          error:
+            "This is a staff account. The client portal is for clients only — please sign in through the admin app.",
+        },
+        { status: 403 }
+      );
+    }
+
+    // No portal identity of any kind: no client record reachable by either link
+    // getAuthClient() uses, and no lead carrying this email. Deliberately an
+    // AND — a client whose email later changed still matches on auth_user_id,
+    // and an invited client always has the lead the invite was sent from — so
+    // this only rejects an account with genuinely nothing behind it.
+    // Three separate `.eq`/`.ilike` filters rather than one `.or(...)`: an `or`
+    // expression is built by string interpolation, and the email it would carry
+    // comes straight off the request body. PostgREST parses commas and parens
+    // inside that expression, so a crafted address could reshape the filter.
+    const [{ data: clientByEmail }, { data: clientByAuthId }, { data: leadRows }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("clients")
+          .select("id")
+          .ilike("email", normalizedEmail)
+          .limit(1),
+        supabaseAdmin
+          .from("clients")
+          .select("id")
+          .eq("auth_user_id", data.user!.id)
+          .limit(1),
+        supabaseAdmin
+          .from("leads")
+          .select("id")
+          .ilike("email", normalizedEmail)
+          .limit(1),
+      ]);
+
+    if (
+      !clientByEmail?.length &&
+      !clientByAuthId?.length &&
+      !leadRows?.length
+    ) {
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        {
+          error:
+            "We couldn't find a client file for this email. If you're an iClosed client, please use the link we emailed you, or contact your iClosed advisor.",
+        },
+        { status: 403 }
+      );
+    }
 
     // Sync user metadata from leads table if missing
     const userMeta = data.user?.user_metadata;
@@ -154,7 +254,8 @@ export async function POST(request: Request) {
     response.cookies.set(deadline.name, deadline.value, deadline.options);
 
     return response;
-  } catch (err: any) {
+  } catch (err) {
+    console.error('[LOGIN] Server error:', err);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -178,9 +178,14 @@ export default function RetainerPage() {
   // Whether the user dismissed (clicked OK on) a terminal post-sign popup, so
   // we drop the modal backdrop and leave a plain confirmation behind.
   const [postSignDismissed, setPostSignDismissed] = useState(false);
-  // Account-free link that no longer resolves (expired, revoked, or the lead was
-  // removed). Shown as a clear message instead of a blank, signable form.
-  const [linkError, setLinkError] = useState<string | null>(null);
+  // A blocking error that replaces the whole form: an account-free link that no
+  // longer resolves (expired, revoked, or the lead was removed), or a signed-in
+  // account with no client file behind it. Shown as a clear message instead of a
+  // blank, signable form.
+  const [pageError, setPageError] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -192,13 +197,30 @@ export default function RetainerPage() {
           `/api/retainer/check${tk ? `?token=${encodeURIComponent(tk)}` : ""}`
         );
         const data = await res.json();
-        // Account-free token link that no longer resolves (invalid/expired, or
-        // the customer was removed). Show a clear message rather than a blank
-        // form. Only in token mode — a logged-in 401 is a real expired session,
-        // handled by the IdleLogoutGuard, so we leave it alone here.
-        if (tk && (!res.ok || data?.error)) {
-          setLinkError(
-            data?.error || "This retainer link is invalid or has expired."
+        // A failed check must NEVER fall through to the form below — that is
+        // how a signed-in account with no client file ended up staring at a
+        // blank but signable retainer reading "Address not available /
+        // Transaction Type: N/A". The two modes fail for different reasons and
+        // need different wording:
+        //   • token mode   → the emailed link no longer resolves.
+        //   • session mode → this account has nothing to sign. A staff/admin
+        //     login is the common case: getAuthClient() refuses to resolve an
+        //     admin_users email, so /check answers 401 and nothing else catches
+        //     it (IdleLogoutGuard treats only middleware-flagged 401s as an
+        //     expiry, precisely so this case isn't mistaken for one).
+        if (!res.ok || data?.error) {
+          setPageError(
+            tk
+              ? {
+                  title: "Link no longer valid",
+                  body: `${
+                    data?.error || "This retainer link is invalid or has expired."
+                  } Please contact your iClosed advisor to request a new retainer link.`,
+                }
+              : {
+                  title: "No retainer available",
+                  body: "We couldn't find a client file for this account, so there's no retainer agreement to sign. If you believe this is a mistake, please contact your iClosed advisor.",
+                }
           );
           return;
         }
@@ -379,8 +401,8 @@ export default function RetainerPage() {
     );
   }
 
-  /* Invalid / expired link State — account-free token no longer resolves */
-  if (linkError) {
+  /* Blocking error State — expired token link, or no client file for this account */
+  if (pageError) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-6">
         <div className="text-center max-w-md">
@@ -390,11 +412,10 @@ export default function RetainerPage() {
             </svg>
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
-            Link no longer valid
+            {pageError.title}
           </h1>
           <p className="text-sm text-gray-500 max-w-md mx-auto">
-            {linkError} Please contact your iClosed advisor to request a new
-            retainer link.
+            {pageError.body}
           </p>
         </div>
       </div>
