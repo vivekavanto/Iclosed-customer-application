@@ -7,6 +7,19 @@ import { notifyAdminActivation } from '@/lib/notifyAdminActivation';
 import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
 
 /**
+ * The single message shown for every account that authenticates but is not a
+ * client portal account — a staff login, or an auth user with no client file.
+ *
+ * Deliberately ONE message for both. Naming the reason ("this is a staff
+ * account") tells anyone with a login form which addresses belong to staff and
+ * which are unregistered, which is an account-enumeration oracle we get nothing
+ * for. It also isn't useful to the person reading it: in both cases the only
+ * thing they can do is activate a client account or call their advisor.
+ */
+const NO_PORTAL_ACCOUNT_MESSAGE =
+  "No client account exists for this email. Please activate your account using the link we emailed you, or contact your iClosed advisor for help.";
+
+/**
  * Supabase's raw auth errors are written for developers ("Invalid login
  * credentials"), and they are shown verbatim on the login form. Translate the
  * ones a client can actually hit into something that tells them what to do.
@@ -102,11 +115,9 @@ export async function POST(request: Request) {
 
     if (adminRow) {
       await supabase.auth.signOut();
+      console.warn("[LOGIN] Rejected staff account at portal gate:", normalizedEmail);
       return NextResponse.json(
-        {
-          error:
-            "This is a staff account. The client portal is for clients only — please sign in through the admin app.",
-        },
+        { error: NO_PORTAL_ACCOUNT_MESSAGE },
         { status: 403 }
       );
     }
@@ -145,11 +156,9 @@ export async function POST(request: Request) {
       !leadRows?.length
     ) {
       await supabase.auth.signOut();
+      console.warn("[LOGIN] Rejected account with no client file:", normalizedEmail);
       return NextResponse.json(
-        {
-          error:
-            "We couldn't find a client file for this email. If you're an iClosed client, please use the link we emailed you, or contact your iClosed advisor.",
-        },
+        { error: NO_PORTAL_ACCOUNT_MESSAGE },
         { status: 403 }
       );
     }
