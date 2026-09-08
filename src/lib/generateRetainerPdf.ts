@@ -112,7 +112,7 @@ export async function generateRetainerPdf(
   // edges line up. Re-measure every number on the profile if either file is
   // ever re-cropped.
   //
-  // The firm's own lockup first, the Nava Wilson one as a fallback — each with
+  // The firm's own lockup first, the DEFAULT firm's as a fallback — each with
   // ITS OWN geometry, because a fallback drawn to the wrong file's numbers is
   // barely better than no fallback. Both files ship today, so this only covers
   // a deploy that lost one: a wrong-tagline letterhead beats a generation

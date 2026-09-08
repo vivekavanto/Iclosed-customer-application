@@ -17,7 +17,7 @@ import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
  * thing they can do is activate a client account or call their advisor.
  */
 const NO_PORTAL_ACCOUNT_MESSAGE =
-  "No client account exists for this email. Please activate your account using the link we emailed you, or contact your iClosed advisor for help.";
+  "This email isn't registered for the client portal. Please use the activation link we emailed you.";
 
 /**
  * Supabase's raw auth errors are written for developers ("Invalid login
@@ -30,13 +30,13 @@ function friendlyAuthError(message: string): string {
   const m = message.toLowerCase();
 
   if (m.includes("invalid login credentials")) {
-    return "The email or password you entered is incorrect. Please check and try again.";
+    return "Incorrect email or password.";
   }
   if (m.includes("email not confirmed")) {
-    return "Your account isn't activated yet. Please open the activation link we emailed you to set your password.";
+    return "Your account isn't activated yet. Check your email for the activation link.";
   }
   if (m.includes("too many requests") || m.includes("rate limit")) {
-    return "Too many sign-in attempts. Please wait a minute and try again.";
+    return "Too many attempts. Please wait a minute and try again.";
   }
   return message;
 }

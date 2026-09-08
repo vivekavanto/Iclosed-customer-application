@@ -25,12 +25,25 @@ export type FirmKey = "navawilson" | "iclosed";
 /**
  * The firm a lead belongs to when nothing says otherwise.
  *
- * Nava Wilson, because it is what every file was BEFORE this feature existed:
- * the retainer already named Nava Wilson PC and its lockup is the "iClosed —
- * POWERED BY NAVA WILSON" artwork. Anything else would silently re-brand every
- * live file, including retainers already signed.
+ * iClosed LLP. This was "navawilson" — chosen because it is what every file was
+ * BEFORE firms existed — but that reasoning assumed the default would apply to a
+ * handful of unlabelled rows. It applies to EVERY row: `leads.firm_key` does not
+ * exist in the database (the migration was never run), so getLeadFirmKey()'s
+ * lookup fails and every single lead falls back to this constant.
+ *
+ * That made the default the firm of record for the whole system, and Nava Wilson
+ * cannot serve in that role: `navawilson.law` is not a verified sending domain in
+ * Resend, so Resend answered 403 to every client-facing email — the signed
+ * retainer, the intake welcome, invites, password resets. iclosed.ca IS verified,
+ * so defaulting here makes outbound mail work with no env override.
+ *
+ * ⚠ This also decides the legal entity a retainer names ("I agree to retain ___",
+ * the "Who are we?" answers) and which lockup its PDF carries. Files that really
+ * are Nava Wilson must set `leads.firm_key = 'navawilson'` explicitly — which
+ * requires that column to exist. Until the firm_key migration is run, EVERY
+ * retainer is an iClosed LLP retainer.
  */
-export const DEFAULT_FIRM_KEY: FirmKey = "navawilson";
+export const DEFAULT_FIRM_KEY: FirmKey = "iclosed";
 
 export interface FirmProfile {
   key: FirmKey;
@@ -156,7 +169,8 @@ export function isFirmKey(value: unknown): value is FirmKey {
  * Coerce anything read out of the database to a firm.
  *
  * NULL is expected and normal: rows written before the firm_key column existed
- * read as null. They are Nava Wilson files — see DEFAULT_FIRM_KEY.
+ * read as null, and so does every row while that column is still missing. They
+ * resolve to DEFAULT_FIRM_KEY.
  */
 export function resolveFirmKey(value: unknown): FirmKey {
   return isFirmKey(value) ? value : DEFAULT_FIRM_KEY;
