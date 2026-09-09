@@ -11,6 +11,9 @@ import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
 // Resend never exposed this because it is an HTTPS fetch client.
 export const runtime = "nodejs";
 
+// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
+export const maxDuration = 60;
+
 /**
  * The single message shown for every account that authenticates but is not a
  * client portal account — a staff login, or an auth user with no client file.

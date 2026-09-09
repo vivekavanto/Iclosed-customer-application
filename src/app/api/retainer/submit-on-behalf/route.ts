@@ -9,6 +9,9 @@ import { sendInviteEmail } from "@/lib/sendInviteEmail";
 // Resend never exposed this because it is an HTTPS fetch client.
 export const runtime = "nodejs";
 
+// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
+export const maxDuration = 60;
+
 
 /**
  * POST /api/retainer/submit-on-behalf

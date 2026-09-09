@@ -15,6 +15,9 @@ import {
 // Resend never exposed this because it is an HTTPS fetch client.
 export const runtime = "nodejs";
 
+// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
+export const maxDuration = 60;
+
 
 export async function POST(req: Request) {
   try {
