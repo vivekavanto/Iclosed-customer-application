@@ -83,6 +83,33 @@ export function readSmtpConfig(firmEnvSuffix: string): SmtpConfig | null {
   };
 }
 
+/**
+ * WHICH of a firm's SMTP variables are missing — for diagnostics only.
+ *
+ * readSmtpConfig() deliberately returns a bare null so the caller can fail
+ * closed, but "incomplete" is useless in a log when seven variables could be the
+ * one at fault. This names them. It reads the same keys in the same way, so the
+ * two cannot disagree about what "complete" means.
+ *
+ * Returns NAMES ONLY. Never a value — SMTP_PASSWORD_<FIRM> is an app password.
+ */
+export function missingSmtpVars(firmEnvSuffix: string): string[] {
+  const missing: string[] = [];
+  if (!process.env[`SMTP_HOST_${firmEnvSuffix}`]?.trim()) {
+    missing.push(`SMTP_HOST_${firmEnvSuffix}`);
+  }
+  if (!process.env[`SMTP_USER_${firmEnvSuffix}`]?.trim()) {
+    missing.push(`SMTP_USER_${firmEnvSuffix}`);
+  }
+  if (!process.env[`SMTP_PASSWORD_${firmEnvSuffix}`]?.replace(/\s+/g, "")) {
+    missing.push(`SMTP_PASSWORD_${firmEnvSuffix}`);
+  }
+  if (!Number.isFinite(Number(process.env[`SMTP_PORT_${firmEnvSuffix}`] ?? 587))) {
+    missing.push(`SMTP_PORT_${firmEnvSuffix}`);
+  }
+  return missing;
+}
+
 /** The `from` override for a firm, when its SMTP mailbox differs from the brand address. */
 export function smtpFrom(firmEnvSuffix: string): string | undefined {
   return process.env[`SMTP_FROM_${firmEnvSuffix}`]?.trim() || undefined;

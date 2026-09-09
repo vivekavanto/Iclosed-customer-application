@@ -44,7 +44,12 @@ import type { FirmKey } from "@/lib/firms";
 import { logger } from "@/lib/logger";
 import { withRetry } from "@/lib/retry";
 import { createResendProvider } from "./resendProvider";
-import { createSmtpProvider, readSmtpConfig, smtpFrom } from "./smtpProvider";
+import {
+  createSmtpProvider,
+  missingSmtpVars,
+  readSmtpConfig,
+  smtpFrom,
+} from "./smtpProvider";
 import {
   EmailSendError,
   type EmailErrorType,
@@ -83,6 +88,8 @@ export interface EmailRoute {
   replyTo: string;
   provider: EmailProvider;
   providerName: ProviderName;
+  /** WHY this provider was chosen. Appears on the per-send log line. */
+  reason: string;
 }
 
 /** Comma-separated env list → trimmed lowercase set. */
@@ -106,14 +113,44 @@ function envSet(raw: string | undefined): Set<string> {
  * Both allowlists must match. Empty (the shipped default) means everything stays
  * on Resend, which is today's behaviour byte-for-byte.
  */
-function smtpEnabledFor(firm: FirmKey | null, label: SendLabel): boolean {
-  if (!firm) return false;
+function smtpGate(
+  firm: FirmKey | null,
+  label: SendLabel,
+): { enabled: boolean; reason: string } {
+  if (!firm) return { enabled: false, reason: "firm-agnostic-send" };
 
-  const firms = envSet(process.env.EMAIL_SMTP_FIRMS);
-  if (!firms.has(firm) && !isWildcard(firms)) return false;
+  const firmsRaw = process.env.EMAIL_SMTP_FIRMS;
+  const firms = envSet(firmsRaw);
+  if (!firms.has(firm) && !isWildcard(firms)) {
+    return {
+      enabled: false,
+      reason: `firm-not-allowlisted(EMAIL_SMTP_FIRMS=${describeList(firmsRaw)})`,
+    };
+  }
 
-  const sends = envSet(process.env.EMAIL_SMTP_SENDS);
-  return isWildcard(sends) || sends.has(label.toLowerCase());
+  const sendsRaw = process.env.EMAIL_SMTP_SENDS;
+  const sends = envSet(sendsRaw);
+  if (!isWildcard(sends) && !sends.has(label.toLowerCase())) {
+    return {
+      enabled: false,
+      reason: `send-not-allowlisted(EMAIL_SMTP_SENDS=${describeList(sendsRaw)})`,
+    };
+  }
+
+  return { enabled: true, reason: "allowlisted" };
+}
+
+/**
+ * Render an allowlist for a log line.
+ *
+ * "<unset>" and "<empty>" are DIFFERENT bugs — the first means nobody added the
+ * variable to this environment, the second means it is there but blank (a
+ * trailing comma, a cleared value). Collapsing them into "falsy" is what makes
+ * a misconfigured deployment take an afternoon instead of a minute.
+ */
+function describeList(raw: string | undefined): string {
+  if (raw === undefined) return "<unset>";
+  return raw.trim() === "" ? "<empty>" : raw.trim();
 }
 
 /**
@@ -146,7 +183,9 @@ export function resolveEmailRoute(
 ): EmailRoute {
   const firmKey = firm ?? null;
 
-  if (firmKey && smtpEnabledFor(firmKey, label)) {
+  const gate = smtpGate(firmKey, label);
+
+  if (firmKey && gate.enabled) {
     const suffix = firmKey.toUpperCase();
     const config = readSmtpConfig(suffix);
 
@@ -156,8 +195,8 @@ export function resolveEmailRoute(
     // while everyone believes the firm's mandate is being met.
     if (!config) {
       throw new EmailSendError(
-        `SMTP is enabled for firm "${firmKey}" but its configuration is incomplete ` +
-          `(need SMTP_HOST_${suffix}, SMTP_USER_${suffix}, SMTP_PASSWORD_${suffix}).`,
+        `SMTP is enabled for firm "${firmKey}" but these environment variables ` +
+          `are missing or empty: ${missingSmtpVars(suffix).join(", ")}.`,
         "not_configured",
       );
     }
@@ -172,6 +211,7 @@ export function resolveEmailRoute(
       replyTo: firmReplyTo(firmKey),
       provider: createSmtpProvider(config),
       providerName: "smtp",
+      reason: gate.reason,
     };
   }
 
@@ -181,6 +221,7 @@ export function resolveEmailRoute(
     replyTo: firmKey ? firmReplyTo(firmKey) : LEGACY_REPLY_TO(),
     provider: createResendProvider(process.env.RESEND_API_KEY),
     providerName: "resend",
+    reason: gate.reason,
   };
 }
 
@@ -233,6 +274,20 @@ export async function sendEmail(
     // `replyTo: null` is meaningfully different from omitting the option.
     ...(opts.replyTo === null ? {} : { replyTo: opts.replyTo ?? route.replyTo }),
   };
+
+  // ONE line per send, written BEFORE the attempt, naming the provider and why
+  // it was chosen. A wrong-provider send is otherwise invisible: the only
+  // evidence is an absence — no record at the provider you expected to see it
+  // at — and an absence is exactly what you cannot search for. `reason` carries
+  // the allowlist values as they were actually read in THIS environment, which
+  // is what separates "the variable is missing on this deploy" from "the code
+  // decided not to use it".
+  //
+  // Recipients stay out of it (client names and addresses); `from` is ours.
+  logger.info(
+    `[email] route firm=${route.firm ?? "none"} send=${opts.label} ` +
+      `provider=${route.providerName} reason=${route.reason} from=${payload.from}`,
+  );
 
   const started = Date.now();
   const context =
