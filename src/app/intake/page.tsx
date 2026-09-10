@@ -763,6 +763,13 @@ export default function ServiceSelection() {
     },
   ];
 
+  // Only Property Closing is offered right now. The others stay defined, and the
+  // API still maps their ids, so re-enabling one means adding it back here.
+  const OFFERED_SERVICE_IDS = ["closing"];
+  const offeredServices = services.filter((s) =>
+    OFFERED_SERVICE_IDS.includes(s.id),
+  );
+
   const progressSteps: Step[] = INTAKE_STEPS.map((s) => ({
     id: s.id,
     label: s.label,
@@ -834,7 +841,7 @@ export default function ServiceSelection() {
         {/* STEP 1 */}
         {step === 1 && (
           <Step1
-            services={services}
+            services={offeredServices}
             selected={selected}
             setSelected={setSelected}
             selectedClosingOption={selectedClosingOption}
