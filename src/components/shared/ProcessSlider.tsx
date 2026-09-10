@@ -17,43 +17,37 @@ type Tab = {
 
 const tabs: Tab[] = [
   {
-    short: "Intake",
-    title: "Fill out our intake",
-    desc: "Choose your service, upload your signed Agreement of Purchase and Sale, and confirm the property details. Our AI reads your documents and populates the file automatically, so there is very little left for you to type.",
+    short: "AI Intake",
+    title: "Pre-fill your intake with AI",
+    desc: "Choose your service and upload your signed Agreement of Purchase and Sale. Our AI reads it and fills in the property details for you.",
     shots: [
-      { src: "/process/intake-1-service.png", alt: "Choosing a service and seeing the price up front" },
+      { src: "/process/intake-1-property-closing.png", alt: "Choosing a service and seeing the price up front" },
       { src: "/process/intake-2-agreement.png", alt: "Uploading the Agreement of Purchase and Sale and supporting documents" },
       { src: "/process/intake-3-purchase.png", alt: "Purchase price, deposit, closing date and property address" },
       { src: "/process/intake-4-sale.png", alt: "Sale price, deposit, closing date and property address" },
     ],
   },
   {
-    short: "Purchase",
-    title: "Everything your purchase needs",
-    desc: "Your purchase file lists every outstanding task in one place — identification, personal information, mortgage representative details and home insurance — and each one opens as a guided form you complete online.",
+    short: "Upload documents",
+    title: "Complete your tasks online",
+    desc: "Whether you are buying or selling, every task for your file sits in one list — identification, personal information, mortgage statements, property tax bills and more. Each one opens as a guided form you complete online.",
     shots: [
       { src: "/process/purchase-1-dashboard.png", alt: "Purchase dashboard listing outstanding tasks and status overview" },
       { src: "/process/purchase-2-identification.png", alt: "Uploading identification documents, with a camera capture option" },
       { src: "/process/purchase-3-personal-info.png", alt: "Personal information form covering property use, citizenship and source of funds" },
-    ],
-  },
-  {
-    short: "Sale",
-    title: "Everything your sale needs",
-    desc: "A sale file tracks its own set of tasks, from your mortgage statement and latest property tax bill through to rental equipment, your direct deposit form and the lockbox code.",
-    shots: [
       { src: "/process/sale-1-dashboard.png", alt: "Sale dashboard listing outstanding tasks and status overview" },
       { src: "/process/sale-2-property-tax.png", alt: "Uploading the latest property tax bill and confirming whether it is paid" },
       { src: "/process/sale-3-rental-equipment.png", alt: "Recording rental equipment such as a hot water tank or furnace" },
     ],
   },
   {
-    short: "Co-seller",
+    short: "Joint closing",
     title: "Buying or selling together",
-    desc: "Closing with someone else? Set how you will hold title and each owner's share, then decide who uploads the documents — you, your partner, or each of you uploading your own.",
+    desc: "Closing with someone else? Set how you will hold title and each owner's share, then choose who uploads the documents. Tasks that need both of you show a separate upload for each party.",
     shots: [
       { src: "/process/coseller-1-ownership.png", alt: "Choosing joint tenancy or tenants in common and setting ownership shares" },
       { src: "/process/coseller-2-who-uploads.png", alt: "Choosing who will upload documents for the file" },
+      { src: "/process/coseller-3-both-parties.png", alt: "Tasks required from both parties, each with its own upload per person" },
     ],
   },
 ];
