@@ -635,6 +635,17 @@ function WhyChoose() {
             Start your closing today
           </Link>
         </div>
+
+        {/* Direct support address */}
+        <p className="mt-5 text-center text-sm text-gray-400">
+          Or email us directly at{" "}
+          <a
+            href="mailto:support@iclosed.ca"
+            className="font-semibold text-[#C10007] hover:underline"
+          >
+            support@iclosed.ca
+          </a>
+        </p>
       </div>
     </section>
   );
@@ -648,8 +659,8 @@ export default function Home() {
       <main>
         <Hero />
         <TrustedBy />
-        <HowItWorks />
         <ProcessSlider />
+        <HowItWorks />
         <Pricing />
         <Testimonials />
         <WhyChoose />
