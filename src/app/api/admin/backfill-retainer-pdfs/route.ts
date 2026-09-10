@@ -99,6 +99,23 @@ export async function POST(req: Request) {
       );
     }
 
+    // Gap-fill only ever ADDS a document that should already have existed, so
+    // it inherits this repo's open-admin-endpoint convention. Re-brand
+    // OVERWRITES a signed agreement the client has already been sent and
+    // deletes the blob behind it, which is not something an unauthenticated
+    // caller may do — so it requires the secret to be configured AND matched,
+    // rather than being open whenever the env var happens to be unset.
+    if (rebrand && !requiredSecret) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "rebrand=true requires BACKFILL_SECRET to be configured on this deployment.",
+        },
+        { status: 403 },
+      );
+    }
+
     // 1. Load every signature row (or just this lead's, when scoped).
     let sigQuery = supabaseAdmin
       .from("retainer_signatures")

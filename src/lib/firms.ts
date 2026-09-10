@@ -25,20 +25,23 @@ export type FirmKey = "navawilson" | "iclosed";
 /**
  * The firm a lead belongs to when nothing says otherwise.
  *
- * iClosed LLP since 2026-09-08 — MIRROR of the admin app's DEFAULT_FIRM_KEY,
- * which moved in the same release. The two MUST match: both repos resolve
- * `leads.firm_key` out of the SAME database, so a case this constant covers (an
- * unrecognised value, or a lookup that failed) would otherwise brand the
- * retainer as one firm in the portal and the email as the other from the admin
- * app, on one file.
+ * Nava Wilson, because it is what every file was BEFORE this feature existed:
+ * the retainer already named Nava Wilson PC and its lockup is the "iClosed —
+ * POWERED BY NAVA WILSON" artwork. Anything else would silently re-brand every
+ * file this constant covers.
  *
- * This re-brands nothing that exists. `leads.firm_key` is NOT NULL, so every
- * stored file already says which firm it is and never reaches this fallback.
- * What stamps a NEW file is the column DEFAULT — the portal's intake insert
- * does not name a firm — set by the admin repo's
- * migrations/2026-09-08-default-firm-iclosed.sql. That migration and this
- * constant have to move together: with only one of them applied, new intake
- * files come out one firm while the code insists they are the other.
+ * It covers less than it looks like. `leads.firm_key` is NOT NULL, so every
+ * stored file already says which firm it is and reaches this only when a lookup
+ * FAILS (a row that was not selected, a deal with no lead) or returns something
+ * unrecognised. What stamps a NEW file is the column DEFAULT, which is also
+ * 'navawilson' — the portal's intake insert does not name a firm.
+ *
+ * ⚠ MIRROR of the admin app's DEFAULT_FIRM_KEY, and the two MUST match: both
+ * repos resolve `leads.firm_key` out of the SAME database, so while they
+ * disagree a file this constant covers is branded as one firm by the portal and
+ * the other by the admin app. Changing it here means changing it there, and
+ * moving the column default (admin
+ * migrations/2026-09-08-default-firm-iclosed.sql) in the same release.
  *
  * ⚠ SENDING ADDRESS. Whichever firm this resolves to also decides the address
  * outbound client mail is sent from, and `navawilson.law` is NOT a verified
@@ -47,7 +50,7 @@ export type FirmKey = "navawilson" | "iclosed";
  * at the verified support@iclosed.ca until that domain is verified, otherwise
  * mail on Nava Wilson files silently stops. See firmEmail.ts.
  */
-export const DEFAULT_FIRM_KEY: FirmKey = "iclosed";
+export const DEFAULT_FIRM_KEY: FirmKey = "navawilson";
 
 export interface FirmProfile {
   key: FirmKey;
@@ -175,8 +178,8 @@ export function isFirmKey(value: unknown): value is FirmKey {
  * NULL should no longer occur — the column is NOT NULL with a CHECK constraint —
  * but this stays tolerant because a lookup can still hand us undefined (a row
  * that was not selected, a deal with no lead). Anything unrecognised resolves to
- * DEFAULT_FIRM_KEY, which is now iClosed LLP; a file that must be Nava Wilson
- * says so in its own column and never reaches this fallback.
+ * DEFAULT_FIRM_KEY, which is Nava Wilson; a file that must be iClosed LLP says
+ * so in its own column and never reaches this fallback.
  */
 export function resolveFirmKey(value: unknown): FirmKey {
   return isFirmKey(value) ? value : DEFAULT_FIRM_KEY;
