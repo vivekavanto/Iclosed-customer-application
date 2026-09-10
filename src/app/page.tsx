@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Check, X } from "lucide-react";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
+import ProcessSlider from "@/components/shared/ProcessSlider";
 const brands = [
   "RE/MAX",
   "HomeLife",
@@ -648,6 +649,7 @@ export default function Home() {
         <Hero />
         <TrustedBy />
         <HowItWorks />
+        <ProcessSlider />
         <Pricing />
         <Testimonials />
         <WhyChoose />
