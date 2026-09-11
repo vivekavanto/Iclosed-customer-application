@@ -7,12 +7,12 @@
  */
 
 // City: letters (including French accents À-ÖØ-öø-ÿ), spaces, hyphens,
-// apostrophes (straight ' and curly ’), and periods. This accepts real
+// apostrophes (straight ‘ and curly ‘), periods, and commas. This accepts real
 // Canadian place names such as "St. Catharines", "St.Catharines",
-// "Saint-Jean-sur-Richelieu", "St. John's", and "Montréal", while still
-// rejecting digits and stray symbols. The leading look-ahead requires at
-// least one letter so punctuation-only input is rejected.
-const CITY_REGEX = /^(?=.*[A-Za-zÀ-ÖØ-öø-ÿ])[A-Za-zÀ-ÖØ-öø-ÿ\s.'’-]+$/;
+// "Saint-Jean-sur-Richelieu", "St. John’s", "Montréal", and district formats like
+// "Rainy River, Unorganized", while still rejecting digits and stray symbols.
+// The leading look-ahead requires at least one letter so punctuation-only input is rejected.
+const CITY_REGEX = /^(?=.*[A-Za-zÀ-ÖØ-öø-ÿ])[A-Za-zÀ-ÖØ-öø-ÿ\s.,’’’-]+$/;
 
 export function validateCity(raw: string): string | null {
   const city = raw.trim();
