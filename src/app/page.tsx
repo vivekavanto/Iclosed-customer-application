@@ -52,7 +52,7 @@ const plans = [
   },
   {
     tag: "Mortgage Refinance or Transfer",
-    price: "$1999",
+    price: "$999",
     extra: "+ Disbursements and HST",
     blurb: "Refinance a mortgage on a property",
     cta: "Start your refinance",
@@ -435,7 +435,7 @@ function Pricing() {
           {plans.map((p) => (
             <Link
               key={p.tag}
-              href="/intake"
+              href={p.cta === "Start your closing" ? "/contact" : "/intake"}
               className="group flex flex-col rounded-2xl overflow-hidden border border-gray-100 shadow-md shadow-gray-200/60 bg-white transition-all duration-300 hover:shadow-xl hover:shadow-[#C10007]/10 hover:border-[#C10007]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C10007]/40 focus-visible:ring-offset-2"
             >
               {/* Card header — gray-50 by default, red on hover */}
