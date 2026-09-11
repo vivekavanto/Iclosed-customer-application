@@ -1,7 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import { DEFAULT_FIRM_KEY, type FirmKey } from "@/lib/firms";
-import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { getLeadFirmKey } from "@/lib/leadFirm";
 
 export interface SendResetPasswordEmailResult {
@@ -90,17 +90,18 @@ export async function sendResetPasswordEmail(
     /* greeting and firm are both optional — the reset link is not */
   }
 
-  const { error: sendError } = await resend.emails.send({
-    from: firmFrom(firm),
-    replyTo: firmReplyTo(firm),
-    to: email,
-    subject: "Reset your iClosed password",
-    html: buildResetEmailHtml(actionLink, firstName),
-  });
+  const result = await sendEmail(
+    {
+      to: [normalizeRecipientEmail(email)],
+      subject: "Reset your iClosed password",
+      html: buildResetEmailHtml(actionLink, firstName),
+    },
+    { firm, label: "reset-password" },
+  );
 
-  if (sendError) {
-    console.error("[ResetPasswordEmail] Resend send failed for", email, ":", sendError.message);
-    return { success: false, error: sendError.message ?? "Failed to send email" };
+  if (!result.ok) {
+    console.error("[ResetPasswordEmail] send failed for", email, ":", result.error);
+    return { success: false, error: result.error ?? "Failed to send email" };
   }
 
   console.log("[ResetPasswordEmail] Sent reset link to", email, "redirectTo", redirectTo);

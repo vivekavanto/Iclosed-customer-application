@@ -13,7 +13,7 @@
 // headline total. The full breakdown is the attached PDF, which is the
 // authoritative document and the one the firm stands behind.
 
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "./resend";
+import { sendEmail } from "./email/emailTransport";
 import { esc, money } from "./closingEstimateEmail";
 import type { Statement } from "./closingCosts";
 import type { StatementTypeConfig } from "./closingCostSettings";
@@ -81,16 +81,25 @@ export async function sendPublicEstimateEmail(
   `;
 
   try {
-    await resend.emails.send({
-      from: EMAIL_FROM,
-      replyTo: EMAIL_REPLY_TO,
-      to: [to],
-      subject: `${statementType.label} — your closing costs`,
-      html,
-      attachments: pdf
-        ? [{ filename: pdf.fileName, content: Buffer.from(pdf.bytes) }]
-        : undefined,
-    });
+    // The anonymous public calculator: there is no file, so no firm.
+    // firmEmail.ts explicitly reserves EMAIL_FROM for exactly this, and
+    // `firm: null` also pins it to Resend whatever the SMTP rollout does.
+    //
+    // The result used to be discarded, so a refused send reported as success.
+    const result = await sendEmail(
+      {
+        to: [to],
+        subject: `${statementType.label} — your closing costs`,
+        html,
+        ...(pdf
+          ? { attachments: [{ filename: pdf.fileName, content: Buffer.from(pdf.bytes) }] }
+          : {}),
+      },
+      { firm: null, label: "public-estimate" },
+    );
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
     return { success: true };
   } catch (err) {
     return {

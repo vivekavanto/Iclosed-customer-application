@@ -4,6 +4,12 @@ import { syncSharedTaskCompletion, syncSharedTaskPatch, advanceMilestone } from 
 import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

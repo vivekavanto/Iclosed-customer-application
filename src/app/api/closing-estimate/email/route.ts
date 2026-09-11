@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend } from "@/lib/resend";
-import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { sendEmail } from "@/lib/email/emailTransport";
+import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { resolveFirmKey } from "@/lib/firms";
 import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
 import { generateClosingCostPdf } from "@/lib/closingCostPdf";
@@ -16,6 +16,14 @@ import {
   rejectLockedInputs,
   resolveClientEstimateContext,
 } from "@/lib/clientEstimateContext";
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
+export const maxDuration = 60;
+
 
 // POST /api/closing-estimate/email
 //
@@ -167,19 +175,30 @@ export async function POST(req: Request) {
     hasAttachment: Boolean(attachment),
   });
 
-  try {
-    // The firm on the client's own file — the same one whose letterhead is on
-    // the attached PDF and whose name signs off the body.
-    await resend.emails.send({
-      from: firmFrom(firm),
-      replyTo: firmReplyTo(firm),
-      to: [to],
+  // The firm on the client's own file — the same one whose letterhead is on the
+  // attached PDF and whose name signs off the body.
+  //
+  // Note this firm comes from the ESTIMATE (deal_closing_estimates.firm_key via
+  // closing_cost_config), not from leads.firm_key like every other send in this
+  // app. If the two ever disagree, this email is branded differently from the
+  // same client's welcome and retainer mail. Left as-is deliberately: the
+  // letterhead on the attachment has to match the sender, and the attachment is
+  // built from the estimate's own config.
+  const sendResult = await sendEmail(
+    {
+      to: [normalizeRecipientEmail(to)],
       subject: estimateEmailSubject(ctx.locked.fileNo),
       html,
-      attachments: attachment ? [attachment] : undefined,
-    });
-  } catch (err) {
-    console.error("[closing-estimate email] send failed:", err);
+      ...(attachment ? { attachments: [attachment] } : {}),
+    },
+    { firm, label: "closing-estimate" },
+  );
+
+  if (!sendResult.ok) {
+    console.error(
+      `[closing-estimate email] send failed errorType=${sendResult.errorType}:`,
+      sendResult.error,
+    );
     return NextResponse.json(
       { success: false, error: "Could not send the email. Please try again." },
       { status: 502 },

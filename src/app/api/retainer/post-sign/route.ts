@@ -5,6 +5,15 @@ import { generateActivationLink } from "@/lib/generateActivationLink";
 import { signedServiceHeaders } from "@/lib/signServiceRequest";
 import { adminAppUrl } from "@/lib/adminAppUrl";
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
+export const maxDuration = 60;
+
+
 /**
  * POST /api/retainer/post-sign
  *

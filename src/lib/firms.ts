@@ -28,20 +28,27 @@ export type FirmKey = "navawilson" | "iclosed";
  * Nava Wilson, because it is what every file was BEFORE this feature existed:
  * the retainer already named Nava Wilson PC and its lockup is the "iClosed —
  * POWERED BY NAVA WILSON" artwork. Anything else would silently re-brand every
- * live file, including retainers already signed.
+ * file this constant covers.
  *
- * ⚠ SENDING ADDRESS — READ BEFORE CHANGING ANYTHING HERE.
- * `leads.firm_key` does not exist in the database yet (see
- * sql/add_lead_firm_key.sql), so getLeadFirmKey()'s lookup fails and EVERY lead
- * falls back to this constant. That makes Nava Wilson's address the sender for
- * all outbound client mail — and `navawilson.law` is NOT a verified sending
- * domain in Resend, which answered 403 to every one of them (signed retainer,
- * intake welcome, invites, password resets).
+ * It covers less than it looks like. `leads.firm_key` is NOT NULL, so every
+ * stored file already says which firm it is and reaches this only when a lookup
+ * FAILS (a row that was not selected, a deal with no lead) or returns something
+ * unrecognised. What stamps a NEW file is the column DEFAULT, which is also
+ * 'navawilson' — the portal's intake insert does not name a firm.
  *
- * The deployment therefore REQUIRES `EMAIL_FROM_NAVAWILSON` and
- * `EMAIL_REPLY_TO_NAVAWILSON` to be set (to the verified support@iclosed.ca)
- * until navawilson.law is verified in Resend. Without them, client email
- * silently stops. See firmEmail.ts.
+ * ⚠ MIRROR of the admin app's DEFAULT_FIRM_KEY, and the two MUST match: both
+ * repos resolve `leads.firm_key` out of the SAME database, so while they
+ * disagree a file this constant covers is branded as one firm by the portal and
+ * the other by the admin app. Changing it here means changing it there, and
+ * moving the column default (admin
+ * migrations/2026-09-08-default-firm-iclosed.sql) in the same release.
+ *
+ * ⚠ SENDING ADDRESS. Whichever firm this resolves to also decides the address
+ * outbound client mail is sent from, and `navawilson.law` is NOT a verified
+ * sending domain in Resend — it answered 403 to every message relayed through
+ * it. `EMAIL_FROM_NAVAWILSON` / `EMAIL_REPLY_TO_NAVAWILSON` must stay pointed
+ * at the verified support@iclosed.ca until that domain is verified, otherwise
+ * mail on Nava Wilson files silently stops. See firmEmail.ts.
  */
 export const DEFAULT_FIRM_KEY: FirmKey = "navawilson";
 
@@ -166,10 +173,13 @@ export function isFirmKey(value: unknown): value is FirmKey {
 }
 
 /**
- * Coerce anything read out of the database to a firm.
+ * Coerce anything read out of the database (or off a request body) to a firm.
  *
- * NULL is expected and normal: rows written before the firm_key column existed
- * read as null. They are Nava Wilson files — see DEFAULT_FIRM_KEY.
+ * NULL should no longer occur — the column is NOT NULL with a CHECK constraint —
+ * but this stays tolerant because a lookup can still hand us undefined (a row
+ * that was not selected, a deal with no lead). Anything unrecognised resolves to
+ * DEFAULT_FIRM_KEY, which is Nava Wilson; a file that must be iClosed LLP says
+ * so in its own column and never reaches this fallback.
  */
 export function resolveFirmKey(value: unknown): FirmKey {
   return isFirmKey(value) ? value : DEFAULT_FIRM_KEY;

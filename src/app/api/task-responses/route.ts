@@ -15,6 +15,12 @@ import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert
 import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
 // the admin panel expects: canadian_citizen | permanent_resident | visa | refugee_status | non_citizen_unsure.
 // Unknown values pass through unchanged so no data is silently dropped.

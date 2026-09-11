@@ -38,3 +38,34 @@ export function firmReplyTo(firm: FirmKey | null | undefined): string {
   const profile = getFirm(firm);
   return process.env[profile.replyToEnvVar]?.trim() || profile.replyToEmail;
 }
+
+/**
+ * Clean a recipient address read out of the database before sending to it.
+ *
+ * Ported from the admin app's emailIdentity.ts, which has had it since a client
+ * could not be emailed at all. Intake stores whatever the client typed, and a
+ * copy-pasted address routinely carries invisible padding — a trailing space, a
+ * non-breaking space, a zero-width character. These render identically on screen
+ * and survive form validation (JS `\s` does not match U+200B/U+FEFF), but GoTrue
+ * rejects such an address outright with "Unable to validate email address:
+ * invalid format" and the send dies before Resend is ever reached. From the
+ * outside that is indistinguishable from a broken template or a bad API key.
+ *
+ * This app previously passed `lead.email` straight from the database to both
+ * Resend and `auth.admin.generateLink` at every send site.
+ *
+ * Deliberately conservative: strip zero-width characters, fold non-breaking
+ * spaces into ordinary ones, then trim the ends. Interior characters are left
+ * alone — an address with a space in the middle is genuinely invalid and should
+ * still fail loudly rather than be silently "repaired".
+ *
+ * ⚠ The two character classes below contain LITERAL invisible characters
+ * (U+200B–U+200D, U+FEFF, and U+00A0), not `\u` escapes. They are correct and
+ * tested — do not "clean up" what looks like an empty character class.
+ */
+export function normalizeRecipientEmail(email: string | null | undefined): string {
+  return (email ?? "")
+    .replace(/[​-‍﻿]/g, "")
+    .replace(/ /g, " ")
+    .trim();
+}

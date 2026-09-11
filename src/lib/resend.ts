@@ -29,3 +29,13 @@ export const EMAIL_REPLY_TO =
  */
 export const INTERNAL_ALERT_TO =
   process.env.INTERNAL_ALERT_EMAIL?.trim() || "testing@navawilson.law";
+
+/**
+ * Public "Contact us" inbox — where website enquiries land. Separate constant
+ * from INTERNAL_ALERT_TO on purpose: that one receives system alerts (new lead,
+ * citizenship flag) and can be pointed at a staging address, while this is the
+ * address printed on the site and answered by a human. Override with
+ * CONTACT_EMAIL.
+ */
+export const CONTACT_INBOX_TO =
+  process.env.CONTACT_EMAIL?.trim() || "support@iclosed.ca";

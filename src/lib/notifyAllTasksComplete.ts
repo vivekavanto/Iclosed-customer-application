@@ -1,5 +1,5 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import { interpolateTokens, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { adminAppUrl } from "@/lib/adminAppUrl";
@@ -408,20 +408,19 @@ async function dispatchAlert(
     `All tasks completed — ${partySummary}`,
   );
 
-  const { error } = await resend.emails.send({
-    from: EMAIL_FROM,
-    replyTo: EMAIL_REPLY_TO,
-    to: recipients,
-    subject,
-    html,
-  });
+  // Internal staff alert: firm-agnostic by design, so `firm: null` also pins it
+  // to Resend whatever the SMTP rollout does.
+  const result = await sendEmail(
+    { to: recipients, subject, html },
+    { firm: null, label: "all-tasks-complete" },
+  );
 
-  if (error) {
+  if (!result.ok) {
     // Deliberately NOT releasing the claim: the in-app notification is already
     // written, and releasing would duplicate it on the next task edit.
     console.error(
-      `[AllTasksComplete] Resend error (in-app notification was still created):`,
-      error,
+      `[AllTasksComplete] send failed (in-app notification was still created):`,
+      result.error,
     );
     return;
   }

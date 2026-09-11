@@ -5,13 +5,22 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
 import { getLeadFirmKey } from "@/lib/leadFirm";
-import { firmFrom, firmReplyTo } from "@/lib/firmEmail";
+import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { brandEmailHtml } from "@/lib/emailBrand";
 import { BLOB_ACCESS, blobToken } from "@/lib/blobPrivacy";
 import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
-import { resend } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
+
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
+export const maxDuration = 60;
+
 
 type Side = "purchase" | "sale" | null;
 
@@ -363,41 +372,39 @@ export async function POST(req: Request) {
         // Same firm the agreement itself names — a confirmation from the
         // other entity, carrying this PDF, would be alarming.
         const firm = await getLeadFirmKey(leadId);
-        // Resend does NOT throw on an API error — it returns { data: null,
-        // error }. Ignoring that return value is why a rejected send looked
-        // exactly like a successful one here: the signature and the PDF were
-        // saved, the response said success, and this block logged "PDF emailed
-        // to" while Resend had actually refused the message (a `from` on an
-        // unverified sending domain returns 403). Every other sender in this
-        // repo checks `error`; this one must too.
-        const { error: emailErr } = await resend.emails.send({
-          from: firmFrom(firm),
-          replyTo: firmReplyTo(firm),
-          to: lead.email,
-          subject,
-          html: brandEmailHtml(html, firm),
-          attachments: [
-            {
-              filename:
-                displaySide === "sale"
-                  ? "retainer-agreement-sale.pdf"
-                  : displaySide === "purchase"
-                    ? "retainer-agreement-purchase.pdf"
-                    : "retainer-agreement.pdf",
-              content: Buffer.from(pdfBytes),
-            },
-          ],
-        });
+        const sendResult = await sendEmail(
+          {
+            to: [normalizeRecipientEmail(lead.email)],
+            subject,
+            html: brandEmailHtml(html, firm),
+            attachments: [
+              {
+                filename:
+                  displaySide === "sale"
+                    ? "retainer-agreement-sale.pdf"
+                    : displaySide === "purchase"
+                      ? "retainer-agreement-purchase.pdf"
+                      : "retainer-agreement.pdf",
+                content: Buffer.from(pdfBytes),
+              },
+            ],
+          },
+          { firm, label: "retainer-signed" },
+        );
 
-        if (emailErr) {
-          console.error("[Retainer Sign] Email send failed:", {
-            to: lead.email,
-            from: firmFrom(firm),
-            firm,
-            error: emailErr,
-          });
-        } else {
+        // Best-effort by contract: the retainer is already signed and stored, so
+        // a failed confirmation email must not fail the request. Log it loudly
+        // instead — previously the SDK's { error } was discarded entirely, so a
+        // refused send left no trace at all.
+        if (sendResult.ok) {
           console.log("[Retainer Sign] PDF emailed to:", lead.email);
+        } else {
+          console.error(
+            "[Retainer Sign] confirmation email FAILED for lead:",
+            leadId,
+            `errorType=${sendResult.errorType}`,
+            sendResult.error,
+          );
         }
       }
 

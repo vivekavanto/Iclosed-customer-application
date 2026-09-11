@@ -1,4 +1,5 @@
-import { resend, EMAIL_FROM, EMAIL_REPLY_TO, INTERNAL_ALERT_TO } from "@/lib/resend";
+import { INTERNAL_ALERT_TO } from "@/lib/resend";
+import { sendEmail } from "@/lib/email/emailTransport";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 
@@ -147,16 +148,16 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
       `New Lead: ${fullName}${lead.lead_type ? ` — ${lead.lead_type}` : ""}`,
     );
 
-    const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
-      replyTo: EMAIL_REPLY_TO,
-      to: INTERNAL_ALERT_TO,
-      subject,
-      html,
-    });
+    // Internal staff alert: firm-agnostic by design (firmEmail.ts reserves
+    // EMAIL_FROM for exactly these), so `firm: null` also pins it to Resend
+    // whatever the SMTP rollout does.
+    const result = await sendEmail(
+      { to: [INTERNAL_ALERT_TO], subject, html },
+      { firm: null, label: "lead-notification" },
+    );
 
-    if (error) {
-      console.error("[LeadNotification] Resend error:", error);
+    if (!result.ok) {
+      console.error("[LeadNotification] send failed:", result.error);
       return false;
     }
 

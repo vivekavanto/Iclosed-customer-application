@@ -67,3 +67,58 @@ export async function getLeadFirm(
 ): Promise<FirmProfile> {
   return getFirm(await getLeadFirmKey(anyFamilyLeadId));
 }
+
+/**
+ * Firm for a deal, via its lead.
+ *
+ * Ported from the admin app, which has had it since firms were introduced. The
+ * portal did without because nothing here started from a deal id — until the
+ * milestone email needed one, and had to reach `deal.lead_id` by hand.
+ */
+export async function getDealFirmKey(
+  dealId: string | null | undefined,
+): Promise<FirmKey> {
+  if (!dealId) return DEFAULT_FIRM_KEY;
+
+  const { data: deal } = await supabaseAdmin
+    .from("deals")
+    .select("lead_id")
+    .eq("id", dealId)
+    .maybeSingle();
+
+  return getLeadFirmKey(deal?.lead_id ?? null);
+}
+
+/** Firm profile for a deal. */
+export async function getDealFirm(
+  dealId: string | null | undefined,
+): Promise<FirmProfile> {
+  return getFirm(await getDealFirmKey(dealId));
+}
+
+/**
+ * Firm for a client (the portal login), via the client's most recent lead.
+ *
+ * A client can in principle hold several files, and they are branded by the
+ * FILE rather than by the person — so this is only for the few sends that have a
+ * client (or just an address) and no lead in hand. The password-reset email is
+ * the one that matters: someone with files at both firms gets whichever is most
+ * recent, which is a guess. It affects the sender address only; the reset link
+ * itself is correct either way.
+ */
+export async function getClientFirmKey(
+  clientId: string | null | undefined,
+): Promise<FirmKey> {
+  if (!clientId) return DEFAULT_FIRM_KEY;
+
+  const { data: lead } = await supabaseAdmin
+    .from("leads")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return getLeadFirmKey(lead?.id ?? null);
+}

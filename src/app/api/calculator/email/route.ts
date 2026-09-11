@@ -11,6 +11,12 @@ import {
 } from "@/lib/publicClosingEstimate";
 import { recordPublicEstimate } from "@/lib/recordPublicEstimate";
 
+// This route can reach the email transport, and the SMTP provider uses
+// nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
+// Resend never exposed this because it is an HTTPS fetch client.
+export const runtime = "nodejs";
+
+
 // POST /api/calculator/email — the public estimator's "Email it to me".
 //
 // PUBLIC BY DESIGN: middleware passes a cookie-less request through.
