@@ -50,7 +50,7 @@ export type FirmKey = "navawilson" | "iclosed";
  * at the verified support@iclosed.ca until that domain is verified, otherwise
  * mail on Nava Wilson files silently stops. See firmEmail.ts.
  */
-export const DEFAULT_FIRM_KEY: FirmKey = "navawilson";
+export const DEFAULT_FIRM_KEY: FirmKey = "iclosed";
 
 export interface FirmProfile {
   key: FirmKey;
