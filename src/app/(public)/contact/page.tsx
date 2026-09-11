@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Mail, Clock, MessageSquare } from "lucide-react";
 import ContactForm from "@/components/contact/ContactForm";
 
 // /contact — the public "Contact us" page.
@@ -23,24 +22,6 @@ export const metadata: Metadata = {
     type: "website",
   },
 };
-
-const highlights = [
-  {
-    icon: Mail,
-    title: "Email us",
-    body: "support@iclosed.ca — every message reaches a real person on our team.",
-  },
-  {
-    icon: Clock,
-    title: "One business day",
-    body: "That's our usual turnaround on messages sent through this form.",
-  },
-  {
-    icon: MessageSquare,
-    title: "No question too small",
-    body: "Pricing, timelines, documents, or just figuring out where to start.",
-  },
-];
 
 export default function ContactPage() {
   return (
@@ -84,29 +65,8 @@ export default function ContactPage() {
           </div>
         </section>
 
-        <section className="mx-auto max-w-5xl px-5 sm:px-8 lg:px-10 pb-20">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_300px] lg:items-start">
-            <ContactForm />
-
-            <aside className="space-y-4">
-              {highlights.map(({ icon: Icon, title, body }) => (
-                <div
-                  key={title}
-                  className="rounded-2xl border border-gray-100 bg-gray-50/70 p-5"
-                >
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-sm">
-                    <Icon className="h-4 w-4 text-[#C10007]" strokeWidth={2} />
-                  </span>
-                  <h2 className="mt-3 text-sm font-bold text-gray-900">
-                    {title}
-                  </h2>
-                  <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                    {body}
-                  </p>
-                </div>
-              ))}
-            </aside>
-          </div>
+        <section className="mx-auto max-w-3xl px-5 sm:px-8 lg:px-10 pb-20">
+          <ContactForm />
         </section>
       </main>
     </div>
