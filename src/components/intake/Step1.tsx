@@ -204,7 +204,7 @@ export function Step1({
               })}
             </div>
 
-            {selected === "closing" && (
+            {/* {selected === "closing" && ( */}
               <div className="mt-8">
                 <div className="flex items-center gap-2 mb-5">
                   <div className="h-px flex-1 bg-gray-100" />
@@ -319,7 +319,7 @@ export function Step1({
                   </div>
                 )}
               </div>
-            )}
+            {/* )} */}
 
             {/* Desktop Continue button — right below the form content */}
             <div className="hidden lg:flex justify-end mt-8 pt-6 border-t border-gray-100">
