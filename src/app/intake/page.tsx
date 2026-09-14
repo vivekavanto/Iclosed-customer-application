@@ -85,15 +85,14 @@ const READ_PASS_BACKOFF_MS = [3_000, 8_000];
 const READ_TOTAL_BUDGET_MS = 6 * 60 * 1000;
 
 export default function ServiceSelection() {
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>("closing");
   const [selectedClosingOption, setSelectedClosingOption] = useState<
     string | null
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
-  // Optional deposit held under the agreement — captured per property side.
+  // Optional deposit held under the agreement — purchase side only.
   const [depositAmount, setDepositAmount] = useState("");
-  const [sellingDepositAmount, setSellingDepositAmount] = useState("");
   // Closing (completion) date — on the APS, so it prefills from an upload.
   // Optional: an unsigned client won't know it yet. ISO "YYYY-MM-DD".
   const [closingDate, setClosingDate] = useState("");
@@ -334,9 +333,6 @@ export default function ServiceSelection() {
         break;
       case "depositAmount":
         setDepositAmount(value);
-        break;
-      case "sellingDepositAmount":
-        setSellingDepositAmount(value);
         break;
       case "closingDate":
         setClosingDate(value);
@@ -778,12 +774,11 @@ export default function ServiceSelection() {
 
   const resetForm = () => {
     setStep(1);
-    setSelected(null);
+    setSelected("closing");
     setSelectedClosingOption(null);
     setPurchasePrice("");
     setSellingPrice("");
     setDepositAmount("");
-    setSellingDepositAmount("");
     setClosingDate("");
     setSellingClosingDate("");
     setPurchaseFiles([]);
@@ -863,8 +858,6 @@ export default function ServiceSelection() {
             setSellingPrice={setSellingPrice}
             depositAmount={depositAmount}
             setDepositAmount={setDepositAmount}
-            sellingDepositAmount={sellingDepositAmount}
-            setSellingDepositAmount={setSellingDepositAmount}
             closingDate={closingDate}
             setClosingDate={setClosingDate}
             sellingClosingDate={sellingClosingDate}
@@ -953,9 +946,8 @@ export default function ServiceSelection() {
                     sub_service: selectedClosingOption,
                     price: purchasePrice,
                     selling_price: selectedClosingOption === "both" ? sellingPrice : null,
-                    deposit_amount: depositAmount,
-                    selling_deposit_amount:
-                      selectedClosingOption === "both" ? sellingDepositAmount : null,
+                    deposit_amount:
+                      selectedClosingOption === "selling" ? null : depositAmount,
                     closing_date: closingDate,
                     selling_closing_date:
                       selectedClosingOption === "both" ? sellingClosingDate : null,

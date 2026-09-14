@@ -19,7 +19,6 @@ export type PrefillKey =
   | "purchasePrice"
   | "sellingPrice"
   | "depositAmount"
-  | "sellingDepositAmount"
   | "closingDate"
   | "sellingClosingDate"
   | "address.street"
@@ -78,7 +77,8 @@ export function keysForSide(
   const prefix = selling ? "sellingAddress" : "address";
   return [
     selling ? "sellingPrice" : "purchasePrice",
-    selling ? "sellingDepositAmount" : "depositAmount",
+    // Deposits are only captured for purchases.
+    ...(side === "purchase" ? (["depositAmount"] as PrefillKey[]) : []),
     selling ? "sellingClosingDate" : "closingDate",
     `${prefix}.street` as PrefillKey,
     `${prefix}.unit` as PrefillKey,
@@ -108,11 +108,13 @@ export function buildPrefillEntries(
     result.purchase_price.confidence,
   );
 
-  push(
-    selling ? "sellingDepositAmount" : "depositAmount",
-    result.deposit.value ? formatCurrencyValue(result.deposit.value) : null,
-    result.deposit.confidence,
-  );
+  if (side === "purchase") {
+    push(
+      "depositAmount",
+      result.deposit.value ? formatCurrencyValue(result.deposit.value) : null,
+      result.deposit.confidence,
+    );
+  }
 
   push(
     selling ? "sellingClosingDate" : "closingDate",
