@@ -161,11 +161,17 @@ export async function POST(req: Request) {
       // admin read a family whose peer tasks are still Pending.
       let sharedSync: Promise<unknown> = Promise.resolve();
       if (task.is_shared && task.task_template_id) {
-        sharedSync = syncSharedTaskCompletion({
+        const syncParams = {
           taskId: task.id,
           dealId: task.deal_id,
           taskTemplateId: task.task_template_id,
-        }).catch((err) => console.error("[SharedTaskSync] Error:", err));
+        };
+        // Completion sync skips peers already done, so an edit to a finished task pushes its answers separately.
+        sharedSync = (
+          wasCompleted
+            ? syncSharedTaskResponses(syncParams)
+            : syncSharedTaskCompletion(syncParams)
+        ).catch((err) => console.error("[SharedTaskSync] Error:", err));
       }
 
       // Citizenship flag — alert law clerk if client selected non-citizen / unsure

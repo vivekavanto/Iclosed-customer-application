@@ -1,5 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { getFamilyPartyCount } from "@/lib/familyPartyCount";
+import { isHoldTitleTask } from "@/lib/taskKinds";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -249,6 +251,9 @@ export async function convertSingleLead(params: {
     return groupLeadFlags;
   };
 
+  // Hold-title is agreed between co-owners — skip it when there is only one party.
+  const singleParty = (await getFamilyPartyCount(lead.id)) === 1;
+
   for (const { side, templateType } of sides) {
     const milestoneMap: Record<string, string> = {};
 
@@ -304,6 +309,7 @@ export async function convertSingleLead(params: {
     if (taskTemplates && taskTemplates.length > 0) {
       const taskRows = taskTemplates
         .filter((t) => {
+          if (singleParty && isHoldTitleTask(t.name)) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
         })

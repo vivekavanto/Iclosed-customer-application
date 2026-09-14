@@ -90,4 +90,8 @@ UNION ALL SELECT 'add_aps_multiple_files', EXISTS (
 UNION ALL SELECT 'create_calculator_estimates', EXISTS (
   SELECT 1 FROM information_schema.tables
   WHERE table_schema = 'public' AND table_name = 'calculator_estimates'
+)
+UNION ALL SELECT 'move_hold_title_to_own_task', EXISTS (
+  SELECT 1 FROM task_templates
+  WHERE name = 'How Will You Hold Title?' AND is_deleted = false
 );
