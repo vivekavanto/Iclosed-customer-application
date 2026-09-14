@@ -1,6 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeal } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { getFamilyPartyCount } from "@/lib/familyPartyCount";
+import { isHoldTitleTask } from "@/lib/taskKinds";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -98,9 +100,23 @@ export async function GET(req: Request) {
       // Get deal type to filter correct templates
       const { data: dealData } = await supabaseAdmin
         .from("deals")
-        .select("type")
+        .select("type, lead_id")
         .eq("id", dId)
         .single();
+
+      // Hold-title is agreed between co-owners — a single-party file has no one to agree with.
+      // Fails open: an unresolvable count keeps the task.
+      const singleParty =
+        !!dealData?.lead_id && (await getFamilyPartyCount(dealData.lead_id)) === 1;
+      if (singleParty) {
+        // Admin-side conversion seeds every default template, so remove any copy it made.
+        await supabaseAdmin
+          .from("tasks")
+          .update({ is_deleted: true })
+          .eq("deal_id", dId)
+          .eq("is_deleted", false)
+          .ilike("title", "%hold title%");
+      }
 
       const dealType = (dealData?.type ?? "Purchase").trim();
       const isBoth = dealType.toLowerCase() === "purchase & sale";
@@ -229,6 +245,7 @@ export async function GET(req: Request) {
             if (existingTemplateKeys.has(tplKey)) return false;
             const titleKey = `${side ?? "_"}:${tt.name?.trim().toLowerCase()}`;
             if (existingTitleKeys.has(titleKey)) return false;
+            if (singleParty && isHoldTitleTask(tt.name)) return false;
             const role = (tt.role_type ?? "").toLowerCase();
             return role === "client" || role === "both" || role === "";
           })

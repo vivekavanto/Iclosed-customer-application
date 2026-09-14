@@ -26,7 +26,7 @@ import DepositFundsDrawer from "@/components/dashboard/DepositFundsDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
-import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
 import { isDepositTask } from "@/lib/depositTask";
 import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
@@ -59,6 +59,7 @@ type FamilyMemberRow = FamilyTaskStatusSummary["members"][number];
 
 interface Task {
   id: string;
+  deal_id: string;
   title: string;
   status: "Pending" | "In Progress" | "Completed";
   due_date: string | null;
@@ -1063,6 +1064,9 @@ export default function DashboardPage() {
       // both route here (and get the per-party family status), matching admin.
       void loadBehalfTargets(task.id);
       setPersonalInfoDrawerOpen(true);
+    } else if (isHoldTitleTask(task.title)) {
+      // Shared by every party, so no on-behalf picker; this drawer renders the shares box.
+      setPersonalInfoDrawerOpen(true);
     } else {
       // Everything else goes through the DB-driven DynamicTaskDrawer so every
       // field defined on the task template renders automatically (and stays in
@@ -1353,9 +1357,19 @@ export default function DashboardPage() {
   const drawerFirstName = directTarget?.first_name ?? activeBehalfTarget?.first_name ?? activeProperty?.first_name;
   const drawerLastName = directTarget?.last_name ?? activeBehalfTarget?.last_name ?? activeProperty?.last_name;
 
-  // One roster per family, so the opened party's status names everyone.
+  // One roster per family, so the opened party's status names everyone. The
+  // hold-title task has no roster of its own — borrow the deal's Personal Info one.
+  const rosterTask =
+    activeTask && isHoldTitleTask(activeTask.title)
+      ? tasks.find(
+          (t) =>
+            t.deal_id === activeTask.deal_id &&
+            isPersonalInfoTask(t.title) &&
+            familyStatus[t.id],
+        )
+      : activeTask;
   const drawerPartyNames = (
-    activeTask ? (familyStatus[activeTask.id]?.members ?? []) : []
+    rosterTask ? (familyStatus[rosterTask.id]?.members ?? []) : []
   )
     .map((m) => m.name.trim())
     .filter(Boolean);
