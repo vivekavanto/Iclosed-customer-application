@@ -45,8 +45,6 @@ interface Step2Props {
     setSellingPrice: (value: string) => void;
     depositAmount: string;
     setDepositAmount: (value: string) => void;
-    sellingDepositAmount: string;
-    setSellingDepositAmount: (value: string) => void;
     closingDate: string;
     setClosingDate: (value: string) => void;
     sellingClosingDate: string;
@@ -117,8 +115,9 @@ function PropertyDetailsForm({
     priceValue: string;
     onPriceChange: (value: string) => void;
     priceError: string;
-    depositValue: string;
-    onDepositChange: (value: string) => void;
+    /** Omit on a sale card — deposits are only captured for purchases. */
+    depositValue?: string;
+    onDepositChange?: (value: string) => void;
     closingDateValue: string;
     onClosingDateChange: (value: string) => void;
     formatCurrency: (value: string) => string;
@@ -136,7 +135,6 @@ function PropertyDetailsForm({
     const selling = slot === "selling";
     const KEY = {
         price: (selling ? "sellingPrice" : "purchasePrice") as PrefillKey,
-        deposit: (selling ? "sellingDepositAmount" : "depositAmount") as PrefillKey,
         closingDate: (selling ? "sellingClosingDate" : "closingDate") as PrefillKey,
         street: (selling ? "sellingAddress.street" : "address.street") as PrefillKey,
         unit: (selling ? "sellingAddress.unit" : "address.unit") as PrefillKey,
@@ -178,20 +176,22 @@ function PropertyDetailsForm({
                 {/* Deposit. Still not REQUIRED to submit — it just isn't
                     labelled as optional: the hint invited people to skip a
                     figure the firm wants, and the closing-cost estimator
-                    prefills "Deposit already paid" from it. */}
-                <Field>
-                    <Input
-                        label="Deposit Amount"
-                        id={`${prefix}-deposit`}
-                        type="text"
-                        value={depositValue}
-                        onChange={(e) => {
-                            onDepositChange(formatCurrency(e.target.value));
-                            onFieldTouched(KEY.deposit);
-                        }}
-                        placeholder="$50,000"
-                    />
-                </Field>
+                    prefills "Deposit already paid" from it. Purchases only. */}
+                {onDepositChange && (
+                    <Field>
+                        <Input
+                            label="Deposit Amount"
+                            id={`${prefix}-deposit`}
+                            type="text"
+                            value={depositValue}
+                            onChange={(e) => {
+                                onDepositChange(formatCurrency(e.target.value));
+                                onFieldTouched("depositAmount");
+                            }}
+                            placeholder="$50,000"
+                        />
+                    </Field>
+                )}
 
                 {/* Closing date. Printed on the APS, so it prefills from an
                     uploaded agreement — but it stays optional: anyone who
@@ -318,8 +318,6 @@ const Step2: React.FC<Step2Props> = ({
     setSellingPrice,
     depositAmount,
     setDepositAmount,
-    sellingDepositAmount,
-    setSellingDepositAmount,
     closingDate,
     setClosingDate,
     sellingClosingDate,
@@ -551,8 +549,6 @@ const Step2: React.FC<Step2Props> = ({
                                     priceValue={sellingPrice}
                                     onPriceChange={setSellingPrice}
                                     priceError={sellingPriceError}
-                                    depositValue={sellingDepositAmount}
-                                    onDepositChange={setSellingDepositAmount}
                                     closingDateValue={sellingClosingDate}
                                     onClosingDateChange={setSellingClosingDate}
                                     formatCurrency={formatCurrency}
@@ -574,8 +570,8 @@ const Step2: React.FC<Step2Props> = ({
                                 priceValue={purchasePrice}
                                 onPriceChange={setPurchasePrice}
                                 priceError={priceError}
-                                depositValue={depositAmount}
-                                onDepositChange={setDepositAmount}
+                                depositValue={isSelling ? undefined : depositAmount}
+                                onDepositChange={isSelling ? undefined : setDepositAmount}
                                 closingDateValue={closingDate}
                                 onClosingDateChange={setClosingDate}
                                 formatCurrency={formatCurrency}
