@@ -37,6 +37,11 @@ export function isPerPartyTask(title: string | null | undefined): boolean {
 /** Number of verified IDs a party must upload (the drawer enforces "two verified IDs"). */
 export const REQUIRED_ID_DOCS = 2;
 
+/** One shared decision for the whole transaction — any party may answer it. */
+export function isHoldTitleTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("hold title");
+}
+
 /** Matched by label: a select's `options` holds its choice list, so there is
  * nowhere on it for a multi_party_only flag. */
 export function isHoldTitleField(label: string | null | undefined): boolean {

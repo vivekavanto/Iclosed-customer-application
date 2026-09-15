@@ -86,9 +86,6 @@ interface FormField {
     | { accept?: string; max_mb?: number; doc_type?: string }
     | NoteContent
     | null;
-  /** Set by /api/task-form-fields for a co-party on a field the primary owns. */
-  read_only?: boolean;
-  read_only_note?: string;
 }
 
 interface ExistingResponse {
@@ -462,13 +459,6 @@ const inputWithIcon =
 const inputNormal =
   "border-gray-200 focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10";
 const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
-// inputBase greyed out, for a value the viewer may see but not edit. Spelled
-// out rather than appended, for the same stylesheet-order reason as above.
-// The red focus ring is suppressed in globals.css, not here: a Tailwind utility
-// sits in @layer utilities and cannot override the unlayered *:focus-visible.
-const inputReadOnly =
-  "w-full px-4 py-3 text-sm text-gray-500 bg-gray-50 border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400 placeholder:text-xs cursor-not-allowed";
-const inputReadOnlyBorder = "border-gray-200";
 
 /* ─────────────────────────────────────────────
    OWNERSHIP SHARES ("Tenants in Common")
@@ -512,14 +502,12 @@ function SharesEditor({
   value,
   defaultNames,
   invalid,
-  readOnly = false,
   onChange,
   onBlur,
 }: {
   value: string;
   defaultNames: string[];
   invalid: boolean;
-  readOnly?: boolean;
   onChange: (value: string) => void;
   onBlur: () => void;
 }) {
@@ -559,10 +547,7 @@ function SharesEditor({
                 update(rows.map((r, j) => (j === i ? { ...r, name: e.target.value } : r)))
               }
               placeholder="Owner's full name"
-              readOnly={readOnly}
-              className={`${readOnly ? inputReadOnly : inputBase} ${
-                readOnly ? inputReadOnlyBorder : inputNormal
-              } flex-1 py-2.5`}
+              className={`${inputBase} ${inputNormal} flex-1 py-2.5`}
             />
             <div className="relative w-24 flex-shrink-0">
               <input
@@ -579,10 +564,7 @@ function SharesEditor({
                   )
                 }
                 placeholder="0"
-                readOnly={readOnly}
-                className={`${readOnly ? inputReadOnly : inputBase} ${
-                  readOnly ? inputReadOnlyBorder : inputNormal
-                } py-2.5 pr-7 text-right`}
+                className={`${inputBase} ${inputNormal} py-2.5 pr-7 text-right`}
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
                 %
@@ -1428,9 +1410,6 @@ export default function PersonalInfoTaskDrawer({
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
-    // Read-only fields belong to the primary — never block a co-party on one,
-    // including while the primary has yet to answer.
-    if (field.read_only) return false;
     return field.required || !!getVisibleWhen(field.options);
   }
 
@@ -1452,15 +1431,6 @@ export default function PersonalInfoTaskDrawer({
       .map((n) => (
         <HelpBadge key={n.id} label={n.label} content={getNoteContent(n.options)} />
       ));
-  }
-
-  function renderReadOnlyNote(field: FormField) {
-    if (!field.read_only || !field.read_only_note) return null;
-    return (
-      <p className="-mt-1 mb-2 text-xs leading-relaxed text-gray-500">
-        {field.read_only_note}
-      </p>
-    );
   }
 
   function renderAttachedNotes(label: string) {
@@ -2782,13 +2752,11 @@ export default function PersonalInfoTaskDrawer({
                       )}
                       {renderLabelBadges(field.label)}
                     </label>
-                    {renderReadOnlyNote(field)}
                     {renderAttachedNotes(field.label)}
                     <SharesEditor
                       value={values[field.id] ?? ""}
                       defaultNames={partyNames ?? []}
                       invalid={!!errors[field.id]}
-                      readOnly={!!field.read_only}
                       onChange={(v) => setValue(field.id, v)}
                       onBlur={() => blurField(field)}
                     />
@@ -2814,33 +2782,19 @@ export default function PersonalInfoTaskDrawer({
                       )}
                       {renderLabelBadges(field.label)}
                     </label>
-                    {renderReadOnlyNote(field)}
                     {renderAttachedNotes(field.label)}
                     <select
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
                       onBlur={() => blurField(field)}
-                      disabled={!!field.read_only}
                       className={[
-                        // appearance-none stays on either way: without it the
-                        // native arrow renders alongside the one drawn below.
-                        "appearance-none",
-                        field.read_only ? inputReadOnly : inputBase,
-                        field.read_only
-                          ? inputReadOnlyBorder
-                          : errors[field.id]
-                            ? inputError
-                            : inputNormal,
-                        field.read_only
-                          ? ""
-                          : !values[field.id]
-                            ? "cursor-pointer text-gray-400 text-xs"
-                            : "cursor-pointer text-gray-900 text-sm",
+                        inputBase,
+                        errors[field.id] ? inputError : inputNormal,
+                        "appearance-none cursor-pointer",
+                        !values[field.id] ? "text-gray-400 text-xs" : "text-gray-900 text-sm",
                       ].join(" ")}
                       style={{
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23${
-                          field.read_only ? "9ca3af" : "6b7280"
-                        }' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
                         backgroundRepeat: "no-repeat",
                         backgroundPosition: "right 14px center",
                         paddingRight: "40px",

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { isPersonalInfoTask, isHoldTitleField } from "@/lib/taskKinds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { getFamilyTaskRoster } from "@/lib/familyTaskTargets";
 
 /** `options` arrives as parsed JSONB, or as a JSON string in some setups. */
 function parseOptions(opts: unknown): Record<string, unknown> {
@@ -72,93 +71,6 @@ async function dropMultiPartyOnlyFields<T extends { label: string; options: unkn
 
   const dropped = new Set(block);
   return fields.filter((f) => !dropped.has(f));
-}
-
-type ResponseRow = {
-  field_id: string | null;
-  field_label: string;
-  value: string | null;
-  file_url: string | null;
-  file_name: string | null;
-};
-
-/**
- * How title is held is ONE decision for the whole transaction, so only one party
- * fills it in. Ownership follows whoever actually answered — not who is primary:
- * the party who filled it keeps editing rights, and everyone else sees their
- * answer read-only, ILA warning included (it is aimed at the lower-share party,
- * who is often a co-purchaser).
- *
- * While nobody has answered, the block stays editable for every party — first to
- * save owns it. A draft save counts, so the moment one party fills it the others
- * stop being asked.
- *
- * Returns the fields with `read_only`/`read_only_note` set on that block, plus
- * the owner's answers to merge into the pre-fill. Fails open on anything
- * unresolvable: the block stays editable rather than becoming un-answerable.
- */
-async function applyHoldTitleOwnership<
-  T extends { id: string; label: string; options: unknown },
->(
-  fields: T[],
-  taskId: string
-): Promise<{ fields: T[]; inherited: ResponseRow[] }> {
-  const untouched = { fields, inherited: [] as ResponseRow[] };
-
-  const block = multiPartyOnlyBlock(fields);
-  if (block.length === 0) return untouched;
-
-  const roster = await getFamilyTaskRoster(taskId);
-  const self = roster?.members.find((m) => m.is_self);
-  if (!roster || !self || roster.members.length < 2) return untouched;
-
-  const taskIds = roster.members
-    .map((m) => m.task_id)
-    .filter((t): t is string => !!t);
-  if (taskIds.length === 0) return untouched;
-
-  const { data } = await supabaseAdmin
-    .from("task_responses")
-    .select("task_id, field_id, field_label, value, file_url, file_name")
-    .in("task_id", taskIds);
-
-  // Blank rows don't count as an answer — a submitted-but-empty field leaves one.
-  const blockIds = new Set(block.map((f) => f.id));
-  const answers = new Map<string, ResponseRow[]>();
-  for (const r of data ?? []) {
-    if (!r.field_id || !blockIds.has(r.field_id)) continue;
-    if (String(r.value ?? "").trim() === "") continue;
-    const rows = answers.get(r.task_id) ?? [];
-    rows.push({
-      field_id: r.field_id,
-      field_label: r.field_label,
-      value: r.value,
-      file_url: r.file_url,
-      file_name: r.file_name,
-    });
-    answers.set(r.task_id, rows);
-  }
-
-  // Whoever answered keeps editing rights — never lock a party out of their own
-  // answer. Nobody answered yet → everyone may fill it, first save wins.
-  if (self.task_id && answers.has(self.task_id)) return untouched;
-
-  const owner = roster.members
-    .filter((m) => !m.is_self && m.task_id && answers.has(m.task_id))
-    // Deterministic if two parties raced: the primary's copy wins.
-    .sort((a, b) => Number(b.is_primary) - Number(a.is_primary))[0];
-  if (!owner) return untouched;
-
-  const ownerName = `${owner.first_name} ${owner.last_name}`.trim();
-  const note = `Answered by ${ownerName} (${owner.role_label}) for the whole transaction.`;
-  const inBlock = new Set(block);
-
-  return {
-    fields: fields.map((f) =>
-      inBlock.has(f) ? { ...f, read_only: true, read_only_note: note } : f
-    ),
-    inherited: answers.get(owner.task_id!) ?? [],
-  };
 }
 
 /**
@@ -253,10 +165,7 @@ export async function GET(req: Request) {
       leadId = deal?.lead_id ?? null;
     }
 
-    const visibleFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
-    // Whoever answered the hold-title block owns it; others inherit it read-only.
-    const { fields: formFields, inherited } =
-      await applyHoldTitleOwnership(visibleFields, task_id);
+    const formFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
 
     // 4. Fetch any existing responses so we can pre-fill the form
     const { data: existingResponses } = await supabaseAdmin
@@ -264,17 +173,15 @@ export async function GET(req: Request) {
       .select("field_id, field_label, value, file_url, file_name")
       .eq("task_id", task_id);
 
-    let finalResponses = existingResponses ?? [];
-
-    // The primary's answer is the source of truth for the read-only block, so it
-    // replaces any stale copy saved on this party's own task.
-    if (inherited.length > 0) {
-      const inheritedIds = new Set(inherited.map((r) => r.field_id));
-      finalResponses = [
-        ...finalResponses.filter((r) => !inheritedIds.has(r.field_id)),
-        ...inherited,
-      ];
-    }
+    // Shared-task sync copies answers by label without field_id; re-link them so they pre-fill.
+    const fieldIdByLabel = new Map(
+      formFields.map((f) => [f.label.trim().toLowerCase(), f.id])
+    );
+    const finalResponses = (existingResponses ?? []).map((r) =>
+      r.field_id
+        ? r
+        : { ...r, field_id: fieldIdByLabel.get(r.field_label.trim().toLowerCase()) ?? null }
+    );
 
     // 5. Pre-fill the person's identity (name + email) from their own lead, plus
     // their phone on Personal Information — intake already asked every party for
