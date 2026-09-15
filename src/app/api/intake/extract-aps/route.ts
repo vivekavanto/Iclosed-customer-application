@@ -24,7 +24,7 @@
 import { NextResponse } from "next/server";
 import { readBlobDocument, BlobDocumentError } from "@/lib/blobDocument";
 import {
-  parseApsExtraction,
+  parseApsPayload,
   type ApsExtractionResult,
   type ApsSide,
 } from "@/lib/apsExtraction";
@@ -141,17 +141,24 @@ function buildPrompt(side: ApsSide): string {
       ? `This agreement is for a property the client is SELLING. The client is on the SELLER side.`
       : `This agreement is for a property the client is BUYING. The client is on the BUYER side.`;
 
-  return `You are extracting structured data from ONE document out of an Ontario real-estate agreement package — the Agreement of Purchase and Sale itself (typically an OREA Form 100 for resale or Form 101 for a condominium), or one of the amendments, waivers, notices and schedules that go with it.
+  return `You are extracting structured data from ONE FILE out of an Ontario real-estate agreement package — the Agreement of Purchase and Sale itself (typically an OREA Form 100 for resale or Form 101 for a condominium), or one of the amendments, waivers, notices and schedules that go with it.
 
 ${sideNote}
 
 Extract ONLY what is actually written on THIS document. Never infer, estimate, or fill a plausible-looking value. A missing field must come back as null. A wrong value that looks right is far worse than a blank one, because the client may not catch it.
 
-Each document in the package is read separately and the results are merged
+Each file the client uploads is read separately and the results are merged
 afterwards, with amendments layered over the agreement. So:
-  - Report what THIS document says, and nothing else.
-  - Do NOT leave a field blank because you think another document covers it.
-  - Do NOT carry a value over from what an attached page might have said.
+  - Report what THIS file says, and nothing else.
+  - Do NOT leave a field blank because you think another file covers it.
+  - Do NOT carry a value over from what a file you were not given might say.
+
+ONE FILE, ONE ANSWER. The file may be a single form, or it may be a whole
+package scanned into one PDF — an offer summary, then the agreement, then its
+schedules, a confirmation of co-operation and a signing certificate, one after
+another. Either way you are describing the FILE AS A WHOLE and you must return
+exactly ONE JSON object. Never return an array, never return one object per
+form, and never split your answer across several objects.
 
 ============================================================
 WHICH DOCUMENT IS THIS?
@@ -165,6 +172,13 @@ Set "document_type" to one of:
    - "schedule"  — Schedule A/B/etc. attached to the agreement
    - "waiver"    — a waiver or notice of fulfilment of condition (Form 123/124)
    - "other"     — anything else that is still part of this package
+
+Judge the file by the most important thing in it. If an Agreement of Purchase
+and Sale appears ANYWHERE in the file, the file is "aps" — read the agreement's
+values and treat the cover sheets, schedules and signing certificates bound in
+with it as part of that same agreement, not as separate documents competing for
+the label. Only when there is no agreement in the file do the other types
+apply.
 
 An amendment, schedule or waiver IS part of the agreement package: set
 "is_aps": true for it. Reserve "is_aps": false for a document that has nothing
@@ -238,7 +252,7 @@ NOT PART OF THIS TRANSACTION
 ============================================================
 If this document has nothing to do with the purchase or sale — a listing agreement, a mortgage commitment, a status certificate, an ID, a random photo — set "is_aps": false, "document_type": "other", return nulls and empty arrays throughout, and say what the document actually appears to be in "reason".
 
-Respond with ONLY a valid JSON object (no markdown, no code fences, no commentary) matching this exact shape:
+Respond with ONLY ONE valid JSON object (no markdown, no code fences, no commentary, and not an array) matching this exact shape:
 
 {
   "is_aps": boolean,
@@ -266,6 +280,107 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
   "reason": string
 }`;
 }
+
+// ── Response shape ────────────────────────────────────────────
+// responseMimeType alone only promises valid JSON — it says nothing about the
+// SHAPE of it, and the rungs disagree about what shape to pick. Asked to read a
+// PDF with five OREA forms stapled together, gemini-3.1-flash-lite answers with
+// an ARRAY of per-form objects about half the time. Downstream that used to
+// read as "this is not an Agreement of Purchase and Sale", which is the worst
+// possible failure here: the client is told their agreement is the wrong
+// document and asked to type every field in by hand, and nothing anywhere logs
+// an error, because every layer believes the read succeeded.
+//
+// The schema is what stops that at the source; parseApsPayload() is the belt to
+// its braces, and the "unusable" outcome below means a model that still answers
+// with something unrecognizable costs us the next rung, not the client's trust.
+//
+// VERIFY BEFORE EDITING: every rung on MODEL_LADDER must accept this. Unlike
+// generationConfig.thinkingConfig — see the note above — responseSchema is
+// accepted by all three today, but the ladder is only as strong as its weakest
+// rung, so re-check with a real agreement after any change here.
+const NULLABLE_STRING = { type: "STRING", nullable: true } as const;
+const CONFIDENCE_SCHEMA = {
+  type: "STRING",
+  enum: ["high", "medium", "low"],
+} as const;
+const VALUE_SCHEMA = {
+  type: "OBJECT",
+  properties: { value: NULLABLE_STRING, confidence: CONFIDENCE_SCHEMA },
+  required: ["value", "confidence"],
+} as const;
+const PARTY_SCHEMA = {
+  type: "ARRAY",
+  items: {
+    type: "OBJECT",
+    properties: { full_name: { type: "STRING" } },
+    required: ["full_name"],
+  },
+} as const;
+
+const RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    is_aps: { type: "BOOLEAN" },
+    document_type: {
+      type: "STRING",
+      enum: ["aps", "amendment", "schedule", "waiver", "other"],
+    },
+    purchase_price: VALUE_SCHEMA,
+    deposit: VALUE_SCHEMA,
+    closing_date: VALUE_SCHEMA,
+    property_address: {
+      type: "OBJECT",
+      properties: {
+        street: NULLABLE_STRING,
+        unit: NULLABLE_STRING,
+        city: NULLABLE_STRING,
+        province: NULLABLE_STRING,
+        postal_code: NULLABLE_STRING,
+        confidence: CONFIDENCE_SCHEMA,
+      },
+      required: [
+        "street",
+        "unit",
+        "city",
+        "province",
+        "postal_code",
+        "confidence",
+      ],
+    },
+    buyers: PARTY_SCHEMA,
+    sellers: PARTY_SCHEMA,
+    agents: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          full_name: NULLABLE_STRING,
+          brokerage: NULLABLE_STRING,
+          role: {
+            type: "STRING",
+            enum: ["listing", "cooperating", "unknown"],
+          },
+          email: NULLABLE_STRING,
+          phone: NULLABLE_STRING,
+        },
+        required: ["full_name", "brokerage", "role", "email", "phone"],
+      },
+    },
+    reason: NULLABLE_STRING,
+  },
+  required: [
+    "is_aps",
+    "document_type",
+    "purchase_price",
+    "deposit",
+    "closing_date",
+    "property_address",
+    "buyers",
+    "sellers",
+    "agents",
+  ],
+} as const;
 
 interface GeminiResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -311,6 +426,7 @@ async function readWithModel(
     generationConfig: {
       temperature: 0,
       responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
     },
   };
 
@@ -360,9 +476,21 @@ async function readWithModel(
     return { kind: "unusable" };
   }
 
-  // parseApsExtraction never throws — a partial or malformed payload degrades
-  // to a result with nothing in it, which the form treats as "couldn't read".
-  return { kind: "ok", result: parseApsExtraction(raw) };
+  // parseApsPayload() finds the extraction whatever wrapper the model put it
+  // in, and answers null only when there is no extraction in there at all.
+  // That case is a broken ANSWER, not a rejected document, so it goes back as
+  // "unusable" and the ladder tries the next model — reporting it as
+  // is_aps:false would tell the client their agreement is the wrong file.
+  const result = parseApsPayload(raw);
+  if (!result) {
+    console.error(
+      `[extract-aps] ${model}: no extraction object in model JSON (` +
+        `${Array.isArray(raw) ? "array" : typeof raw})`,
+    );
+    return { kind: "unusable" };
+  }
+
+  return { kind: "ok", result };
 }
 
 // ── Handler ───────────────────────────────────────────────────

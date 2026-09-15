@@ -316,11 +316,114 @@ function normalizeAgents(raw: unknown): ExtractedAgent[] {
   return out;
 }
 
+// ── Finding the extraction inside the model's answer ──────────
+//
+// The prompt asks for one JSON object and the strong tiers answer with one.
+// The flash-lite rung the ladder falls back to does not always: given a PDF
+// that staples five OREA forms together, it answers with an ARRAY of
+// per-document objects instead — measured at roughly one run in two on the
+// same agreement.
+//
+// That shape used to be indistinguishable from a document we had rejected.
+// `(raw ?? {}).is_aps` on an array is `undefined`, so a correctly-read
+// agreement came back is_aps:false with every field null, and the client was
+// told "that doesn't look like an Agreement of Purchase and Sale" and asked to
+// type it all in themselves. Nothing logged an error, because as far as every
+// layer was concerned the read had succeeded.
+//
+// So the payload is unwrapped before it is parsed, and a payload with no
+// extraction object in it at all is reported as unreadable — which sends the
+// route on to the next model — rather than as a verdict on the client's file.
+
+/** Top-level keys that mark an object as an extraction rather than a wrapper. */
+const EXTRACTION_KEYS = [
+  "is_aps",
+  "document_type",
+  "purchase_price",
+  "deposit",
+  "closing_date",
+  "property_address",
+  "buyers",
+  "sellers",
+  "agents",
+] as const;
+
+// Bounds on the search below. A model answer is small; anything deeper or
+// wider than this is not an extraction we failed to find, it is noise.
+const MAX_UNWRAP_DEPTH = 3;
+const MAX_UNWRAP_PAYLOADS = 12;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function looksLikeExtraction(value: Record<string, unknown>): boolean {
+  return EXTRACTION_KEYS.some((key) => key in value);
+}
+
+function collectPayloads(
+  node: unknown,
+  depth: number,
+  out: Record<string, unknown>[],
+): void {
+  if (depth > MAX_UNWRAP_DEPTH || out.length >= MAX_UNWRAP_PAYLOADS) return;
+
+  if (Array.isArray(node)) {
+    for (const entry of node) collectPayloads(entry, depth + 1, out);
+    return;
+  }
+
+  if (!isPlainObject(node)) return;
+
+  if (looksLikeExtraction(node)) {
+    out.push(node);
+    return;
+  }
+
+  // A wrapper — { "result": {...} }, { "documents": [...] } — is worth one
+  // more level down. An object that is neither an extraction nor a wrapper
+  // around one carries nothing and is dropped.
+  for (const child of Object.values(node)) {
+    collectPayloads(child, depth + 1, out);
+  }
+}
+
 /**
- * Defensively turn whatever the model returned into an ApsExtractionResult.
+ * Every extraction object inside a model answer, in the order given.
+ *
+ * An empty list means the answer carried no extraction at all. Callers must
+ * treat that as an unusable response, NOT as `is_aps: false` — the difference
+ * is what the client is told, and whether another model gets a look.
+ */
+export function unwrapApsPayloads(raw: unknown): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  collectPayloads(raw, 0, out);
+  return out;
+}
+
+/**
+ * Parse a whole model answer, whatever shape it arrived in.
+ *
+ * `null` means the answer was unreadable and the read belongs on another
+ * model. An answer carrying several documents — the array case above, which is
+ * a package PDF read form-by-form — is merged under the same rules as a package
+ * uploaded as separate files, so an amendment stapled into one PDF still
+ * overrides the agreement it amends.
+ */
+export function parseApsPayload(raw: unknown): ApsExtractionResult | null {
+  const payloads = unwrapApsPayloads(raw);
+  if (payloads.length === 0) return null;
+  if (payloads.length === 1) return parseApsExtraction(payloads[0]);
+  return mergeApsExtractions(payloads.map((payload) => parseApsExtraction(payload)));
+}
+
+/**
+ * Defensively turn one extraction object into an ApsExtractionResult.
  *
  * Never throws: a malformed or partial response degrades to a result with
  * nothing in it, which the form treats exactly like "couldn't read the file".
+ * A caller holding a raw model answer wants parseApsPayload() instead — this
+ * one assumes any wrapper has already been peeled off.
  */
 export function parseApsExtraction(raw: unknown): ApsExtractionResult {
   const source = (raw ?? {}) as Record<string, unknown>;
