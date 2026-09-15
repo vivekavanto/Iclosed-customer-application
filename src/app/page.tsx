@@ -40,6 +40,7 @@ const plans = [
     extra: "+ Disbursements and HST",
     blurb: "Close on a property you are buying",
     cta: "Start your closing",
+    href: "/intake",
     dark: false,
   },
   {
@@ -48,6 +49,7 @@ const plans = [
     extra: "+ Disbursements and HST",
     blurb: "Close on a property you are selling",
     cta: "Start your closing",
+    href: "/intake",
     dark: true,
   },
   {
@@ -56,6 +58,7 @@ const plans = [
     extra: "+ Disbursements and HST",
     blurb: "Refinance a mortgage on a property",
     cta: "Start your refinance",
+    href: "/contact",
     dark: false,
   },
 ];
@@ -435,7 +438,7 @@ function Pricing() {
           {plans.map((p) => (
             <Link
               key={p.tag}
-              href="/contact"
+              href={p.href}
               className="group flex flex-col rounded-2xl overflow-hidden border border-gray-100 shadow-md shadow-gray-200/60 bg-white transition-all duration-300 hover:shadow-xl hover:shadow-[#C10007]/10 hover:border-[#C10007]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C10007]/40 focus-visible:ring-offset-2"
             >
               {/* Card header — gray-50 by default, red on hover */}
@@ -494,17 +497,17 @@ function Testimonials() {
   if (!featured) return null;
 
   return (
-    <section className="bg-white py-16">
-      <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
-        <div className="mb-12 sm:mb-16 text-center">
+    <section className="bg-white">
+      {/* <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10"> */}
+        {/* <div className="mb-12 sm:mb-16 text-center">
           <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl lg:text-5xl">
             Closing Made Easy.{" "}
             <span className="text-[#C10007]">Just Ask Our Clients.</span>
           </h2>
-        </div>
+        </div> */}
 
         {/* Featured full-width red quote card */}
-        <div className="relative mb-6 overflow-hidden rounded-3xl bg-[#C10007] p-8 sm:p-10 lg:p-14">
+        {/* <div className="relative mb-6 overflow-hidden rounded-3xl bg-[#C10007] p-8 sm:p-10 lg:p-14">
           <div className="pointer-events-none absolute right-0 top-0 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-10 -left-10 h-48 w-48 rounded-full bg-white/5 blur-2xl" />
           <span className="relative block text-5xl sm:text-6xl font-black leading-none text-white/30">
@@ -524,10 +527,10 @@ function Testimonials() {
               <p className="text-white/60 text-sm">{"★".repeat(featured.stars)}</p>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Grid of remaining testimonials */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {rest.map((t) => (
             <div
               key={t.name}
@@ -554,8 +557,8 @@ function Testimonials() {
               </div>
             </div>
           ))}
-        </div>
-      </div>
+        </div> */}
+      {/* </div> */}
     </section>
   );
 }
