@@ -1,7 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -310,6 +310,8 @@ export async function convertSingleLead(params: {
       const taskRows = taskTemplates
         .filter((t) => {
           if (singleParty && isHoldTitleTask(t.name)) return false;
+          // Only added once someone picks virtual signing.
+          if (isTreefortTask(t.name)) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
         })

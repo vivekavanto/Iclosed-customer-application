@@ -15,6 +15,7 @@ import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert
 import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 import { spouseNameFromResponses, syncSpouseIdTask } from "@/lib/spouseIdTask";
+import { syncTreefortTasks } from "@/lib/treefortTask";
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
@@ -361,6 +362,7 @@ export async function POST(req: Request) {
           side: (task.side ?? null) as "purchase" | "sale" | null,
           spouseName: spouseNameFromResponses(responses),
         });
+        await syncTreefortTasks(task.id);
       }
 
       // Family-aware milestone advancement — completes only when EVERY party on

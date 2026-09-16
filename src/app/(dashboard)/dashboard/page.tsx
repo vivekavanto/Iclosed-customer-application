@@ -26,7 +26,7 @@ import DepositFundsDrawer from "@/components/dashboard/DepositFundsDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
-import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isTreefortTask, isUploadIdTask } from "@/lib/taskKinds";
 import { isDepositTask } from "@/lib/depositTask";
 import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
@@ -1105,6 +1105,7 @@ export default function DashboardPage() {
       spouse_name: member.spouse_name ?? null,
     });
     if (isUploadIdTask(task.title)) setIdDrawerOpen(true);
+    else if (isTreefortTask(task.title)) setDynamicDrawerOpen(true);
     else setPersonalInfoDrawerOpen(true);
   }
 
@@ -1407,17 +1408,19 @@ export default function DashboardPage() {
       {/* ── Dynamic Task Drawer (DB-driven form fields) ── */}
       <DynamicTaskDrawer
         open={dynamicDrawerOpen}
-        onClose={() => setDynamicDrawerOpen(false)}
-        taskId={activeTask?.id ?? null}
+        onClose={() => {
+          setDynamicDrawerOpen(false);
+          setDirectTarget(null);
+        }}
+        taskId={directTarget?.task_id ?? activeTask?.id ?? null}
         taskTitle={activeTask?.title ?? "Task Details"}
         leadId={leadId ?? undefined}
         clientFirstName={activeProperty?.first_name}
         clientLastName={activeProperty?.last_name}
         side={activeTask?.side ?? dealTypeToSide(activeDeal?.type)}
-        onTaskCompleted={(id) => {
-          setDynamicDrawerOpen(false);
-          markDone(id);
-        }}
+        onTaskCompleted={(id) =>
+          handleDrawerCompleted(id, () => setDynamicDrawerOpen(false))
+        }
       />
 
       {/* ── Deposit Funds Drawer (dedicated, standalone) ── */}

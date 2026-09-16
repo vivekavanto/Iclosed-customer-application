@@ -112,7 +112,7 @@ export async function POST(req: Request) {
   const ip = requestIp(req);
   if (!(await rateLimitOk(`contact-form-ip:${ip}`, IP_LIMIT, IP_WINDOW_SECONDS))) {
     return fail(
-      "Too many messages from this connection. Please try again later, or email support@iclosed.ca.",
+      "Too many messages from this connection. Please try again later, or email hello@iclosed.ca.",
       429,
     );
   }
@@ -126,7 +126,7 @@ export async function POST(req: Request) {
 
   if (!sent) {
     return fail(
-      "We couldn't send your message right now. Please email support@iclosed.ca directly.",
+      "We couldn't send your message right now. Please email hello@iclosed.ca directly.",
       502,
     );
   }

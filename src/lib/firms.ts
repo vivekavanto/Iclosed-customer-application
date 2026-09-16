@@ -47,7 +47,7 @@ export type FirmKey = "navawilson" | "iclosed";
  * outbound client mail is sent from, and `navawilson.law` is NOT a verified
  * sending domain in Resend — it answered 403 to every message relayed through
  * it. `EMAIL_FROM_NAVAWILSON` / `EMAIL_REPLY_TO_NAVAWILSON` must stay pointed
- * at the verified support@iclosed.ca until that domain is verified, otherwise
+ * at the verified hello@iclosed.ca until that domain is verified, otherwise
  * mail on Nava Wilson files silently stops. See firmEmail.ts.
  */
 export const DEFAULT_FIRM_KEY: FirmKey = "iclosed";
@@ -152,8 +152,8 @@ export const FIRMS: Record<FirmKey, FirmProfile> = {
     legalName: "iClosed LLP",
     introName: "iClosed LLP",
     footerName: "iClosed LLP",
-    fromEmail: "iClosed <support@iclosed.ca>",
-    replyToEmail: "support@iclosed.ca",
+    fromEmail: "iClosed <hello@iclosed.ca>",
+    replyToEmail: "hello@iclosed.ca",
     // The bare iClosed wordmark. Intentionally NOT logo-full.png — that
     // lockup carries the "POWERED BY NAVA WILSON" tagline, which is exactly
     // what an iClosed LLP retainer must not say. Note the artwork reads

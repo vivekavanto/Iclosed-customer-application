@@ -30,8 +30,13 @@ export function isUploadIdTask(title: string | null | undefined): boolean {
   return (title ?? "").toLowerCase().includes("identif");
 }
 
+// Added per person when anyone on the file picks virtual signing (src/lib/treefortTask.ts).
+export function isTreefortTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("treefort");
+}
+
 export function isPerPartyTask(title: string | null | undefined): boolean {
-  return isPersonalInfoTask(title) || isUploadIdTask(title);
+  return isPersonalInfoTask(title) || isUploadIdTask(title) || isTreefortTask(title);
 }
 
 /** Number of verified IDs a party must upload (the drawer enforces "two verified IDs"). */

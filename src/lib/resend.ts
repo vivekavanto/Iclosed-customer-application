@@ -18,7 +18,7 @@ export const EMAIL_FROM =
  * inbox nobody watches. Override per environment with EMAIL_REPLY_TO.
  */
 export const EMAIL_REPLY_TO =
-  process.env.EMAIL_REPLY_TO?.trim() || "support@iclosed.ca";
+  process.env.EMAIL_REPLY_TO?.trim() || "hello@iclosed.ca";
 
 /**
  * Back-office inbox that RECEIVES staff-facing alerts (new lead, citizenship
@@ -38,4 +38,4 @@ export const INTERNAL_ALERT_TO =
  * CONTACT_EMAIL.
  */
 export const CONTACT_INBOX_TO =
-  process.env.CONTACT_EMAIL?.trim() || "support@iclosed.ca";
+  process.env.CONTACT_EMAIL?.trim() || "hello@iclosed.ca";
