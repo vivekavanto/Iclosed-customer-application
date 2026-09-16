@@ -47,6 +47,12 @@ const RULES: TaskDescriptionRule[] = [
       "Please provide the contact details for your mortgage broker or lender, so we can coordinate your financing and receive your mortgage instructions.",
   },
   {
+    match: "treefort id verification",
+    sides: ["purchase", "sale"],
+    description:
+      "Please complete ID verification by Treefort prior to your signing appointment. The link will be sent to you via email a few days prior to signing. You'll need two pieces of ID, one with a photograph. Once you have completed the verification, please submit this task. If you have not received the Treefort link within a day of your signing, please reach out.",
+  },
+  {
     match: "solicitor information",
     sides: ["purchase"],
     description:

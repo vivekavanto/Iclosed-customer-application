@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Loader2, CheckCircle2, Mail } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
-const SUPPORT_EMAIL = "support@iclosed.ca";
+const CONTACT_EMAIL = "hello@iclosed.ca";
 
 /**
  * Reformats to (416) 555-1234 as the visitor types — the same helper the intake
@@ -82,7 +82,7 @@ export default function ContactForm() {
       if (!res.ok || !data?.success) {
         toastError(
           data?.error ||
-            `We couldn't send your message. Please email ${SUPPORT_EMAIL} directly.`,
+            `We couldn't send your message. Please email ${CONTACT_EMAIL} directly.`,
         );
         return;
       }
@@ -91,7 +91,7 @@ export default function ContactForm() {
       setSent(true);
     } catch {
       toastError(
-        `We couldn't reach our servers. Please email ${SUPPORT_EMAIL} directly.`,
+        `We couldn't reach our servers. Please email ${CONTACT_EMAIL} directly.`,
       );
     } finally {
       setSubmitting(false);
@@ -246,10 +246,10 @@ export default function ContactForm() {
         <p className="text-center text-xs text-gray-400 sm:text-left">
           Or email us directly at{" "}
           <a
-            href={`mailto:${SUPPORT_EMAIL}`}
+            href={`mailto:${CONTACT_EMAIL}`}
             className="font-semibold text-[#C10007] hover:underline"
           >
-            {SUPPORT_EMAIL}
+            {CONTACT_EMAIL}
           </a>
         </p>
         <button

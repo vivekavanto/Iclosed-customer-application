@@ -649,10 +649,10 @@ function WhyChoose() {
         <p className="mt-5 text-center text-sm text-gray-400">
           Or email us directly at{" "}
           <a
-            href="mailto:support@iclosed.ca"
+            href="mailto:hello@iclosed.ca"
             className="font-semibold text-[#C10007] hover:underline"
           >
-            support@iclosed.ca
+            hello@iclosed.ca
           </a>
         </p>
       </div>

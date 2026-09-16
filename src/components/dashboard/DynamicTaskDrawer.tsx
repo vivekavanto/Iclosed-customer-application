@@ -142,7 +142,6 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
-// Amber callout — used for task-description notes and "note" fields.
 function DetailsCard({ details }: { details: TaskDetailsCard }) {
   const [copied, setCopied] = useState(false);
 
@@ -183,6 +182,7 @@ function DetailsCard({ details }: { details: TaskDetailsCard }) {
   );
 }
 
+// Amber callout — used for task-description notes and "note" fields.
 function InfoNote({ text }: { text: string }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">

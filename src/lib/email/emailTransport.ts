@@ -66,7 +66,7 @@ import {
  * to import from anywhere. Same values, same env vars — keep them in step.
  */
 const LEGACY_FROM = () => process.env.EMAIL_FROM?.trim() || "iClosed <noreply@iclosed.ca>";
-const LEGACY_REPLY_TO = () => process.env.EMAIL_REPLY_TO?.trim() || "support@iclosed.ca";
+const LEGACY_REPLY_TO = () => process.env.EMAIL_REPLY_TO?.trim() || "hello@iclosed.ca";
 
 /** What every call site gets back. Never throws; always tells you what happened. */
 export type EmailSendResult =

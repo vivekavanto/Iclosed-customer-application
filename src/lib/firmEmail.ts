@@ -8,7 +8,7 @@ import { getFirm, type FirmKey } from "@/lib/firms";
  * browser — and `process.env` lookups have no business in a client bundle.
  *
  *   Nava Wilson  →  iclosed@navawilson.law
- *   iClosed LLP  →  support@iclosed.ca
+ *   iClosed LLP  →  hello@iclosed.ca
  *
  * ⚠ OPS PREREQUISITE: navawilson.law must be a VERIFIED sending domain in
  * Resend before Nava Wilson files start sending from it, or those sends fail.
