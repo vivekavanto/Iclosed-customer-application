@@ -145,7 +145,8 @@ export async function GET(req: Request) {
     // 3. Fetch the form fields for this template
     const { data: fields, error: fieldsError } = await supabaseAdmin
       .from("task_form_fields")
-      .select("id, field_type, label, placeholder, required, order_index, options")
+      // "*" so visible_when is picked up once migrated without breaking before.
+      .select("*")
       .eq("task_template_id", templateId)
       .order("order_index", { ascending: true });
 

@@ -56,6 +56,7 @@ interface UploadIdentificationDrawerProps {
   clientFirstName?: string | null;
   clientLastName?: string | null;
   onBehalf?: boolean;
+  spouseName?: string | null;
 }
 
 // ── Camera slot model (used only by the guided camera flow) ───────────────────
@@ -154,6 +155,13 @@ interface ExistingDoc {
 }
 
 const DOC_TYPE = "identification";
+const SPOUSE_DOC_TYPE = "spouse_identification";
+
+function idDocsUrl(leadId: string, spouseTaskId: string | null): string {
+  return `/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}${
+    spouseTaskId ? `&task_id=${encodeURIComponent(spouseTaskId)}` : ""
+  }`;
+}
 const ALLOWED_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png", ".heic"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -490,7 +498,11 @@ function detectionFields(det: DetectionResult | null): Record<string, unknown> {
  * produced, so stored URLs, the download proxy and every existing row keep
  * working unchanged.
  */
-async function uploadFileToBlob(file: File, leadId: string): Promise<string> {
+async function uploadFileToBlob(
+  file: File,
+  leadId: string,
+  spouseTaskId: string | null,
+): Promise<string> {
   const blob = await upload(
     `corporate-docs/${leadId}/${Date.now()}-${file.name}`,
     file,
@@ -498,7 +510,10 @@ async function uploadFileToBlob(file: File, leadId: string): Promise<string> {
       access: BLOB_ACCESS,
       handleUploadUrl: "/api/blob/upload",
       contentType: file.type || undefined,
-      clientPayload: JSON.stringify({ lead_id: leadId, doc_type: DOC_TYPE }),
+      clientPayload: JSON.stringify({
+        lead_id: leadId,
+        doc_type: spouseTaskId ? SPOUSE_DOC_TYPE : DOC_TYPE,
+      }),
     },
   );
   return blob.url;
@@ -532,6 +547,7 @@ function describeUploadError(err: unknown): string {
  */
 async function registerUploadedDoc(payload: {
   leadId: string;
+  spouseTaskId: string | null;
   blobUrl: string;
   fileName: string;
   customType: string;
@@ -544,7 +560,8 @@ async function registerUploadedDoc(payload: {
       file_url: payload.blobUrl,
       file_name: payload.fileName,
       lead_id: payload.leadId,
-      doc_type: DOC_TYPE,
+      doc_type: payload.spouseTaskId ? SPOUSE_DOC_TYPE : DOC_TYPE,
+      ...(payload.spouseTaskId ? { task_id: payload.spouseTaskId } : {}),
       custom_type: payload.customType,
       ...detectionFields(payload.detection),
     }),
@@ -674,7 +691,9 @@ export default function UploadIdentificationDrawer({
   taskId,
   onSaved,
   embedded = false,
+  spouseName,
 }: UploadIdentificationDrawerProps) {
+  const spouseTaskId = spouseName && taskId ? taskId : null;
   const isLargeScreen = useIsLargeScreen();
   // Manual upload state
   const [selected, setSelected] = useState<SelectedFile[]>([]);
@@ -847,14 +866,16 @@ export default function UploadIdentificationDrawer({
   // the on-behalf dropdown — leadId switches, so files picked for one person must
   // not be uploaded under another. The existing-docs effect below reloads the
   // newly-selected person's saved docs.
-  const prevLeadIdRef = useRef(leadId);
+  // Client and spouse share a lead.
+  const docOwnerKey = `${leadId ?? ""}:${spouseTaskId ?? ""}`;
+  const prevLeadIdRef = useRef(docOwnerKey);
   useEffect(() => {
     if (!open) {
-      prevLeadIdRef.current = leadId;
+      prevLeadIdRef.current = docOwnerKey;
       return;
     }
-    if (prevLeadIdRef.current !== leadId) {
-      prevLeadIdRef.current = leadId;
+    if (prevLeadIdRef.current !== docOwnerKey) {
+      prevLeadIdRef.current = docOwnerKey;
       setSelected((prev) => {
         prev.forEach((s) => s.previewUrl && URL.revokeObjectURL(s.previewUrl));
         return [];
@@ -862,14 +883,14 @@ export default function UploadIdentificationDrawer({
       setGlobalError(null);
       setDraftSaved(false);
     }
-  }, [open, leadId]);
+  }, [open, docOwnerKey]);
 
   // Load existing docs when drawer opens
   useEffect(() => {
     if (!open || !leadId) return;
     let cancelled = false;
     setLoadingExisting(true);
-    fetch(`/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}`)
+    fetch(idDocsUrl(leadId, spouseTaskId))
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
@@ -882,7 +903,7 @@ export default function UploadIdentificationDrawer({
     return () => {
       cancelled = true;
     };
-  }, [open, leadId]);
+  }, [open, leadId, spouseTaskId]);
 
   // Close on Escape — the shell owns this in embedded mode.
   useEffect(() => {
@@ -983,7 +1004,7 @@ export default function UploadIdentificationDrawer({
   async function stageFile(id: string, file: File, leadIdForUpload: string) {
     let blobUrl: string;
     try {
-      blobUrl = await uploadFileToBlob(file, leadIdForUpload);
+      blobUrl = await uploadFileToBlob(file, leadIdForUpload, spouseTaskId);
     } catch (err: unknown) {
       const message = describeUploadError(err);
       setSelected((prev) =>
@@ -1241,7 +1262,7 @@ export default function UploadIdentificationDrawer({
       // JSON call to record the row.
       let blobUrl: string;
       try {
-        blobUrl = await uploadFileToBlob(file, leadId);
+        blobUrl = await uploadFileToBlob(file, leadId, spouseTaskId);
       } catch (uploadErr: unknown) {
         throw new Error(describeUploadError(uploadErr));
       }
@@ -1249,6 +1270,7 @@ export default function UploadIdentificationDrawer({
       try {
         await registerUploadedDoc({
           leadId,
+          spouseTaskId,
           blobUrl,
           fileName: file.name,
           customType: existingDoc?.custom_type || "identification",
@@ -1265,7 +1287,7 @@ export default function UploadIdentificationDrawer({
       const delData = await delRes.json();
       if (!delData.success) throw new Error(delData.error ?? "Failed to remove old file");
 
-      const r = await fetch(`/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}`);
+      const r = await fetch(idDocsUrl(leadId, spouseTaskId));
       const d = await r.json();
       if (d.success) setExisting(d.docs ?? []);
     } catch (e: unknown) {
@@ -1548,6 +1570,7 @@ export default function UploadIdentificationDrawer({
         try {
           const url = await registerUploadedDoc({
             leadId,
+            spouseTaskId,
             blobUrl: s.blobUrl,
             fileName: s.file.name,
             customType,
@@ -1604,7 +1627,7 @@ export default function UploadIdentificationDrawer({
       setSelected([]);
 
       try {
-        const r = await fetch(`/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}`);
+        const r = await fetch(idDocsUrl(leadId, spouseTaskId));
         const d = await r.json();
         if (d.success) setExisting(d.docs ?? []);
       } catch {}
@@ -1686,6 +1709,7 @@ export default function UploadIdentificationDrawer({
         try {
           await registerUploadedDoc({
             leadId,
+            spouseTaskId,
             blobUrl: s.blobUrl,
             fileName: s.file.name,
             customType,
@@ -1713,7 +1737,7 @@ export default function UploadIdentificationDrawer({
 
       try {
         const r = await fetch(
-          `/api/lead-identification-docs?lead_id=${encodeURIComponent(leadId)}`,
+          idDocsUrl(leadId, spouseTaskId),
         );
         const d = await r.json();
         if (d.success) setExisting(d.docs ?? []);
@@ -1940,10 +1964,14 @@ export default function UploadIdentificationDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
-              Upload Identification Documents
+              {spouseName
+                ? `Upload Identification for ${spouseName}`
+                : "Upload Identification Documents"}
             </h2>
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-              Upload your identification documents to verify your identity for the property transaction.
+              {spouseName
+                ? `As your consenting spouse, ${spouseName} must provide two pieces of identification for the signing.`
+                : "Upload your identification documents to verify your identity for the property transaction."}
             </p>
           </div>
           <button

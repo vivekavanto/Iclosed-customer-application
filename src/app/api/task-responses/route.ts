@@ -14,6 +14,7 @@ import {
 import { requestAllTasksCompleteAlert } from "@/lib/requestAllTasksCompleteAlert";
 import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
+import { spouseNameFromResponses, syncSpouseIdTask } from "@/lib/spouseIdTask";
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
     // Fetch task context for shared-task syncing
     const { data: task, error: taskFetchError } = await supabaseAdmin
       .from("tasks")
-      .select("id, title, deal_id, milestone_id, is_shared, task_template_id, completed, status")
+      .select("id, title, deal_id, milestone_id, is_shared, task_template_id, completed, status, side")
       .eq("id", task_id)
       .single();
 
@@ -350,6 +351,16 @@ export async function POST(req: Request) {
             }
           }
         }
+      }
+
+      // Before advanceMilestone, so a new spouse task holds the milestone open.
+      if ((task.title ?? "").toLowerCase().includes("personal info") && task.deal_id) {
+        await syncSpouseIdTask({
+          personalInfoTaskId: task.id,
+          dealId: task.deal_id,
+          side: (task.side ?? null) as "purchase" | "sale" | null,
+          spouseName: spouseNameFromResponses(responses),
+        });
       }
 
       // Family-aware milestone advancement — completes only when EVERY party on

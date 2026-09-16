@@ -115,7 +115,7 @@ export async function GET(req: Request) {
           .update({ is_deleted: true })
           .eq("deal_id", dId)
           .eq("is_deleted", false)
-          .ilike("title", "%hold title%");
+          .or("title.ilike.%hold title%,title.ilike.%ownership shares%");
       }
 
       const dealType = (dealData?.type ?? "Purchase").trim();

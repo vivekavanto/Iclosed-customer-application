@@ -28,6 +28,7 @@ import { readBlobMeta, BlobDocumentError } from "@/lib/blobDocument";
 
 interface DocFields {
   lead_id: string;
+  task_id?: string | null;
   doc_type: string;
   custom_type: string | null;
   is_identification: boolean | null;
@@ -51,6 +52,7 @@ async function insertDocRow(
 ) {
   return supabaseAdmin.from("lead_corporate_docs").insert({
     lead_id: fields.lead_id,
+    ...(fields.task_id ? { task_id: fields.task_id } : {}),
     doc_type: fields.doc_type,
     custom_type: fields.custom_type || null,
     file_name,
@@ -134,6 +136,7 @@ async function registerUploadedBlob(req: Request) {
 
   const fields: DocFields = {
     lead_id,
+    task_id: typeof body.task_id === "string" ? body.task_id : null,
     doc_type,
     custom_type: typeof body.custom_type === "string" ? body.custom_type : null,
     is_identification: parseIsIdentification(body.is_identification),

@@ -6,6 +6,12 @@ interface TaskDescriptionRule {
   description: string;
   // Rendered as a highlighted callout below the description.
   note?: string;
+  details?: TaskDetailsCard;
+}
+
+export interface TaskDetailsCard {
+  heading: string;
+  lines: string[];
 }
 
 const RULES: TaskDescriptionRule[] = [
@@ -41,6 +47,22 @@ const RULES: TaskDescriptionRule[] = [
       "Please provide the contact details for your mortgage broker or lender, so we can coordinate your financing and receive your mortgage instructions.",
   },
   {
+    match: "solicitor information",
+    sides: ["purchase"],
+    description:
+      "Please share the following details with your mortgage agent/lender for us to receive the mortgage instructions:",
+    details: {
+      heading: "Solicitor information",
+      lines: [
+        "Kubeskaran Navaratnam",
+        "Nava Wilson Professional Corporation",
+        "info@navawilson.law",
+        "210-10 Milner Business Court, Toronto, ON M1B 3C6",
+        "Phone: 416-321-1100 Ext. 115 | Fax: 416-321-1107",
+      ],
+    },
+  },
+  {
     match: "home insurance policy",
     sides: ["purchase"],
     description:
@@ -62,14 +84,14 @@ const RULES: TaskDescriptionRule[] = [
 export function getTaskCopy(
   title: string | null | undefined,
   side: TaskSide = null,
-): { description: string; note: string | null } | null {
+): { description: string; note: string | null; details: TaskDetailsCard | null } | null {
   const normalized = (title ?? "").toLowerCase();
   if (!normalized) return null;
 
   for (const rule of RULES) {
     if (!normalized.includes(rule.match)) continue;
     if (rule.sides && (side === null || !rule.sides.includes(side))) continue;
-    return { description: rule.description, note: rule.note ?? null };
+    return { description: rule.description, note: rule.note ?? null, details: rule.details ?? null };
   }
   return null;
 }

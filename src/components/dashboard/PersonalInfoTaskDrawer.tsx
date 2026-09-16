@@ -5,7 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
-import { getVisibleWhen, isVisibleByRules } from "@/lib/visibleWhen";
+import { getVisibleWhen, isVisibleByRules, ruleSource } from "@/lib/visibleWhen";
 import {
   X,
   Upload,
@@ -76,7 +76,8 @@ interface FormField {
     | "checkbox"
     | "date"
     | "note"
-    | "shares";
+    | "shares"
+    | "spouse";
   label: string;
   placeholder: string | null;
   required: boolean;
@@ -86,6 +87,7 @@ interface FormField {
     | { accept?: string; max_mb?: number; doc_type?: string }
     | NoteContent
     | null;
+  visible_when?: unknown;
 }
 
 interface ExistingResponse {
@@ -583,6 +585,99 @@ function SharesEditor({
           Total: {formatPercent(total)}%
         </span>
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   SPOUSE NAME (free text + other parties on the deal)
+───────────────────────────────────────────── */
+function SpouseNameInput({
+  value,
+  suggestions,
+  placeholder,
+  invalid,
+  onChange,
+  onBlur,
+}: {
+  value: string;
+  suggestions: string[];
+  placeholder: string;
+  invalid: boolean;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = value.trim().toLowerCase();
+  const matches = suggestions.some((s) => s.toLowerCase() === query)
+    ? suggestions
+    : suggestions.filter((s) => s.toLowerCase().includes(query));
+  const showList = open && matches.length > 0;
+
+  return (
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setOpen(false);
+        onBlur();
+      }}
+    >
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+        placeholder={placeholder}
+        autoComplete="off"
+        className={[
+          inputBase,
+          invalid ? inputError : inputNormal,
+          suggestions.length > 0 ? "pr-10" : "",
+        ].join(" ")}
+      />
+      {suggestions.length > 0 && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Choose from people on this transaction"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-gray-400 hover:text-gray-600"
+        >
+          <ChevronDown size={16} strokeWidth={2} />
+        </button>
+      )}
+      {showList && (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+          <p className="px-4 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            People on this transaction
+          </p>
+          {matches.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(name);
+                setOpen(false);
+              }}
+              className={[
+                "w-full cursor-pointer px-4 py-2.5 text-left text-sm transition-colors hover:bg-gray-50",
+                name.toLowerCase() === query
+                  ? "bg-[#FEF2F2] font-semibold text-[#C10007]"
+                  : "text-gray-700",
+              ].join(" ")}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1397,20 +1492,35 @@ export default function PersonalInfoTaskDrawer({
     return "";
   }
 
+  const spouseCandidates = useMemo(() => {
+    const self = [clientFirstName, clientLastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim()
+      .toLowerCase();
+    const seen = new Set<string>();
+    return (partyNames ?? []).filter((name) => {
+      const key = name.trim().toLowerCase();
+      if (!key || key === self || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [partyNames, clientFirstName, clientLastName]);
+
   // Resolve whether a field should currently be shown from its (optional)
   // visible_when rule — see isVisibleByRules for the matching semantics.
   function isFieldVisible(field: FormField): boolean {
     // No property address to offer → hide the checkbox, keep the fields.
     if (isMailSameAsPropertyField(field.label)) return mailSameOffered;
     if (mailSameChecked && isMailForwardingField(field)) return false;
-    return isVisibleByRules(field.options, fields, values);
+    return isVisibleByRules(ruleSource(field), fields, values);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
-    return field.required || !!getVisibleWhen(field.options);
+    return field.required || !!getVisibleWhen(ruleSource(field));
   }
 
   // Notes that render inside `label`'s field group rather than on their own.
@@ -1452,7 +1562,7 @@ export default function PersonalInfoTaskDrawer({
   const revealedFieldIds = useRef<Set<string>>(new Set());
   useEffect(() => {
     const visible = fields
-      .filter((f) => !!getVisibleWhen(f.options) && isFieldVisible(f))
+      .filter((f) => !!getVisibleWhen(ruleSource(f)) && isFieldVisible(f))
       .map((f) => f.id);
 
     const newly = visible.filter((id) => !revealedFieldIds.current.has(id));
@@ -2722,7 +2832,8 @@ export default function PersonalInfoTaskDrawer({
                     (f) =>
                       f.label.trim().toLowerCase() === attach.trim().toLowerCase()
                   );
-                  if (target?.field_type === "select") return null;
+                  if (target?.field_type === "select" || target?.field_type === "spouse")
+                    return null;
                   // Badges on the mail-forwarding heading are drawn beside it.
                   if (
                     getNoteContent(field.options).display === "badge" &&
@@ -2765,6 +2876,37 @@ export default function PersonalInfoTaskDrawer({
                         {errors[field.id]}
                       </p>
                     )}
+                  </div>
+                );
+              }
+
+              if (field.field_type === "spouse") {
+                return (
+                  <div key={field.id} id={`field-${field.id}`}>
+                    <label className="text-sm font-semibold text-gray-800 mb-2 block">
+                      {field.label}
+                      {fieldRequired(field) && (
+                        <span className="text-[#C10007] ml-1">*</span>
+                      )}
+                      {renderLabelBadges(field.label)}
+                    </label>
+                    <SpouseNameInput
+                      value={values[field.id] ?? ""}
+                      suggestions={spouseCandidates}
+                      placeholder={field.placeholder ?? "Full legal name as it appears on their ID"}
+                      invalid={!!errors[field.id]}
+                      onChange={(v) => setValue(field.id, v)}
+                      onBlur={() => blurField(field)}
+                    />
+                    {errors[field.id] && (
+                      <p className="mt-1.5 text-xs text-[#C10007]">
+                        {errors[field.id]}
+                      </p>
+                    )}
+                    {(() => {
+                      const notes = renderAttachedNotes(field.label);
+                      return notes && <div className="mt-2 [&>div]:mb-0">{notes}</div>;
+                    })()}
                   </div>
                 );
               }
