@@ -1,21 +1,26 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { NextResponse } from "next/server";
+import { SPOUSE_ID_DOC_TYPE } from "@/lib/spouseIdTask";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const lead_id = searchParams.get("lead_id");
+    // Spouse IDs share the client's lead, so scope by task.
+    const task_id = searchParams.get("task_id");
 
     if (!lead_id) {
       return NextResponse.json({ success: false, error: "lead_id is required" }, { status: 400 });
     }
 
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("lead_corporate_docs")
       .select("id, file_name, file_url, custom_type, created_at")
-      .eq("lead_id", lead_id)
-      .eq("doc_type", "identification")
-      .order("created_at", { ascending: true });
+      .eq("lead_id", lead_id);
+    query = task_id
+      ? query.eq("doc_type", SPOUSE_ID_DOC_TYPE).eq("task_id", task_id)
+      : query.eq("doc_type", "identification");
+    const { data, error } = await query.order("created_at", { ascending: true });
 
     if (error) throw new Error(error.message);
 
@@ -39,7 +44,7 @@ export async function DELETE(req: Request) {
       .from("lead_corporate_docs")
       .delete()
       .eq("id", id)
-      .eq("doc_type", "identification");
+      .in("doc_type", ["identification", SPOUSE_ID_DOC_TYPE]);
 
     if (error) throw new Error(error.message);
 

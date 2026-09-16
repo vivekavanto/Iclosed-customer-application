@@ -63,7 +63,9 @@ export async function POST(req: Request) {
         return {
           allowedContentTypes: ALLOWED_CONTENT_TYPES,
           maximumSizeInBytes:
-            docType === "identification" ? MAX_DOCUMENT_UPLOAD_BYTES : MAX_SIZE,
+            docType === "identification" || docType === "spouse_identification"
+              ? MAX_DOCUMENT_UPLOAD_BYTES
+              : MAX_SIZE,
           tokenPayload: clientPayload ?? null,
         };
       },

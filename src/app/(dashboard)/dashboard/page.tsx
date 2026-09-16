@@ -50,6 +50,7 @@ interface FamilyTaskStatusSummary {
     completed: boolean;
     doc_count?: number;
     doc_total?: number;
+    spouse_name?: string | null;
   }>;
 }
 
@@ -72,6 +73,7 @@ interface Task {
   side?: "purchase" | "sale" | null;
   order_index?: number | null;
   template_order_index?: number | null;
+  spouse_name?: string | null;
   milestones?: {
     id: string;
     title: string;
@@ -293,7 +295,15 @@ function AttentionCard({
 
   // Deduplicate tasks so no task title appears twice, and drop any tasks
   // that should never be surfaced to customers (e.g. "Schedule Appointment").
-  const uniqueTasks = deduplicateTasks(tasks).filter((t) => !isHiddenTask(t));
+  // Spouse ID tasks render inside their Identification section.
+  const rosterTaskIds = new Set(
+    Object.values(familyStatus).flatMap((fs) =>
+      fs.is_multi_party ? fs.members.map((m) => m.task_id) : [],
+    ),
+  );
+  const uniqueTasks = deduplicateTasks(tasks).filter(
+    (t) => !isHiddenTask(t) && !(t.spouse_name && rosterTaskIds.has(t.id)),
+  );
 
   // Show ALL incomplete tasks, sorted by the per-task order the team maintains
   // in the admin panel. Primary key is the per-deal tasks.order_index (which is
@@ -596,7 +606,7 @@ function AttentionCard({
                           "Party";
                         return (
                           <div
-                            key={m.lead_id}
+                            key={`${m.lead_id}:${m.task_id ?? ""}`}
                             className="flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-gray-50/50"
                           >
                             <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 bg-gray-200 text-gray-500">
@@ -955,6 +965,7 @@ export default function DashboardPage() {
     first_name: string;
     last_name: string;
     is_self: boolean;
+    spouse_name?: string | null;
   } | null>(null);
 
   // Per-party completion summaries keyed by task id — drives the dashboard
@@ -1005,7 +1016,7 @@ export default function DashboardPage() {
   // Fetch per-party completion summaries for every Personal Info / Upload ID task
   // in the given list. Powers the dashboard badges and the open-the-shell choice.
   async function loadFamilyStatus(taskList: Task[]) {
-    const perParty = taskList.filter((t) => isPerPartyTask(t.title));
+    const perParty = taskList.filter((t) => isPerPartyTask(t.title) && !t.spouse_name);
     if (perParty.length === 0) {
       setFamilyStatus({});
       return;
@@ -1048,7 +1059,7 @@ export default function DashboardPage() {
     // Uses the shared isUploadIdTask() helper so routing, per-party family status
     // and the drawer's ID-doc counting all agree on what counts as an ID task.
     if (isUploadIdTask(task.title)) {
-      void loadBehalfTargets(task.id);
+      if (!task.spouse_name) void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
     } else if (isDepositTask(task.title)) {
       // The closing-funds task is one file upload wrapped in a lot of reading:
@@ -1091,6 +1102,7 @@ export default function DashboardPage() {
       first_name: member.first_name,
       last_name: member.last_name,
       is_self: member.is_self,
+      spouse_name: member.spouse_name ?? null,
     });
     if (isUploadIdTask(task.title)) setIdDrawerOpen(true);
     else setPersonalInfoDrawerOpen(true);
@@ -1312,7 +1324,7 @@ export default function DashboardPage() {
   // is still pending. Gate those milestones on the family roster's all_completed.
   const blockedMilestoneIds = new Set<string>();
   for (const t of visibleTasks) {
-    if (!t.milestone_id || !isPerPartyTask(t.title)) continue;
+    if (!t.milestone_id || !isPerPartyTask(t.title) || t.spouse_name) continue;
     const fs = familyStatus[t.id];
     if (fs?.is_multi_party && !fs.all_completed) {
       blockedMilestoneIds.add(t.milestone_id);
@@ -1459,6 +1471,7 @@ export default function DashboardPage() {
         }}
         leadId={drawerLeadId}
         taskId={drawerTaskId ?? undefined}
+        spouseName={directTarget ? directTarget.spouse_name : activeTask?.spouse_name}
         partyStatuses={
           activeTask ? familyStatus[activeTask.id]?.members : undefined
         }

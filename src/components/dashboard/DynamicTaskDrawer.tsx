@@ -5,7 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
-import { getVisibleWhen, isVisibleByRules } from "@/lib/visibleWhen";
+import { getVisibleWhen, isVisibleByRules, ruleSource } from "@/lib/visibleWhen";
 import { getTaskCopy, type TaskSide } from "@/lib/taskDescriptions";
 import {
   isCityField,
@@ -32,7 +32,10 @@ import {
   ChevronDown,
   FileText,
   Info,
+  Copy,
+  Check,
 } from "lucide-react";
+import type { TaskDetailsCard } from "@/lib/taskDescriptions";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
@@ -67,6 +70,7 @@ interface FormField {
     | FieldOption[]
     | { accept?: string; max_mb?: number; doc_type?: string }
     | null;
+  visible_when?: unknown;
 }
 
 interface ExistingResponse {
@@ -139,6 +143,46 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
 }
 
 // Amber callout — used for task-description notes and "note" fields.
+function DetailsCard({ details }: { details: TaskDetailsCard }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(details.lines.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the text is still selectable */
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-sm font-bold text-gray-900">{details.heading}</p>
+        <button
+          type="button"
+          onClick={copy}
+          className={[
+            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+            copied
+              ? "border-green-200 bg-green-50 text-green-700"
+              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100",
+          ].join(" ")}
+        >
+          {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {details.lines.map((line) => (
+        <p key={line} className="text-sm leading-relaxed text-gray-700">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function InfoNote({ text }: { text: string }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
@@ -1006,14 +1050,14 @@ export default function DynamicTaskDrawer({
   // Resolve whether a field should currently be shown from its (optional)
   // visible_when rule — see isVisibleByRules for the matching semantics.
   function isFieldVisible(field: FormField): boolean {
-    return isVisibleByRules(field.options, fields, values);
+    return isVisibleByRules(ruleSource(field), fields, values);
   }
 
   // A conditional field (one with a visible_when rule) is treated as required
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
-    return field.required || !!getVisibleWhen(field.options);
+    return field.required || !!getVisibleWhen(ruleSource(field));
   }
 
   // Validate ONE field. Shared by submit and the on-blur check so a field the
@@ -1665,6 +1709,7 @@ export default function DynamicTaskDrawer({
               <p className="text-sm text-gray-600 leading-relaxed">
                 {taskCopy.description}
               </p>
+              {taskCopy.details && <DetailsCard details={taskCopy.details} />}
               {taskCopy.note && <InfoNote text={taskCopy.note} />}
             </div>
           )}
@@ -1685,7 +1730,7 @@ export default function DynamicTaskDrawer({
                       label: (
                         <>
                           Policy contains a clause stating{" "}
-                          <span className="font-semibold text-gray-900">&ldquo;cost guaranteed insurance&rdquo;</span>
+                          <span className="font-semibold text-gray-900">&ldquo;cost guaranteed insurance&rdquo;</span> (not needed for condos)
                         </>
                       ),
                     },

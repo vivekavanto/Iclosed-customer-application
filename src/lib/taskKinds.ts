@@ -38,8 +38,10 @@ export function isPerPartyTask(title: string | null | undefined): boolean {
 export const REQUIRED_ID_DOCS = 2;
 
 /** One shared decision for the whole transaction — any party may answer it. */
+// Renamed "How Will You Hold Title?" → "Ownership shares"; both still match.
 export function isHoldTitleTask(title: string | null | undefined): boolean {
-  return (title ?? "").toLowerCase().includes("hold title");
+  const t = (title ?? "").toLowerCase();
+  return t.includes("hold title") || t.includes("ownership shares");
 }
 
 /** Matched by label: a select's `options` holds its choice list, so there is

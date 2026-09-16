@@ -135,3 +135,52 @@ describe("isVisibleByRules", () => {
     ).toBe(true);
   });
 });
+
+describe("property-ownership split (Purchase, Married + Primary)", () => {
+  const fields = [
+    { id: "m", label: "Marital Status" },
+    { id: "r", label: PURCHASE_RESIDENCE },
+  ];
+  const combined = {
+    visible_when: {
+      any: [
+        { field_label: "Marital Status", not_equals: "married" },
+        { field_label: PURCHASE_RESIDENCE, not_equals: "primary" },
+      ],
+    },
+  };
+  const split = {
+    visible_when: {
+      all: [
+        { field_label: "Marital Status", equals: "married" },
+        { field_label: PURCHASE_RESIDENCE, equals: "primary" },
+      ],
+    },
+  };
+  const show = (opts: object, m: string, r: string) =>
+    isVisibleByRules(opts, fields, { m, r });
+
+  test("married + primary shows the split questions only", () => {
+    expect(show(split, "married", "primary")).toBe(true);
+    expect(show(combined, "married", "primary")).toBe(false);
+  });
+
+  test("every other combination shows the combined question only", () => {
+    for (const [m, r] of [
+      ["single", "primary"],
+      ["married", "investment"],
+      ["married", ""],
+      ["", ""],
+    ]) {
+      expect(show(combined, m, r)).toBe(true);
+      expect(show(split, m, r)).toBe(false);
+    }
+  });
+
+  test("not_equals clauses parse as negated", () => {
+    expect(getVisibleWhen(combined)).toEqual([
+      { field_label: "Marital Status", values: ["married"], negate: true },
+      { field_label: PURCHASE_RESIDENCE, values: ["primary"], negate: true },
+    ]);
+  });
+});

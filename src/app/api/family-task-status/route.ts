@@ -4,8 +4,89 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import { getFamilyTaskRoster } from "@/lib/familyTaskTargets";
 import { getFamilyUploadMode } from "@/lib/getFamilyUploadMode";
 import { isUploadIdTask, REQUIRED_ID_DOCS } from "@/lib/taskKinds";
+import { SPOUSE_ID_DOC_TYPE } from "@/lib/spouseIdTask";
 
 export const dynamic = "force-dynamic";
+
+type StatusMember = {
+  lead_id: string;
+  task_id: string | null;
+  name: string;
+  first_name: string;
+  last_name: string;
+  role_label: string;
+  is_primary: boolean;
+  is_self: boolean;
+  can_edit: boolean;
+  completed: boolean;
+  doc_count?: number;
+  doc_total?: number;
+  spouse_name?: string | null;
+};
+
+async function spouseMembers(
+  side: "purchase" | "sale" | null,
+  parties: StatusMember[],
+): Promise<Array<{ after_task_id: string; member: StatusMember }>> {
+  const partyTaskIds = parties.map((m) => m.task_id).filter((id): id is string => !!id);
+  if (partyTaskIds.length === 0) return [];
+
+  const { data: partyTasks } = await supabaseAdmin
+    .from("tasks")
+    .select("id, deal_id")
+    .in("id", partyTaskIds);
+  const partyByDeal = new Map<string, StatusMember>();
+  for (const t of partyTasks ?? []) {
+    const party = parties.find((m) => m.task_id === t.id);
+    if (party) partyByDeal.set(t.deal_id, party);
+  }
+  if (partyByDeal.size === 0) return [];
+
+  let q = supabaseAdmin
+    .from("tasks")
+    .select("id, deal_id, spouse_name, completed")
+    .in("deal_id", [...partyByDeal.keys()])
+    .not("spouse_name", "is", null)
+    .eq("is_deleted", false);
+  q = side == null ? q.is("side", null) : q.eq("side", side);
+  const { data: spouseTasks, error } = await q;
+  if (error || !spouseTasks?.length) return [];
+
+  const { data: docs } = await supabaseAdmin
+    .from("lead_corporate_docs")
+    .select("task_id")
+    .eq("doc_type", SPOUSE_ID_DOC_TYPE)
+    .in("task_id", spouseTasks.map((t) => t.id));
+  const docCounts: Record<string, number> = {};
+  for (const d of docs ?? []) {
+    if (d.task_id) docCounts[d.task_id] = (docCounts[d.task_id] ?? 0) + 1;
+  }
+
+  return spouseTasks.flatMap((t) => {
+    const party = partyByDeal.get(t.deal_id);
+    if (!party?.task_id) return [];
+    const name = String(t.spouse_name ?? "").trim();
+    const [first = "", ...rest] = name.split(/\s+/);
+    return [{
+      after_task_id: party.task_id,
+      member: {
+        lead_id: party.lead_id,
+        task_id: t.id,
+        name,
+        first_name: first,
+        last_name: rest.join(" "),
+        role_label: "Spouse",
+        is_primary: false,
+        is_self: false,
+        can_edit: party.can_edit,
+        completed: !!t.completed,
+        doc_count: docCounts[t.id] ?? 0,
+        doc_total: REQUIRED_ID_DOCS,
+        spouse_name: name,
+      },
+    }];
+  });
+}
 
 /**
  * GET /api/family-task-status?task_id=<taskId>
@@ -65,7 +146,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const members = roster.members.map((m) => ({
+    const members: StatusMember[] = roster.members.map((m) => ({
       lead_id: m.lead_id,
       task_id: m.task_id,
       name: `${m.first_name} ${m.last_name}`.trim(),
@@ -83,6 +164,14 @@ export async function GET(req: Request) {
         ? { doc_count: docCounts[m.lead_id] ?? 0, doc_total: REQUIRED_ID_DOCS }
         : {}),
     }));
+
+    if (isIdTask) {
+      const spouseRows = await spouseMembers(roster.task.side, members);
+      for (const row of spouseRows.reverse()) {
+        const at = members.findIndex((m) => m.task_id === row.after_task_id);
+        members.splice(at + 1, 0, row.member);
+      }
+    }
 
     const all_completed = members.every((m) => m.completed);
     const completed_count = members.filter((m) => m.completed).length;
