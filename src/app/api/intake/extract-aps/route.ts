@@ -186,6 +186,34 @@ to do with this transaction — a mortgage commitment, a status certificate, an
 ID, a random photo.
 
 ============================================================
+HAND-CORRECTED VALUES
+============================================================
+These documents are negotiated on paper. A term that was typed or printed on
+the form is very often struck out by hand and the agreed value written in
+beside, above or below it — usually in a different hand or colour, and usually
+with the parties' initials somewhere near it.
+
+THE HANDWRITTEN CORRECTION IS THE AGREED VALUE. The struck-out value is what
+the term USED to say, and is never the answer.
+
+So, before reading any field, look at the whole area around it, not just the
+line the label points at:
+  - A number with a line, a strike, an X or a scribble through it has been
+    REPLACED. Find what replaced it — normally immediately above the
+    struck-out number, or squeezed into the margin beside it — and use that.
+  - Handwriting beats print wherever the two conflict, even when the
+    handwriting is messier or harder to read than the printed value it
+    replaces. Do not prefer the printed value because it is cleaner.
+  - Initials near an edit confirm it was agreed. They do not change which
+    value is current; the un-struck one is current either way.
+  - If a value has been corrected more than once, the last surviving
+    (un-struck) value is the answer.
+  - Only if you genuinely cannot make out the replacement should you fall back
+    to the struck-out value — and then set that field's confidence to "low".
+
+A field read off a handwritten correction is "medium" confidence at best.
+
+============================================================
 WHAT TO EXTRACT
 ============================================================
 
@@ -210,6 +238,21 @@ WHAT TO EXTRACT
 3. closing_date — the completion / closing date.
    - Strictly "YYYY-MM-DD". Convert any written form ("the 15th day of March, 2026") to that format.
    - This is the COMPLETION date, not the offer date, not the irrevocable date, not the requisition date.
+   - On an OREA Form 100/101 it is the "COMPLETION DATE" paragraph: "... shall
+     be completed by no later than 6:00 p.m. on the ____ day of ________,
+     20__", with the day, the month and the two-digit year each on their own
+     blank. Read all three, and take the year off the document rather than
+     assuming the current one.
+   - THE DAY NUMBER IS THE FIELD MOST OFTEN CORRECTED BY HAND. A printed day
+     with a line through it and a handwritten day above or beside it means the
+     closing date MOVED: return the handwritten day, not the struck-out one.
+     The same goes for the month and the year. See HAND-CORRECTED VALUES above
+     — a closing date lifted from a crossed-out number is the most expensive
+     mistake you can make on this form, because the whole file is scheduled
+     around it.
+   - Beware the adjacent IRREVOCABILITY paragraph, which carries its own
+     day / month / year blanks and its own hand-corrections. Take the date from
+     the COMPLETION DATE paragraph only.
 
 4. property_address — the address of the property being bought or sold.
    - Split into components. "street" is the street number and name only ("123 Main Street West").
