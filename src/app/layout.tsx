@@ -2,8 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 import AuthHashHandler from "@/components/AuthHashHandler";
 import Providers from "@/components/Providers";
+import { siteUrl } from "@/lib/siteUrl";
 
 export const metadata: Metadata = {
+  // Load-bearing, not boilerplate: without it Next silently DROPS every
+  // relative Open Graph image and canonical URL, so the blog's social previews
+  // and canonical tags never reach the rendered head.
+  metadataBase: new URL(siteUrl()),
   title: "iClosed – Customer Portal",
   description:
     "iClosed customer portal – manage your real-estate closing from intake to completion.",

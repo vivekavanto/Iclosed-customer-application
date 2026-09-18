@@ -31,6 +31,22 @@ export const INTERNAL_ALERT_TO =
   process.env.INTERNAL_ALERT_EMAIL?.trim() || "testing@navawilson.law";
 
 /**
+ * Who is told when a NEW LEAD completes intake.
+ *
+ * Split out of INTERNAL_ALERT_TO on purpose. That constant also carries the
+ * citizenship flag and name-change alerts, and it still points at a staging
+ * inbox — repointing it to move the new-lead alert would have silently
+ * redirected those two as well. Override with NEW_LEAD_ALERT_EMAILS
+ * (comma-separated) to add or move recipients without a deploy.
+ */
+export const NEW_LEAD_ALERT_TO: string[] = (
+  process.env.NEW_LEAD_ALERT_EMAILS ?? "iclosed@navawilson.law,aliya@navawilson.law"
+)
+  .split(",")
+  .map((address) => address.trim())
+  .filter(Boolean);
+
+/**
  * Public "Contact us" inbox — where website enquiries land. Separate constant
  * from INTERNAL_ALERT_TO on purpose: that one receives system alerts (new lead,
  * citizenship flag) and can be pointed at a staging address, while this is the

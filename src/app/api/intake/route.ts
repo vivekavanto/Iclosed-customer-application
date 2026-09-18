@@ -2,6 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
+import { notifyNewLead } from "@/lib/notifyNewLead";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { normalizeEmailForStorage } from "@/lib/normalizeEmail";
@@ -517,10 +518,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
 
-    // Track every lead row created in this intake so each one triggers an
-    // admin notification, regardless of path (primary, co-person, sale-split).
-    const notifyLeadIds: string[] = [lead.id];
-
     // ── 3. Create co-person leads ─────────────────────────────
     const coPersonLeadIds: string[] = [];
     const coPersonLeadIdByFormId = new Map<string, string>();
@@ -588,7 +585,6 @@ export async function POST(req: Request) {
           } else if (cpLead) {
             coPersonLeadIds.push(cpLead.id);
             if (cp.id) coPersonLeadIdByFormId.set(cp.id, cpLead.id);
-            notifyLeadIds.push(cpLead.id);
           }
         } catch (cpErr) {
           console.warn("[Intake] Co-person lead creation failed (non-blocking):", cpErr);
@@ -687,17 +683,29 @@ export async function POST(req: Request) {
       console.error("[Intake] Welcome email failed:", err);
     }
 
-    // ── 6. Notify iClosed team for every lead created in this intake ───
+    // ── 6. Notify the iClosed team that a lead has arrived ─────────────
+    // ONE alert per intake, for the primary lead — by email to the back office
+    // and as a row in the admin's in-app feed (which also lights the yellow dot
+    // on the sidebar's Leads button).
+    //
+    // This used to loop over every lead row created here and email once each.
+    // The copy no longer carries per-person detail, so that would put the same
+    // message in the inbox two or three times for a couple buying together —
+    // the co-purchasers are part of the same arriving file, and staff open the
+    // file, not the person.
+    //
     // Awaited so a serverless instance termination after the response can't
-    // silently drop the notification. Each send is wrapped individually so
-    // one failure doesn't skip the others.
-    await Promise.all(
-      notifyLeadIds.map((id) =>
-        sendLeadNotificationEmail(id).catch((err) =>
-          console.error("[Intake] Team notification failed for lead", id, err)
-        )
-      )
-    );
+    // silently drop them, and each is wrapped on its own so a failing email
+    // doesn't cost us the in-app alert (or the other way round). Neither can
+    // fail the intake: the lead is already saved.
+    await Promise.all([
+      sendLeadNotificationEmail(lead.id).catch((err) =>
+        console.error("[Intake] Team notification email failed for lead", lead.id, err)
+      ),
+      notifyNewLead(lead.id).catch((err) =>
+        console.error("[Intake] In-app new-lead alert failed for lead", lead.id, err)
+      ),
+    ]);
 
     return NextResponse.json({
       success: true,

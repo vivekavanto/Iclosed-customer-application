@@ -5,13 +5,13 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 //
 // A referral code lives directly on the partner record (partners.referral_code)
 // — each partner created in the admin "Partners" panel gets their own code (e.g.
-// PAVITHRA0003). partners_referral_code_unique_idx enforces one live code per
+// SARUJANK2026). partners_referral_code_unique_idx enforces one live code per
 // partner, so a code resolves to exactly one partner.
 //
 // Attribution only — no discount is computed here; the intake flow just records
 // the resolved partner id.
 //
-// GET /api/referral/validate?code=JANE2024
+// GET /api/referral/validate?code=SARUJANK2026
 //   -> { valid: true, code, partner: {...} }
 //   -> { valid: false, error }   (200 — an unknown code is not a server error)
 
