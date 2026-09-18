@@ -4,6 +4,7 @@ import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
+import { normalizeEmailForStorage } from "@/lib/normalizeEmail";
 import { NextResponse } from "next/server";
 import {
   normalizePostalCode,
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
     const {
       first_name,
       last_name,
-      email,
+      email: rawEmail,
       phone,
       service,
       sub_service,
@@ -57,9 +58,20 @@ export async function POST(req: Request) {
       partner_id,
       referral_agent_name,
       referral_agent_company,
-      referral_agent_email,
+      referral_agent_email: rawReferralAgentEmail,
       referral_agent_phone,
     } = body;
+
+    // Addresses are cleaned ONCE, here, so every use below — the duplicate
+    // checks, the client/lead inserts, the welcome email — sees the same value.
+    //
+    // Storing the raw typed value is what broke the agent signup notification:
+    // Supabase Auth trims the address it registers, so a pasted trailing space
+    // left the lead/client row unfindable from the login identity, the admin
+    // never promoted the deal off "Inactive", and the referring agent was never
+    // told their client had signed up. See lib/normalizeEmail.ts.
+    const email = normalizeEmailForStorage(rawEmail);
+    const referral_agent_email = normalizeEmailForStorage(rawReferralAgentEmail);
 
     // Postal codes are stored uppercase everywhere.
     const address_postal_code =
@@ -530,7 +542,10 @@ export async function POST(req: Request) {
             .insert({
               first_name: cpFirst || "",
               last_name: cpLast || "",
-              email: cp.email,
+              // Same cleaning as the primary lead — a co-purchaser signs in
+              // under their own login, so an untrimmed address strands their
+              // activation (and the agent notification) exactly the same way.
+              email: normalizeEmailForStorage(cp.email),
               phone: cp.phone || null,
               service,
               sub_service: service === "closing" ? sub_service : null,

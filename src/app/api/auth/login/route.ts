@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { sendWelcomeEmail } from '@/lib/sendWelcomeEmail';
 import { notifyAdminActivation } from '@/lib/notifyAdminActivation';
 import { sessionDeadlineCookie } from '@/lib/sessionPolicy';
+import { findRowByEmail, findRowsByEmail } from '@/lib/emailLookup';
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
@@ -194,15 +195,15 @@ export async function POST(request: Request) {
       }
     }
 
-    // Get client record
-    const { data: client, error: clientError } = await supabaseAdmin
-      .from("clients")
-      .select("id")
-      .eq("email", email)
-      .single();
+    // Get client record. Whitespace-tolerant: an exact .eq() found nothing for
+    // a client whose stored address carried a stray space, and since everything
+    // below — including the activate-deal notification that triggers the agent's
+    // "your client just signed up" email — hangs off `if (client)`, that login
+    // did none of it and said nothing about it.
+    const client = await findRowByEmail<{ id: string }>("clients", "id", email);
 
     console.log("[LOGIN] Email:", email);
-    console.log("[LOGIN] Client:", client, "Error:", clientError?.message);
+    console.log("[LOGIN] Client:", client);
 
     // If client exists, link leads and send welcome email
     if (client) {
@@ -214,12 +215,22 @@ export async function POST(request: Request) {
       // fired the moment the client sets their password.
       await notifyAdminActivation(email, "LOGIN");
 
-      // Link unlinked leads by email
-      await supabaseAdmin
-        .from("leads")
-        .update({ client_id: client.id })
-        .eq("email", email)
-        .is("client_id", null);
+      // Link unlinked leads by email. Resolved to ids first and updated by id:
+      // the tolerant lookup's `%address%` pattern over-matches by design (it
+      // would also catch "foo@bar.com.au" for "foo@bar.com"), which is harmless
+      // for a read it filters afterwards and would be a wrong write here.
+      const emailLeads = await findRowsByEmail<{ id: string; client_id: string | null }>(
+        "leads",
+        "id, client_id",
+        email,
+      );
+      const unlinked = emailLeads.filter((l) => !l.client_id).map((l) => l.id);
+      if (unlinked.length > 0) {
+        await supabaseAdmin
+          .from("leads")
+          .update({ client_id: client.id })
+          .in("id", unlinked);
+      }
 
       // Find deals → leads and send welcome email for unsent ones
       const { data: deals, error: dealsErr } = await supabaseAdmin
