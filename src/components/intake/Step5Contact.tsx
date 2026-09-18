@@ -1379,7 +1379,7 @@ export default function Step5Contact({
                                 <div className="flex items-stretch gap-2">
                                     <input
                                         type="text"
-                                        placeholder="E.G. JANE2024"
+                                        placeholder="E.G. JANEK2026"
                                         value={referralCode}
                                         onChange={(e) => {
                                             setReferralCode(e.target.value);

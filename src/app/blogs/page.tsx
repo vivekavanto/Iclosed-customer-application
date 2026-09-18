@@ -3,13 +3,18 @@ import Link from "next/link";
 import Image from "next/image";
 import { Calendar, ArrowRight, BookOpen } from "lucide-react";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
-import { blogPosts } from "./blogData";
+import { listPublishedPosts } from "@/lib/blogPosts";
 
 export const metadata: Metadata = {
   title: "Blog | iClosed — Real Estate Law Insights",
   description:
     "Real estate law insights, guides, and homeowner resources from the iClosed Real Estate Law Desk.",
 };
+
+// Posts come from the database now, so this page can go stale. Five minutes is
+// the backstop; publishing calls revalidatePath("/blogs") and takes effect at
+// once, so nobody waits on this timer in practice.
+export const revalidate = 300;
 
 function IClosedLogo() {
   return (
@@ -27,8 +32,9 @@ function IClosedLogo() {
   );
 }
 
-export default function BlogsIndexPage() {
-  const [featured, ...rest] = blogPosts;
+export default async function BlogsIndexPage() {
+  const posts = await listPublishedPosts();
+  const [featured, ...rest] = posts;
 
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
@@ -81,6 +87,22 @@ export default function BlogsIndexPage() {
 
       {/* Featured post */}
       <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-14">
+        {/* An empty blog is a real state now that posts live in a table — an
+            unpublished-everything moment, or a database read that failed. The
+            page keeps its header, hero and CTA rather than crashing on an
+            undefined `featured`. */}
+        {!featured && (
+          <div className="rounded-3xl border border-gray-100 bg-white px-6 py-16 text-center">
+            <p className="text-base font-semibold text-gray-900">
+              No articles published yet
+            </p>
+            <p className="mt-2 text-sm text-gray-500">
+              New guides from the iClosed Real Estate Law Desk are on the way.
+            </p>
+          </div>
+        )}
+
+        {featured && (
         <Link href={`/blogs/${featured.slug}`} className="group mb-10 block">
           <article className="overflow-hidden rounded-3xl border border-[#f0e4e4] bg-white shadow-[0_4px_32px_rgba(0,0,0,0.07)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-red-200/70 hover:shadow-[0_28px_72px_rgba(193,0,7,0.12)]">
             <div className="flex flex-col md:flex-row">
@@ -133,6 +155,7 @@ export default function BlogsIndexPage() {
             </div>
           </article>
         </Link>
+        )}
 
         {/* Rest of posts */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:gap-7">

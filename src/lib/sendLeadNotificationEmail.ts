@@ -1,12 +1,30 @@
-import { INTERNAL_ALERT_TO } from "@/lib/resend";
+import { NEW_LEAD_ALERT_TO } from "@/lib/resend";
 import { sendEmail } from "@/lib/email/emailTransport";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
+
+// Wording of last resort, used only when the "Lead Notification Email" row is
+// missing, renamed or deactivated. The row is the source of truth so staff can
+// reword this from /admin/templates/emails without a deploy — but before this
+// fallback existed a missing row meant the alert simply never went out, which
+// is the one failure nobody would notice.
+//
+// Deliberately free of client details: the alert's job is to say "go look",
+// and keeping names, addresses and prices out of the inbox means a new lead
+// costs nothing if a mailbox is later compromised.
+const FALLBACK_SUBJECT = "New lead on iClosed";
+const FALLBACK_BODY = `
+<p>A new lead just signed up on iClosed.</p>
+<p>Please look into iClosed for the details.</p>`;
 
 /**
  * Sends a new-lead notification email to the iClosed team
  * so law clerks are notified when a new intake is completed.
  * Uses the "Lead Notification Email" template from the email_templates table.
+ *
+ * Called ONCE per intake, for the primary lead — the copy carries no
+ * per-person detail, so sending it again for each co-purchaser would just put
+ * the same message in the inbox two or three times.
  */
 export async function sendLeadNotificationEmail(leadId: string): Promise<boolean> {
   try {
@@ -33,9 +51,13 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
       .limit(1)
       .maybeSingle();
 
-    if (tmplErr || !template?.body) {
-      console.error("[LeadNotification] Template not found in email_templates table");
-      return false;
+    if (tmplErr) {
+      console.error("[LeadNotification] Template lookup failed:", tmplErr);
+    }
+    if (!template?.body) {
+      console.warn(
+        "[LeadNotification] No active 'Lead Notification' template — using the built-in copy",
+      );
     }
 
     // ── Build variables for template ─────────────────────────
@@ -140,19 +162,29 @@ export async function sendLeadNotificationEmail(leadId: string): Promise<boolean
     };
 
     // ── Render template with all placeholders ────────────────
-    const html = renderMilestoneTemplate(template.body, templateVariables);
+    // The variables above are still passed even though the shipped copy uses
+    // none of them: leaving them wired means staff can put the detail table
+    // back into the template row if they ever want it, without a code change.
+    const html = renderMilestoneTemplate(template?.body || FALLBACK_BODY, templateVariables);
 
     const subject = resolveTemplateSubject(
       template,
       templateVariables,
-      `New Lead: ${fullName}${lead.lead_type ? ` — ${lead.lead_type}` : ""}`,
+      FALLBACK_SUBJECT,
     );
+
+    if (NEW_LEAD_ALERT_TO.length === 0) {
+      console.warn(
+        "[LeadNotification] NEW_LEAD_ALERT_EMAILS is empty — no recipients, skipping",
+      );
+      return false;
+    }
 
     // Internal staff alert: firm-agnostic by design (firmEmail.ts reserves
     // EMAIL_FROM for exactly these), so `firm: null` also pins it to Resend
     // whatever the SMTP rollout does.
     const result = await sendEmail(
-      { to: [INTERNAL_ALERT_TO], subject, html },
+      { to: NEW_LEAD_ALERT_TO, subject, html },
       { firm: null, label: "lead-notification" },
     );
 

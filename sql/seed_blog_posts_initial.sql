@@ -1,27 +1,35 @@
-export interface BlogPost {
-  slug: string;
-  title: string;
-  excerpt: string;
-  date: string;
-  readTime: string;
-  image: string;
-  author: string;
-  tags: string[];
-  content: string;
-}
+-- The three posts that lived in src/app/blogs/blogData.ts, moved into the
+-- blog_posts table so the public site and the dashboard read one source.
+--
+-- GENERATED from blogData.ts — do not hand-edit. The article bodies are copied
+-- byte for byte, emoji headings and typographic apostrophes included: changing
+-- published copy during a storage migration makes any later diff meaningless.
+--
+-- The slugs below are live URLs with whatever ranking they have earned. They
+-- must not change.
+--
+-- Two notes on the values:
+--   * published_at is parsed from the human-readable `date` string at noon UTC.
+--   * cover_image_alt is seeded from the title as a placeholder. It is real alt
+--     text only once someone writes it; Gemini suggests one on re-format.
+--
+-- Where the dashboard's hardcoded copies disagreed with blogData.ts on dates,
+-- blogData.ts won — it is what the public site actually showed.
+--
+-- Run AFTER create_blog_posts.sql. Safe to re-run: ON CONFLICT DO NOTHING.
 
-export const blogPosts: BlogPost[] = [
-  {
-    slug: "why-title-insurance-is-essential-for-ontario-homebuyers",
-    title: "Why Title Insurance Is Essential for Ontario Homebuyers",
-    excerpt:
-      "Why title insurance is essential protection for Ontario homebuyers and investors.",
-    date: "May 17, 2026",
-    readTime: "5 min read",
-    image: "/blog1.png",
-    author: "IClosed Real Estate Law Desk",
-    tags: ["Title Insurance", "Ontario", "Real Estate Law", "Homebuyers"],
-    content: `
+INSERT INTO blog_posts (
+  slug, status, published_at,
+  title, excerpt, content_html, content_source, reading_time_min,
+  cover_image_url, cover_image_alt, author, tags,
+  seo_source, format_source
+) VALUES (
+  $blog$why-title-insurance-is-essential-for-ontario-homebuyers$blog$,
+  'published',
+  $blog$2026-05-17T12:00:00.000Z$blog$::timestamptz,
+  $blog$Why Title Insurance Is Essential for Ontario Homebuyers$blog$,
+  $blog$Why title insurance is essential protection for Ontario homebuyers and investors.$blog$,
+  $blog$
       <p><em>From the Real Estate Law Desk at IClosed</em></p>
 
       <p>When you purchase property in Ontario — whether it's your first home, a commercial unit, or a pre-construction condo — you're entering a chain of ownership that may span generations. At IClosed, we've encountered countless cases where a clean-looking transaction turned legally complicated because title insurance wasn't in place. That's why we don't just recommend title insurance. We consider it a crucial layer of legal protection.</p>
@@ -65,19 +73,30 @@ export const blogPosts: BlogPost[] = [
 
       <h2>📞 Have Questions About Title Insurance or a Real Estate Closing in Ontario?</h2>
       <p>Speak with a real estate lawyer today at IClosed. Call us at (416) 321-1100 or email info@iclosed.ca.</p>
-    `,
-  },
-  {
-    slug: "disbursements-what-are-they-and-why-are-you-paying-them",
-    title: "Disbursements: What Are They and Why Are You Paying Them?",
-    excerpt:
-      "Understanding disbursements in Ontario real estate transactions — the out-of-pocket expenses your lawyer incurs on your behalf.",
-    date: "May 17, 2026",
-    readTime: "7 min read",
-    image: "/blog2.png",
-    author: "IClosed Real Estate Law Desk",
-    tags: ["Disbursements", "Closing Costs", "Legal Fees", "Real Estate"],
-    content: `
+    $blog$,
+  NULL,
+  5,
+  $blog$/blog1.png$blog$,
+  $blog$Why Title Insurance Is Essential for Ontario Homebuyers$blog$,
+  $blog$IClosed Real Estate Law Desk$blog$,
+  ARRAY[$blog$Title Insurance$blog$, $blog$Ontario$blog$, $blog$Real Estate Law$blog$, $blog$Homebuyers$blog$]::text[],
+  'manual',
+  'manual'
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO blog_posts (
+  slug, status, published_at,
+  title, excerpt, content_html, content_source, reading_time_min,
+  cover_image_url, cover_image_alt, author, tags,
+  seo_source, format_source
+) VALUES (
+  $blog$disbursements-what-are-they-and-why-are-you-paying-them$blog$,
+  'published',
+  $blog$2026-05-17T12:00:00.000Z$blog$::timestamptz,
+  $blog$Disbursements: What Are They and Why Are You Paying Them?$blog$,
+  $blog$Understanding disbursements in Ontario real estate transactions — the out-of-pocket expenses your lawyer incurs on your behalf.$blog$,
+  $blog$
       <p><em>Real Estate Law Insights from IClosed</em></p>
 
       <p>Let's say you're buying or selling a property in Ontario. You hire a lawyer and get a quote for legal fees. But when closing time comes, there's another section on your invoice labeled "disbursements."</p>
@@ -145,20 +164,30 @@ export const blogPosts: BlogPost[] = [
       <p>Let's talk numbers — clearly, fairly, and with your best interest in mind.</p>
 
       <p>Located in 10 Milner Business Court, Suite 210 Toronto, ON, M1B 3C6<br/>Call us at 416-321-1100<br/>Email: info@iclosed.ca</p>
-    `,
-  },
-  {
-    slug: "understanding-real-estate-transaction-costs-legal-side",
-    title:
-      "Understanding Real Estate Transaction Costs: The Legal Side They Don't Tell You About",
-    excerpt:
-      "Breaking down the real estate transaction costs you will encounter in Ontario — and the ones most people overlook.",
-    date: "May 17, 2026",
-    readTime: "6 min read",
-    image: "/blog3.png",
-    author: "IClosed Real Estate Law Desk",
-    tags: ["Transaction Costs", "Real Estate Law", "Ontario", "Legal Fees"],
-    content: `
+    $blog$,
+  NULL,
+  7,
+  $blog$/blog2.png$blog$,
+  $blog$Disbursements: What Are They and Why Are You Paying Them?$blog$,
+  $blog$IClosed Real Estate Law Desk$blog$,
+  ARRAY[$blog$Disbursements$blog$, $blog$Closing Costs$blog$, $blog$Legal Fees$blog$, $blog$Real Estate$blog$]::text[],
+  'manual',
+  'manual'
+)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO blog_posts (
+  slug, status, published_at,
+  title, excerpt, content_html, content_source, reading_time_min,
+  cover_image_url, cover_image_alt, author, tags,
+  seo_source, format_source
+) VALUES (
+  $blog$understanding-real-estate-transaction-costs-legal-side$blog$,
+  'published',
+  $blog$2026-05-17T12:00:00.000Z$blog$::timestamptz,
+  $blog$Understanding Real Estate Transaction Costs: The Legal Side They Don't Tell You About$blog$,
+  $blog$Breaking down the real estate transaction costs you will encounter in Ontario — and the ones most people overlook.$blog$,
+  $blog$
       <p><em>Real Estate Law Brief from IClosed | Serving Ontario Buyers &amp; Sellers</em></p>
 
       <p>You've found the perfect property. The price is right. Your financing is approved. But suddenly, the final number at closing looks a lot higher than expected.</p>
@@ -230,10 +259,14 @@ export const blogPosts: BlogPost[] = [
       <p>Talk to a real estate lawyer today at IClosed.</p>
 
       <p>📍 Located in Markham and Milner<br/>📞 416-321-1100<br/>📧 info@iclosed.ca</p>
-    `,
-  },
-];
-
-export function getBlogPost(slug: string): BlogPost | undefined {
-  return blogPosts.find((p) => p.slug === slug);
-}
+    $blog$,
+  NULL,
+  6,
+  $blog$/blog3.png$blog$,
+  $blog$Understanding Real Estate Transaction Costs: The Legal Side They Don't Tell You About$blog$,
+  $blog$IClosed Real Estate Law Desk$blog$,
+  ARRAY[$blog$Transaction Costs$blog$, $blog$Real Estate Law$blog$, $blog$Ontario$blog$, $blog$Legal Fees$blog$]::text[],
+  'manual',
+  'manual'
+)
+ON CONFLICT DO NOTHING;

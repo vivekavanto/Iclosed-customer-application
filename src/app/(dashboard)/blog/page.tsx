@@ -1,75 +1,16 @@
-"use client";
-
 import { Calendar, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Link from "next/link";
 import Image from "next/image";
+import { listPublishedPosts } from "@/lib/blogPosts";
 
-const blogPosts = [
-  {
-    id: 1,
-    title: "Why Title Insurance Is Essential for Ontario Homebuyers",
-    excerpt:
-      "Why title insurance is essential protection for Ontario homebuyers and investors.",
-    date: "February 27, 2026",
-    status: "published" ,
-    readTime: "5 min read",
-    image: "/blog1.png",
-  },
-  {
-    id: 2,
-    title: "Disbursements: What Are They and Why Are You Paying Them?",
-    excerpt:
-      "Understanding disbursements in Ontario real estate transactions - the out-of-pocket expenses your lawyer incurs on your behalf.",
-    date: "February 27, 2026",
-    status: "published" ,
-    readTime: "7 min read",
-    image: "/blog2.png",
-  },
-  {
-    id: 3,
-    title: "Understanding Real Estate Transaction Costs: The Legal Side They Dont Tell You About",
-    excerpt:
-      "Breaking down the real estate transaction costs you will encounter in Ontario - and the ones most people overlook.",
-    date: "February 27, 2026",
-    status: "published" ,
-    readTime: "4 min read",
-    image: "/blog3.png",
-  },
-  {
-    id: 4,
-    title: "Legal Deed vs. Mortgage: Key Differences Explained",
-    excerpt:
-      "Clarify the differences between a legal deed and a mortgage and what each means for your property ownership.",
-    date: "February 10, 2026",
-    status: "draft" ,
-    readTime: "6 min read",
-    image: "/blog1.png",
-  },
-  {
-    id: 5,
-    title: "First-Time Homebuyer: Common Mistakes to Avoid",
-    excerpt:
-      "Don't let common pitfalls derail your home purchase. Learn what first-time buyers should watch out for.",
-    date: "February 5, 2026",
-    status: "draft" ,
-    readTime: "8 min read",
-    image: "/blog2.png",
-  },
-  {
-    id: 6,
-    title: "The Role of Title Insurance in Your Property Purchase",
-    excerpt:
-      "Discover why title insurance is essential and how it protects your investment in real estate.",
-    date: "January 30, 2026",
-    status: "draft" ,
-    readTime: "5 min read",
-    image: "/blog3.png",
-  },
-];
+// Reads the same table as the public /blogs pages. This used to be its own
+// hardcoded array of six posts — with dates that disagreed with the public
+// site's copy of the same articles — plus a third copy in [id]/page.tsx.
+export const revalidate = 300;
 
-export default function Blog() {
-  const publishedPosts = blogPosts.filter((post) => post.status === "published");
+export default async function Blog() {
+  const publishedPosts = await listPublishedPosts();
   const [featured, ...rest] = publishedPosts;
 
   if (!featured) {
@@ -80,7 +21,7 @@ export default function Blog() {
             <div className="mb-3 flex items-center justify-center gap-3">
               <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C10007]/30" />
               <p className="text-[11px] font-bold uppercase tracking-[0.26em] text-[#C10007]">
-                Blog management
+                iClosed Insights
               </p>
               <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C10007]/30" />
             </div>
@@ -103,17 +44,17 @@ export default function Blog() {
           <div className="mb-3 flex items-center justify-center gap-3">
             <span className="h-px w-12 bg-gradient-to-r from-transparent to-[#C10007]/30" />
             <p className="text-[11px] font-bold uppercase tracking-[0.26em] text-[#C10007]">
-              Blog management
+              iClosed Insights
             </p>
             <span className="h-px w-12 bg-gradient-to-l from-transparent to-[#C10007]/30" />
           </div>
           <h2 className="text-3xl font-bold tracking-tight text-gray-900 md:text-4xl">
-            Create and manage your blog content
+            Real estate law, made clear
           </h2>
         </div>
 
 
-        <Link href={`/blog/${featured.id}`} className="group mb-8 block">
+        <Link href={`/blog/${featured.slug}`} className="group mb-8 block">
           <article className="overflow-hidden rounded-3xl border border-[#f0e4e4] bg-white shadow-[0_4px_32px_rgba(0,0,0,0.07)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-red-200/70 hover:shadow-[0_28px_72px_rgba(193,0,7,0.12)]">
             <div className="flex flex-col md:flex-row">
 
@@ -168,7 +109,7 @@ export default function Blog() {
           {rest.map((post) => (
             <Link
               key={post.id}
-              href={`/blog/${post.id}`}
+              href={`/blog/${post.slug}`}
               className="group block h-full"
             >
               <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition-all duration-300 ease-out hover:-translate-y-2 hover:border-red-100 hover:shadow-[0_20px_56px_rgba(193,0,7,0.10)]">

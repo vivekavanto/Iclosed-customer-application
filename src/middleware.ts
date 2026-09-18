@@ -40,6 +40,11 @@ const PROTECTED_PAGES = [
   "/documents",
   "/profile",
   "/retainer",
+  // Blog admin. Defence in depth only: this check knows whether there is a
+  // session, not whether it belongs to staff. The real gate is the
+  // getAdminSession() call in src/app/(admin)/admin/blog/layout.tsx, which is
+  // what separates a signed-in client from a member of admin_users.
+  "/admin",
 ];
 
 // Refresh this far ahead of the access token's expiry. Doing it while the old
@@ -310,5 +315,7 @@ export const config = {
     "/profile/:path*",
     "/retainer",
     "/retainer/:path*",
+    "/admin",
+    "/admin/:path*",
   ],
 };

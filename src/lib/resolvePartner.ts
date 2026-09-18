@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { buildReferralCode } from "@/lib/referralCode";
+
 // Partners (referral sources) live in the shared `partners` table. When a client
 // keys in an agent/broker at intake instead of using a referral code, we resolve
 // them here: link to an existing partner by email, or create a new one with an
@@ -8,9 +10,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // clients.
 //
 // The referral-code generation MUST stay in lockstep with the admin panel, which
-// reads/writes the same table. Canonical source mirrored here:
-//   D:\iclosed_dev_admin\src\app\api\admin\partners\route.ts (derivePrefix + the
-//   globally-sequential number + 23505 retry). Keep both in sync.
+// reads/writes the same table. The scheme itself now lives in lib/referralCode.ts
+// (first name + the second name's initial + the year, SARUJANK2026), mirrored
+// verbatim from D:\iclosed_dev_admin\src\lib\referralCode.ts. Only the
+// read-codes / insert / 23505-retry dance around it is repeated per repo.
 
 // Map the intake "How did you hear about us?" value onto the partners
 // .brokerage_type CHECK constraint ('Real Estate Agent' | 'Mortgage Broker').
@@ -23,16 +26,6 @@ export function partnerTypeFromSource(
   if (s.includes("agent")) return "Real Estate Agent";
   if (s.includes("broker")) return "Mortgage Broker";
   return null;
-}
-
-// Derive the code prefix from the partner's first name (fallback: email
-// local-part, fallback: PTNR). Uppercased letters only, capped at 8 chars.
-function derivePrefix(name?: string | null, email?: string | null): string {
-  const firstToken = (name ?? "").trim().split(/\s+/)[0] ?? "";
-  const emailLocal = (email ?? "").split("@")[0] ?? "";
-  const source = firstToken || emailLocal || "PTNR";
-  const cleaned = source.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8);
-  return cleaned || "PTNR";
 }
 
 interface PartnerInput {
@@ -70,28 +63,30 @@ export async function findOrCreatePartner(
   );
   if (match) return { id: match.id };
 
-  // 2. Create a new partner with a globally-sequential referral code. The
-  //    sequence spans soft-deleted rows too, so a retired code is never
-  //    reissued — matching the admin panel's nextSequenceBase().
-  const prefix = derivePrefix(name, normalizedEmail);
+  // 2. Create a new partner with a name-derived referral code. The read spans
+  //    soft-deleted rows too, so a retired code is never reissued and a name
+  //    collision extends into the second name instead — matching the admin
+  //    panel, which reads the same set before building a code.
   const { data: codes, error: codesError } = await supabase
     .from("partners")
     .select("referral_code");
   if (codesError) throw codesError;
 
-  let maxNum = 0;
+  const taken = new Set<string>();
   for (const row of codes ?? []) {
-    const m = /(\d+)$/.exec(row.referral_code ?? "");
-    if (!m) continue;
-    const n = parseInt(m[1], 10);
-    if (!isNaN(n) && n > maxNum) maxNum = n;
+    const code = (row.referral_code ?? "").trim().toUpperCase();
+    if (code) taken.add(code);
   }
 
   // Fall back to the email local-part if the name is blank.
   const partnerName = (name ?? "").trim() || normalizedEmail.split("@")[0] || "Partner";
 
   for (let attempt = 1; attempt <= 10; attempt++) {
-    const referral_code = `${prefix}${String(maxNum + attempt).padStart(4, "0")}`;
+    const referral_code = buildReferralCode({
+      name: partnerName,
+      email: normalizedEmail,
+      taken,
+    });
     const { data, error } = await supabase
       .from("partners")
       .insert([
@@ -108,8 +103,12 @@ export async function findOrCreatePartner(
       .single();
 
     if (!error) return { id: data.id };
-    // Unique violation on referral_code — another insert took this number; retry.
-    if (error.code === "23505") continue;
+    // Unique violation on referral_code — another insert took this code; retry
+    // with it marked as taken so the next candidate is a longer one.
+    if (error.code === "23505") {
+      taken.add(referral_code.toUpperCase());
+      continue;
+    }
     throw error;
   }
 

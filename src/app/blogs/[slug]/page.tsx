@@ -11,37 +11,70 @@ import {
   MapPin,
 } from "lucide-react";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
-import { blogPosts, getBlogPost } from "../blogData";
+import {
+  listPublishedPosts,
+  listPublishedSlugs,
+  getPublishedPost,
+} from "@/lib/blogPosts";
 import ShareButtons from "./ShareButtons";
+import BlogArticleBody from "@/components/blog/BlogArticleBody";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+export const revalidate = 300;
+
 export async function generateStaticParams() {
-  return blogPosts.map((post) => ({ slug: post.slug }));
+  // Published only — a draft must never be prerendered into the build output.
+  // `dynamicParams` stays at its default, so a post published after the last
+  // build still renders on its first request instead of 404ing until a deploy.
+  const slugs = await listPublishedSlugs();
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = getBlogPost(slug);
+  const post = await getPublishedPost(slug);
 
   if (!post) {
-    return {
-      title: "Blog not found | iClosed",
-    };
+    return { title: "Blog not found | iClosed" };
   }
 
+  // meta_* are what Google prints; title/excerpt are what a human reads on the
+  // page. They are allowed to differ, and a post that was never hand-tuned
+  // falls back to the human-facing pair rather than rendering nothing.
+  const title = post.metaTitle ?? `${post.title} | iClosed`;
+  const description = post.metaDescription ?? post.excerpt;
+  const image = post.ogImageUrl ?? post.image;
+
   return {
-    title: `${post.title} | iClosed`,
-    description: post.excerpt,
+    title,
+    description,
+    keywords: post.tags,
+    authors: [{ name: post.author }],
+    alternates: { canonical: post.canonicalUrl ?? `/blogs/${post.slug}` },
+    robots: post.noindex ? { index: false, follow: true } : undefined,
     openGraph: {
-      title: post.title,
-      description: post.excerpt,
-      images: [post.image],
       type: "article",
+      siteName: "iClosed",
+      locale: "en_CA",
+      url: `/blogs/${post.slug}`,
+      title: post.metaTitle ?? post.title,
+      description,
+      publishedTime: post.publishedAt ?? undefined,
+      modifiedTime: post.updatedAt,
+      authors: [post.author],
+      tags: post.tags,
+      images: [{ url: image, width: 1200, height: 630, alt: post.imageAlt }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.metaTitle ?? post.title,
+      description,
+      images: [image],
     },
   };
 }
@@ -64,13 +97,13 @@ function IClosedLogo() {
 
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
-  const post = getBlogPost(slug);
+  const post = await getPublishedPost(slug);
 
   if (!post) {
     notFound();
   }
 
-  const relatedPosts = blogPosts
+  const relatedPosts = (await listPublishedPosts())
     .filter((p) => p.slug !== post.slug)
     .slice(0, 2);
 
@@ -188,21 +221,33 @@ export default async function BlogPostPage({ params }: PageProps) {
 
       {/* Main content */}
       <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-        <article
-          className="
-            mb-12
-            [&_h2]:mb-5 [&_h2]:mt-12 [&_h2]:border-l-[3px] [&_h2]:border-[#C10007]
-            [&_h2]:pl-5 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-gray-900
-            [&_li]:text-[15.5px] [&_li]:leading-[1.8] [&_li]:text-gray-600
-            [&_p]:mb-5 [&_p]:text-[16px] [&_p]:leading-[1.85] [&_p]:text-gray-600
-            [&_strong]:font-semibold [&_strong]:text-gray-800
-            [&_ul]:mb-6 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-7
-            [&_blockquote]:mb-6 [&_blockquote]:rounded-2xl [&_blockquote]:border-l-4 [&_blockquote]:border-[#C10007]
-            [&_blockquote]:bg-red-50/60 [&_blockquote]:px-6 [&_blockquote]:py-4 [&_blockquote]:text-[15px]
-            [&_blockquote]:leading-relaxed [&_blockquote]:text-gray-700
-          "
-          dangerouslySetInnerHTML={{ __html: post.content }}
-        />
+        <BlogArticleBody html={post.content} />
+
+        {/* The FAQ block. Rendered from the same data that becomes FAQPage
+            JSON-LD — structured data must never describe content a visitor
+            cannot see, and this is also the passage an AI Overview quotes. */}
+        {post.faq.length > 0 && (
+          <section className="mb-12">
+            <h2 className="mb-6 border-l-[3px] border-[#C10007] pl-5 text-xl font-bold tracking-tight text-gray-900">
+              Frequently asked questions
+            </h2>
+            <div className="space-y-4">
+              {post.faq.map((item) => (
+                <details
+                  key={item.question}
+                  className="group rounded-2xl border border-gray-100 bg-white px-6 py-4 shadow-[0_2px_12px_rgba(0,0,0,0.04)]"
+                >
+                  <summary className="cursor-pointer list-none text-[15.5px] font-semibold text-gray-900 marker:hidden">
+                    {item.question}
+                  </summary>
+                  <p className="mt-3 text-[15.5px] leading-[1.8] text-gray-600">
+                    {item.answer}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Share + Contact card */}
         <ShareButtons title={post.title} />

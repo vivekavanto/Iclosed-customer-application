@@ -2,8 +2,10 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
+import { notifyNewLead } from "@/lib/notifyNewLead";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
+import { normalizeEmailForStorage } from "@/lib/normalizeEmail";
 import { NextResponse } from "next/server";
 import {
   normalizePostalCode,
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
     const {
       first_name,
       last_name,
-      email,
+      email: rawEmail,
       phone,
       service,
       sub_service,
@@ -57,9 +59,20 @@ export async function POST(req: Request) {
       partner_id,
       referral_agent_name,
       referral_agent_company,
-      referral_agent_email,
+      referral_agent_email: rawReferralAgentEmail,
       referral_agent_phone,
     } = body;
+
+    // Addresses are cleaned ONCE, here, so every use below — the duplicate
+    // checks, the client/lead inserts, the welcome email — sees the same value.
+    //
+    // Storing the raw typed value is what broke the agent signup notification:
+    // Supabase Auth trims the address it registers, so a pasted trailing space
+    // left the lead/client row unfindable from the login identity, the admin
+    // never promoted the deal off "Inactive", and the referring agent was never
+    // told their client had signed up. See lib/normalizeEmail.ts.
+    const email = normalizeEmailForStorage(rawEmail);
+    const referral_agent_email = normalizeEmailForStorage(rawReferralAgentEmail);
 
     // Postal codes are stored uppercase everywhere.
     const address_postal_code =
@@ -505,10 +518,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
 
-    // Track every lead row created in this intake so each one triggers an
-    // admin notification, regardless of path (primary, co-person, sale-split).
-    const notifyLeadIds: string[] = [lead.id];
-
     // ── 3. Create co-person leads ─────────────────────────────
     const coPersonLeadIds: string[] = [];
     const coPersonLeadIdByFormId = new Map<string, string>();
@@ -530,7 +539,10 @@ export async function POST(req: Request) {
             .insert({
               first_name: cpFirst || "",
               last_name: cpLast || "",
-              email: cp.email,
+              // Same cleaning as the primary lead — a co-purchaser signs in
+              // under their own login, so an untrimmed address strands their
+              // activation (and the agent notification) exactly the same way.
+              email: normalizeEmailForStorage(cp.email),
               phone: cp.phone || null,
               service,
               sub_service: service === "closing" ? sub_service : null,
@@ -573,7 +585,6 @@ export async function POST(req: Request) {
           } else if (cpLead) {
             coPersonLeadIds.push(cpLead.id);
             if (cp.id) coPersonLeadIdByFormId.set(cp.id, cpLead.id);
-            notifyLeadIds.push(cpLead.id);
           }
         } catch (cpErr) {
           console.warn("[Intake] Co-person lead creation failed (non-blocking):", cpErr);
@@ -672,17 +683,29 @@ export async function POST(req: Request) {
       console.error("[Intake] Welcome email failed:", err);
     }
 
-    // ── 6. Notify iClosed team for every lead created in this intake ───
+    // ── 6. Notify the iClosed team that a lead has arrived ─────────────
+    // ONE alert per intake, for the primary lead — by email to the back office
+    // and as a row in the admin's in-app feed (which also lights the yellow dot
+    // on the sidebar's Leads button).
+    //
+    // This used to loop over every lead row created here and email once each.
+    // The copy no longer carries per-person detail, so that would put the same
+    // message in the inbox two or three times for a couple buying together —
+    // the co-purchasers are part of the same arriving file, and staff open the
+    // file, not the person.
+    //
     // Awaited so a serverless instance termination after the response can't
-    // silently drop the notification. Each send is wrapped individually so
-    // one failure doesn't skip the others.
-    await Promise.all(
-      notifyLeadIds.map((id) =>
-        sendLeadNotificationEmail(id).catch((err) =>
-          console.error("[Intake] Team notification failed for lead", id, err)
-        )
-      )
-    );
+    // silently drop them, and each is wrapped on its own so a failing email
+    // doesn't cost us the in-app alert (or the other way round). Neither can
+    // fail the intake: the lead is already saved.
+    await Promise.all([
+      sendLeadNotificationEmail(lead.id).catch((err) =>
+        console.error("[Intake] Team notification email failed for lead", lead.id, err)
+      ),
+      notifyNewLead(lead.id).catch((err) =>
+        console.error("[Intake] In-app new-lead alert failed for lead", lead.id, err)
+      ),
+    ]);
 
     return NextResponse.json({
       success: true,
