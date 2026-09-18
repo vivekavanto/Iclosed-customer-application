@@ -12,7 +12,7 @@ import { endClientSession } from "@/lib/sessionClient";
 
 const navLinks = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Shared Documents", href: "/documents", icon: FileText },
+  { label: "Your Documents", href: "/documents", icon: FileText },
   // { label: "Blog", href: "/blog", icon: BookOpen },
 ];
 
