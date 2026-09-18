@@ -9,7 +9,7 @@ if (!apiKey) {
 export const resend = new Resend(apiKey);
 
 export const EMAIL_FROM =
-  process.env.EMAIL_FROM || "iClosed <noreply@iclosed.ca>";
+  process.env.EMAIL_FROM || "iClosed <hello@iclosed.ca>";
 
 /**
  * Where replies go — the SAME address on every outbound email, client-facing or
@@ -18,7 +18,7 @@ export const EMAIL_FROM =
  * inbox nobody watches. Override per environment with EMAIL_REPLY_TO.
  */
 export const EMAIL_REPLY_TO =
-  process.env.EMAIL_REPLY_TO?.trim() || "support@iclosed.ca";
+  process.env.EMAIL_REPLY_TO?.trim() || "hello@iclosed.ca";
 
 /**
  * Back-office inbox that RECEIVES staff-facing alerts (new lead, citizenship

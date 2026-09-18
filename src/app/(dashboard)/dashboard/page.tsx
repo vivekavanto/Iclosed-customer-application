@@ -30,6 +30,7 @@ import { isPerPartyTask, isPersonalInfoTask, isUploadIdTask } from "@/lib/taskKi
 import { isDepositTask } from "@/lib/depositTask";
 import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
+import { getFirm, type FirmKey } from "@/lib/firms";
 import { useToast } from "@/components/ui/Toast";
 
 /** Per-party completion summary for a Personal Info / Upload ID task. */
@@ -123,6 +124,10 @@ interface PropertyData {
   // deal (party to only that one side). null for a primary client (sees both).
   // Computed authoritatively by /api/dashboardproperty.
   recipient_side: "purchase" | "sale" | null;
+  // Which firm retains this file — "navawilson" or "iclosed". Resolved from
+  // the transaction's ROOT lead by /api/dashboardproperty, and used to pick
+  // the contact details shown to this client.
+  firm_key?: FirmKey | null;
   // Everyone on this transaction (primary + co-persons).
   parties?: Party[];
 }
@@ -973,6 +978,10 @@ export default function DashboardPage() {
   // ── Derived: active property + deal ──────────────────────
   const activeProperty = properties.find((p) => p.lead_id === activeLeadId) ?? null;
   const activeDealId = activeProperty?.deal_id ?? null;
+  // The firm whose name, telephone number and mailbox this client is shown.
+  // Falls back to DEFAULT_FIRM_KEY (inside getFirm) while properties are still
+  // loading, so the card never renders with blank contact details.
+  const activeFirm = getFirm(activeProperty?.firm_key);
   const activeDeal = activeDealId ? (deals.find((d) => d.id === activeDealId) ?? null) : null;
 
   const leadId = activeLeadId;
@@ -1387,6 +1396,7 @@ export default function DashboardPage() {
         leadId={leadId ?? undefined}
         clientFirstName={activeProperty?.first_name}
         clientLastName={activeProperty?.last_name}
+        firmKey={activeProperty?.firm_key}
         side={activeTask?.side ?? dealTypeToSide(activeDeal?.type)}
         onTaskCompleted={(id) => {
           setDynamicDrawerOpen(false);
@@ -1419,6 +1429,7 @@ export default function DashboardPage() {
         leadId={drawerLeadId}
         clientFirstName={drawerFirstName}
         clientLastName={drawerLastName}
+        firmKey={activeProperty?.firm_key}
         onBehalf={isOnBehalf}
         behalfTargets={behalfTargets}
         selectedBehalfLeadId={selectedBehalfLeadId}
@@ -1658,7 +1669,7 @@ export default function DashboardPage() {
             <div className="space-y-2.5">
               {/* Call */}
               <a
-                href="tel:416-321-1100"
+                href={`tel:${activeFirm.supportPhone}`}
                 className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
               >
                 <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
@@ -1668,13 +1679,15 @@ export default function DashboardPage() {
                   <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
                     Call us
                   </p>
-                  <p className="text-sm font-bold text-gray-900">416-321-1100</p>
+                  <p className="text-sm font-bold text-gray-900">
+                    {activeFirm.supportPhone}
+                  </p>
                 </div>
               </a>
 
               {/* Email */}
               <a
-                href="mailto:iclosed@navawilson.law"
+                href={`mailto:${activeFirm.supportEmail}`}
                 className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
               >
                 <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
@@ -1685,7 +1698,7 @@ export default function DashboardPage() {
                     Email us
                   </p>
                   <p className="text-xs font-bold text-gray-900 break-all">
-                    iclosed@navawilson.law
+                    {activeFirm.supportEmail}
                   </p>
                 </div>
               </a>

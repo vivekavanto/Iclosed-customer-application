@@ -74,6 +74,27 @@ export interface FirmProfile {
   /** Where a client's reply actually lands. */
   replyToEmail: string;
   /**
+   * The telephone number the PORTAL shows a client under "Need Assistance?".
+   *
+   * Per-firm because a client reads it, even though both values are the same
+   * number today: iClosed works out of the Nava Wilson office, so the
+   * switchboard is shared — SHARED_LETTERHEAD in closingCostSettings.ts prints
+   * this same number on both firms' statements. It is a field rather than a
+   * shared constant so that the day iClosed LLP takes its own line, the portal
+   * follows by editing one string here.
+   */
+  supportPhone: string;
+  /**
+   * The address the PORTAL tells a client to write to.
+   *
+   * Deliberately its own field rather than a reuse of `fromEmail` /
+   * `replyToEmail`: those two are ROUTING, and `fromEmail` in particular is
+   * constrained by which domains Resend has verified — which is no reason to
+   * print the wrong address in front of a client. It must still be a mailbox
+   * the firm's clerks actually read.
+   */
+  supportEmail: string;
+  /**
    * Brand lockup for the retainer PDF, read from this app's `public/`, plus
    * the geometry to draw it at.
    *
@@ -139,6 +160,8 @@ export const FIRMS: Record<FirmKey, FirmProfile> = {
     footerName: "Nava Wilson Professional Corporation",
     fromEmail: "iClosed <iclosed@navawilson.law>",
     replyToEmail: "iclosed@navawilson.law",
+    supportPhone: "416-321-1100",
+    supportEmail: "iclosed@navawilson.law",
     // Ink starts at pixel 87 of 1108 across, 16% down.
     pdfLogo: { file: "logo-full.png", height: 54, lift: 13, gap: 2, inkLeft: 87 / 1108 },
     emailLogoFile: "email-logo.png",
@@ -152,8 +175,10 @@ export const FIRMS: Record<FirmKey, FirmProfile> = {
     legalName: "iClosed LLP",
     introName: "iClosed LLP",
     footerName: "iClosed LLP",
-    fromEmail: "iClosed <support@iclosed.ca>",
-    replyToEmail: "support@iclosed.ca",
+    fromEmail: "iClosed <hello@iclosed.ca>",
+    replyToEmail: "hello@iclosed.ca",
+    supportPhone: "416-321-1100",
+    supportEmail: "hello@iclosed.ca",
     // The bare iClosed wordmark. Intentionally NOT logo-full.png — that
     // lockup carries the "POWERED BY NAVA WILSON" tagline, which is exactly
     // what an iClosed LLP retainer must not say. Note the artwork reads

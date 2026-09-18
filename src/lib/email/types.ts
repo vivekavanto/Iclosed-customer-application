@@ -35,7 +35,7 @@ export interface EmailAttachment {
 
 /** One email, fully resolved and ready to hand to a provider. */
 export interface EmailMessage {
-  /** Display-name + address, e.g. `iClosed <support@iclosed.ca>`. */
+  /** Display-name + address, e.g. `iClosed <hello@iclosed.ca>`. */
   from: string;
   /** Where a reply actually lands. Omitted only by the internal staff alerts. */
   replyTo?: string;
