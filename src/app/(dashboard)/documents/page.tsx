@@ -1,94 +1,46 @@
 "use client";
 
-import { useState } from "react";
-import {
-  History,
-  Pencil,
-  Trash2,
-  Upload,
-  Plus,
-  ChevronRight,
-  FileText,
-  Users,
-} from "lucide-react";
-import DocumentHistoryPopup from "@/components/documents/popup";
+import { useEffect, useState } from "react";
+import { Download, FileText, Loader2, Users } from "lucide-react";
+import { docDownloadHref, docFetchCredentials } from "@/lib/blobPrivacy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Ext = "pdf" | "jpg" | "png";
+interface Party {
+  lead_id: string;
+  first_name: string;
+  last_name: string;
+  role: string;
+}
 
-// ─── Static data ──────────────────────────────────────────────────────────────
-const docs = [
-  {
-    id: 1,
-    name: "Agreement of Purchase and Sale (APS).pdf",
-    ext: "pdf" as Ext,
-    date: "March 20, 2025 at 10:42 AM EST",
-  },
-  {
-    id: 2,
-    name: "Mortgage Approval Letter.pdf",
-    ext: "pdf" as Ext,
-    date: "March 28, 2025, at 5:00 PM",
-  },
-  {
-    id: 3,
-    name: "Proof of Address (Utility Bill).jpg",
-    ext: "jpg" as Ext,
-    date: "March 28, 2025, at 5:00 PM",
-  },
-  {
-    id: 4,
-    name: "ID Verification – Front (Driver's License).png",
-    ext: "png" as Ext,
-    date: "March 28, 2025, at 5:00 PM",
-  },
-  {
-    id: 5,
-    name: "ID Verification – Back (Driver's License).png",
-    ext: "png" as Ext,
-    date: "March 28, 2025, at 5:00 PM",
-  },
-  {
-    id: 6,
-    name: "Co-Purchaser Authorization Form.pdf",
-    ext: "pdf" as Ext,
-    date: "March 28, 2025, at 5:00 PM",
-  },
-];
+interface Doc {
+  id: string;
+  lead_id: string;
+  label: string;
+  file_name: string | null;
+  file_url: string;
+  file_size: number | null;
+  created_at: string | null;
+}
 
-const partners = [
-  {
-    id: 1,
-    name: "John Doe",
-    badge: "(You)",
-    role: "Purchaser",
-    initials: "JD",
-    color: "#C10007",
-  },
-  {
-    id: 2,
-    name: "Jessica Martin",
-    badge: "",
-    role: "Real Estate Agent",
-    initials: "JM",
-    color: "#C10007",
-  },
-  {
-    id: 3,
-    name: "Daniel Reyes",
-    badge: "",
-    role: "Mortgage Advisor",
-    initials: "DR",
-    color: "#C10007",
-  },
-];
-
-const extStyle: Record<Ext, { bg: string; icon: string }> = {
-  pdf: { bg: "bg-[#C10007]/10", icon: "text-[#C10007]" },
-  jpg: { bg: "bg-[#C10007]/10",      icon: "text-[#C10007]"  },
-  png: { bg: "bg-[#C10007]/10",   icon: "text-[#C10007]" },
+const roleLabel: Record<string, string> = {
+  primary: "You",
+  purchaser: "Co-Purchaser",
+  seller: "Co-Seller",
+  applicant: "Applicant",
 };
 
+function formatDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function formatFileSize(bytes: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function CountBadge({ n }: { n: number }) {
@@ -99,195 +51,187 @@ function CountBadge({ n }: { n: number }) {
   );
 }
 
-function SectionHeader({
-  icon,
-  title,
-  count,
-  action,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  count: number;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-gray-50 text-gray-400">
-          {icon}
-        </div>
-        <h2 className="text-base font-bold text-[#1a1a1a]">{title}</h2>
-        <CountBadge n={count} />
-      </div>
-      {action}
-    </div>
-  );
+// Saves via a blob: URL so it always downloads instead of opening inline.
+async function forceDownload(doc: Doc) {
+  const res = await fetch(docDownloadHref(doc.file_url), {
+    credentials: docFetchCredentials(doc.file_url),
+  });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = doc.file_name || doc.label;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
-function DocCard({
-  doc,
-  onHistoryClick,
-}: {
-  doc: (typeof docs)[number];
-  onHistoryClick: (name: string) => void;
-}) {
-  const { bg, icon } = extStyle[doc.ext];
+function DocCard({ doc }: { doc: Doc }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      await forceDownload(doc);
+    } catch (err) {
+      console.error("[documents] download failed:", err);
+      // Fallback: open in a new tab instead of a silent dead button.
+      window.open(docDownloadHref(doc.file_url), "_blank", "noopener,noreferrer");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="group flex items-center gap-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-all duration-200 hover:border-gray-200 hover:shadow-md">
-      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${bg}`}>
-        <FileText className={`h-5 w-5 ${icon}`} />
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#C10007]/10">
+        <FileText className="h-5 w-5 text-[#C10007]" />
       </div>
 
-      {/* Info */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-[#1a1a1a]">
-          <span className="ph-mask">{doc.name}</span>
+          <span className="ph-mask">{doc.label}</span>
         </p>
-        <p className="mt-0.5 text-xs text-gray-400">Uploaded On: {doc.date}</p>
+        <p className="mt-0.5 text-xs text-gray-400">
+          Uploaded {formatDate(doc.created_at)}
+          {doc.file_size ? ` · ${formatFileSize(doc.file_size)}` : ""}
+        </p>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <button
-          onClick={() => onHistoryClick(doc.name)}
-          className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[#1a1a1a] border border-gray-300"
-          title="History"
-        >
-          <History className="h-4 w-4" />
-        </button>
-        <button
-          className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[#1a1a1a] border border-gray-300"
-          title="Rename"
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
-        <button
-          className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-red-50 hover:text-[#C10007] border border-gray-300"
-          title="Delete"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function PartnerCard({ p }: { p: (typeof partners)[number] }) {
-  return (
-    <div
-      className="flex flex-col rounded-2xl border border-gray-100 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-md"
-      style={{ borderTop: `3px solid ${p.color}` }}
-    >
-      {/* Avatar */}
-      <div
-        className="flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white"
-        style={{ backgroundColor: p.color }}
+      <button
+        type="button"
+        onClick={handleDownload}
+        disabled={downloading}
+        className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[#1a1a1a] border border-gray-300 disabled:opacity-50"
+        title="Download"
       >
-        {p.initials}
-      </div>
-
-      {/* Name + role */}
-      <div className="mt-4">
-        <p className="font-semibold text-[#1a1a1a]">
-          {p.name}{" "}
-          {p.badge && (
-            <span className="text-sm font-normal text-gray-400">{p.badge}</span>
-          )}
-        </p>
-        <p className="mt-0.5 text-sm text-gray-500">{p.role}</p>
-      </div>
-
-      {/* More Info */}
-      <button className="cursor-pointer mt-5 flex items-center gap-1 text-sm font-semibold text-[#1a1a1a] transition-colors hover:text-[#C10007]">
-        More Info <ChevronRight className="h-3.5 w-3.5" />
+        {downloading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )}
       </button>
     </div>
   );
 }
 
+function DocSection({
+  icon,
+  title,
+  subtitle,
+  docs,
+  emptyText,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  docs: Doc[];
+  emptyText: string;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-gray-50 text-gray-400">
+          {icon}
+        </div>
+        <h2 className="text-base font-bold text-[#1a1a1a]">{title}</h2>
+        {subtitle && <span className="text-sm font-normal text-gray-400">{subtitle}</span>}
+        <CountBadge n={docs.length} />
+      </div>
+      {docs.length === 0 ? (
+        <p className="text-sm text-gray-400">{emptyText}</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {docs.map((doc) => (
+            <DocCard key={doc.id} doc={doc} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DocumentsPage() {
-  const [historyPopup, setHistoryPopup] = useState<{
-    open: boolean;
-    docName: string;
-    docShortName: string;
-  }>({ open: false, docName: "", docShortName: "" });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [parties, setParties] = useState<Party[]>([]);
+  const [documents, setDocuments] = useState<Doc[]>([]);
+  const [otherDocuments, setOtherDocuments] = useState<Doc[]>([]);
 
-  const openHistory = (docName: string) => {
-    // Derive a short label from the filename, e.g. "Agreement of Purchase..." → "APS"
-    const short = docName.split(/[\s(]/)[0].replace(/\.[^.]+$/, "");
-    setHistoryPopup({ open: true, docName, docShortName: short });
-  };
+  useEffect(() => {
+    fetch("/api/documents")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data?.success) throw new Error(data?.error || "Could not load documents");
+        setParties(data.parties ?? []);
+        setDocuments(data.documents ?? []);
+        setOtherDocuments(data.otherDocuments ?? []);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not load documents"))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const closeHistory = () =>
-    setHistoryPopup((prev) => ({ ...prev, open: false }));
+  const docsByLead = documents.reduce<Record<string, Doc[]>>((acc, doc) => {
+    (acc[doc.lead_id] ??= []).push(doc);
+    return acc;
+  }, {});
 
   return (
-    <>
-      <div className="space-y-10">
-
-        {/* ── Page heading + primary CTA ── */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1a1a]">
-              Documents
-            </h1>
-            <p className="mt-1 text-sm text-gray-400">
-              Manage your deal documents and partner contacts
-            </p>
-          </div>
-
-          <button className="cursor-pointer flex items-center gap-2 rounded-sm bg-[#C10007] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#a00006]">
-            <Upload className="h-4 w-4" />
-            Upload Documents
-          </button>
-        </div>
-
-        {/* ── Uploaded Documents — 2-column card grid ── */}
-        <section className="space-y-4">
-          <SectionHeader
-            icon={<FileText className="h-4 w-4" />}
-            title="Uploaded Documents"
-            count={docs.length}
-          />
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {docs.map((doc) => (
-              <DocCard key={doc.id} doc={doc} onHistoryClick={openHistory} />
-            ))}
-          </div>
-        </section>
-
-        {/* ── Divider ── */}
-        <div className="h-px bg-gray-100" />
-
-        {/* ── Partners — 3-column profile cards ── */}
-        <section className="space-y-4">
-          <SectionHeader
-            icon={<Users className="h-4 w-4" />}
-            title="Partners"
-            count={partners.length}
-            action={
-              <button className="cursor-pointer flex items-center gap-1.5 rounded-sm border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-[#1a1a1a] shadow-sm transition-colors hover:bg-gray-50">
-                <Plus className="h-4 w-4" />
-                Add New Partner
-              </button>
-            }
-          />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {partners.map((p) => (
-              <PartnerCard key={p.id} p={p} />
-            ))}
-          </div>
-        </section>
-
+    <div className="space-y-10">
+      <div>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1a1a]">
+          Shared Documents
+        </h1>
+        <p className="mt-1 text-sm text-gray-400">
+          Every document uploaded for your file, in one place
+        </p>
       </div>
 
-      {/* ── Document History Popup ── */}
-      <DocumentHistoryPopup
-        open={historyPopup.open}
-        onClose={closeHistory}
-        docShortName={historyPopup.docShortName}
-      />
-    </>
+      {loading ? (
+        <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : error ? (
+        <p className="text-sm text-[#C10007]">{error}</p>
+      ) : documents.length === 0 && otherDocuments.length === 0 ? (
+        <p className="text-sm text-gray-400">No documents have been uploaded yet.</p>
+      ) : (
+        <div className="space-y-10">
+          {parties.length > 1 ? (
+            // Multiple parties on the file — divide person-specific documents.
+            parties.map((party) => (
+              <DocSection
+                key={party.lead_id}
+                icon={<Users className="h-4 w-4" />}
+                title={`${party.first_name} ${party.last_name}`.trim() || "Unnamed Party"}
+                subtitle={roleLabel[party.role] ?? party.role}
+                docs={docsByLead[party.lead_id] ?? []}
+                emptyText="No documents yet."
+              />
+            ))
+          ) : (
+            <DocSection
+              icon={<FileText className="h-4 w-4" />}
+              title="Uploaded Documents"
+              docs={documents}
+              emptyText="No documents have been uploaded yet."
+            />
+          )}
+
+          {/* Deal-level, not per-party — shown once, on its own. */}
+          {otherDocuments.length > 0 && (
+            <DocSection
+              icon={<FileText className="h-4 w-4" />}
+              title="Other Documents"
+              docs={otherDocuments}
+              emptyText=""
+            />
+          )}
+        </div>
+      )}
+    </div>
   );
 }

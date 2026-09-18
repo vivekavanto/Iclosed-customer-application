@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, X, LogOut, LogIn, LayoutDashboard } from "lucide-react";
+import { Menu, X, LogOut, LogIn, LayoutDashboard, FileText } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
 import { identifyUser, resetUser } from "@/lib/analytics";
@@ -12,6 +12,7 @@ import { endClientSession } from "@/lib/sessionClient";
 
 const navLinks = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Shared Documents", href: "/documents", icon: FileText },
   // { label: "Blog", href: "/blog", icon: BookOpen },
 ];
 
