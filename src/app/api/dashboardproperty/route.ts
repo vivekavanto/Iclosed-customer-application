@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
+import { resolveFirmKey, type FirmKey } from "@/lib/firms";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export async function GET() {
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -133,16 +134,29 @@ export async function GET() {
       last_name: string | null;
       parent_lead_id: string | null;
       co_person_role: string | null;
+      firm_key: string | null;
     }> = [];
     if (primaryIds.length > 0) {
       const inList = primaryIds.join(",");
       const { data: fam } = await supabaseAdmin
         .from("leads")
-        .select("id, first_name, last_name, parent_lead_id, co_person_role, created_at")
+        .select("id, first_name, last_name, parent_lead_id, co_person_role, firm_key, created_at")
         .or(`id.in.(${inList}),parent_lead_id.in.(${inList})`)
         .order("created_at", { ascending: true });
       familyLeads = fam ?? [];
     }
+
+    // Which firm retains this transaction — the same rule as lib/leadFirm.ts:
+    // the ROOT lead of the family is authoritative, because co-clients on one
+    // file are retained by ONE firm and signed ONE retainer wording. The root
+    // is already in `familyLeads` (it was fetched by primary id), so this costs
+    // no extra query. A child whose parent row has gone falls back to its own
+    // copy, which the admin app keeps in step; anything unreadable resolves to
+    // DEFAULT_FIRM_KEY, exactly as the server-side helper does.
+    const firmForPrimary = (primaryId: string, ownFirmKey: string | null): FirmKey => {
+      const root = familyLeads.find((l) => l.id === primaryId);
+      return resolveFirmKey(root?.firm_key ?? ownFirmKey);
+    };
 
     // Primary first, then co-persons in creation order. `role` is "primary" for
     // the primary applicant and the co-person's own role ("purchaser"/"seller")
@@ -188,6 +202,10 @@ export async function GET() {
         // Sale deal. The dashboard uses this to show only that side's property,
         // tasks and milestones. NULL for a primary client (sees both sides).
         recipient_side: recipientSideForLead(lead),
+        // Which firm this file is retained by. The portal is shared by both
+        // firms, so the client-facing contact details ("Need Assistance?") are
+        // chosen from this rather than hard-coded to Nava Wilson.
+        firm_key: firmForPrimary(primaryIdByLeadId[lead.id], lead.firm_key ?? null),
         // Everyone on this transaction (primary + co-persons) for the hero panel.
         parties: partiesForPrimary(primaryIdByLeadId[lead.id]),
       };

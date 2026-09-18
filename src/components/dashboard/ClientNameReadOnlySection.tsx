@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { getFirm, type FirmKey } from "@/lib/firms";
 
 const inputBase =
   "w-full px-4 py-3 text-sm text-gray-900 bg-white border rounded-lg outline-none transition-colors duration-150 placeholder:text-gray-400";
@@ -14,13 +15,19 @@ interface ClientNameReadOnlySectionProps {
   firstName?: string | null;
   lastName?: string | null;
   leadId?: string;
+  // Which firm retains this file. Decides the clerks' address this drawer
+  // tells the client to write to — the portal is shared by both firms.
+  // Absent → DEFAULT_FIRM_KEY, via getFirm.
+  firmKey?: FirmKey | null;
 }
 
 export default function ClientNameReadOnlySection({
   firstName,
   lastName,
   leadId,
+  firmKey,
 }: ClientNameReadOnlySectionProps) {
+  const firm = getFirm(firmKey);
   const { success: toastSuccess, error: toastError } = useToast();
   const [nameChangeModalOpen, setNameChangeModalOpen] = useState(false);
   const [requestedFirstName, setRequestedFirstName] = useState("");
@@ -94,7 +101,9 @@ export default function ClientNameReadOnlySection({
       closeNameChangeModal();
     } catch (err) {
       console.error(err);
-      toastError("Failed to send your request. Please try again or email iclosed@navawilson.law.");
+      toastError(
+        `Failed to send your request. Please try again or email ${firm.supportEmail}.`,
+      );
     } finally {
       setSendingNameRequest(false);
     }

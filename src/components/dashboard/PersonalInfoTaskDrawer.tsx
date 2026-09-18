@@ -27,6 +27,7 @@ import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
 import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
+import { getFirm, type FirmKey } from "@/lib/firms";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import {
   isCityField,
@@ -131,6 +132,10 @@ interface PersonalInfoTaskDrawerProps {
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
+  // Which firm retains this file. Decides the clerks' address this drawer
+  // tells the client to write to — the portal is shared by both firms.
+  // Absent → DEFAULT_FIRM_KEY, via getFirm.
+  firmKey?: FirmKey | null;
   // When true, the primary is submitting this task on a co-person's behalf.
   // Suppresses the logged-in client's reusable personal-info prefill so the
   // primary's own phone/marital/citizenship don't leak into the co-person's form.
@@ -1120,6 +1125,7 @@ export default function PersonalInfoTaskDrawer({
   leadId,
   clientFirstName,
   clientLastName,
+  firmKey,
   onBehalf,
   behalfTargets,
   selectedBehalfLeadId,
@@ -1130,6 +1136,7 @@ export default function PersonalInfoTaskDrawer({
   embedded = false,
   onSectionSaved,
 }: PersonalInfoTaskDrawerProps) {
+  const firm = getFirm(firmKey);
   const isLargeScreen = useIsLargeScreen();
   const [fields, setFields] = useState<FormField[]>([]);
   const [fieldsLoading, setFieldsLoading] = useState(false);
@@ -2521,6 +2528,7 @@ export default function PersonalInfoTaskDrawer({
               firstName={clientFirstName}
               lastName={clientLastName}
               leadId={leadId}
+              firmKey={firmKey}
             />
           )}
 
@@ -3370,10 +3378,10 @@ export default function PersonalInfoTaskDrawer({
           <p className="text-sm text-gray-600 leading-relaxed mb-6 px-2">
             If you need any modifications after submitting, please contact the clerks at{" "}
             <a
-              href="mailto:iclosed@navawilson.law"
+              href={`mailto:${firm.supportEmail}`}
               className="text-blue-600 hover:underline font-medium"
             >
-              iclosed@navawilson.law
+              {firm.supportEmail}
             </a>
           </p>
 

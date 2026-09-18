@@ -7,6 +7,7 @@ import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { getVisibleWhen, isVisibleByRules, ruleSource } from "@/lib/visibleWhen";
 import { getTaskCopy, type TaskSide } from "@/lib/taskDescriptions";
+import { getFirm, type FirmKey } from "@/lib/firms";
 import {
   isCityField,
   isPostalCodeField,
@@ -131,6 +132,10 @@ interface DynamicTaskDrawerProps {
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
+  // Which firm retains this file. Decides the clerks' address this drawer
+  // tells the client to write to — the portal is shared by both firms.
+  // Absent → DEFAULT_FIRM_KEY, via getFirm.
+  firmKey?: FirmKey | null;
   side?: TaskSide;
   onTaskCompleted?: (taskId: string) => void;
 }
@@ -768,9 +773,11 @@ export default function DynamicTaskDrawer({
   leadId,
   clientFirstName,
   clientLastName,
+  firmKey,
   side = null,
   onTaskCompleted,
 }: DynamicTaskDrawerProps) {
+  const firm = getFirm(firmKey);
   const isLargeScreen = useIsLargeScreen();
   const [fields, setFields] = useState<FormField[]>([]);
   const [fieldsLoading, setFieldsLoading] = useState(false);
@@ -2778,10 +2785,10 @@ export default function DynamicTaskDrawer({
           <p className="text-sm text-gray-600 leading-relaxed mb-6 px-2">
             If you need any modifications after submitting, please contact the clerks at{" "}
             <a
-              href="mailto:iclosed@navawilson.law"
+              href={`mailto:${firm.supportEmail}`}
               className="text-blue-600 hover:underline font-medium"
             >
-              iclosed@navawilson.law
+              {firm.supportEmail}
             </a>
           </p>
 

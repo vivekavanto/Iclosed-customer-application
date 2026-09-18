@@ -9,7 +9,7 @@ if (!apiKey) {
 export const resend = new Resend(apiKey);
 
 export const EMAIL_FROM =
-  process.env.EMAIL_FROM || "iClosed <noreply@iclosed.ca>";
+  process.env.EMAIL_FROM || "iClosed <hello@iclosed.ca>";
 
 /**
  * Where replies go — the SAME address on every outbound email, client-facing or
