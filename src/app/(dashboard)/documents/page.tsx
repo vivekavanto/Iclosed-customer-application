@@ -1,17 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, FileText, Loader2, Users } from "lucide-react";
+import { Building2, Download, Eye, FileText, Loader2, Users } from "lucide-react";
 import { docDownloadHref, docFetchCredentials } from "@/lib/blobPrivacy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Party {
-  lead_id: string;
-  first_name: string;
-  last_name: string;
-  role: string;
-}
-
 interface Doc {
   id: string;
   lead_id: string;
@@ -21,13 +14,6 @@ interface Doc {
   file_size: number | null;
   created_at: string | null;
 }
-
-const roleLabel: Record<string, string> = {
-  primary: "You",
-  purchaser: "Co-Purchaser",
-  seller: "Co-Seller",
-  applicant: "Applicant",
-};
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -100,19 +86,30 @@ function DocCard({ doc }: { doc: Doc }) {
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={handleDownload}
-        disabled={downloading}
-        className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[#1a1a1a] border border-gray-300 disabled:opacity-50"
-        title="Download"
-      >
-        {downloading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Download className="h-4 w-4" />
-        )}
-      </button>
+      <div className="flex shrink-0 items-center gap-1">
+        <a
+          href={docDownloadHref(doc.file_url)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[#1a1a1a] border border-gray-300"
+          title="View"
+        >
+          <Eye className="h-4 w-4" />
+        </a>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="cursor-pointer rounded-sm p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-[#1a1a1a] border border-gray-300 disabled:opacity-50"
+          title="Download"
+        >
+          {downloading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -120,13 +117,11 @@ function DocCard({ doc }: { doc: Doc }) {
 function DocSection({
   icon,
   title,
-  subtitle,
   docs,
   emptyText,
 }: {
   icon: React.ReactNode;
   title: string;
-  subtitle?: string;
   docs: Doc[];
   emptyText: string;
 }) {
@@ -137,7 +132,6 @@ function DocSection({
           {icon}
         </div>
         <h2 className="text-base font-bold text-[#1a1a1a]">{title}</h2>
-        {subtitle && <span className="text-sm font-normal text-gray-400">{subtitle}</span>}
         <CountBadge n={docs.length} />
       </div>
       {docs.length === 0 ? (
@@ -157,16 +151,15 @@ function DocSection({
 export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [parties, setParties] = useState<Party[]>([]);
   const [documents, setDocuments] = useState<Doc[]>([]);
   const [otherDocuments, setOtherDocuments] = useState<Doc[]>([]);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   useEffect(() => {
     fetch("/api/documents")
       .then((res) => res.json())
       .then((data) => {
         if (!data?.success) throw new Error(data?.error || "Could not load documents");
-        setParties(data.parties ?? []);
         setDocuments(data.documents ?? []);
         setOtherDocuments(data.otherDocuments ?? []);
       })
@@ -174,21 +167,51 @@ export default function DocumentsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const docsByLead = documents.reduce<Record<string, Doc[]>>((acc, doc) => {
-    (acc[doc.lead_id] ??= []).push(doc);
-    return acc;
-  }, {});
+  const allDocs = [...documents, ...otherDocuments];
+
+  const handleDownloadAll = async () => {
+    setDownloadingAll(true);
+    try {
+      const res = await fetch("/api/documents/package");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Download failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = "iclosed-documents.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error("[documents] download-all failed:", err);
+    } finally {
+      setDownloadingAll(false);
+    }
+  };
 
   return (
     <div className="space-y-10">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-[#1a1a1a]">
-          Shared Documents
-        </h1>
-        <p className="mt-1 text-sm text-gray-400">
-          Every document uploaded for your file, in one place
-        </p>
-      </div>
+      {allDocs.length > 0 && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleDownloadAll}
+            disabled={downloadingAll}
+            className="inline-flex items-center gap-2 rounded-sm border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-[#1a1a1a] shadow-sm transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            {downloadingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Download All
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 py-8 text-sm text-gray-500">
@@ -196,40 +219,22 @@ export default function DocumentsPage() {
         </div>
       ) : error ? (
         <p className="text-sm text-[#C10007]">{error}</p>
-      ) : documents.length === 0 && otherDocuments.length === 0 ? (
+      ) : allDocs.length === 0 ? (
         <p className="text-sm text-gray-400">No documents have been uploaded yet.</p>
       ) : (
         <div className="space-y-10">
-          {parties.length > 1 ? (
-            // Multiple parties on the file — divide person-specific documents.
-            parties.map((party) => (
-              <DocSection
-                key={party.lead_id}
-                icon={<Users className="h-4 w-4" />}
-                title={`${party.first_name} ${party.last_name}`.trim() || "Unnamed Party"}
-                subtitle={roleLabel[party.role] ?? party.role}
-                docs={docsByLead[party.lead_id] ?? []}
-                emptyText="No documents yet."
-              />
-            ))
-          ) : (
-            <DocSection
-              icon={<FileText className="h-4 w-4" />}
-              title="Uploaded Documents"
-              docs={documents}
-              emptyText="No documents have been uploaded yet."
-            />
-          )}
-
-          {/* Deal-level, not per-party — shown once, on its own. */}
-          {otherDocuments.length > 0 && (
-            <DocSection
-              icon={<FileText className="h-4 w-4" />}
-              title="Other Documents"
-              docs={otherDocuments}
-              emptyText=""
-            />
-          )}
+          <DocSection
+            icon={<Users className="h-4 w-4" />}
+            title="Your Documents"
+            docs={documents}
+            emptyText="No documents have been uploaded yet."
+          />
+          <DocSection
+            icon={<Building2 className="h-4 w-4" />}
+            title="Documents from iClosed"
+            docs={otherDocuments}
+            emptyText="No documents from iClosed yet."
+          />
         </div>
       )}
     </div>

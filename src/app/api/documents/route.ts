@@ -5,18 +5,11 @@ import { docTypeLabel } from "@/lib/docTypeLabel";
 
 export const dynamic = "force-dynamic";
 
-interface Party {
-  lead_id: string;
-  first_name: string;
-  last_name: string;
-  role: string;
-}
-
-// doc_type="other" is written ONLY by admin's OtherDocuments.tsx (deal-level, not per-party); "document" is DynamicTaskDrawer's client-upload fallback, so it stays with the client's own documents.
-const ADMIN_OTHER_DOC_TYPE = "other";
+// Admin-only doc_types — proof_of_deposit excluded, client can upload that one too.
+const ADMIN_ONLY_DOC_TYPES = new Set(["other", "final_report", "statement_of_account"]);
 const GENERIC_LABEL_TYPES = new Set(["other", "document"]);
 
-// GET /api/documents — every document for the client's family, split into `documents` (per-party) and `otherDocuments` (admin's deal-level bucket). Requires lead_corporate_docs.hidden_from_client (see iclosed-admin migrations/2026-09-17-hidden-from-client-lead-corporate-docs.sql).
+// GET /api/documents — family's documents, split into yours vs. iClosed's.
 export async function GET() {
   const auth = await getAuthClientDeals();
   if (!auth) {
@@ -27,7 +20,7 @@ export async function GET() {
     ...new Set((auth.deals ?? []).map((d) => d.lead_id).filter((x): x is string => !!x)),
   ];
   if (ownLeadIds.length === 0) {
-    return NextResponse.json({ success: true, parties: [], documents: [], otherDocuments: [] });
+    return NextResponse.json({ success: true, documents: [], otherDocuments: [] });
   }
 
   const { data: ownLeads } = await supabaseAdmin
@@ -37,25 +30,18 @@ export async function GET() {
 
   const rootIds = [...new Set((ownLeads ?? []).map((l) => l.parent_lead_id ?? l.id))];
   if (rootIds.length === 0) {
-    return NextResponse.json({ success: true, parties: [], documents: [], otherDocuments: [] });
+    return NextResponse.json({ success: true, documents: [], otherDocuments: [] });
   }
 
   const orFilter = rootIds.map((r) => `id.eq.${r},parent_lead_id.eq.${r}`).join(",");
   const { data: familyLeads } = await supabaseAdmin
     .from("leads")
-    .select("id, first_name, last_name, parent_lead_id, co_person_role")
+    .select("id")
     .or(orFilter);
 
-  const parties: Party[] = (familyLeads ?? []).map((l) => ({
-    lead_id: l.id as string,
-    first_name: (l.first_name as string) ?? "",
-    last_name: (l.last_name as string) ?? "",
-    role: l.parent_lead_id ? ((l.co_person_role as string) ?? "applicant") : "primary",
-  }));
-
-  const leadIds = parties.map((p) => p.lead_id);
+  const leadIds = (familyLeads ?? []).map((l) => l.id as string);
   if (leadIds.length === 0) {
-    return NextResponse.json({ success: true, parties: [], documents: [], otherDocuments: [] });
+    return NextResponse.json({ success: true, documents: [], otherDocuments: [] });
   }
 
   const { data: docs, error } = await supabaseAdmin
@@ -92,8 +78,8 @@ export async function GET() {
       created_at: d.created_at as string | null,
     }));
 
-  const documents = allDocs.filter((d) => d.doc_type !== ADMIN_OTHER_DOC_TYPE);
-  const otherDocuments = allDocs.filter((d) => d.doc_type === ADMIN_OTHER_DOC_TYPE);
+  const documents = allDocs.filter((d) => !d.doc_type || !ADMIN_ONLY_DOC_TYPES.has(d.doc_type));
+  const otherDocuments = allDocs.filter((d) => d.doc_type && ADMIN_ONLY_DOC_TYPES.has(d.doc_type));
 
-  return NextResponse.json({ success: true, parties, documents, otherDocuments });
+  return NextResponse.json({ success: true, documents, otherDocuments });
 }

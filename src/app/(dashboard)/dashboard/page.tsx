@@ -276,6 +276,8 @@ function AttentionCard({
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
   // Which multi-party task rows are expanded to show their per-party breakdown.
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  // Show only the first TASK_PAGE_SIZE pending tasks until "See more" is clicked.
+  const [showAllTasks, setShowAllTasks] = useState(false);
   const prevPendingIdsRef = useRef<string>("");
 
   // Multi-party tasks that just flipped to fully-complete THIS session. We keep
@@ -288,6 +290,8 @@ function AttentionCard({
   const completionTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // How long the green confirmation stays before the card disappears.
   const COMPLETION_FLASH_MS = 3000;
+  // How many pending tasks to show before "See more" is needed.
+  const TASK_PAGE_SIZE = 5;
 
   // A per-party task (Personal Info / Upload ID) on a multi-party deal is only
   // "done" once EVERY party's section is complete — not just the logged-in
@@ -507,7 +511,7 @@ function AttentionCard({
         </div>
       ) : (
         <div className="p-3 sm:p-4 space-y-3">
-          {pending.map((task, idx) => {
+          {(showAllTasks ? pending : pending.slice(0, TASK_PAGE_SIZE)).map((task, idx) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
                 month: "long",
@@ -697,6 +701,15 @@ function AttentionCard({
               </div>
             );
           })}
+          {pending.length > TASK_PAGE_SIZE && (
+            <button
+              type="button"
+              onClick={() => setShowAllTasks((v) => !v)}
+              className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
+            >
+              {showAllTasks ? "Show less" : `See more (${pending.length - TASK_PAGE_SIZE})`}
+            </button>
+          )}
         </div>
       )}
     </div>
