@@ -1859,7 +1859,7 @@ export default function DynamicTaskDrawer({
                 {acceptableDocsOpen && (
                   <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
                     <p className="text-[11px] text-gray-500 leading-relaxed">
-                      Please provide <span className="font-semibold text-gray-700">two different government-issued photo IDs</span> from the list below for identity verification.
+                      Please provide <span className="font-semibold text-gray-700">two different pieces of identification</span> from the list below for identity verification.
                     </p>
                     
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -1872,6 +1872,8 @@ export default function DynamicTaskDrawer({
                         "Canadian SIN Card (plastic only)",
                         "Foreign Passport",
                         "Canadian Government-issued Photo ID Card",
+                        "Credit Card (with signature)",
+                        "Birth Certificate",
                       ].map((doc) => (
                         <div key={doc} className="flex items-center gap-2 text-xs text-gray-600">
                           <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
@@ -1883,7 +1885,7 @@ export default function DynamicTaskDrawer({
                     <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
                       <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       <p className="text-[11px] text-gray-500">
-                        <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid government ID for these purposes.
+                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be used for ID verification purposes.
                       </p>
                     </div>
                   </div>

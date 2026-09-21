@@ -30,7 +30,11 @@ export default async function EditBlogPost({
     tags: row.tags ?? [],
     meta_title: row.meta_title ?? "",
     meta_description: row.meta_description ?? "",
+    focus_keyword: row.focus_keyword ?? "",
+    faq: Array.isArray(row.faq) ? row.faq : [],
+    noindex: row.noindex,
     format_source: row.format_source,
+    seo_source: row.seo_source,
   };
 
   return <BlogEditor initial={initial} />;

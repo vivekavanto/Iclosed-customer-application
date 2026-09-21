@@ -175,6 +175,8 @@ const ACCEPTABLE_ID_TYPES = [
   "Canadian SIN Card (plastic only)",
   "Foreign Passport",
   "Canadian Government-issued Photo ID Card",
+  "Credit Card (with signature)",
+  "Birth Certificate",
 ];
 
 // Every acceptable ID now requires BOTH sides. Passports used to be the one
@@ -607,6 +609,8 @@ function AcceptableDocumentsSection() {
     "Canadian SIN Card (plastic only)",
     "Foreign Passport",
     "Canadian Government-issued Photo ID Card",
+    "Credit Card (with signature)",
+    "Birth Certificate",
   ];
 
   return (
@@ -619,10 +623,11 @@ function AcceptableDocumentsSection() {
       <div className="px-4 py-4 bg-white space-y-4">
         <p className="text-xs text-gray-600 leading-relaxed">
           Please provide{" "}
-          <span className="font-bold text-[#C10007]">two different government-issued photo IDs</span>{" "}
+          <span className="font-bold text-[#C10007]">two different pieces of identification</span>{" "}
           from the list below for identity verification. We need{" "}
           <span className="font-semibold text-gray-800">both sides of each ID</span> — for a
-          passport, that is the photo page and the signature page.
+          passport, that is the photo page and the signature page, and for a credit card the back
+          must show your signature.
         </p>
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -637,8 +642,9 @@ function AcceptableDocumentsSection() {
         <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
           <AlertCircle size={13} className="text-[#C10007] flex-shrink-0 mt-0.5" />
           <p className="text-xs text-gray-500">
-            <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid
-            government ID for these purposes.
+            <span className="font-semibold text-gray-700">Note:</span> Health cards and
+            Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be
+            used for ID verification purposes.
           </p>
         </div>
       </div>
@@ -785,7 +791,7 @@ export default function UploadIdentificationDrawer({
       case "expired":
         return `Your ${documentType || "ID"} expired on ${expiryDate || "an unknown date"}. Expired IDs cannot be used for identity verification.`;
       case "invalid_id":
-        return customReason || "Health cards cannot be used for identity verification. Please upload a valid government-issued photo ID, such as a passport or driver's licence.";
+        return customReason || "Health cards and Citizenship Certificates cannot be used for identity verification. Please upload a document from the accepted list, such as a passport, driver's licence or Citizenship Card.";
       case "invalid_file_type":
         return "This file type is not supported. Please upload a PDF, JPG, PNG, or HEIC file.";
       case "file_too_large":
@@ -2654,6 +2660,19 @@ export default function UploadIdentificationDrawer({
                       Passports need both sides: the photo/info page (front) and the
                       signature page — upload that one as the &ldquo;back&rdquo;, not the blank
                       rear cover.
+                    </span>
+                  </div>
+                )}
+
+                {/* Credit-card guidance: the signature strip on the back is the
+                    part that makes the card usable as ID. */}
+                {manualClassifyModal.selectedType.toLowerCase().includes("credit card") && (
+                  <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5">
+                    <ShieldCheck size={14} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      Credit cards need both sides, and the back must show your handwritten
+                      signature on the signature strip. A statement or a photo of the card number
+                      on paper cannot be used.
                     </span>
                   </div>
                 )}

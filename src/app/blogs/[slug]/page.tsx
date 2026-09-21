@@ -18,6 +18,7 @@ import {
 } from "@/lib/blogPosts";
 import ShareButtons from "./ShareButtons";
 import BlogArticleBody from "@/components/blog/BlogArticleBody";
+import BlogJsonLd from "@/components/blog/BlogJsonLd";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -109,6 +110,10 @@ export default async function BlogPostPage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
+      {/* Article / breadcrumb / FAQPage structured data. The FAQ it submits is
+          the same array rendered visibly further down this page. */}
+      <BlogJsonLd post={post} />
+
       {/* Public header */}
       <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/90 backdrop-blur">
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">

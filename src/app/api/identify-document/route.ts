@@ -13,6 +13,8 @@ const ACCEPTABLE_IDS = [
   "SIN Card (plastic only)",
   "Foreign Passport",
   "Government-issued Photo ID Card",
+  "Credit Card (with signature)",
+  "Birth Certificate",
 ];
 
 // Documents that look official but are NOT acceptable under LSO By-Law 7.1.
@@ -33,7 +35,6 @@ const REJECTED_ID_KEYWORDS = [
   "work id",
   "membership",
   "loyalty",
-  "credit card",
   "debit card",
   "bank card",
   "transit",
@@ -41,8 +42,12 @@ const REJECTED_ID_KEYWORDS = [
   "presto",
   "social insurance number slip",
   "sin paper",
-  "birth certificate",
   "marriage certificate",
+  // A Citizenship CERTIFICATE (the paper / commemorative document) is not
+  // acceptable — only the plastic Citizenship CARD is. These keywords are
+  // written out in full so they never match "Canadian Citizenship Card".
+  "citizenship certificate",
+  "certificate of citizenship",
 ];
 
 const ACCEPTABLE_IDS_NORMALIZED = new Set(
@@ -74,7 +79,7 @@ const SUPPORTED_MIME_TYPES = new Set([
 function buildPrompt() {
   return `You are a STRICT document classifier helping verify a Canadian real-estate client's identification under Law Society of Ontario By-Law 7.1.
 
-Your job is to decide whether the uploaded image/PDF contains ACCEPTABLE government-issued identification. Be conservative — when in doubt, REJECT.
+Your job is to decide whether the uploaded image/PDF contains an ACCEPTABLE identification document from the list below. Most acceptable documents are government-issued; two are not — a signed credit card is accepted as supporting ID, and a birth certificate is accepted even though it carries no photo. Everything else: be conservative — when in doubt, REJECT.
 
 ============================================================
 ACCEPTABLE document types (these are the ONLY valid types):
@@ -84,10 +89,12 @@ ${ACCEPTABLE_IDS.map((d) => `   - ${d}`).join("\n")}
 ============================================================
 EXPLICITLY REJECTED documents — these must NEVER be classified as identification, even if they look official, are government-issued, or contain a photo. If the upload is one of these (or only contains these), set "contains_identification": false and return an empty "documents" array:
    - Health Cards of any kind (Ontario OHIP / red-and-white or photo, Quebec RAMQ, BC Services Card, Alberta AHCIP, any provincial/territorial health insurance card, any private medical/insurance card)
-   - Birth certificates, marriage certificates, death certificates
+   - Canadian Citizenship CERTIFICATES — the paper or commemorative document, including the large decorative "Certificate of Canadian Citizenship". ONLY the plastic wallet-sized Canadian Citizenship CARD is acceptable.
+   - Marriage certificates, death certificates, divorce certificates (a BIRTH certificate IS acceptable — see the edge-case policy below)
    - Paper SIN slips or SIN confirmation letters (only the plastic SIN card is acceptable, and even then it must clearly be the plastic card)
    - Library cards, student IDs, school IDs, employee/work IDs, gym/membership cards, loyalty cards
-   - Credit cards, debit cards, bank cards
+   - Debit cards, bank cards, prepaid/gift cards (a CREDIT card IS acceptable — see the edge-case policy below)
+   - Credit card statements, bank statements, or any printout/screenshot showing a card number — only the physical card itself counts
    - Transit cards (Presto, OPUS, Compass, etc.)
    - Vehicle ownership / vehicle registration / vehicle insurance pink slips
    - Utility bills, bank statements, tax documents, letters
@@ -97,7 +104,7 @@ EXPLICITLY REJECTED documents — these must NEVER be classified as identificati
 
 For EACH distinct identification document you find in the image/PDF, do the following:
 
-1. Verify it is a real, physical, government-issued identification document that matches EXACTLY one of the ACCEPTABLE types above. If you cannot confidently map it to one of those exact labels, treat it as NOT identification.
+1. Verify it is a real, physical document (not a screenshot, photocopy of a statement, or printout) that matches EXACTLY one of the ACCEPTABLE types above. If you cannot confidently map it to one of those exact labels, treat it as NOT identification.
 2. Use the EXACT label from the ACCEPTABLE list as "document_type" (verbatim, including punctuation and capitalization). Do not invent new labels and do not append parentheticals.
 3. Determine which side(s) of that specific ID are visible:
    - "front" if only the front side is shown
@@ -119,8 +126,11 @@ Edge-case policy:
   - side="front" is the photo / biodata page (photograph, name, date of birth, passport number, machine-readable zone).
   - side="back" is the reverse of that page or the facing page — typically the signature/endorsement page, the observations page, or the inside back cover. It usually has no photograph and may carry only printed text, a signature line, or a barcode. This is VALID and must be recognized as a passport back, not rejected as "not identification".
   - side="front-and-back" if both the photo page and its reverse/facing page are visible together (e.g. an open passport photographed across both pages, or two pages scanned into one file).
-- Cards (Driver's License, PR Card, Citizenship Card, NEXUS, plastic SIN, generic Government-issued Photo ID Card) are "front-and-back" required.
+- Cards (Driver's License, PR Card, Citizenship Card, NEXUS, plastic SIN, generic Government-issued Photo ID Card, Credit Card) are "front-and-back" required.
 - DRIVER'S LICENSE BACK SIDE DETECTION: The back of a driver's license is VALID identification and must be recognized. Driver's license backs typically contain: a 2D barcode (PDF417), magnetic stripe, additional text/numbers, and sometimes a signature. If you see any of these elements along with a card format, classify it as "Driver's License" with side="back". Do NOT reject driver's license backs as invalid.
+- CREDIT CARD: a physical credit card (Visa / Mastercard / Amex etc.) IS acceptable. Use the exact label "Credit Card (with signature)". It requires BOTH sides: side_requirement="front-and-back". The front carries the card number, cardholder name and brand logo; the back must show the SIGNATURE STRIP WITH A HANDWRITTEN SIGNATURE. If the back is visible but the signature strip is blank/unsigned, set "is_complete": false and say in "reason" that the back of the credit card must be signed. Debit cards, bank cards and prepaid/gift cards remain REJECTED, as do credit card statements or photos of a card number on paper.
+- BIRTH CERTIFICATE: a government-issued birth certificate (Canadian provincial/territorial or foreign) IS acceptable. Use the exact label "Birth Certificate". It has no photograph and that is expected — do NOT reject it for lacking a photo. side_requirement="front-and-back"; the reverse is often blank or carries a registration number / security printing, and that is a valid back. Birth certificates usually have no expiry date — return null.
+- CITIZENSHIP: only the plastic wallet-sized card maps to "Canadian Citizenship Card". A Citizenship CERTIFICATE (letter-sized paper document or the large commemorative certificate, often titled "Certificate of Canadian Citizenship") is REJECTED — set "contains_identification": false and state in "reason" that Citizenship Certificates are not acceptable and that the Citizenship Card is required instead.
 - "Government-issued Photo ID Card" is a LAST-RESORT label only for legitimate provincial/territorial photo ID cards issued in lieu of a driver's license (e.g. Ontario Photo Card, BC Identification Card). Do NOT use this label to smuggle in health cards, work IDs, or any rejected document above.
 - Users often scan/photograph BOTH sides of an ID onto one page. Look for TWO distinct views of the same card. If you see both sides of one ID together, that single document entry should have side="front-and-back".
 - Users may scan MULTIPLE DIFFERENT IDs into one file (e.g., driver's license + passport in same PDF). Create a separate entry in the documents array for EACH distinct ACCEPTABLE ID type found. Ignore any rejected documents that appear alongside them.
