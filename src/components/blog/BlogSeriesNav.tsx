@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { SeriesPosition } from "@/lib/blogSeries";
 
 /**
@@ -36,58 +35,46 @@ export default function BlogSeriesNav({
    */
   basePath?: string;
 }) {
-  const { previous, next, index, total } = position;
+  const { previous, next } = position;
 
   // A blog with one post, or a post that is not in the published list, has no
   // series to speak of.
   if (!previous && !next) return null;
 
-  const button =
-    "inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 text-[13px] font-semibold transition-colors duration-200";
-
   return (
     <nav
       aria-label="Article series"
-      className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-gray-100 pt-6"
+      className="mt-12 border-t border-gray-100 pt-6 text-[13px] leading-relaxed"
     >
-      <div className="text-[13px] font-medium text-gray-400">
-        Continue reading
-        {index > 0 && (
-          <span className="ml-2 tabular-nums text-gray-300">
-            {index} of {total}
-          </span>
-        )}
-      </div>
-
-      {/* Bottom right, and in reading order: back on the left, forward on the
-          right, matching where each one takes you. */}
-      <div className="ml-auto flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2 text-gray-500">
+        <span className="font-semibold text-gray-700">Continue the series:</span>
         {previous && (
           <Link
             href={`${basePath}/${previous.slug}`}
             rel="prev"
-            // The visible label is only a direction; the title is what makes
-            // the link meaningful out of context, which is how a screen reader
-            // lists it.
             aria-label={`Previous article: ${previous.title}`}
             title={previous.title}
-            className={`${button} border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900`}
+            className="inline-flex items-center gap-1.5 font-medium text-gray-600 transition-colors hover:text-[#C10007] hover:underline"
           >
-            <ArrowLeft size={14} strokeWidth={2.4} />
-            Previous
+            <span className="font-bold text-[#C10007]">
+              Previous
+            </span>
+            <span>: {previous.title}</span>
           </Link>
         )}
-
+        {previous && next && <span className="font-semibold text-gray-300">|</span>}
         {next && (
           <Link
             href={`${basePath}/${next.slug}`}
             rel="next"
             aria-label={`Next article: ${next.title}`}
             title={next.title}
-            className={`${button} border-[#C10007] bg-[#C10007] text-white hover:bg-red-700`}
+            className="inline-flex items-center gap-1.5 font-medium text-gray-600 transition-colors hover:text-[#C10007] hover:underline"
           >
-            Next
-            <ArrowRight size={14} strokeWidth={2.4} />
+            <span className="font-bold text-[#C10007]">
+              Next
+            </span>
+            <span>: {next.title}</span>
           </Link>
         )}
       </div>
