@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
+import BlogCoverImage from "@/components/blog/BlogCoverImage";
 import { Calendar, ArrowRight, BookOpen } from "lucide-react";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
 import { listPublishedPosts } from "@/lib/blogPosts";
@@ -106,18 +106,18 @@ export default async function BlogsIndexPage() {
         <Link href={`/blogs/${featured.slug}`} className="group mb-10 block">
           <article className="overflow-hidden rounded-3xl border border-[#f0e4e4] bg-white shadow-[0_4px_32px_rgba(0,0,0,0.07)] transition-all duration-300 ease-out hover:-translate-y-1 hover:border-red-200/70 hover:shadow-[0_28px_72px_rgba(193,0,7,0.12)]">
             <div className="flex flex-col md:flex-row">
-              <div className="relative min-h-[220px] w-full shrink-0 overflow-hidden md:min-h-[320px] md:w-[42%] lg:min-h-[380px]">
-                <Image
-                  src={featured.image}
-                  alt={featured.title}
-                  fill
-                  className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  priority
-                />
+              <BlogCoverImage
+                src={featured.image}
+                alt={featured.imageAlt}
+                priority
+                sizes="(min-width: 768px) 42vw, 100vw"
+                imageClassName="transition-transform duration-700 group-hover:scale-105"
+                className="min-h-[220px] w-full shrink-0 md:min-h-[320px] md:w-[42%] lg:min-h-[380px]"
+              >
                 <span className="absolute left-4 top-4 rounded-full bg-[#C10007] px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white shadow-lg">
                   Featured
                 </span>
-              </div>
+              </BlogCoverImage>
 
               <div className="flex flex-1 flex-col justify-center px-7 py-8 sm:px-10 lg:px-14 lg:py-12">
                 <div className="mb-5 flex flex-wrap items-center gap-2.5">
@@ -166,14 +166,13 @@ export default async function BlogsIndexPage() {
               className="group block h-full"
             >
               <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition-all duration-300 ease-out hover:-translate-y-2 hover:border-red-100 hover:shadow-[0_20px_56px_rgba(193,0,7,0.10)]">
-                <div className="relative h-52 w-full shrink-0 overflow-hidden">
-                  <Image
-                    src={post.image}
-                    alt={post.title}
-                    fill
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                </div>
+                <BlogCoverImage
+                  src={post.image}
+                  alt={post.imageAlt}
+                  sizes="(min-width: 640px) 50vw, 100vw"
+                  imageClassName="transition-transform duration-700 group-hover:scale-105"
+                  className="h-52 w-full shrink-0"
+                />
 
                 <div className="flex flex-1 flex-col p-6">
                   <div className="mb-4 flex flex-wrap items-center gap-2">

@@ -65,8 +65,19 @@ export type BlogPost = {
   publishedAt: string | null;
   updatedAt: string;
   readTime: string;
-  image: string;
+  /**
+   * The picture that represents this post: the uploaded cover, or — when the
+   * post has none — the first image in its own body. Null only when the post
+   * contains no image at all. There is no house stand-in.
+   */
+  image: string | null;
   imageAlt: string;
+  /**
+   * True when `image` was borrowed from the body rather than uploaded as a
+   * cover. The article page uses it to skip the hero, so a body image is not
+   * printed twice on the one page that also renders the body.
+   */
+  imageFromContent: boolean;
   author: string;
   tags: string[];
   /** Sanitized. Safe to hand to dangerouslySetInnerHTML. */
@@ -88,9 +99,6 @@ const SELECT_COLS = `
   created_by_email, updated_by_email, import_batch_id
 `;
 
-/** Fallback cover, so a post without an image never renders a broken <Image>. */
-const FALLBACK_IMAGE = "/blog1.png";
-
 function formatDisplayDate(iso: string | null): string {
   if (!iso) return "";
   // UTC on purpose: the seeded posts are stored at noon UTC precisely so that
@@ -104,11 +112,38 @@ function formatDisplayDate(iso: string | null): string {
   });
 }
 
+/**
+ * The src of the first <img> in an article body.
+ *
+ * The fallback for a post whose author uploaded pictures into the article but
+ * never set a cover — which used to leave a blank space where the card art
+ * goes. Borrowing from the post itself is safe in the way a house fallback was
+ * not: the picture is about this post, so two unrelated articles can never end
+ * up wearing the same one.
+ *
+ * Runs on sanitized HTML, so the src has already been through the sanitizer's
+ * allowed-scheme check before anything renders it.
+ */
+function firstContentImage(html: string): { src: string; alt: string } | null {
+  const tag = /<img\b[^>]*>/i.exec(html);
+  if (!tag) return null;
+
+  const src = /\ssrc\s*=\s*["']([^"']+)["']/i.exec(tag[0]);
+  if (!src?.[1]) return null;
+
+  const alt = /\salt\s*=\s*["']([^"']*)["']/i.exec(tag[0]);
+  return { src: src[1], alt: alt?.[1]?.trim() || "" };
+}
+
 export function toBlogPost(row: BlogPostRow): BlogPost {
   // Sanitized here, on the read path, rather than trusting what is stored.
   // The three migrated rows predate the sanitizer entirely, and the separate
   // admin app can write to this table without passing through our routes.
   const content = sanitizeBlogHtml(row.content_html);
+
+  // Only looked up when there is no cover — the ordinary case is an uploaded
+  // cover, and that path should not scan the body at all.
+  const borrowed = row.cover_image_url ? null : firstContentImage(content);
 
   return {
     id: row.id,
@@ -119,8 +154,17 @@ export function toBlogPost(row: BlogPostRow): BlogPost {
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
     readTime: `${row.reading_time_min ?? readingTimeFromHtml(content)} min read`,
-    image: row.cover_image_url ?? FALLBACK_IMAGE,
-    imageAlt: row.cover_image_alt ?? row.title,
+    // No house fallback. A post used to borrow /blog1.png when it had no
+    // cover of its own, which put the same stock picture on unrelated
+    // articles and made the listing read as one repeated post. The fallback
+    // below is the post's OWN first image, which cannot repeat that way; every
+    // surface still checks for null and lays out without one.
+    image: row.cover_image_url ?? borrowed?.src ?? null,
+    // The cover's alt describes the cover; a borrowed picture brings its own.
+    imageAlt: row.cover_image_url
+      ? row.cover_image_alt ?? row.title
+      : borrowed?.alt || row.title,
+    imageFromContent: !row.cover_image_url && borrowed !== null,
     author: row.author,
     tags: Array.isArray(row.tags) ? row.tags : [],
     content,

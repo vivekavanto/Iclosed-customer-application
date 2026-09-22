@@ -1,4 +1,5 @@
 import { sanitizeBlogHtml } from "@/lib/sanitizeBlogHtml";
+import { buildBlogToc, cleanArticleBody } from "@/lib/blogToc";
 
 /**
  * The rendered body of a blog article — public page and dashboard alike.
@@ -13,12 +14,25 @@ import { sanitizeBlogHtml } from "@/lib/sanitizeBlogHtml";
  * written through /api/blog/*, and deliberately so: it is the only thing
  * standing in front of rows seeded before the sanitizer existed, and rows the
  * separate admin app writes straight to the table.
+ *
+ * Heading ids are added here, after sanitizing (which strips ids) and on every
+ * render, so the anchors the "On this page" panel links to always exist — even
+ * on a page that never renders a contents list. buildBlogToc is the single
+ * source of both those ids and the sidebar's links; see src/lib/blogToc.ts.
  */
 export default function BlogArticleBody({
   html,
+  hasRenderedFaq = false,
   className = "",
 }: {
   html: string;
+  /**
+   * Whether the page lays out post.faq itself, below this block. When it does,
+   * an FAQ section in the body is a duplicate and is dropped; when it does not,
+   * the body's copy is the article's only FAQ and is kept. The page must pass
+   * the same answer it uses to decide whether to render that block.
+   */
+  hasRenderedFaq?: boolean;
   className?: string;
 }) {
   return (
@@ -27,6 +41,7 @@ export default function BlogArticleBody({
         mb-12
         [&_h2]:mb-5 [&_h2]:mt-12 [&_h2]:border-l-[3px] [&_h2]:border-[#C10007]
         [&_h2]:pl-5 [&_h2]:text-xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:text-gray-900
+        [&_h2]:scroll-mt-24 [&_h3]:scroll-mt-24 [&_h4]:scroll-mt-24
         [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:text-[17px] [&_h3]:font-bold [&_h3]:text-gray-900
         [&_h4]:mb-2 [&_h4]:mt-6 [&_h4]:text-[15px] [&_h4]:font-semibold [&_h4]:text-gray-800
         [&_p]:mb-5 [&_p]:text-[16px] [&_p]:leading-[1.85] [&_p]:text-gray-600
@@ -53,7 +68,11 @@ export default function BlogArticleBody({
         [&_pre]:text-[13px] [&_pre]:text-gray-100
         ${className}
       `}
-      dangerouslySetInnerHTML={{ __html: sanitizeBlogHtml(html) }}
+      dangerouslySetInnerHTML={{
+        __html: buildBlogToc(
+          cleanArticleBody(sanitizeBlogHtml(html), { hasRenderedFaq })
+        ).html,
+      }}
     />
   );
 }

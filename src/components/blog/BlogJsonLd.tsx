@@ -34,9 +34,15 @@ export default function BlogJsonLd({ post }: { post: BlogPost }) {
   const base = siteUrl();
   const url = post.canonicalUrl ?? `${base}/blogs/${post.slug}`;
   const image = post.ogImageUrl ?? post.image;
-  // Schema.org requires absolute URLs; the cover is usually a site-relative
-  // path like /blog1.png.
-  const absoluteImage = image.startsWith("http") ? image : `${base}${image}`;
+  // Schema.org requires absolute URLs; an uploaded cover is a blob URL, but a
+  // hand-entered one can be a site-relative path. A post with no cover at all
+  // simply omits the property — `image` is optional on BlogPosting, and a
+  // made-up URL would be worse than saying nothing.
+  const absoluteImage = image
+    ? image.startsWith("http")
+      ? image
+      : `${base}${image}`
+    : undefined;
 
   const graph: Record<string, unknown>[] = [
     {

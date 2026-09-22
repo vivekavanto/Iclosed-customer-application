@@ -4,6 +4,14 @@ import { notFound } from "next/navigation";
 import { Calendar, ArrowLeft, Clock, User } from "lucide-react";
 import { getPublishedPost, listPublishedPosts } from "@/lib/blogPosts";
 import BlogArticleBody from "@/components/blog/BlogArticleBody";
+import BlogSeriesNav from "@/components/blog/BlogSeriesNav";
+import { adjacentInSeries } from "@/lib/blogSeries";
+import BlogToc from "@/components/blog/BlogToc";
+import { buildBlogToc, cleanArticleBody } from "@/lib/blogToc";
+import { sanitizeBlogHtml } from "@/lib/sanitizeBlogHtml";
+
+/** Shared by the FAQ heading's id and the contents entry that points at it. */
+const FAQ_ANCHOR = "article-faq";
 
 /**
  * The dashboard's reader for a single article.
@@ -23,7 +31,9 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
   const post = await getPublishedPost(slug);
-  return { title: post ? `${post.title} | iClosed` : "Blog not found | iClosed" };
+  return {
+    title: post ? `${post.title} | iClosed` : "Blog not found | iClosed",
+  };
 }
 
 export default async function DashboardBlogPost({ params }: PageProps) {
@@ -32,13 +42,34 @@ export default async function DashboardBlogPost({ params }: PageProps) {
 
   if (!post) notFound();
 
-  const related = (await listPublishedPosts())
-    .filter((p) => p.slug !== post.slug)
-    .slice(0, 2);
+  // The same pass BlogArticleBody runs over the body, so every link in the
+  // sidebar lands on an id that exists. See the public article page, which
+  // derives its contents identically — the two must not drift apart.
+  const { items: bodyToc } = buildBlogToc(
+    cleanArticleBody(sanitizeBlogHtml(post.content), {
+      hasRenderedFaq: post.faq.length > 0,
+    })
+  );
+
+  // The FAQ is laid out by this page rather than inside the body HTML, so
+  // buildBlogToc cannot see it. Listed last because that is where it sits.
+  const tocItems =
+    post.faq.length > 0 && !bodyToc.some((item) => item.id === FAQ_ANCHOR)
+      ? [
+          ...bodyToc,
+          {
+            id: FAQ_ANCHOR,
+            text: "Frequently asked questions",
+            level: 2 as const,
+          },
+        ]
+      : bodyToc;
+
+  const series = adjacentInSeries(await listPublishedPosts(), post.slug);
 
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
-      <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <Link
           href="/blog"
           className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-gray-500 transition-colors hover:text-[#C10007]"
@@ -48,15 +79,21 @@ export default async function DashboardBlogPost({ params }: PageProps) {
         </Link>
 
         <article>
-          <div className="relative mb-8 h-64 w-full overflow-hidden rounded-3xl sm:h-80">
-            <Image
-              src={post.image}
-              alt={post.imageAlt}
-              fill
-              className="object-cover"
-              priority
-            />
-          </div>
+          {/* A real cover only. When post.image was borrowed from the body
+              (imageFromContent), the reader meets that picture a few
+              paragraphs down — printing it as the hero as well shows the
+              same image twice on the one page that renders the body. */}
+          {post.image && !post.imageFromContent && (
+            <div className="relative mb-8 h-64 w-full overflow-hidden rounded-3xl sm:h-80">
+              <Image
+                src={post.image}
+                alt={post.imageAlt}
+                fill
+                className="object-cover"
+                priority
+              />
+            </div>
+          )}
 
           {post.tags.length > 0 && (
             <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -90,58 +127,51 @@ export default async function DashboardBlogPost({ params }: PageProps) {
             </span>
           </div>
 
-          <BlogArticleBody html={post.content} />
+          {/* Table of contents. Sticky beside the article on a wide screen,
+              above it on a narrow one where there is no column to stick to.
+              Renders nothing at all for a post with fewer than two headings. */}
+          <div className="flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-12">
+            <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[300px]">
+              <BlogToc items={tocItems} />
+            </aside>
 
-          {post.faq.length > 0 && (
-            <section className="mb-12">
-              <h2 className="mb-6 border-l-[3px] border-[#C10007] pl-5 text-xl font-bold tracking-tight text-gray-900">
-                Frequently asked questions
-              </h2>
-              <div className="space-y-4">
-                {post.faq.map((item) => (
-                  <details
-                    key={item.question}
-                    className="rounded-2xl border border-gray-100 bg-white px-6 py-4"
+            <div className="min-w-0 flex-1">
+              <BlogArticleBody
+                html={post.content}
+                hasRenderedFaq={post.faq.length > 0}
+              />
+
+              {post.faq.length > 0 && (
+                <section className="mb-12">
+                  <h2
+                    id={FAQ_ANCHOR}
+                    className="mb-6 scroll-mt-8 border-l-[3px] border-[#C10007] pl-5 text-xl font-bold tracking-tight text-gray-900"
                   >
-                    <summary className="cursor-pointer list-none text-[15.5px] font-semibold text-gray-900 marker:hidden">
-                      {item.question}
-                    </summary>
-                    <p className="mt-3 text-[15.5px] leading-[1.8] text-gray-600">
-                      {item.answer}
-                    </p>
-                  </details>
-                ))}
-              </div>
-            </section>
-          )}
+                    Frequently asked questions
+                  </h2>
+                  <div className="space-y-4">
+                    {post.faq.map((item) => (
+                      <details
+                        key={item.question}
+                        className="rounded-2xl border border-gray-100 bg-white px-6 py-4"
+                      >
+                        <summary className="cursor-pointer list-none text-[15.5px] font-semibold text-gray-900 marker:hidden">
+                          {item.question}
+                        </summary>
+                        <p className="mt-3 text-[15.5px] leading-[1.8] text-gray-600">
+                          {item.answer}
+                        </p>
+                      </details>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
         </article>
 
-        {related.length > 0 && (
-          <section className="border-t border-gray-100 pt-10">
-            <h2 className="mb-6 text-lg font-bold tracking-tight text-gray-900">
-              Keep reading
-            </h2>
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              {related.map((p) => (
-                <Link key={p.slug} href={`/blog/${p.slug}`} className="group block">
-                  <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white transition-all duration-300 hover:-translate-y-1 hover:border-red-100 hover:shadow-[0_16px_44px_rgba(193,0,7,0.09)]">
-                    <div className="relative h-40 w-full shrink-0 overflow-hidden">
-                      <Image src={p.image} alt={p.imageAlt} fill className="object-cover" />
-                    </div>
-                    <div className="flex flex-1 flex-col p-5">
-                      <h3 className="mb-2 line-clamp-2 text-[15px] font-bold leading-snug text-gray-900 group-hover:text-[#C10007]">
-                        {p.title}
-                      </h3>
-                      <p className="line-clamp-2 text-[13px] leading-relaxed text-gray-500">
-                        {p.excerpt}
-                      </p>
-                    </div>
-                  </article>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
+        {/* Where this article sits in the run, and what to read next. */}
+        <BlogSeriesNav position={series} basePath="/blog" />
       </main>
     </div>
   );
