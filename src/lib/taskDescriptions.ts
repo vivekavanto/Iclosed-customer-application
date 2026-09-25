@@ -75,6 +75,12 @@ const RULES: TaskDescriptionRule[] = [
       "Before releasing your mortgage funds, your lender requires proof that your new home is insured as of the closing date, with them listed on the policy. Please upload a home insurance policy that matches the checklist below.",
   },
   {
+    match: "void cheque",
+    sides: ["purchase"],
+    description: "Please upload a void cheque for each purchaser.",
+    note: "We may use this banking information to return any excess funds remaining after your transaction closes. If you are obtaining a mortgage, your lender may also require a void cheque to set up your mortgage payments.",
+  },
+  {
     // The drawer renders DEPOSIT_TASK_DESCRIPTION itself (it needs the copy
     // alongside the balance and the transfer instructions); this rule is what
     // puts the same sentence on the task CARD in the dashboard list, so the

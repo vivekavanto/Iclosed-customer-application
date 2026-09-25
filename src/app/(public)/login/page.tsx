@@ -156,7 +156,7 @@ export default function LoginPage() {
         <div className="relative z-10 mt-4">
           {/* Logo */}
           <div className="mb-12">
-            <img src="/logo.png" alt="iClosed" className="h-8 brightness-0 invert" />
+            <img src="/iclosed-logo-hires.png" alt="iClosed" className="h-8 brightness-0 invert" />
           </div>
 
           <h2 className="mb-4 text-[1.75rem] font-bold leading-snug text-white">
@@ -194,7 +194,7 @@ export default function LoginPage() {
         <div className="w-full max-w-[400px]">
           {/* Mobile-only logo */}
           <div className="mb-8 md:hidden">
-            <img src="/logo.png" alt="iClosed" className="h-8" />
+            <img src="/iclosed-logo-hires.png" alt="iClosed" className="h-8" />
           </div>
 
           {/* Header */}

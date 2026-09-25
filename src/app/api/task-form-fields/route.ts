@@ -47,8 +47,16 @@ function multiPartyOnlyBlock<T extends { label: string; options: unknown }>(
   const flagged = fields.filter(isMultiPartyOnly);
   if (flagged.length === 0) return [];
   const names = new Set(flagged.map((f) => f.label.trim().toLowerCase()));
+  // attach_to targets go too — a select's options can't carry the flag.
+  const targets = new Set(
+    flagged
+      .map((f) => parseOptions(f.options).attach_to)
+      .filter((t): t is string => typeof t === "string")
+      .map((t) => t.trim().toLowerCase())
+  );
   return fields.filter((f) => {
     if (isMultiPartyOnly(f)) return true;
+    if (targets.has(f.label.trim().toLowerCase())) return true;
     const opts = parseOptions(f.options);
     const attachTo = typeof opts.attach_to === "string" ? opts.attach_to : null;
     if (attachTo && names.has(attachTo.trim().toLowerCase())) return true;
@@ -71,6 +79,55 @@ async function dropMultiPartyOnlyFields<T extends { label: string; options: unkn
 
   const dropped = new Set(block);
   return fields.filter((f) => !dropped.has(f));
+}
+
+const PURCHASER_TOKEN = /\bPurchaser (\d+)\b/g;
+
+// Primary first, then co-purchasers in the order they were added.
+async function getPurchaserNames(leadId: string): Promise<string[]> {
+  const { data: lead } = await supabaseAdmin
+    .from("leads")
+    .select("id, parent_lead_id")
+    .eq("id", leadId)
+    .maybeSingle();
+  if (!lead) return [];
+  const primaryId = lead.parent_lead_id ?? lead.id;
+
+  const { data: family } = await supabaseAdmin
+    .from("leads")
+    .select("id, first_name, last_name, parent_lead_id, co_person_role, created_at")
+    .or(`id.eq.${primaryId},parent_lead_id.eq.${primaryId}`)
+    .order("created_at", { ascending: true });
+
+  return (family ?? [])
+    .filter((l) => l.co_person_role !== "seller")
+    .sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0))
+    .map((l) => `${l.first_name ?? ""} ${l.last_name ?? ""}`.trim());
+}
+
+// "Purchaser N" → that purchaser's name.
+function withPurchaserNames<T extends { label: string; options: unknown }>(
+  fields: T[],
+  names: string[]
+): T[] {
+  const swap = (s: string) =>
+    s.replace(PURCHASER_TOKEN, (m, n) => names[Number(n) - 1] || m);
+  return fields.map((f) => ({
+    ...f,
+    label: swap(f.label),
+    options: Array.isArray(f.options)
+      ? f.options.map((o: { label: string; value: string }) => ({
+          ...o,
+          label: swap(o.label),
+          value: swap(o.value),
+        }))
+      : f.options,
+  }));
+}
+
+function mentionsPurchaser(field: { label: string; options: unknown }): boolean {
+  const text = field.label + (Array.isArray(field.options) ? JSON.stringify(field.options) : "");
+  return new RegExp(PURCHASER_TOKEN.source).test(text);
 }
 
 /**
@@ -166,7 +223,10 @@ export async function GET(req: Request) {
       leadId = deal?.lead_id ?? null;
     }
 
-    const formFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
+    let formFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
+    if (leadId && formFields.some(mentionsPurchaser)) {
+      formFields = withPurchaserNames(formFields, await getPurchaserNames(leadId));
+    }
 
     // 4. Fetch any existing responses so we can pre-fill the form
     const { data: existingResponses } = await supabaseAdmin
