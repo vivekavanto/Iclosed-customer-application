@@ -44,7 +44,10 @@ export default function RootLayout({
         />
       </head>
 
-      <body className="min-h-screen flex flex-col bg-[var(--color-bg)] text-[var(--color-text-body)]">
+      <body
+        className="min-h-screen flex flex-col bg-[var(--color-bg)] text-[var(--color-text-body)]"
+        suppressHydrationWarning
+      >
         <Providers>
           <AuthHashHandler />
           {children}
