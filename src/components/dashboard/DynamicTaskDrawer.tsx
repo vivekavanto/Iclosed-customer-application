@@ -197,6 +197,22 @@ function InfoNote({ text }: { text: string }) {
   );
 }
 
+// Note with variant "section" renders as heading + text.
+function getNoteSection(opts: unknown): { text: string } | null {
+  let parsed: unknown = opts;
+  if (typeof opts === "string") {
+    try {
+      parsed = JSON.parse(opts);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const o = parsed as { variant?: unknown; text?: unknown };
+  if (o.variant !== "section") return null;
+  return { text: typeof o.text === "string" ? o.text : "" };
+}
+
 // Format phone as (416) 555-1234
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -1805,8 +1821,8 @@ export default function DynamicTaskDrawer({
             </>
           )}
 
-          {/* ── Void Cheque / Direct Deposit static sections ── */}
-          {isVoidChequeTask && (
+          {/* ── Void Cheque / Direct Deposit static sections (sale only) ── */}
+          {isVoidChequeTask && side !== "purchase" && (
             <>
               <p className="text-sm text-gray-600 leading-relaxed">
               Please upload a void cheque / direct deposit form for each party involved in the sale. 
@@ -2051,6 +2067,17 @@ export default function DynamicTaskDrawer({
 
               // Display-only callout — the label carries the message.
               if (field.field_type === "note") {
+                const section = getNoteSection(field.options);
+                if (section) {
+                  return (
+                    <div key={field.id} id={`field-${field.id}`} className="space-y-1.5 pt-2">
+                      <p className="text-base font-semibold text-gray-900">{field.label}</p>
+                      {section.text && (
+                        <p className="text-sm text-gray-600 leading-relaxed">{section.text}</p>
+                      )}
+                    </div>
+                  );
+                }
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
                     <InfoNote text={field.label} />
