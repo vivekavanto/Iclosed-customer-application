@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import BlogCoverImage from "@/components/blog/BlogCoverImage";
 import { Calendar, ArrowRight, BookOpen } from "lucide-react";
-import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
+import SiteHeader from "@/components/layout/SiteHeader";
 import { listPublishedPosts } from "@/lib/blogPosts";
 
 export const metadata: Metadata = {
@@ -16,54 +16,16 @@ export const metadata: Metadata = {
 // once, so nobody waits on this timer in practice.
 export const revalidate = 300;
 
-function IClosedLogo() {
-  return (
-    <Link href="/" className="flex items-center select-none flex-shrink-0">
-      <span
-        className="text-[#C10007] font-bold italic text-xl leading-none"
-        style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
-      >
-        i
-      </span>
-      <span className="text-gray-900 font-bold text-xl leading-none tracking-tight">
-        Closed
-      </span>
-    </Link>
-  );
-}
-
 export default async function BlogsIndexPage() {
   const posts = await listPublishedPosts();
   const [featured, ...rest] = posts;
 
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
-      {/* Public header */}
-      <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/90 backdrop-blur">
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
-          <IClosedLogo />
-          <nav className="hidden md:flex items-center gap-6">
-            <Link
-              href="/"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Home
-            </Link>
-            <Link
-              href="/blogs"
-              className="text-sm font-medium text-[#C10007]"
-            >
-              Blog
-            </Link>
-          </nav>
-          <div className="flex items-center gap-2">
-            <HomeHeaderAuth />
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* Hero */}
-      <section className="relative overflow-hidden border-b border-gray-100 bg-white">
+      <section className="relative overflow-hidden border-b border-gray-100 bg-white pt-16">
         <div className="absolute inset-x-0 top-0 h-[3px] bg-[#C10007]" />
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
           <div className="max-w-3xl">
