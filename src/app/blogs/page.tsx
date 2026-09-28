@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import BlogCoverImage from "@/components/blog/BlogCoverImage";
 import { Calendar, ArrowRight, BookOpen } from "lucide-react";
-import SiteHeader from "@/components/layout/SiteHeader";
+import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
+import DashboardBlogCards from "@/components/blog/DashboardBlogCards";
 import { listPublishedPosts } from "@/lib/blogPosts";
 
 export const metadata: Metadata = {
@@ -15,6 +16,43 @@ export const metadata: Metadata = {
 // the backstop; publishing calls revalidatePath("/blogs") and takes effect at
 // once, so nobody waits on this timer in practice.
 export const revalidate = 300;
+
+function SiteHeader() {
+  return (
+    <header className="fixed top-0 inset-x-0 z-50 h-16 bg-white/95 backdrop-blur-md border-b border-gray-100">
+      <div className="max-w-7xl mx-auto w-full h-full px-5 sm:px-8 lg:px-10 flex items-center justify-between">
+        <Link href="/" className="flex items-center select-none">
+          <span
+            className="text-[#C10007] font-bold italic text-xl leading-none"
+            style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+          >
+            i
+          </span>
+          <span className="font-bold text-xl text-gray-900 tracking-tight leading-none">
+            Closed
+          </span>
+        </Link>
+
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link
+            href="/blogs"
+            className="hidden sm:inline-flex px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-gray-100 hover:text-gray-900 transition-colors"
+          >
+            Blog
+          </Link>
+          <Link
+            href="/intake"
+            className="px-3 sm:px-5 py-2 text-sm font-semibold !text-white bg-[#C10007] rounded-sm hover:bg-[#a00006] transition-colors shadow-sm"
+          >
+            <span className="hidden sm:inline">Start your closing</span>
+            <span className="sm:hidden">Get started</span>
+          </Link>
+          <HomeHeaderAuth />
+        </div>
+      </div>
+    </header>
+  );
+}
 
 export default async function BlogsIndexPage() {
   const posts = await listPublishedPosts();
@@ -120,60 +158,7 @@ export default async function BlogsIndexPage() {
         )}
 
         {/* Rest of posts */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:gap-7">
-          {rest.map((post) => (
-            <Link
-              key={post.slug}
-              href={`/blogs/${post.slug}`}
-              className="group block h-full"
-            >
-              <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition-all duration-300 ease-out hover:-translate-y-2 hover:border-red-100 hover:shadow-[0_20px_56px_rgba(193,0,7,0.10)]">
-                <BlogCoverImage
-                  src={post.image}
-                  alt={post.imageAlt}
-                  sizes="(min-width: 640px) 50vw, 100vw"
-                  imageClassName="transition-transform duration-700 group-hover:scale-105"
-                  className="h-52 w-full shrink-0"
-                />
-
-                <div className="flex flex-1 flex-col p-6">
-                  <div className="mb-4 flex flex-wrap items-center gap-2">
-                    {post.tags.slice(0, 2).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-[#C10007]"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    <span className="text-xs font-medium text-gray-400">
-                      {post.readTime}
-                    </span>
-                  </div>
-
-                  <h3 className="mb-3 line-clamp-2 text-base font-bold leading-snug text-gray-900 transition-colors duration-200 group-hover:text-[#C10007]">
-                    {post.title}
-                  </h3>
-
-                  <p className="mb-5 line-clamp-3 flex-1 text-[13.5px] leading-relaxed text-gray-500">
-                    {post.excerpt}
-                  </p>
-
-                  <div className="flex items-center justify-between border-t border-gray-100 pt-4">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
-                      <Calendar size={12} strokeWidth={2} />
-                      <span>{post.date}</span>
-                    </div>
-                    <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#C10007] transition-all duration-200 group-hover:gap-2.5">
-                      Read more
-                      <ArrowRight size={13} strokeWidth={2.5} />
-                    </span>
-                  </div>
-                </div>
-              </article>
-            </Link>
-          ))}
-        </div>
+        <DashboardBlogCards posts={rest} basePath="/blogs" />
       </main>
 
       {/* CTA Footer */}
@@ -193,7 +178,7 @@ export default async function BlogsIndexPage() {
             <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
               <Link
                 href="/intake"
-                className="inline-flex items-center gap-2 rounded-full bg-[#C10007] px-7 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-red-700 hover:shadow-lg"
+                className="inline-flex items-center gap-2 rounded-full bg-[#C10007] px-7 py-3 text-sm font-semibold !text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-red-700 hover:shadow-lg"
               >
                 Start your closing
                 <ArrowRight size={15} strokeWidth={2.5} />

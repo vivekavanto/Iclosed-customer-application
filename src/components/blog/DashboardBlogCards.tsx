@@ -10,7 +10,13 @@ import BlogCoverImage from "@/components/blog/BlogCoverImage";
 const INITIAL_CARD_COUNT = 6;
 const CARD_ROW_SIZE = 3;
 
-export default function DashboardBlogCards({ posts }: { posts: BlogPost[] }) {
+export default function DashboardBlogCards({
+  posts,
+  basePath = "/blog",
+}: {
+  posts: BlogPost[];
+  basePath?: string;
+}) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_CARD_COUNT);
   const visiblePosts = posts.slice(0, visibleCount);
   const hasMorePosts = visibleCount < posts.length;
@@ -19,7 +25,7 @@ export default function DashboardBlogCards({ posts }: { posts: BlogPost[] }) {
     <>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 lg:gap-7">
         {visiblePosts.map((post) => (
-          <Link key={post.id} href={`/blog/${post.slug}`} className="group block h-full">
+          <Link key={post.id} href={`${basePath}/${post.slug}`} className="group block h-full">
             <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition-all duration-300 ease-out hover:-translate-y-2 hover:border-red-100 hover:shadow-[0_20px_56px_rgba(193,0,7,0.10)]">
               <BlogCoverImage src={post.image} alt={post.imageAlt} sizes="(min-width: 640px) 50vw, 100vw" className="h-48 w-full shrink-0" />
               <div className="flex flex-1 flex-col p-6">
