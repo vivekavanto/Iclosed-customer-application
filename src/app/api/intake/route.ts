@@ -2,6 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient, getAuthUser } from "@/lib/getAuthClient";
 import { sendWelcomeEmail } from "@/lib/sendWelcomeEmail";
 import { sendLeadNotificationEmail } from "@/lib/sendLeadNotificationEmail";
+import { sendQuoteEmail } from "@/lib/sendQuoteEmail";
 import { notifyNewLead } from "@/lib/notifyNewLead";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
@@ -682,6 +683,9 @@ export async function POST(req: Request) {
     } catch (err) {
       console.error("[Intake] Welcome email failed:", err);
     }
+
+    // Quote email to the primary client only.
+    await sendQuoteEmail(lead.id);
 
     // ── 6. Notify the iClosed team that a lead has arrived ─────────────
     // ONE alert per intake, for the primary lead — by email to the back office

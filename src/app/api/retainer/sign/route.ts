@@ -4,6 +4,8 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
+import { retainerAgreementKind } from "@/lib/retainerAgreement";
+import { loadRetainerAgreementData } from "@/lib/loadRetainerAgreement";
 import { getLeadFirmKey } from "@/lib/leadFirm";
 import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { brandEmailHtml } from "@/lib/emailBrand";
@@ -299,6 +301,8 @@ export async function POST(req: Request) {
 
       // 1. Generate PDF (P&S receives both addresses; single-side leads
       //    are unchanged and just receive propertyAddress)
+      // Same v7 terms the client read on the page, recomputed server-side.
+      const agreementKind = retainerAgreementKind(lead?.lead_type);
       const pdfBytes = await generateRetainerPdf({
         fullName: full_name,
         signature,
@@ -313,6 +317,10 @@ export async function POST(req: Request) {
         // this decides which firm the signed agreement names, and the client
         // must not be able to choose that.
         firmKey: await getLeadFirmKey(leadId),
+        agreement:
+          lead && agreementKind
+            ? await loadRetainerAgreementData(lead, propertyAddress, agreementKind)
+            : null,
       });
 
       // 2. Upload to Vercel Blob (combined PDF for P&S uses "main" segment)

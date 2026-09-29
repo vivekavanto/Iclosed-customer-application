@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getRetainerFaqItems, retainerAgreementLine } from "@/lib/retainerFaq";
 import { DEFAULT_FIRM_KEY, FIRMS, getFirm, type FirmKey } from "@/lib/firms";
+import { buildRetainerAgreement, longDate, type RetainerAgreementData } from "@/lib/retainerAgreement";
 
 interface RetainerPdfParams {
   fullName: string;
@@ -23,6 +24,8 @@ interface RetainerPdfParams {
    * un-migrated caller reproduces the old document exactly.
    */
   firmKey?: FirmKey | string | null;
+  /** v7 purchase/sale agreement; replaces the FAQ body when present. */
+  agreement?: RetainerAgreementData | null;
 }
 
 /** Wrap long text into lines that fit within maxWidth */
@@ -147,65 +150,194 @@ export async function generateRetainerPdf(
     y -= 30;
   }
 
-  page.drawText("Retainer Agreement", { x: margin, y, font: bold, size: 18, color: rgb(0.1, 0.1, 0.1) });
-  y -= 28;
-
-  // Property address(es)
-  if (isCombined) {
-    // Combined P&S retainer — show both labelled addresses
-    const labelWidth = 130;
-    page.drawText("Purchase Property:", { x: margin, y, font: bold, size: 9, color: rgb(0.2, 0.2, 0.2) });
-    page.drawText(purchaseAddress || "Address not available", {
-      x: margin + labelWidth,
-      y,
-      font: regular,
-      size: 9,
-      color: rgb(0.4, 0.4, 0.4),
-    });
-    y -= 14;
-    page.drawText("Sale Property:", { x: margin, y, font: bold, size: 9, color: rgb(0.2, 0.2, 0.2) });
-    page.drawText(saleAddress || "Address not available", {
-      x: margin + labelWidth,
-      y,
-      font: regular,
-      size: 9,
-      color: rgb(0.4, 0.4, 0.4),
-    });
-    y -= 16;
+  if (params.agreement) {
+    drawAgreement(params.agreement);
   } else {
-    page.drawText(propertyAddress || "Address not available", { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
+    page.drawText("Retainer Agreement", { x: margin, y, font: bold, size: 18, color: rgb(0.1, 0.1, 0.1) });
+    y -= 28;
+
+    // Property address(es)
+    if (isCombined) {
+      // Combined P&S retainer — show both labelled addresses
+      const labelWidth = 130;
+      page.drawText("Purchase Property:", { x: margin, y, font: bold, size: 9, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText(purchaseAddress || "Address not available", {
+        x: margin + labelWidth,
+        y,
+        font: regular,
+        size: 9,
+        color: rgb(0.4, 0.4, 0.4),
+      });
+      y -= 14;
+      page.drawText("Sale Property:", { x: margin, y, font: bold, size: 9, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText(saleAddress || "Address not available", {
+        x: margin + labelWidth,
+        y,
+        font: regular,
+        size: 9,
+        color: rgb(0.4, 0.4, 0.4),
+      });
+      y -= 16;
+    } else {
+      page.drawText(propertyAddress || "Address not available", { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
+      y -= 16;
+    }
+
+    page.drawText(`Transaction Type: ${leadType || "N/A"}`, { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
     y -= 16;
+
+    // Divider
+    page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+    y -= 24;
+
+    // ── FAQ Sections ──
+    for (const item of getRetainerFaqItems(firm)) {
+      // Question
+      const qLines = wrapText(item.question, bold, 10, contentWidth);
+      ensureSpace(qLines.length * lineHeight + 10);
+      for (const line of qLines) {
+        page.drawText(line, { x: margin, y, font: bold, size: 10, color: rgb(0.1, 0.1, 0.1) });
+        y -= lineHeight;
+      }
+      y -= 2;
+
+      // Answer
+      const aLines = wrapText(item.answer, regular, 9, contentWidth);
+      ensureSpace(aLines.length * lineHeight);
+      for (const line of aLines) {
+        page.drawText(line, { x: margin, y, font: regular, size: 9, color: rgb(0.3, 0.3, 0.3) });
+        y -= lineHeight;
+      }
+      y -= 12;
+    }
   }
 
-  page.drawText(`Transaction Type: ${leadType || "N/A"}`, { x: margin, y, font: regular, size: 9, color: rgb(0.4, 0.4, 0.4) });
-  y -= 16;
+  // v7 agreement body: title, meta, sections, fee tables, definitions.
+  function drawAgreement(data: RetainerAgreementData) {
+    const a = buildRetainerAgreement(data, signedDate);
+    const ink = rgb(0.1, 0.1, 0.1);
+    const body = rgb(0.3, 0.3, 0.3);
+    const muted = rgb(0.45, 0.45, 0.45);
 
-  // Divider
-  page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-  y -= 24;
+    const paragraph = (text: string, font = regular, size = 9, color = body) => {
+      for (const line of wrapText(text, font, size, contentWidth)) {
+        ensureSpace(lineHeight);
+        page.drawText(line, { x: margin, y, font, size, color });
+        y -= lineHeight;
+      }
+    };
+    // Bold label then body text; two strings per line keep spacing.
+    const labelled = (label: string, text: string) => {
+      const words = [
+        ...label.split(" ").map((w) => ({ w, b: true })),
+        ...text.split(" ").map((w) => ({ w, b: false })),
+      ];
+      const lineWidth = (ws: typeof words) => {
+        const b = ws.filter((t) => t.b).map((t) => t.w).join(" ");
+        const r = ws.filter((t) => !t.b).map((t) => t.w).join(" ");
+        return bold.widthOfTextAtSize(b, 9) + regular.widthOfTextAtSize((b && r ? " " : "") + r, 9);
+      };
+      const lines: (typeof words)[] = [];
+      let cur: typeof words = [];
+      for (const t of words) {
+        if (cur.length && lineWidth([...cur, t]) > contentWidth) {
+          lines.push(cur);
+          cur = [];
+        }
+        cur.push(t);
+      }
+      if (cur.length) lines.push(cur);
 
-  // ── FAQ Sections ──
-  for (const item of getRetainerFaqItems(firm)) {
-    // Question
-    const qLines = wrapText(item.question, bold, 10, contentWidth);
-    ensureSpace(qLines.length * lineHeight + 10);
-    for (const line of qLines) {
-      page.drawText(line, { x: margin, y, font: bold, size: 10, color: rgb(0.1, 0.1, 0.1) });
-      y -= lineHeight;
-    }
-    y -= 2;
+      for (const ws of lines) {
+        ensureSpace(lineHeight);
+        const b = ws.filter((t) => t.b).map((t) => t.w).join(" ");
+        const r = ws.filter((t) => !t.b).map((t) => t.w).join(" ");
+        let x = margin;
+        if (b) {
+          page.drawText(b, { x, y, font: bold, size: 9, color: ink });
+          x += bold.widthOfTextAtSize(b + " ", 9);
+        }
+        if (r) page.drawText(r, { x, y, font: regular, size: 9, color: body });
+        y -= lineHeight;
+      }
+      y -= 6;
+    };
+    const heading = (text: string) => {
+      ensureSpace(30);
+      y -= 8;
+      page.drawText(text.toUpperCase(), { x: margin, y, font: bold, size: 10, color: brandColor });
+      y -= 18;
+    };
+    const table = (rows: { label: string; amount: string }[], head?: boolean) => {
+      const all = head ? [{ label: "If this happens", amount: "Fee" }, ...rows] : rows;
+      all.forEach((r, i) => {
+        const isHead = head && i === 0;
+        const amountWidth = bold.widthOfTextAtSize(r.amount, 9);
+        const labelLines = wrapText(r.label, isHead ? bold : regular, 9, contentWidth - amountWidth - 24);
+        const h = labelLines.length * lineHeight + 8;
+        ensureSpace(h);
+        const shade = isHead ? rgb(0.85, 0.85, 0.85) : i % 2 === (head ? 1 : 0) ? rgb(0.97, 0.97, 0.98) : undefined;
+        if (shade) {
+          page.drawRectangle({ x: margin, y: y - h + lineHeight - 2, width: contentWidth, height: h, color: shade });
+        }
+        labelLines.forEach((l, j) => {
+          page.drawText(l, { x: margin + 6, y: y - j * lineHeight, font: isHead ? bold : regular, size: 9, color: isHead ? ink : body });
+        });
+        page.drawText(r.amount, { x: margin + contentWidth - 6 - amountWidth, y, font: bold, size: 9, color: ink });
+        y -= h;
+      });
+      y -= 4;
+    };
 
-    // Answer
-    const aLines = wrapText(item.answer, regular, 9, contentWidth);
-    ensureSpace(aLines.length * lineHeight);
-    for (const line of aLines) {
-      page.drawText(line, { x: margin, y, font: regular, size: 9, color: rgb(0.3, 0.3, 0.3) });
-      y -= lineHeight;
-    }
+    page.drawText(a.title, { x: margin, y, font: bold, size: 18, color: ink });
+    y -= 20;
+    paragraph(a.meta.join("  \u00b7  "), regular, 9, muted);
+    y -= 8;
+    page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+    y -= 18;
+
+    a.sections.forEach((sec) => labelled(sec.label, sec.body));
+    heading("Your fees");
+    table(a.fees);
+    paragraph(a.feeNote, regular, 8, muted);
+    heading("If something changes");
+    paragraph(a.changesIntro, regular, 8, muted);
+    y -= 4;
+    table(a.changes, true);
+    heading("Definitions");
+    a.definitions.forEach((d) => labelled(d.label, d.body));
+    y -= 6;
+    paragraph(a.acceptance, bold, 9, ink);
     y -= 12;
   }
 
   // ── Signature Section ──
+  if (params.agreement) {
+    // v7: one shaded row, "Signature ____" left and "Date ____" right.
+    ensureSpace(60);
+    const rowH = 30;
+    const baseY = y - 18;
+    page.drawRectangle({ x: margin, y: y - rowH, width: contentWidth, height: rowH, color: rgb(0.97, 0.97, 0.98) });
+    const gray = rgb(0.35, 0.35, 0.4);
+    const ink = rgb(0.1, 0.1, 0.1);
+    page.drawText("Signature", { x: margin + 6, y: baseY, font: regular, size: 10, color: gray });
+    const sigX = margin + 6 + regular.widthOfTextAtSize("Signature", 10) + 8;
+    page.drawText(signature, { x: sigX + 2, y: baseY + 1, font: italic, size: 13, color: ink });
+    page.drawLine({ start: { x: sigX, y: baseY - 3 }, end: { x: sigX + 200, y: baseY - 3 }, thickness: 0.8, color: ink });
+
+    const dateText = longDate(signedDate);
+    const dateLineW = Math.max(110, regular.widthOfTextAtSize(dateText, 10) + 8);
+    const dateLineX = margin + contentWidth - 6 - dateLineW;
+    const dateLabelX = dateLineX - 8 - bold.widthOfTextAtSize("Date", 10);
+    page.drawText("Date", { x: dateLabelX, y: baseY, font: bold, size: 10, color: ink });
+    page.drawText(dateText, { x: dateLineX + 4, y: baseY, font: regular, size: 10, color: ink });
+    page.drawLine({ start: { x: dateLineX, y: baseY - 3 }, end: { x: dateLineX + dateLineW, y: baseY - 3 }, thickness: 0.8, color: ink });
+
+    y -= rowH + 12;
+    page.drawText(`${fullName}  \u00b7  ${uniqueId}`, { x: margin, y, font: regular, size: 8, color: gray });
+    return doc.save();
+  }
+
   ensureSpace(120);
   page.drawLine({ start: { x: margin, y }, end: { x: pageWidth - margin, y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
   y -= 20;
