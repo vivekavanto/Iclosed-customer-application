@@ -4,6 +4,7 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { INTAKE_STEPS, STEP_AGREEMENT } from "@/components/intake/steps";
+import { QUOTE_LEGAL_FEES } from "@/lib/quotePricing";
 
 interface Service {
   id: string;
@@ -63,7 +64,7 @@ export function Step1({
       title: "I am buying a property",
       description:
         "Buying a property? We'll handle the legal steps to complete your purchase securely.",
-      price: "$1199",
+      price: `$${QUOTE_LEGAL_FEES.buying}`,
     },
     {
       id: "selling",
@@ -71,7 +72,7 @@ export function Step1({
       title: "I am selling a property",
       description:
         "Selling a property? We'll prepare your documents and manage the legal side of your sale.",
-      price: "$1099",
+      price: `$${QUOTE_LEGAL_FEES.selling}`,
     },
     {
       id: "both",
@@ -79,7 +80,7 @@ export function Step1({
       title: "I am buying and selling a property",
       description:
         "Doing both? iClosed will coordinate both ends to ensure a smooth and connected closing.",
-      price: "$2199",
+      price: `$${QUOTE_LEGAL_FEES.both}`,
     },
   ];
 

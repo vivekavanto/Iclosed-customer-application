@@ -5,6 +5,8 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
 import { getLeadFirmKey } from "@/lib/leadFirm";
+import { retainerAgreementKind } from "@/lib/retainerAgreement";
+import { loadRetainerAgreementData } from "@/lib/loadRetainerAgreement";
 
 type Side = "purchase" | "sale" | null;
 
@@ -222,6 +224,13 @@ export async function GET(req: Request) {
 
     const displayLeadType = formatLeadTypeLabelForRecipient(lead);
 
+    // v7 purchase/sale agreement figures; other lead types keep the FAQ retainer.
+    const agreementKind = retainerAgreementKind(lead?.lead_type);
+    const retainerAgreement =
+      lead && agreementKind
+        ? await loadRetainerAgreementData(lead, propertyAddress, agreementKind)
+        : null;
+
     return NextResponse.json({
       signed: false,
       full_name: fullName,
@@ -239,6 +248,7 @@ export async function GET(req: Request) {
       retainer_total: totalRetainers,
       is_co_person: isCoPerson,
       co_person_role: coRole,
+      retainer_agreement: retainerAgreement,
     });
   } catch (err) {
     console.error("[Retainer Check] Server error:", err);
