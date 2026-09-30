@@ -1,26 +1,21 @@
-// v7 purchase/sale retainer wording, shared by page and PDF.
+// v9 purchase/sale retainer wording (spec section 8, Appendix A). Pure.
 import { getFirm, type FirmKey } from "@/lib/firms";
 import { money } from "@/lib/closingEstimateEmail";
 import { QUOTE_TEAM } from "@/lib/quotePricing";
-import { round2 } from "@/lib/closingCosts";
+import { computeFees, dollars, millions, type ExtraFee, type IclosedFees } from "@/lib/iclosedFees";
 
 export type AgreementKind = "purchase" | "sale";
 
-/** Figures and file facts the server supplies for one retainer. */
-export interface RetainerAgreementData {
+export interface RetainerAgreementInput {
   kind: AgreementKind;
   firmKey: FirmKey;
   property: string;
   /** Deal file number; null hides it. */
   fileNo: string | null;
-  legalFees: number;
-  /** Positive amount off the legal fee; null or 0 hides the row. */
+  /** Positive dollars off the legal fee. */
   discount: number | null;
-  disbursements: number;
-  /** HST-taxable part of `disbursements`. */
-  taxableDisbursements: number;
-  hstRate: number;
-  hstNumber: string | null;
+  /** YYYY-MM-DD signing date. */
+  date: string;
 }
 
 export interface AgreementSection {
@@ -33,9 +28,10 @@ export interface FeeRow {
   amount: string;
 }
 
+/** Rendered agreement text for the page and PDF. */
 export interface RetainerAgreement {
   title: string;
-  /** Header facts joined with " · ". */
+  /** Subtitle facts joined with " · ". */
   meta: string[];
   sections: AgreementSection[];
   fees: FeeRow[];
@@ -46,18 +42,12 @@ export interface RetainerAgreement {
   acceptance: string;
 }
 
-/** Single-side purchase and sale leads get the v7 agreement; others keep the FAQ. */
+/** Purchase and sale leads get v9; others keep the FAQ. */
 export function retainerAgreementKind(leadType: string | null | undefined): AgreementKind | null {
   const lt = (leadType ?? "").trim();
   if (lt === "Purchase") return "purchase";
   if (lt === "Sale") return "sale";
   return null;
-}
-
-/** HST on the firm's taxable fees, after any discount. */
-export function retainerAgreementHst(d: RetainerAgreementData): number {
-  const discount = d.discount && d.discount > 0 ? d.discount : 0;
-  return round2(d.hstRate * Math.max(0, d.legalFees - discount + d.taxableDisbursements));
 }
 
 /** "29 September 2026" from YYYY-MM-DD. */
@@ -67,48 +57,87 @@ export function longDate(isoDate: string): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
-const INDEPENDENT_ADVICE: AgreementSection = {
+// "($100.00)" for a discount, "$0.00" when none.
+function bracketed(n: number): string {
+  return n > 0 ? `(${money(n)})` : money(0);
+}
+
+const ADVICE: AgreementSection = {
   label: "Independent legal advice.",
   body: "We act for everyone on your file together. If one person's interests differ from the rest, they may need their own lawyer for independent legal advice. We will tell you and this usually costs $250 to $450.",
 };
 
-const DEFINITIONS: AgreementSection[] = [
-  {
+const DEF = {
+  title: {
     label: "Title Insurance.",
     body: "A one-time policy that protects the owner and the lender against losses from title fraud, defects in title and similar problems unknown at closing.",
   },
-  {
+  lender: {
     label: "B Lender or Private Lender.",
-    body: "A lender outside the major banks and credit unions, such as a trust company, mortgage investment corporation or private individual, whose mortgages usually need extra documents and review.",
+    body: "A lender outside the major banks, such as a trust company, mortgage investment corporation or private individual, whose mortgages usually need extra documents and review.",
   },
-  {
+  noar: {
     label: "Notice of Assignment of Rents.",
     body: "A document some lenders require on a rented property, giving the lender the right to collect the rent if the mortgage goes into default.",
   },
-  {
+  instructions: {
     label: "Mortgage Instructions.",
     body: "Your lender's written directions to us setting out the mortgage terms, their conditions and the documents they need before they release your funds.",
   },
-];
+} satisfies Record<string, AgreementSection>;
 
-// Wording that differs between the purchase and sale agreements.
+// "If this happens" labels per extras key (spec A4).
+const EXTRA_LABELS: Record<string, (e: ExtraFee) => Partial<Record<AgreementKind, string>>> = {
+  closing_date_moved: () => ({
+    purchase: "If you require the closing date to be moved",
+    sale: "If you require the closing date to be moved",
+  }),
+  late_mortgage_instructions: (e) => ({
+    purchase: `Mortgage instructions arrive under ${e.threshold_business_days} business days of closing`,
+  }),
+  extra_payout: () => ({
+    purchase: "Each payout beyond the one in your fee",
+    sale: "Each payout beyond first mortgage, property tax and commission",
+  }),
+  notice_of_assignment_of_rents: (e) => ({
+    purchase: `Notice of Assignment of Rents required (${dollars(e.registration ?? 0)} is paid to the ministry)`,
+  }),
+  bridge_financing: () => ({ purchase: "Bridge financing" }),
+  b_or_private_lender: () => ({
+    purchase: "Your mortgage is from a B Lender or Private Lender",
+    sale: "Your mortgage is from a B Lender or Private Lender",
+  }),
+  price_tier: (e) => ({
+    purchase: `Purchase price over ${millions(e.threshold ?? 0)}`,
+    sale: `Sale price over ${millions(e.threshold ?? 0)}`,
+  }),
+  tax_certificate: () => ({ purchase: "Tax Certificate from the Municipality (paid to Municipality)" }),
+};
+
+function extraFeeText(key: string, e: ExtraFee): string {
+  if (e.fee === "at_cost") return "At cost";
+  const fee = dollars(e.fee);
+  if (key === "notice_of_assignment_of_rents") return `${fee} plus ${dollars(e.registration ?? 0)} registration`;
+  if (key === "price_tier") return `${fee}, or quoted above ${millions(e.manual_quote_above ?? 0)}`;
+  if (e.approximate) return `Approx ${fee}`;
+  return e.unit && e.unit.startsWith("per ") ? `${fee} ${e.unit}` : fee;
+}
+
 const COPY: Record<
   AgreementKind,
   {
-    label: string;
+    title: string;
     legalFeeLabel: string;
-    disbursementsLabel: string;
     sections: AgreementSection[];
     feeNote: string;
     changesIntro: string;
-    changes: FeeRow[];
+    definitions: AgreementSection[];
     acceptance: string;
   }
 > = {
   purchase: {
-    label: "Purchase",
+    title: "Purchase Retainer Agreement",
     legalFeeLabel: "Legal fees (for title transfer and mortgage)",
-    disbursementsLabel: "Estimated Disbursements (average is $650-$750)",
     sections: [
       {
         label: "What we do.",
@@ -130,7 +159,7 @@ const COPY: Record<
         label: "Your information.",
         body: "Confidential. Shared only with your lender, the title insurer, the land registry office and your brokerage. Send anything sensitive through your portal. We keep your file for the period the Law Society requires, then destroy it securely.",
       },
-      INDEPENDENT_ADVICE,
+      ADVICE,
       {
         label: "Ending this retainer.",
         body: "Either of us can end this relationship in writing. We can stop acting if you do not pay, if a conflict comes up, or if you ask us to do something we cannot properly do. If it ends, or if your deal does not close, you pay the costs already incurred plus a fee for the work done. Ontario law governs this agreement.",
@@ -140,27 +169,17 @@ const COPY: Record<
       "Land transfer tax and your title insurance premium are not included in these fees. They are paid to the government and to the insurer, not to us, and we bill them to you as they are incurred. Our fees come out of your closing funds, not in advance. Your draft statement of account itemises every disbursement.",
     changesIntro:
       "None of the items below apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as private or B lender mortgages, estates, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
-    changes: [
-      { label: "If you require the closing date to be moved", amount: "$250 per extension request" },
-      { label: "Mortgage instructions arrive under 3 business days of closing", amount: "$200" },
-      { label: "Each payout beyond the one in your fee", amount: "$100" },
-      { label: "Notice of Assignment of Rents required ($85 is paid to the ministry)", amount: "$150 plus $85 registration" },
-      { label: "Bridge financing", amount: "$200" },
-      { label: "Your mortgage is from a B Lender or Private Lender", amount: "$250" },
-      { label: "Purchase price over $1.5M", amount: "$300, or quoted above $3M" },
-      { label: "Tax Certificate from the Municipality (paid to Municipality)", amount: "Approx $100" },
-    ],
+    definitions: [DEF.title, DEF.lender, DEF.noar, DEF.instructions],
     acceptance:
       "By signing you agree to these terms and the fees above, you understand that in most cases we also act for your lender, you instruct us to obtain title insurance, and you understand we use AI-assisted tools with lawyer oversight.",
   },
   sale: {
-    label: "Sale",
+    title: "Sale Retainer Agreement",
     legalFeeLabel: "Legal fees (including first mortgage, property tax and commission payout)",
-    disbursementsLabel: "Disbursements",
     sections: [
       {
         label: "What we do.",
-        body: "We prepare your transfer and your statement of adjustments, respond to the buyer's requisitions, pay off your mortgage and discharge it from title, hold and release your funds in trust, close, and send you your proceeds.",
+        body: "We prepare your transfer and your statement of adjustments, respond to the buyer's requisitions, pay off your mortgage and arrange its discharge from title, hold and release your funds in trust, close, and send you your proceeds.",
       },
       {
         label: "What we do not do.",
@@ -176,9 +195,9 @@ const COPY: Record<
       },
       {
         label: "Your information.",
-        body: "Confidential. Shared only with your lender, the title insurer, the land registry and your brokerage. Send anything sensitive through your portal. We keep your file for the period the Law Society requires, then destroy it securely.",
+        body: "Confidential. Shared only with your lender, the buyer's lawyer, the land registry and your brokerage. Send anything sensitive through your portal. We keep your file for the period the Law Society requires, then destroy it securely.",
       },
-      INDEPENDENT_ADVICE,
+      ADVICE,
       {
         label: "Ending this retainer.",
         body: "Either of us can end it in writing. We can stop acting if you do not pay, if a conflict comes up, or if you ask us to do something we cannot properly do. If it ends, or if your deal does not close, you pay the costs already incurred plus a fee for the work done. Ontario law governs this agreement.",
@@ -188,41 +207,35 @@ const COPY: Record<
       "There is no land transfer tax on a sale, and you do not buy title insurance. Our fees come out of your sale proceeds, not in advance. Your draft statement of account itemises every disbursement.",
     changesIntro:
       "None of these apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as private or B lender mortgages, estates, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
-    changes: [
-      { label: "If you require the closing date to be moved", amount: "$250 per extension request" },
-      { label: "Each payout beyond first mortgage, property tax and commission", amount: "$100" },
-      { label: "Notice of Assignment of Rents required ($85 is paid to the ministry)", amount: "$150 plus $85 registration" },
-      { label: "Your mortgage is from a B Lender or Private Lender", amount: "$250" },
-      { label: "Sale price over $1.5M", amount: "$300, or quoted above $3M" },
-    ],
+    definitions: [DEF.lender],
     acceptance:
       "By signing you agree to these terms and the fees above, and you understand we use AI-assisted tools with lawyer oversight.",
   },
 };
 
-export function buildRetainerAgreement(
-  d: RetainerAgreementData,
-  /** YYYY-MM-DD, the signing date. */
-  date: string,
-): RetainerAgreement {
-  const copy = COPY[d.kind];
-  const firm = getFirm(d.firmKey);
-  const entity = firm.key === "navawilson" ? `${firm.legalName}, operating as iClosed` : firm.legalName;
+export function buildRetainerAgreement(fees: IclosedFees, input: RetainerAgreementInput): RetainerAgreement {
+  const { kind } = input;
+  const copy = COPY[kind];
+  const ft = fees.file_types[kind];
+  const f = computeFees(fees, kind, { discount: input.discount });
   const { lawyer, csm } = QUOTE_TEAM;
-  const hasDiscount = Boolean(d.discount && d.discount > 0);
 
-  const fees: FeeRow[] = [{ label: copy.legalFeeLabel, amount: money(d.legalFees) }];
-  if (hasDiscount) fees.push({ label: "Discount", amount: `-${money(d.discount as number)}` });
-  fees.push(
-    { label: copy.disbursementsLabel, amount: money(d.disbursements) },
-    { label: "HST", amount: money(retainerAgreementHst(d)) },
-  );
+  const range = ft.disbursements_range;
+  const disbursementsLabel =
+    kind === "purchase" && range
+      ? `Estimated Disbursements (average is ${dollars(range[0])}-${dollars(range[1])})`
+      : ft.disbursements_label;
 
-  const hstReg = d.hstNumber ? ` HST registration ${d.hstNumber}.` : "";
+  const changes: FeeRow[] = Object.entries(fees.extras).flatMap(([key, e]) => {
+    const label = e.applies_to.includes(kind) ? EXTRA_LABELS[key]?.(e)[kind] : undefined;
+    return label ? [{ label, amount: extraFeeText(key, e) }] : [];
+  });
+
+  const hstNumber = fees.retainer?.hst_registration_number || "[number]";
 
   return {
-    title: `${copy.label} Retainer Agreement`,
-    meta: [copy.label, d.property, d.fileNo ? `File ${d.fileNo}` : "", longDate(date), entity].filter(Boolean),
+    title: copy.title,
+    meta: [input.property, input.fileNo ? `File ${input.fileNo}` : "", longDate(input.date), getFirm(input.firmKey).introName].filter(Boolean),
     sections: [
       {
         label: "Your lawyer.",
@@ -230,11 +243,16 @@ export function buildRetainerAgreement(
       },
       ...copy.sections,
     ],
-    fees,
-    feeNote: `${copy.feeNote}${hstReg}`,
+    fees: [
+      { label: copy.legalFeeLabel, amount: money(f.legalFees) },
+      { label: "Discount", amount: bracketed(f.discount) },
+      { label: disbursementsLabel, amount: money(f.disbursements) },
+      { label: "HST", amount: money(f.hst) },
+    ],
+    feeNote: `${copy.feeNote} HST registration ${hstNumber}.`,
     changesIntro: copy.changesIntro,
-    changes: copy.changes,
-    definitions: DEFINITIONS,
+    changes,
+    definitions: copy.definitions,
     acceptance: copy.acceptance,
   };
 }

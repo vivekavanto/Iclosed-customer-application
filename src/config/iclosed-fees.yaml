@@ -1,0 +1,174 @@
+# iClosed fee and rules settings
+# Master source for every price, estimate, range and rate used by the quote email,
+# quote page, retainer and draft statement of account. Code reads from here; never hardcode.
+# Money is CAD. Amounts are dollars with two decimals; store and compute as integer cents.
+# Spec: docs/iclosed-documents-implementation-spec.md
+
+version: 1
+updated: 2026-09-29
+owner: Saru Kanapathipillai
+
+tax:
+  hst_rate: 0.13
+  # HST applies to legal fees plus our own disbursements (software, file administration).
+  # Registration and search lines are shown tax included and passed through at cost.
+  hst_on_levy: true   # TODO(decision): LAWPRO says the levy is not subject to HST. false gives sale HST $197.47.
+
+file_types:
+  purchase:
+    label: purchase            # used in copy: "Your purchase quote"
+    quote_prefix: P
+    legal_fees:
+      standard: 1199.00
+    disbursements:
+      registration_of_transfer: { amount: 85.00, when: always }
+      registration_of_charge:   { amount: 85.00, when: has_mortgage, per: charge }
+      searches:                 { amount: 175.00, estimate: true, range: [150.00, 250.00] }
+      software:                 { amount: 285.00, hst: true }
+      file_administration:      { amount: 85.00, hst: true }
+    disbursements_label: Estimated disbursements
+    disbursements_range: [650.00, 750.00]
+    title_insurance_estimate: 1500.00
+    land_transfer_tax: true
+
+  sale:
+    label: sale
+    quote_prefix: S
+    legal_fees:
+      standard: 1099.00
+      includes_payouts: [first_mortgage, property_tax, commission]
+    disbursements:
+      law_society_levy:    { amount: 65.00, hst: true }   # see tax.hst_on_levy
+      searches:            { amount: 0.00, todo: "Should a sale include searches? Discuss with Angat" }
+      software:            { amount: 285.00, hst: true }
+      file_administration: { amount: 135.00, hst: true, note: "includes SureFund" }
+    disbursements_label: Disbursements
+    disbursements_fixed: 485.00
+    title_insurance_estimate: null
+    land_transfer_tax: false
+
+  refinance:
+    label: refinance
+    quote_prefix: R
+    legal_fees:
+      standard: 999.00
+      includes_payouts: [first_mortgage]
+    disbursements:
+      registration_of_charge: { amount: 85.00, when: always, per: charge }
+      searches:               { amount: 175.00, estimate: true, range: [150.00, 250.00] }
+      software:               { amount: 285.00, hst: true }
+      file_administration:    { amount: 135.00, hst: true, note: "includes SureFund" }
+    disbursements_label: Disbursements
+    disbursements_range: [650.00, 750.00]
+    title_insurance_estimate: 250.00
+    # From 50 FCT lender-policy invoices (Apr 2025 to Sep 2026): $194.40 incl. tax up to about
+    # $760,000 of mortgage, then about +$1 per $1,000. Median $248.40, mean $393.22.
+    land_transfer_tax: false
+
+  new_build_condo:
+    label: new condo
+    quote_prefix: N
+    legal_fees:
+      occupancy: 500.00
+      final_closing: 1199.00
+      standard: 1699.00          # occupancy + final_closing
+    agreement_review:            # optional, billed when done, never in totals
+      fee: 300.00
+      builder_correspondence: 50.00
+    disbursements:               # all at final closing
+      registration_of_transfer: { amount: 85.00, when: always }
+      registration_of_charge:   { amount: 85.00, when: has_mortgage, per: charge }
+      searches:                 { amount: 175.00, estimate: true, range: [150.00, 250.00], note: "higher with several PINs (unit, parking, locker)" }
+      software:                 { amount: 285.00, hst: true }
+      file_administration:      { amount: 85.00, hst: true }
+    occupancy_disbursements:
+      execution_search: { amount: at_cost, when: builder_requires_execution_search }
+    disbursements_label: Estimated disbursements
+    disbursements_range: [650.00, 750.00]
+    title_insurance_estimate: 1500.00
+    land_transfer_tax: true      # base is price net of HST plus certain builder adjustments (input, not calculated)
+
+# "If this happens" fees. Shown only in the retainer. Charged only once they apply and the
+# client has been told in writing. Never shown on the draft statement of account.
+extras:
+  closing_date_moved:
+    fee: 250.00
+    unit: per extension request
+    applies_to: [purchase, sale, refinance, new_build_condo]
+    notes: "Refinance: only when documents must be redrafted. New build: occupancy or closing date."
+  late_mortgage_instructions:
+    fee: 200.00
+    threshold_business_days: 3
+    applies_to: [purchase, refinance, new_build_condo]
+  extra_payout:
+    fee: 100.00
+    unit: each, beyond those included in the legal fee
+    applies_to: [purchase, sale, refinance, new_build_condo]
+  notice_of_assignment_of_rents:
+    fee: 150.00
+    registration: 85.00          # paid to the ministry
+    applies_to: [purchase, refinance, new_build_condo]
+  bridge_financing:
+    fee: 200.00
+    applies_to: [purchase, new_build_condo]
+  b_or_private_lender:
+    fee: 250.00
+    applies_to: [purchase, sale, refinance, new_build_condo]
+  price_tier:
+    threshold: 1500000.00        # refinance uses mortgage amount
+    fee: 300.00
+    manual_quote_above: 3000000.00
+    applies_to: [purchase, sale, refinance, new_build_condo]
+  tax_certificate:
+    fee: 100.00
+    approximate: true
+    paid_to: municipality
+    applies_to: [purchase]
+  discharge_registration:
+    fee: 85.00                   # paid to the ministry
+    applies_to: [refinance]
+  execution_search_at_occupancy:
+    fee: at_cost
+    applies_to: [new_build_condo]
+
+land_transfer_tax:
+  # Rates are marginal: each rate applies to the part of the price inside its band.
+  ontario:
+    source: https://www.ontario.ca/document/land-transfer-tax
+    verified: 2026-09-29
+    brackets:                    # single-family residences (one or two dwellings)
+      - { up_to: 55000.00,   rate: 0.005 }
+      - { up_to: 250000.00,  rate: 0.010 }
+      - { up_to: 400000.00,  rate: 0.015 }
+      - { up_to: 2000000.00, rate: 0.020 }
+      - { up_to: null,       rate: 0.025 }
+    first_time_buyer_rebate_max: 4000.00
+  toronto:
+    source: https://www.toronto.ca/services-payments/property-taxes-utilities/municipal-land-transfer-tax-mltt/municipal-land-transfer-tax-mltt-rates-and-fees/
+    effective: 2026-04-01
+    verified: 2026-09-29
+    brackets:
+      - { up_to: 55000.00,    rate: 0.005 }
+      - { up_to: 250000.00,   rate: 0.010 }
+      - { up_to: 400000.00,   rate: 0.015 }
+      - { up_to: 2000000.00,  rate: 0.020 }
+      - { up_to: 3000000.00,  rate: 0.025 }
+      - { up_to: 4000000.00,  rate: 0.0440 }
+      - { up_to: 5000000.00,  rate: 0.0545 }
+      - { up_to: 10000000.00, rate: 0.0650 }
+      - { up_to: 20000000.00, rate: 0.0755 }
+      - { up_to: null,        rate: 0.0860 }
+    first_time_buyer_rebate_max: 4475.00
+    administration_fee: 115.89   # $102.56 plus HST, charged through Teraview
+
+rounding:
+  mode: half_up
+  scale: 2
+
+# Assumed for every file, as in the closing cost estimator; adjust here.
+intake_defaults:
+  has_mortgage: true             # standard purchase: one property, one new mortgage
+  charges_count: 1
+
+retainer:
+  hst_registration_number: "829252303RT0001"  # null prints the [number] placeholder

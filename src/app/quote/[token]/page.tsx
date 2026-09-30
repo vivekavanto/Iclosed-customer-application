@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { verifyQuoteToken } from "@/lib/quoteToken";
 import { loadLeadQuote, type LeadQuote } from "@/lib/leadQuote";
 import { CONDO_FEES, QUOTE_LEGAL_FEES, QUOTE_TEAM } from "@/lib/quotePricing";
+import { dollars } from "@/lib/iclosedFees";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
 import { money } from "@/lib/closingEstimateEmail";
 
 // Reads leads with the service-role client; never cache or index.
@@ -43,15 +45,15 @@ const LEGAL_LINES: Record<Side, Line[]> = {
   buying: [
     {
       title: "Purchase, for title transfer and mortgage",
-      note: "Flat fee. One property, with or without a new mortgage.",
-      amount: QUOTE_LEGAL_FEES.buying,
+      note: "Flat fee. One property, one new mortgage.",
+      amount: null,
     },
   ],
   selling: [
     {
       title: "Sale, including first mortgage, property tax and commission payout",
-      note: "Flat fee. Paying off one mortgage and discharging it from title. Each further payout is $100 plus HST.",
-      amount: QUOTE_LEGAL_FEES.selling,
+      note: "Includes your first mortgage, property tax and commission payouts. Any other payout is {extra_payout} plus HST.",
+      amount: null,
     },
   ],
   both: [
@@ -124,8 +126,10 @@ const TBD_LINES: Record<Side, Line[]> = {
 };
 TBD_LINES.both = TBD_LINES.buying;
 
+const DISBURSEMENT_TITLE: Partial<Record<Side, string>> = { selling: "Levy, software and file costs" };
+
 const DISBURSEMENT_NOTE: Record<Side, string> = {
-  buying: "Itemised in full on your draft statement of account.",
+  buying: "Typical range is {range}. Itemised in full on your draft statement of account.",
   selling: "Itemised in full on your draft statement of account.",
   both: "Itemised in full on your draft statement of account.",
   refinance: "Itemised in full on your draft statement of account.",
@@ -133,21 +137,23 @@ const DISBURSEMENT_NOTE: Record<Side, string> = {
 };
 
 const TRANSACTION: Record<Side, string> = {
-  buying: "Purchase",
-  selling: "Sale",
+  buying: "Purchase with one new mortgage",
+  selling: "Sale with one mortgage payout",
   both: "Purchase and sale",
   refinance: "Refinance",
   condo: "New condo, occupancy and final closing",
 };
 
-// Condo quotes mention builder adjustments in the disclaimer.
+// Condo quotes mention builder adjustments; sale has no title insurance.
 const MOVING_FIGURES: Record<Side, string> = {
-  buying: "statement of adjustments figures",
+  buying: "title insurance premiums and statement of adjustments figures",
   selling: "statement of adjustments figures",
-  both: "statement of adjustments figures",
-  refinance: "statement of adjustments figures",
-  condo: "builder adjustments",
+  both: "title insurance premiums and statement of adjustments figures",
+  refinance: "title insurance premiums and statement of adjustments figures",
+  condo: "title insurance premiums and builder adjustments",
 };
+
+const TITLE: Partial<Record<Side, string>> = { buying: "Your purchase quote", selling: "Your sale quote" };
 
 const RED = "#B3211E";
 
@@ -230,6 +236,17 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
   const continueHref = `/quote/${encodeURIComponent(token)}/continue`;
   const quoteDate = formatDate(quote.createdAt);
 
+  // Numbers inside copy come from fee settings.
+  const fees = loadIclosedFees();
+  const range = fees.file_types.purchase.disbursements_range;
+  const payoutFee = fees.extras.extra_payout.fee;
+  const fill = (text: string) =>
+    text
+      .replace("{range}", range ? `${dollars(range[0])} to ${dollars(range[1])}` : "")
+      .replace("{extra_payout}", typeof payoutFee === "number" ? dollars(payoutFee) : "");
+  const specSide = side === "buying" || side === "selling";
+  const contactHref = specSide ? `mailto:${csm.email}` : `tel:${csm.phone.replace(/\D/g, "")}`;
+
   return (
     <div className="min-h-screen bg-[#FAFAFA] px-4 py-6 sm:py-12">
       <div className="mx-auto max-w-[880px]">
@@ -238,12 +255,12 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
             <span className="italic" style={{ color: RED }}>i</span>Closed
           </div>
           <p className="text-[13px] text-gray-500">
-            <span className="hidden sm:inline">Quote </span>Q-{quote.leadId.slice(0, 6).toUpperCase()}
+            <span className="hidden sm:inline">Quote </span>{quote.quoteNumber ?? `Q-${quote.leadId.slice(0, 6).toUpperCase()}`}
             {quoteDate && <span className="hidden sm:inline"> · {quoteDate}</span>}
           </p>
         </header>
 
-        <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-gray-900 sm:mt-8 sm:text-4xl">Your quote</h1>
+        <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-gray-900 sm:mt-8 sm:text-4xl">{TITLE[side] ?? "Your quote"}</h1>
         <p className="mt-2 text-[15px] text-gray-600">
           Thanks for getting in touch. Here is what it costs to close {INTRO[side]}
           {condo ? "." : " with us."}
@@ -257,7 +274,7 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
           </div>
           <div className="mt-5 sm:mt-0 sm:flex sm:items-stretch sm:gap-8">
             <div className="flex items-center justify-between border-t border-gray-200 py-3 sm:block sm:border-0 sm:py-0 sm:text-right">
-              <p className="text-[13px] text-gray-500">Disbursements</p>
+              <p className="text-[13px] text-gray-500">{quote.disbursementsLabel}</p>
               <p className="text-sm font-bold text-gray-900 sm:text-xl">{money(quote.disbursements)}</p>
             </div>
             <div className="flex items-center justify-between border-t border-gray-200 pt-3 sm:block sm:border-0 sm:border-l sm:pl-8 sm:pt-0 sm:text-right">
@@ -271,12 +288,12 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
         <section className="mt-5 overflow-hidden rounded-xl border border-gray-100 bg-white sm:mt-7">
           <SectionHead>Legal fees</SectionHead>
           {LEGAL_LINES[side].map((l) => (
-            <Row key={l.title} title={l.title} note={l.note} short={l.short} amount={money(l.amount ?? 0)} />
+            <Row key={l.title} title={l.title} note={fill(l.note)} short={l.short} amount={money(l.amount ?? quote.legalFees)} />
           ))}
           <SectionHead>Disbursements</SectionHead>
           <Row
-            title="Registration, searches and file costs"
-            note={DISBURSEMENT_NOTE[side]}
+            title={DISBURSEMENT_TITLE[side] ?? "Registration, searches and file costs"}
+            note={fill(DISBURSEMENT_NOTE[side])}
             amount={money(quote.disbursements)}
           />
           {TBD_LINES[side].map((l) => (
@@ -321,7 +338,7 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
                 <p className="text-[13px] text-gray-500">Customer Success Manager</p>
                 <p className="mt-1 text-[13px] text-gray-700">
                   Your day to day contact.{" "}
-                  <a href={`tel:${csm.phone.replace(/\D/g, "")}`} className="font-semibold" style={{ color: RED }}>
+                  <a href={contactHref} className="font-semibold" style={{ color: RED }}>
                     Get in touch
                   </a>
                 </p>
@@ -359,7 +376,7 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
         <p className="mt-6 text-xs leading-relaxed text-gray-500 sm:mt-7">
           This quote is an estimate, prepared from the information we have today.
           <span className="hidden sm:inline">
-            {" "}Government charges, title insurance premiums and {MOVING_FIGURES[side]} can move before closing.
+            {" "}Government charges{side === "selling" ? " and " : ", "}{MOVING_FIGURES[side]} can move before closing.
           </span>{" "}
           If something on your file falls outside a standard closing, we will tell you the fee in writing,
           and get your agreement, before we do the work.

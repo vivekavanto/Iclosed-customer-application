@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, MapPin, Tag, ArrowRight } from "lucide-react";
 import FAQAccordion from "@/components/retainer/FAQAccordion";
 import RetainerAgreementView from "@/components/retainer/RetainerAgreementView";
-import { longDate, type RetainerAgreementData } from "@/lib/retainerAgreement";
+import { longDate, type RetainerAgreement } from "@/lib/retainerAgreement";
 import { getRetainerFaqItems, retainerAgreementLine } from "@/lib/retainerFaq";
 import { resolveFirmKey, type FirmKey } from "@/lib/firms";
 import Button from "@/components/ui/Button";
@@ -137,8 +137,8 @@ export default function RetainerPage() {
   // null so the form never renders a blank firm name in the moment between
   // first paint and /api/retainer/check answering.
   const [firm, setFirm] = useState<FirmKey>(resolveFirmKey(null));
-  // v7 purchase/sale agreement figures; null keeps the FAQ retainer.
-  const [agreement, setAgreement] = useState<RetainerAgreementData | null>(null);
+  // v9 purchase/sale agreement; null keeps the FAQ retainer.
+  const [agreement, setAgreement] = useState<RetainerAgreement | null>(null);
   const [retainerCurrent, setRetainerCurrent] = useState(1);
   const [retainerTotal, setRetainerTotal] = useState(1);
   const [isCoPerson, setIsCoPerson] = useState(false);
@@ -665,8 +665,7 @@ export default function RetainerPage() {
     <div className="min-h-screen bg-white">
       {agreement ? (
         <RetainerAgreementView
-          data={agreement}
-          date={date}
+          agreement={agreement}
           badge={
             retainerTotal >= 2 && (
               <span className="flex-shrink-0 w-11 h-11 rounded-full border-2 border-[#C10007] flex items-center justify-center text-sm font-bold text-[#C10007]">
@@ -745,7 +744,7 @@ export default function RetainerPage() {
       ═══════════════════════════════════════ */}
       <form onSubmit={handleSubmit} noValidate>
         {agreement ? (
-          // v7 signature line: prefilled, read-only name and date.
+          // v9 signature line: prefilled, read-only name and date.
           <div className="mx-6 sm:mx-10 lg:mx-16 mb-6">
             <div className="flex flex-col gap-4 rounded-md bg-gray-50 px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
               <div className="flex items-end gap-3">

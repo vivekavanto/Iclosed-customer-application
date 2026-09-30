@@ -1,4 +1,4 @@
-import { buildRetainerAgreement, type RetainerAgreementData } from "@/lib/retainerAgreement";
+import type { RetainerAgreement } from "@/lib/retainerAgreement";
 
 const RED = "#B3211E";
 
@@ -32,18 +32,15 @@ function FeeTable({ rows, head }: { rows: { label: string; amount: string }[]; h
   );
 }
 
-/** The v7 purchase or sale retainer body, above the signature form. */
+/** The v9 purchase or sale retainer body, above the signature form. */
 export default function RetainerAgreementView({
-  data,
-  date,
+  agreement,
   badge,
 }: {
-  data: RetainerAgreementData;
-  /** YYYY-MM-DD signing date. */
-  date: string;
+  agreement: RetainerAgreement;
   badge?: React.ReactNode;
 }) {
-  const a = buildRetainerAgreement(data, date);
+  const a = agreement;
 
   return (
     <div className="px-6 pt-8 pb-4 sm:px-10 sm:pt-10 lg:px-16 lg:pt-12">
