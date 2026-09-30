@@ -5,7 +5,6 @@ import { notFound } from "next/navigation";
 import {
   Calendar,
   ArrowLeft,
-  ArrowRight,
   Phone,
   Mail,
   MapPin,
@@ -18,6 +17,15 @@ import {
 } from "@/lib/blogPosts";
 import ShareButtons from "./ShareButtons";
 import BlogArticleBody from "@/components/blog/BlogArticleBody";
+import BlogJsonLd from "@/components/blog/BlogJsonLd";
+import BlogToc from "@/components/blog/BlogToc";
+import BlogSeriesNav from "@/components/blog/BlogSeriesNav";
+import { adjacentInSeries } from "@/lib/blogSeries";
+import { buildBlogToc, cleanArticleBody } from "@/lib/blogToc";
+import { sanitizeBlogHtml } from "@/lib/sanitizeBlogHtml";
+
+/** Shared by the FAQ heading's id and the contents entry that points at it. */
+const FAQ_ANCHOR = "article-faq";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -68,13 +76,15 @@ export async function generateMetadata({
       modifiedTime: post.updatedAt,
       authors: [post.author],
       tags: post.tags,
-      images: [{ url: image, width: 1200, height: 630, alt: post.imageAlt }],
+      images: image
+        ? [{ url: image, width: 1200, height: 630, alt: post.imageAlt }]
+        : undefined,
     },
     twitter: {
       card: "summary_large_image",
       title: post.metaTitle ?? post.title,
       description,
-      images: [image],
+      images: image ? [image] : undefined,
     },
   };
 }
@@ -103,12 +113,41 @@ export default async function BlogPostPage({ params }: PageProps) {
     notFound();
   }
 
-  const relatedPosts = (await listPublishedPosts())
-    .filter((p) => p.slug !== post.slug)
-    .slice(0, 2);
+  // The same pass BlogArticleBody runs over the body, so every link here lands
+  // on an id that exists. Sanitize first: the sanitizer strips ids, and a
+  // heading it has removed must not show up in the contents.
+  const { items: bodyToc } = buildBlogToc(
+    cleanArticleBody(sanitizeBlogHtml(post.content), {
+      hasRenderedFaq: post.faq.length > 0,
+    })
+  );
+
+  // The FAQ is a section of the page a reader scrolls through, but it is laid
+  // out here rather than inside the body HTML, so buildBlogToc cannot see it.
+  // It is listed last because that is where it sits. The id guard is for the
+  // article that already has a heading slugged "article-faq" — rare, but a
+  // duplicate id would send both links to whichever comes first.
+  const tocItems =
+    post.faq.length > 0 && !bodyToc.some((item) => item.id === FAQ_ANCHOR)
+      ? [
+          ...bodyToc,
+          {
+            id: FAQ_ANCHOR,
+            text: "Frequently asked questions",
+            level: 2 as const,
+          },
+        ]
+      : bodyToc;
+
+  // Where this article sits in the run of published posts.
+  const series = adjacentInSeries(await listPublishedPosts(), post.slug);
 
   return (
     <div className="min-h-screen bg-[#fdfcfc]">
+      {/* Article / breadcrumb / FAQPage structured data. The FAQ it submits is
+          the same array rendered visibly further down this page. */}
+      <BlogJsonLd post={post} />
+
       {/* Public header */}
       <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/90 backdrop-blur">
         <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
@@ -120,10 +159,7 @@ export default async function BlogPostPage({ params }: PageProps) {
             >
               Home
             </Link>
-            <Link
-              href="/blogs"
-              className="text-sm font-medium text-[#C10007]"
-            >
+            <Link href="/blogs" className="text-sm font-medium text-[#C10007]">
               Blog
             </Link>
           </nav>
@@ -187,7 +223,11 @@ export default async function BlogPostPage({ params }: PageProps) {
 
               <div className="mt-auto flex flex-wrap items-center gap-6 border-t border-gray-100 pt-6">
                 <div className="flex items-center gap-2">
-                  <Calendar size={13} strokeWidth={2} className="text-gray-400" />
+                  <Calendar
+                    size={13}
+                    strokeWidth={2}
+                    className="text-gray-400"
+                  />
                   <span className="text-sm font-medium text-gray-500">
                     {post.date}
                   </span>
@@ -205,49 +245,75 @@ export default async function BlogPostPage({ params }: PageProps) {
               </div>
             </div>
 
-            <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-3xl shadow-[0_8px_48px_rgba(0,0,0,0.09)] ring-1 ring-gray-100 sm:h-80 lg:h-[420px] lg:w-[46%]">
-              <Image
-                src={post.image}
-                alt={post.title}
-                fill
-                className="object-cover transition-transform duration-700 hover:scale-[1.02]"
-                priority
-              />
-              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/10 to-transparent" />
-            </div>
+            {/* A real cover only. When post.image was borrowed from the body
+                (imageFromContent), the reader meets that picture a few
+                paragraphs down — printing it as the hero as well shows the
+                same image twice on the one page that renders the body. */}
+            {post.image && !post.imageFromContent && (
+              <div className="relative h-64 w-full shrink-0 overflow-hidden rounded-3xl shadow-[0_8px_48px_rgba(0,0,0,0.09)] ring-1 ring-gray-100 sm:h-80 lg:h-[420px] lg:w-[46%]">
+                <Image
+                  src={post.image}
+                  alt={post.imageAlt}
+                  fill
+                  className="object-cover transition-transform duration-700 hover:scale-[1.02]"
+                  priority
+                />
+                <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/10 to-transparent" />
+              </div>
+            )}
           </div>
         </div>
       </section>
 
       {/* Main content */}
-      <main className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-        <BlogArticleBody html={post.content} />
+      <main className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+        <div className="flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-12">
+          {/* Table of contents. Sticky beside the article on a wide screen, above it
+              on a phone where there is no column to stick to. Renders nothing
+              at all for a post with fewer than two headings. */}
+          <aside className="w-full shrink-0 lg:sticky lg:top-20 lg:w-[300px]">
+            <BlogToc items={tocItems} />
+          </aside>
 
-        {/* The FAQ block. Rendered from the same data that becomes FAQPage
-            JSON-LD — structured data must never describe content a visitor
-            cannot see, and this is also the passage an AI Overview quotes. */}
-        {post.faq.length > 0 && (
-          <section className="mb-12">
-            <h2 className="mb-6 border-l-[3px] border-[#C10007] pl-5 text-xl font-bold tracking-tight text-gray-900">
-              Frequently asked questions
-            </h2>
-            <div className="space-y-4">
-              {post.faq.map((item) => (
-                <details
-                  key={item.question}
-                  className="group rounded-2xl border border-gray-100 bg-white px-6 py-4 shadow-[0_2px_12px_rgba(0,0,0,0.04)]"
+          <div className="min-w-0 flex-1">
+            <BlogArticleBody
+              html={post.content}
+              hasRenderedFaq={post.faq.length > 0}
+            />
+
+            {/* The FAQ block. Rendered from the same data that becomes FAQPage
+                JSON-LD — structured data must never describe content a visitor
+                cannot see, and this is also the passage an AI Overview quotes. */}
+            {post.faq.length > 0 && (
+              <section className="mb-12">
+                <h2
+                  id={FAQ_ANCHOR}
+                  className="mb-6 scroll-mt-24 border-l-[3px] border-[#C10007] pl-5 text-xl font-bold tracking-tight text-gray-900"
                 >
-                  <summary className="cursor-pointer list-none text-[15.5px] font-semibold text-gray-900 marker:hidden">
-                    {item.question}
-                  </summary>
-                  <p className="mt-3 text-[15.5px] leading-[1.8] text-gray-600">
-                    {item.answer}
-                  </p>
-                </details>
-              ))}
-            </div>
-          </section>
-        )}
+                  Frequently asked questions
+                </h2>
+                <div className="space-y-4">
+                  {post.faq.map((item) => (
+                    <details
+                      key={item.question}
+                      className="group rounded-2xl border border-gray-100 bg-white px-6 py-4 shadow-[0_2px_12px_rgba(0,0,0,0.04)]"
+                    >
+                      <summary className="cursor-pointer list-none text-[15.5px] font-semibold text-gray-900 marker:hidden">
+                        {item.question}
+                      </summary>
+                      <p className="mt-3 text-[15.5px] leading-[1.8] text-gray-600">
+                        {item.answer}
+                      </p>
+                    </details>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        </div>
+
+        {/* Where this article sits in the run, and what to read next. */}
+        <BlogSeriesNav position={series} />
 
         {/* Share + Contact card */}
         <ShareButtons title={post.title} />
@@ -302,62 +368,6 @@ export default async function BlogPostPage({ params }: PageProps) {
             </div>
           </div>
         </div>
-
-        {/* Related */}
-        {relatedPosts.length > 0 && (
-          <div className="mt-16">
-            <div className="mb-6 flex items-end justify-between">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.26em] text-[#C10007]">
-                  Keep reading
-                </p>
-                <h3 className="mt-2 text-2xl font-bold tracking-tight text-gray-900">
-                  More from the Law Desk
-                </h3>
-              </div>
-              <Link
-                href="/blogs"
-                className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-[#C10007] hover:gap-2.5 transition-all"
-              >
-                All articles
-                <ArrowRight size={14} strokeWidth={2.5} />
-              </Link>
-            </div>
-
-            <div className="grid gap-6 sm:grid-cols-2">
-              {relatedPosts.map((p) => (
-                <Link
-                  key={p.slug}
-                  href={`/blogs/${p.slug}`}
-                  className="group block h-full"
-                >
-                  <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_2px_16px_rgba(0,0,0,0.06)] transition-all duration-300 ease-out hover:-translate-y-1.5 hover:border-red-100 hover:shadow-[0_20px_56px_rgba(193,0,7,0.10)]">
-                    <div className="relative h-44 w-full shrink-0 overflow-hidden">
-                      <Image
-                        src={p.image}
-                        alt={p.title}
-                        fill
-                        className="object-cover transition-transform duration-700 group-hover:scale-105"
-                      />
-                    </div>
-                    <div className="flex flex-1 flex-col p-5">
-                      <span className="text-xs font-medium text-gray-400 mb-2">
-                        {p.readTime}
-                      </span>
-                      <h4 className="line-clamp-2 text-[15px] font-bold leading-snug text-gray-900 transition-colors duration-200 group-hover:text-[#C10007]">
-                        {p.title}
-                      </h4>
-                      <span className="mt-4 inline-flex items-center gap-1 text-[12px] font-semibold text-[#C10007] transition-all duration-200 group-hover:gap-2.5">
-                        Read article
-                        <ArrowRight size={13} strokeWidth={2.5} />
-                      </span>
-                    </div>
-                  </article>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

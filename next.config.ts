@@ -1,6 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  images: {
+    // Blog cover images (and any body image an admin pastes in) are Vercel
+    // Blob URLs. next/image refuses to render an external src whose hostname
+    // isn't allowlisted here — with no entry at all, EVERY remote image is
+    // blocked, which is why a post with a real cover_image_url renders as
+    // blank while one that happens to store a data: URI still works (data:
+    // URIs skip this check entirely). The store id in the hostname changes
+    // whenever a Blob store is rotated or recreated (public vs private, or a
+    // fresh store after a token reset), so this is a wildcard rather than one
+    // fixed store id — a new store should never require touching this file
+    // again.
+    remotePatterns: [
+      { protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
+    ],
+  },
   turbopack: {
     // Pin the workspace root so Next stops picking up the unrelated
     // D:\package-lock.json (a different project) as the root directory.

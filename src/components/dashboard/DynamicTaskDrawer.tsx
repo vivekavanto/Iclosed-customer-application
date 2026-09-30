@@ -197,6 +197,22 @@ function InfoNote({ text }: { text: string }) {
   );
 }
 
+// Note with variant "section" renders as heading + text.
+function getNoteSection(opts: unknown): { text: string } | null {
+  let parsed: unknown = opts;
+  if (typeof opts === "string") {
+    try {
+      parsed = JSON.parse(opts);
+    } catch {
+      return null;
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const o = parsed as { variant?: unknown; text?: unknown };
+  if (o.variant !== "section") return null;
+  return { text: typeof o.text === "string" ? o.text : "" };
+}
+
 // Format phone as (416) 555-1234
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
@@ -1805,8 +1821,8 @@ export default function DynamicTaskDrawer({
             </>
           )}
 
-          {/* ── Void Cheque / Direct Deposit static sections ── */}
-          {isVoidChequeTask && (
+          {/* ── Void Cheque / Direct Deposit static sections (sale only) ── */}
+          {isVoidChequeTask && side !== "purchase" && (
             <>
               <p className="text-sm text-gray-600 leading-relaxed">
               Please upload a void cheque / direct deposit form for each party involved in the sale. 
@@ -1859,7 +1875,7 @@ export default function DynamicTaskDrawer({
                 {acceptableDocsOpen && (
                   <div className="px-4 py-4 bg-white border-t border-gray-100 space-y-4">
                     <p className="text-[11px] text-gray-500 leading-relaxed">
-                      Please provide <span className="font-semibold text-gray-700">two different government-issued photo IDs</span> from the list below for identity verification.
+                      Please provide <span className="font-semibold text-gray-700">two different pieces of identification</span> from the list below for identity verification.
                     </p>
                     
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -1872,6 +1888,8 @@ export default function DynamicTaskDrawer({
                         "Canadian SIN Card (plastic only)",
                         "Foreign Passport",
                         "Canadian Government-issued Photo ID Card",
+                        "Credit Card (with signature)",
+                        "Birth Certificate",
                       ].map((doc) => (
                         <div key={doc} className="flex items-center gap-2 text-xs text-gray-600">
                           <CheckCircle2 size={12} className="text-green-500 flex-shrink-0" />
@@ -1883,7 +1901,7 @@ export default function DynamicTaskDrawer({
                     <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
                       <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       <p className="text-[11px] text-gray-500">
-                        <span className="font-semibold text-gray-700">Note:</span> Health cards are not valid government ID for these purposes.
+                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be used for ID verification purposes.
                       </p>
                     </div>
                   </div>
@@ -2049,6 +2067,17 @@ export default function DynamicTaskDrawer({
 
               // Display-only callout — the label carries the message.
               if (field.field_type === "note") {
+                const section = getNoteSection(field.options);
+                if (section) {
+                  return (
+                    <div key={field.id} id={`field-${field.id}`} className="space-y-1.5 pt-2">
+                      <p className="text-base font-semibold text-gray-900">{field.label}</p>
+                      {section.text && (
+                        <p className="text-sm text-gray-600 leading-relaxed">{section.text}</p>
+                      )}
+                    </div>
+                  );
+                }
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
                     <InfoNote text={field.label} />

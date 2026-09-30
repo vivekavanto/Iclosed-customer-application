@@ -1,4 +1,5 @@
 import { sanitizeBlogHtml, blogHtmlToText } from "./sanitizeBlogHtml";
+import { callGeminiJson } from "./geminiJson";
 
 /**
  * Turns an author's raw text into structured article HTML, using Gemini.
@@ -15,32 +16,9 @@ import { sanitizeBlogHtml, blogHtmlToText } from "./sanitizeBlogHtml";
  * instinct as the server-side safety net in the identify-document route: steer
  * with the prompt, then verify on our own side.
  *
- * Raw fetch, no SDK — matching src/app/api/identify-document/route.ts and
- * src/app/api/intake/extract-aps/route.ts, the two places Gemini is already
- * wired into this app.
+ * The transport, the model ladder and the JSON handling live in
+ * src/lib/geminiJson.ts, shared with src/lib/blogSeo.ts.
  */
-
-// Two rungs, not the three that extract-aps needs. That ladder exists because
-// a twelve-page scanned agreement could take 115 seconds to come back as a 503.
-// This is a few thousand words of plain text in and marked-up text out, so the
-// budget is much smaller — but the fallback still matters, because "503 high
-// demand" has nothing to do with how big our request is.
-//
-// Verify an id exists before reordering:
-//   curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
-const MODEL_LADDER = [
-  { id: "gemini-3.5-flash", timeoutMs: 30_000 },
-  { id: "gemini-3.1-flash-lite", timeoutMs: 20_000 },
-] as const;
-
-// NOTE: do not add generationConfig.thinkingConfig. The flash-lite tier answers
-// `thinkingBudget: 0` with "400 Request contains an invalid argument", which
-// would take out the fallback rung and leave nothing to fall back to. See the
-// longer note in src/app/api/intake/extract-aps/route.ts.
-
-function endpointFor(model: string): string {
-  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-}
 
 export type BlogFormatResult = {
   html: string;
@@ -111,25 +89,34 @@ ${body}
 --- AUTHOR'S TEXT ENDS ---`;
 }
 
-/** Strips the ```json fences a model sometimes adds despite responseMimeType. */
+/**
+ * Parses one rung's answer into sanitized HTML.
+ *
+ * Throwing here is how a rung is rejected: callGeminiJson treats a parse
+ * failure the same as a timeout and moves down the ladder, which is the
+ * behaviour we want for a model that answered with prose, or whose entire
+ * output disappeared through the sanitizer.
+ */
 function parseFormatJson(text: string): { html: string; warnings: string[] } {
-  const cleaned = text
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  const parsed = JSON.parse(cleaned) as { html?: unknown; warnings?: unknown };
+  const parsed = JSON.parse(text) as { html?: unknown; warnings?: unknown };
 
   if (typeof parsed.html !== "string" || parsed.html.trim().length === 0) {
     throw new Error("Model returned no html field.");
+  }
+
+  // The allowlist in sanitizeBlogHtml is the real constraint on what the model
+  // may emit. The prompt's tag list is a hint; this is enforcement, and it runs
+  // before anything is stored or shown.
+  const html = sanitizeBlogHtml(parsed.html);
+  if (html.trim().length === 0) {
+    throw new Error("Output was empty after sanitizing.");
   }
 
   const warnings = Array.isArray(parsed.warnings)
     ? parsed.warnings.filter((w): w is string => typeof w === "string").slice(0, 10)
     : [];
 
-  return { html: parsed.html, warnings };
+  return { html, warnings };
 }
 
 /**
@@ -187,12 +174,6 @@ export async function formatBlogHtml(input: {
   body: string;
   title?: string;
 }): Promise<BlogFormatOutcome> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("[blogFormat] GEMINI_API_KEY is not set in process.env");
-    return { ok: false, error: "GEMINI_API_KEY is not configured on the server." };
-  }
-
   const body = input.body?.trim() ?? "";
   if (body.length === 0) {
     return { ok: false, error: "Nothing to format — the article body is empty." };
@@ -204,88 +185,39 @@ export async function formatBlogHtml(input: {
     };
   }
 
-  const prompt = buildPrompt(input.title, body);
-  const requestBody = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      // Zero, not the warmer setting a copywriting task would want. There is no
-      // creative decision here — the same input should produce the same markup
-      // twice, so that re-formatting a post is a no-op rather than a reshuffle.
-      temperature: 0,
-      responseMimeType: "application/json",
-    },
-  };
+  const result = await callGeminiJson({
+    prompt: buildPrompt(input.title, body),
+    parse: parseFormatJson,
+    label: "blogFormat",
+  });
 
-  const failures: string[] = [];
-
-  for (const rung of MODEL_LADDER) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), rung.timeoutMs);
-
-    try {
-      const res = await fetch(`${endpointFor(rung.id)}?key=${encodeURIComponent(apiKey)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        failures.push(`${rung.id}: HTTP ${res.status} ${detail.slice(0, 160)}`);
-        continue;
-      }
-
-      const json = (await res.json()) as {
-        candidates?: { content?: { parts?: { text?: string }[] } }[];
-      };
-      const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        failures.push(`${rung.id}: empty response`);
-        continue;
-      }
-
-      const parsed = parseFormatJson(text);
-
-      // The allowlist in sanitizeBlogHtml is the real constraint on what the
-      // model may emit. The prompt's tag list is a hint; this is enforcement,
-      // and it runs before anything is stored or shown.
-      const html = sanitizeBlogHtml(parsed.html);
-      if (html.trim().length === 0) {
-        failures.push(`${rung.id}: output was empty after sanitizing`);
-        continue;
-      }
-
-      const { ratio, missing } = verifyWordsPreserved(body, html);
-      const warnings = [...parsed.warnings];
-      if (ratio < WORDS_PRESERVED_FLOOR) {
-        warnings.unshift(
-          `Only ${Math.round(ratio * 100)}% of the original wording survived formatting — review before publishing.` +
-            (missing.length ? ` Missing words include: ${missing.join(", ")}.` : ""),
-        );
-      }
-
-      console.log(
-        `[blogFormat] model=${rung.id} in=${body.length}ch out=${html.length}ch preserved=${ratio.toFixed(3)}`,
-      );
-
-      return { ok: true, data: { html, warnings, model: rung.id, wordsPreserved: ratio } };
-    } catch (err: unknown) {
-      const reason =
-        err instanceof Error && err.name === "AbortError"
-          ? `timed out after ${rung.timeoutMs}ms`
-          : err instanceof Error
-            ? err.message
-            : "unknown error";
-      failures.push(`${rung.id}: ${reason}`);
-    } finally {
-      clearTimeout(timeoutId);
-    }
+  if (!result.ok) {
+    return {
+      ok: false,
+      error:
+        result.error === "GEMINI_ALL_RUNGS_FAILED"
+          ? "Could not format the article right now. Please try again in a moment."
+          : result.error,
+    };
   }
 
-  console.error(`[blogFormat] every model failed — ${failures.join(" | ")}`);
+  const { html, warnings: modelWarnings } = result.data;
+  const { ratio, missing } = verifyWordsPreserved(body, html);
+
+  const warnings = [...modelWarnings];
+  if (ratio < WORDS_PRESERVED_FLOOR) {
+    warnings.unshift(
+      `Only ${Math.round(ratio * 100)}% of the original wording survived formatting — review before publishing.` +
+        (missing.length ? ` Missing words include: ${missing.join(", ")}.` : ""),
+    );
+  }
+
+  console.log(
+    `[blogFormat] model=${result.model} in=${body.length}ch out=${html.length}ch preserved=${ratio.toFixed(3)}`,
+  );
+
   return {
-    ok: false,
-    error: "Could not format the article right now. Please try again in a moment.",
+    ok: true,
+    data: { html, warnings, model: result.model, wordsPreserved: ratio },
   };
 }

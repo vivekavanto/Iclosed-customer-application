@@ -25,6 +25,7 @@ import { DEPOSIT_TASK_DESCRIPTION, FUNDS_TRANSFER } from "@/lib/depositTask";
  */
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_FILES = 10;
 const ACCEPT = ".pdf,.jpg,.jpeg,.png";
 
 interface FormField {
@@ -70,7 +71,7 @@ export default function DepositFundsDrawer({
   } | null>(null);
   const [fields, setFields] = useState<FormField[]>([]);
 
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,27 +108,44 @@ export default function DepositFundsDrawer({
 
   useEffect(() => {
     if (!open) return;
-    setFile(null);
+    setFiles([]);
     setSaved(false);
     setError(null);
     void load();
   }, [open, load]);
 
-  const handleFilePick = (picked: File | null) => {
-    if (!picked) return;
-    if (picked.size > MAX_BYTES) {
-      setError("That file is larger than 10MB. Please upload a smaller file.");
+  const handleFilePick = (picked: File[]) => {
+    if (picked.length === 0) return;
+    const tooBig = picked.filter((f) => f.size > MAX_BYTES);
+    const ok = picked.filter((f) => f.size <= MAX_BYTES);
+    // Same name + size treated as the same file.
+    const next = [...files];
+    for (const f of ok) {
+      if (!next.some((x) => x.name === f.name && x.size === f.size)) next.push(f);
+    }
+    if (next.length > MAX_FILES) {
+      setError(`You can upload up to ${MAX_FILES} files.`);
+      setFiles(next.slice(0, MAX_FILES));
       return;
     }
+    setError(
+      tooBig.length
+        ? `${tooBig.map((f) => f.name).join(", ")} ${tooBig.length === 1 ? "is" : "are"} larger than 10MB.`
+        : null,
+    );
+    setFiles(next);
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
     setError(null);
-    setFile(picked);
   };
 
   const handleSubmit = async () => {
     if (!taskId) return;
     // Mandatory: there is nothing else on this task, so without the proof there
     // is nothing to submit.
-    if (!file) {
+    if (files.length === 0) {
       setError("Please upload your proof of deposit to complete this task.");
       return;
     }
@@ -138,31 +156,36 @@ export default function DepositFundsDrawer({
       const safeLeadId = leadId ?? "unknown";
       // Direct browser → Vercel Blob upload: a 10MB scan would exceed the
       // ~4.5MB serverless request-body cap going through the function.
-      const blob = await upload(
-        `corporate-docs/${safeLeadId}/${Date.now()}-${file.name}`,
-        file,
-        {
-          access: BLOB_ACCESS,
-          handleUploadUrl: "/api/blob/upload",
-          clientPayload: JSON.stringify({
-            lead_id: safeLeadId,
-            doc_type: "proof_of_deposit",
-          }),
-        },
-      );
+      const uploaded = await Promise.all(
+        files.map(async (file, i) => {
+          const blob = await upload(
+            `corporate-docs/${safeLeadId}/${Date.now()}-${i}-${file.name}`,
+            file,
+            {
+              access: BLOB_ACCESS,
+              handleUploadUrl: "/api/blob/upload",
+              clientPayload: JSON.stringify({
+                lead_id: safeLeadId,
+                doc_type: "proof_of_deposit",
+              }),
+            },
+          );
 
-      const metaRes = await fetch("/api/blob/save-doc-metadata", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lead_id: safeLeadId,
-          doc_type: "proof_of_deposit",
-          file_name: file.name,
-          file_url: blob.url,
+          const metaRes = await fetch("/api/blob/save-doc-metadata", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lead_id: safeLeadId,
+              doc_type: "proof_of_deposit",
+              file_name: file.name,
+              file_url: blob.url,
+            }),
+          });
+          const metaData = await metaRes.json();
+          if (!metaData.success) throw new Error(`${file.name}: ${metaData.error ?? "Upload failed."}`);
+          return { file_url: blob.url, file_name: file.name };
         }),
-      });
-      const metaData = await metaRes.json();
-      if (!metaData.success) throw new Error(metaData.error ?? "Upload failed.");
+      );
 
       // The seeded field is the one file slot on this template; fall back to a
       // label-only response if the template row is missing, so a client is never
@@ -176,15 +199,14 @@ export default function DepositFundsDrawer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           task_id: taskId,
-          responses: [
-            {
-              ...(field.id ? { field_id: field.id } : {}),
-              field_label: field.label,
-              field_type: "file",
-              file_url: blob.url,
-              file_name: file.name,
-            },
-          ],
+          // One response row per file, all on the same field.
+          responses: uploaded.map((u) => ({
+            ...(field.id ? { field_id: field.id } : {}),
+            field_label: field.label,
+            field_type: "file",
+            file_url: u.file_url,
+            file_name: u.file_name,
+          })),
         }),
       });
       const result = await res.json();
@@ -346,32 +368,52 @@ export default function DepositFundsDrawer({
                   ref={fileInputRef}
                   type="file"
                   accept={ACCEPT}
+                  multiple
                   className="hidden"
                   onChange={(e) => {
-                    const picked = e.target.files?.[0] ?? null;
+                    const picked = Array.from(e.target.files ?? []);
                     e.target.value = "";
                     handleFilePick(picked);
                   }}
                 />
-                {file ? (
-                  <div className="flex items-center gap-3 border border-gray-200 rounded-xl px-4 py-4">
-                    <span className="shrink-0 w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center">
-                      <FileText className="h-4 w-4 text-[#C10007]" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{file.name}</p>
-                      <p className="text-xs text-gray-500">
-                        {Math.max(1, Math.round(file.size / 1024))} KB
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={saving}
-                      className="shrink-0 text-sm font-semibold text-[#C10007] hover:underline disabled:opacity-50"
-                    >
-                      Replace
-                    </button>
+                {files.length > 0 ? (
+                  <div className="space-y-2">
+                    {files.map((file, idx) => (
+                      <div
+                        key={`${file.name}:${file.size}`}
+                        className="flex items-center gap-3 border border-gray-200 rounded-xl px-4 py-4"
+                      >
+                        <span className="shrink-0 w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center">
+                          <FileText className="h-4 w-4 text-[#C10007]" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{file.name}</p>
+                          <p className="text-xs text-gray-500">
+                            {Math.max(1, Math.round(file.size / 1024))} KB
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(idx)}
+                          disabled={saving}
+                          className="shrink-0 rounded-md p-1.5 text-gray-400 hover:text-[#C10007] hover:bg-gray-100 transition-colors disabled:opacity-50"
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                    {files.length < MAX_FILES && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={saving}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm font-semibold text-[#C10007] hover:border-[#C10007] hover:bg-gray-50/60 transition-colors disabled:opacity-50"
+                      >
+                        <Upload className="h-4 w-4" />
+                        Add more files
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <button
@@ -384,7 +426,7 @@ export default function DepositFundsDrawer({
                     </span>
                     <span className="text-sm font-bold text-gray-900">Upload proof of deposit</span>
                     <span className="text-xs text-gray-500">
-                      Click or drag · {ACCEPT} · Max 10MB
+                      Click to select one or more files · {ACCEPT} · Max 10MB each
                     </span>
                   </button>
                 )}

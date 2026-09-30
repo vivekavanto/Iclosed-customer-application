@@ -18,6 +18,9 @@ import {
   Home,
   FileText,
   Users,
+  Eye,
+  Download,
+  Lock,
 } from "lucide-react";
 import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
 import ClosingCostEstimateModal from "@/components/dashboard/ClosingCostEstimateModal";
@@ -32,6 +35,7 @@ import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
 import { getFirm, type FirmKey } from "@/lib/firms";
 import { useToast } from "@/components/ui/Toast";
+import { docDownloadHref } from "@/lib/blobPrivacy";
 
 /** Per-party completion summary for a Personal Info / Upload ID task. */
 interface FamilyTaskStatusSummary {
@@ -66,6 +70,7 @@ interface Task {
   status: "Pending" | "In Progress" | "Completed";
   due_date: string | null;
   completed: boolean;
+  completed_at?: string | null;
   is_shared: boolean;
   assignee: string | null;
   document_name: string | null;
@@ -256,6 +261,36 @@ function saveSeenTaskIds(ids: Set<string>): void {
   }
 }
 
+// Multi-party tasks are done only when every party is done.
+function isTaskDone(t: Task, familyStatus: Record<string, FamilyTaskStatusSummary>): boolean {
+  const fs = familyStatus[t.id];
+  if (fs?.is_multi_party) return fs.all_completed;
+  return t.completed;
+}
+
+// Deduped, customer-visible tasks; spouse ID rows live in their roster.
+function customerVisibleTasks(
+  tasks: Task[],
+  familyStatus: Record<string, FamilyTaskStatusSummary>,
+): Task[] {
+  const rosterTaskIds = new Set(
+    Object.values(familyStatus).flatMap((fs) =>
+      fs.is_multi_party ? fs.members.map((m) => m.task_id) : [],
+    ),
+  );
+  return deduplicateTasks(tasks).filter(
+    (t) => !isHiddenTask(t) && !(t.spouse_name && rosterTaskIds.has(t.id)),
+  );
+}
+
+// Admin-configured order; unordered tasks sort last.
+const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
+function sortByOrder(a: Task, b: Task): number {
+  const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
+  const bo = b.order_index ?? b.template_order_index ?? ORDER_FALLBACK;
+  return ao - bo;
+}
+
 function initials(first: string, last: string): string {
   return `${(first[0] ?? "").toUpperCase()}${(last[0] ?? "").toUpperCase()}` || "?";
 }
@@ -293,41 +328,8 @@ function AttentionCard({
   // How many pending tasks to show before "See more" is needed.
   const TASK_PAGE_SIZE = 5;
 
-  // A per-party task (Personal Info / Upload ID) on a multi-party deal is only
-  // "done" once EVERY party's section is complete — not just the logged-in
-  // user's own copy. Fall back to the row's own flag for everything else.
-  const isTaskComplete = (t: Task): boolean => {
-    const fs = familyStatus[t.id];
-    if (fs?.is_multi_party) return fs.all_completed;
-    return t.completed;
-  };
-
-  // Deduplicate tasks so no task title appears twice, and drop any tasks
-  // that should never be surfaced to customers (e.g. "Schedule Appointment").
-  // Spouse ID tasks render inside their Identification section.
-  const rosterTaskIds = new Set(
-    Object.values(familyStatus).flatMap((fs) =>
-      fs.is_multi_party ? fs.members.map((m) => m.task_id) : [],
-    ),
-  );
-  const uniqueTasks = deduplicateTasks(tasks).filter(
-    (t) => !isHiddenTask(t) && !(t.spouse_name && rosterTaskIds.has(t.id)),
-  );
-
-  // Show ALL incomplete tasks, sorted by the per-task order the team maintains
-  // in the admin panel. Primary key is the per-deal tasks.order_index (which is
-  // kept in sync with the template order and can be overridden per-deal from the
-  // admin deal page); template_order_index (the live task_templates.order_index)
-  // is the fallback for rows whose per-deal value isn't set yet. Tasks without
-  // either (manual additions) fall to the end so they don't jump ahead of the
-  // configured workflow. Stable sort preserves the API's due-date tiebreaker.
-  // Completed tasks naturally fall away because of the !completed filter.
-  const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
-  const sortByOrder = (a: Task, b: Task) => {
-    const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
-    const bo = b.order_index ?? b.template_order_index ?? ORDER_FALLBACK;
-    return ao - bo;
-  };
+  const isTaskComplete = (t: Task): boolean => isTaskDone(t, familyStatus);
+  const uniqueTasks = customerVisibleTasks(tasks, familyStatus);
 
   // Tasks the user still has to action — drives the header count and the
   // "all done" state.
@@ -712,6 +714,226 @@ function AttentionCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   COMPLETED TASKS (read-only)
+════════════════════════════════════════════════════ */
+
+interface TaskDocument {
+  id: string;
+  label: string | null;
+  file_name: string | null;
+  file_url: string;
+  uploaded_at: string | null;
+}
+
+// Task file, tagged with its party on multi-party tasks.
+type CompletedDoc = TaskDocument & { party: string | null };
+
+function CompletedTasksCard({
+  tasks,
+  loading,
+  familyStatus,
+}: {
+  tasks: Task[];
+  loading: boolean;
+  familyStatus: Record<string, FamilyTaskStatusSummary>;
+}) {
+  const [docsByTask, setDocsByTask] = useState<Record<string, TaskDocument[]>>({});
+  // Last fetched key; differs while loading.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
+  const PAGE_SIZE = 5;
+
+  const completed = customerVisibleTasks(tasks, familyStatus)
+    .filter((t) => isTaskDone(t, familyStatus))
+    .sort(sortByOrder);
+
+  // Multi-party tasks pull files from every party's own task row.
+  const sourceTaskIds = (t: Task): string[] => {
+    const fs = familyStatus[t.id];
+    if (!fs?.is_multi_party) return [t.id];
+    return fs.members.map((m) => m.task_id).filter((id): id is string => !!id);
+  };
+  const docTaskIdsKey = [...new Set(completed.flatMap(sourceTaskIds))].sort().join(",");
+
+  useEffect(() => {
+    if (!docTaskIdsKey) return;
+    let cancelled = false;
+    fetch(`/api/tasks/completed-documents?task_ids=${encodeURIComponent(docTaskIdsKey)}`, {
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.success) setDocsByTask(data.documents ?? {});
+      })
+      .catch(() => {
+        // Non-fatal; tasks still render.
+      })
+      .finally(() => {
+        if (!cancelled) setLoadedKey(docTaskIdsKey);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docTaskIdsKey]);
+  const docsLoading = !!docTaskIdsKey && loadedKey !== docTaskIdsKey;
+
+  const docsFor = (t: Task): CompletedDoc[] => {
+    const fs = familyStatus[t.id];
+    if (!fs?.is_multi_party) {
+      return (docsByTask[t.id] ?? []).map((d) => ({ ...d, party: null }));
+    }
+    return fs.members.flatMap((m) =>
+      m.task_id
+        ? (docsByTask[m.task_id] ?? []).map((d) => ({
+            ...d,
+            party: m.name || `${m.first_name} ${m.last_name}`.trim() || null,
+          }))
+        : [],
+    );
+  };
+
+  const toggle = (id: string) =>
+    setExpandedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  if (loading || completed.length === 0) return null;
+
+  const visible = showAll ? completed : completed.slice(0, PAGE_SIZE);
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm mt-5">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 sm:px-6 py-4 bg-[#C10007]/15">
+        <div className="w-10 h-10 rounded-full bg-[#C10007] flex items-center justify-center flex-shrink-0">
+          <CheckCircle2 size={18} className="text-white" strokeWidth={2.2} />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-[#7a0004]">Completed Tasks</h2>
+          <p className="text-xs text-[#7a0004]/70 mt-0.5">
+            {completed.length} {completed.length === 1 ? "task" : "tasks"}
+          </p>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="p-3 sm:p-4 space-y-3">
+        {visible.map((task) => {
+          const docs = docsFor(task);
+          const isExpanded = expandedTaskIds.has(task.id);
+          const completedOn = task.completed_at
+            ? new Date(task.completed_at).toLocaleDateString("en-CA", {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })
+            : null;
+
+          return (
+            <div key={task.id} className="rounded-xl border border-gray-200 bg-gray-50/60 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => docs.length > 0 && toggle(task.id)}
+                disabled={docs.length === 0}
+                aria-expanded={docs.length > 0 ? isExpanded : undefined}
+                className={`w-full text-left px-4 sm:px-5 py-4 ${docs.length > 0 ? "cursor-pointer" : "cursor-default"}`}
+              >
+                <div className="flex items-center gap-4">
+                  <span
+                    className="w-7 h-7 rounded-full bg-[#FEF2F2] flex items-center justify-center flex-shrink-0"
+                    aria-label="Completed"
+                  >
+                    <Check size={15} className="text-[#C10007]" strokeWidth={2.5} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm sm:text-base font-bold text-gray-700 leading-snug">
+                      {task.title}
+                    </p>
+                    <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+                      {completedOn ? `Completed on ${completedOn}` : "Completed"}
+                      {docs.length > 0 &&
+                        ` · ${docs.length} ${docs.length === 1 ? "document" : "documents"}`}
+                    </p>
+                  </div>
+                  {docsLoading && docs.length === 0 ? (
+                    <Loader2 size={16} className="text-gray-300 animate-spin flex-shrink-0" />
+                  ) : docs.length > 0 ? (
+                    <ChevronDown
+                      size={18}
+                      strokeWidth={2}
+                      className={`text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`}
+                    />
+                  ) : (
+                    <Lock size={14} className="text-gray-300 flex-shrink-0" aria-hidden />
+                  )}
+                </div>
+              </button>
+
+              {/* Uploaded files, view/download only */}
+              {isExpanded && docs.length > 0 && (
+                <div className="border-t border-gray-100 divide-y divide-gray-100 bg-white">
+                  {docs.map((d) => {
+                    const href = docDownloadHref(d.file_url);
+                    const name = d.file_name || d.label || "Document";
+                    return (
+                      <div key={`${d.id}:${d.file_url}`} className="flex items-center gap-3 px-4 sm:px-5 py-3">
+                        <div className="w-9 h-9 rounded-lg bg-[#C10007]/10 flex items-center justify-center flex-shrink-0">
+                          <FileText size={16} className="text-[#C10007]" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="ph-mask text-sm font-semibold text-gray-900 truncate">{name}</p>
+                          {(d.party || (d.label && d.label !== name)) && (
+                            <p className="ph-mask text-xs text-gray-400 truncate">
+                              {[d.party, d.label && d.label !== name ? d.label : null]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </p>
+                          )}
+                        </div>
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-shrink-0 rounded-sm p-2 text-gray-500 border border-gray-300 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                          title="View"
+                        >
+                          <Eye size={16} />
+                        </a>
+                        <a
+                          href={href}
+                          download={d.file_name ?? undefined}
+                          className="flex-shrink-0 rounded-sm p-2 text-gray-500 border border-gray-300 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+                          title="Download"
+                        >
+                          <Download size={16} />
+                        </a>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {completed.length > PAGE_SIZE && (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
+          >
+            {showAll ? "Show less" : `See more (${completed.length - PAGE_SIZE})`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -1660,6 +1882,12 @@ export default function DashboardPage() {
             loading={tasksLoading}
             onTaskClick={handleTaskClick}
             onMemberClick={handleMemberClick}
+            familyStatus={familyStatus}
+          />
+          <CompletedTasksCard
+            key={`completed:${activeLeadId ?? "no-active-lead"}:${selectedSide}`}
+            tasks={visibleTasks}
+            loading={tasksLoading}
             familyStatus={familyStatus}
           />
         </div>

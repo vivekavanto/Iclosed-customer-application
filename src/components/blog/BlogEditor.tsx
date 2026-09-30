@@ -2,18 +2,21 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Loader2, AlertTriangle, Eye, Code2 } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, Eye, Code2, Search, Plus, X } from "lucide-react";
 import BlogArticleBody from "./BlogArticleBody";
 
 /**
  * Create / edit screen for one post.
  *
  * The flow it is built around: paste the article as plain text, press Format
- * with AI, read what came back, fix anything, save, publish. Formatting is
- * explicitly a separate step from saving, so the admin always sees the markup
- * before it becomes the stored copy — and the draft is never overwritten by a
- * model's output that nobody looked at.
+ * with AI, read what came back, fix anything, draft the search metadata with
+ * AI, fix that, save, publish. Both AI steps are explicitly separate from
+ * saving, so the admin always sees what the model produced before it becomes
+ * the stored copy — and the draft is never overwritten by output nobody
+ * looked at.
  */
+
+export type FaqItem = { question: string; answer: string };
 
 export type EditorPost = {
   id: string | null;
@@ -29,7 +32,11 @@ export type EditorPost = {
   tags: string[];
   meta_title: string;
   meta_description: string;
+  focus_keyword: string;
+  faq: FaqItem[];
+  noindex: boolean;
   format_source: string;
+  seo_source: string;
 };
 
 export const EMPTY_POST: EditorPost = {
@@ -46,7 +53,11 @@ export const EMPTY_POST: EditorPost = {
   tags: [],
   meta_title: "",
   meta_description: "",
+  focus_keyword: "",
+  faq: [],
+  noindex: false,
   format_source: "manual",
+  seo_source: "manual",
 };
 
 // Google truncates past roughly these. Shown as a live count so the limit is
@@ -68,6 +79,7 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
   const router = useRouter();
   const [post, setPost] = useState<EditorPost>(initial);
   const [formatting, setFormatting] = useState(false);
+  const [seoLoading, setSeoLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -114,6 +126,80 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
     }
   }
 
+  /**
+   * Drafts the search metadata. Reads the formatted HTML when there is one and
+   * the raw draft otherwise, so this works before or after formatting.
+   *
+   * It overwrites meta title, meta description, excerpt, focus keyword, tags
+   * and FAQ in one go. That is blunt on purpose — a field-by-field merge would
+   * leave the admin comparing six half-updated boxes against a warning list,
+   * whereas replacing the set means what is on screen is exactly what the
+   * model proposed, and nothing is saved until they press Save.
+   */
+  async function handleGenerateSeo() {
+    setError(null);
+    setNotice(null);
+    setWarnings([]);
+
+    const body = (post.content_html || post.content_source).trim();
+    if (!body) {
+      setError("Write the article before drafting its search metadata.");
+      return;
+    }
+
+    setSeoLoading(true);
+    try {
+      const res = await fetch("/api/blog/seo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body, title: post.title }),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.success) {
+        setError(json.error ?? "Could not draft the search metadata.");
+        return;
+      }
+
+      const seo = json.seo;
+      setPost((p) => ({
+        ...p,
+        meta_title: seo.metaTitle ?? p.meta_title,
+        meta_description: seo.metaDescription ?? p.meta_description,
+        excerpt: seo.excerpt || p.excerpt,
+        focus_keyword: seo.focusKeyword ?? p.focus_keyword,
+        tags: seo.tags?.length ? seo.tags : p.tags,
+        faq: seo.faq ?? p.faq,
+        seo_source: "gemini",
+      }));
+      setWarnings(seo.warnings ?? []);
+      setNotice(
+        `Search metadata drafted with ${seo.model}. Read it before publishing — these are the words Google and AI answers will quote.`,
+      );
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setSeoLoading(false);
+    }
+  }
+
+  /** Any hand edit to SEO copy means a human has been through it. */
+  function reviewedSeo(source: string): string {
+    return source === "gemini" ? "gemini_edited" : source;
+  }
+
+  function setSeoField<K extends keyof EditorPost>(key: K, value: EditorPost[K]) {
+    setPost((p) => ({ ...p, [key]: value, seo_source: reviewedSeo(p.seo_source) }));
+  }
+
+  function setFaqItem(index: number, patch: Partial<FaqItem>) {
+    setPost((p) => ({
+      ...p,
+      faq: p.faq.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+      seo_source: reviewedSeo(p.seo_source),
+    }));
+  }
+
   async function handleSave(): Promise<string | null> {
     setError(null);
     setNotice(null);
@@ -137,7 +223,13 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
         tags: post.tags,
         meta_title: post.meta_title || null,
         meta_description: post.meta_description || null,
+        focus_keyword: post.focus_keyword || null,
+        // Blank rows are dropped rather than stored: an empty question would
+        // become an empty <Question> in the FAQPage structured data.
+        faq: post.faq.filter((f) => f.question.trim() && f.answer.trim()),
+        noindex: post.noindex,
         format_source: post.format_source,
+        seo_source: post.seo_source,
       };
 
       const res = post.id
@@ -224,19 +316,24 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
               AI formatted — unreviewed
             </span>
           )}
+          {post.seo_source === "gemini" && (
+            <span className="rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">
+              AI SEO — unreviewed
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleSave}
-            disabled={saving || formatting}
+            disabled={saving || formatting || seoLoading}
             className="rounded-full border border-gray-200 bg-white px-5 py-2 text-sm font-semibold text-gray-700 transition hover:border-gray-300 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save draft"}
           </button>
           <button
             onClick={() => handlePublish(!isPublished)}
-            disabled={saving || formatting}
+            disabled={saving || formatting || seoLoading}
             className="rounded-full bg-[#C10007] px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
           >
             {isPublished ? "Unpublish" : "Publish"}
@@ -293,7 +390,7 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
 
           <button
             onClick={handleFormat}
-            disabled={formatting || saving}
+            disabled={formatting || saving || seoLoading}
             className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-50"
           >
             {formatting ? (
@@ -414,6 +511,28 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
               Search appearance
             </p>
 
+            <button
+              onClick={handleGenerateSeo}
+              disabled={formatting || saving || seoLoading}
+              className="mb-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-900 bg-white px-4 py-2 text-[13px] font-semibold text-gray-900 transition hover:bg-gray-900 hover:text-white disabled:opacity-50"
+            >
+              {seoLoading ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Drafting…
+                </>
+              ) : (
+                <>
+                  <Search size={14} />
+                  Draft SEO with AI
+                </>
+              )}
+            </button>
+            <p className="mb-4 text-[11px] leading-relaxed text-gray-400">
+              Fills the fields below from the article. It replaces whatever is
+              there, and saves nothing until you press Save.
+            </p>
+
             <Field
               label="Meta title"
               hint="Leave blank to use the post title."
@@ -421,7 +540,7 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
             >
               <input
                 value={post.meta_title}
-                onChange={(e) => set("meta_title", e.target.value)}
+                onChange={(e) => setSeoField("meta_title", e.target.value)}
                 className={inputClass}
               />
             </Field>
@@ -435,11 +554,120 @@ export default function BlogEditor({ initial }: { initial: EditorPost }) {
             >
               <textarea
                 value={post.meta_description}
-                onChange={(e) => set("meta_description", e.target.value)}
+                onChange={(e) => setSeoField("meta_description", e.target.value)}
                 rows={3}
                 className={inputClass}
               />
             </Field>
+
+            <div className="h-4" />
+
+            <Field
+              label="Focus keyword"
+              hint="The one search phrase this article should rank for."
+            >
+              <input
+                value={post.focus_keyword}
+                onChange={(e) => setSeoField("focus_keyword", e.target.value)}
+                placeholder="title insurance ontario"
+                className={inputClass}
+              />
+            </Field>
+
+            <label className="mt-4 flex cursor-pointer items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={post.noindex}
+                onChange={(e) => set("noindex", e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[#C10007]"
+              />
+              <span>
+                <span className="text-[12.5px] font-semibold text-gray-700">
+                  Hide from search engines
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-gray-400">
+                  Keeps the post out of the sitemap and adds a noindex tag. It
+                  stays visible to anyone with the link.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {/* ── FAQ ──────────────────────────────────
+              These render on the page AND are submitted as FAQPage structured
+              data, which is what an AI Overview quotes. Google treats markup
+              describing content a visitor cannot see as a manual-action-grade
+              violation, so there is no way to add one here without it also
+              appearing on the page. */}
+          <div className="rounded-2xl border border-gray-100 bg-white p-4">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                FAQ
+              </p>
+              <button
+                onClick={() =>
+                  setPost((p) => ({
+                    ...p,
+                    faq: [...p.faq, { question: "", answer: "" }],
+                  }))
+                }
+                className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#C10007] hover:text-red-700"
+              >
+                <Plus size={13} strokeWidth={2.5} />
+                Add
+              </button>
+            </div>
+            <p className="mb-4 text-[11px] leading-relaxed text-gray-400">
+              Shown on the article and submitted as structured data. Every
+              answer must be supported by the article itself.
+            </p>
+
+            {post.faq.length === 0 ? (
+              <p className="text-[12.5px] text-gray-400">
+                No questions yet. Draft SEO with AI, or add one by hand.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {post.faq.map((item, i) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-gray-100 bg-gray-50/60 p-3"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+                        Q{i + 1}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setPost((p) => ({
+                            ...p,
+                            faq: p.faq.filter((_, n) => n !== i),
+                            seo_source: reviewedSeo(p.seo_source),
+                          }))
+                        }
+                        aria-label={`Remove question ${i + 1}`}
+                        className="text-gray-300 transition hover:text-[#C10007]"
+                      >
+                        <X size={14} strokeWidth={2.5} />
+                      </button>
+                    </div>
+                    <input
+                      value={item.question}
+                      onChange={(e) => setFaqItem(i, { question: e.target.value })}
+                      placeholder="What does title insurance actually cover?"
+                      className={`${inputClass} mb-2`}
+                    />
+                    <textarea
+                      value={item.answer}
+                      onChange={(e) => setFaqItem(i, { answer: e.target.value })}
+                      rows={3}
+                      placeholder="Two or three sentences, drawn from the article."
+                      className={inputClass}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
