@@ -33,43 +33,23 @@ function purchaseDisbursements(r: ClosingCostRates): number {
   return r.legalTitleSubmission + r.adminFee + r.teraview + r.sheriff + r.regTransfer;
 }
 
-// HST-taxable part of purchase disbursements (registration is not taxable).
-export function purchaseTaxableDisbursements(r: ClosingCostRates): number {
-  return round2(r.legalTitleSubmission + r.adminFee + r.teraview + r.sheriff);
-}
-
-// Sale disbursements are all firm charges, so all HST-taxable.
-export function saleTaxableDisbursements(r: ClosingCostRates): number {
-  return round2(saleDisbursements(r));
-}
-
-// Sale side: no transfer registration or title insurance.
-function saleDisbursements(r: ClosingCostRates): number {
-  return r.adminFee + r.teraview + r.sheriff;
-}
-
 // Refinance: new mortgage registration plus lender title submission.
 function refinanceDisbursements(r: ClosingCostRates): number {
   return r.legalTitleSubmission + r.adminFee + r.teraview + r.sheriff + r.regMortgage;
 }
 
+// Refinance and condo only; purchase and sale use src/config/iclosed-fees.yaml.
 export function quoteFigures(
-  side: QuoteSide,
+  side: "refinance" | "condo",
   rates: ClosingCostRates,
 ): { legalFees: number; disbursements: number } {
-  const disbursements = {
-    buying: () => purchaseDisbursements(rates),
-    selling: () => saleDisbursements(rates),
-    both: () => purchaseDisbursements(rates) + saleDisbursements(rates),
-    refinance: () => refinanceDisbursements(rates),
-    // Charged at final closing, same as a resale purchase.
-    condo: () => purchaseDisbursements(rates),
-  }[side]();
+  // Condo: charged at final closing, like a purchase.
+  const disbursements = side === "refinance" ? refinanceDisbursements(rates) : purchaseDisbursements(rates);
   return { legalFees: QUOTE_LEGAL_FEES[side], disbursements: round2(disbursements) };
 }
 
 // Team named on the quote email and page.
 export const QUOTE_TEAM = {
   lawyer: { name: "Gathya Manoharan", lsoNumber: "75591T" },
-  csm: { firstName: "Aliya", fullName: "Aliya Ali", phone: "647-426-3769" },
+  csm: { firstName: "Aliya", fullName: "Aliya Ali", phone: "647-426-3769", email: "aliya@iclosed.ca" },
 };

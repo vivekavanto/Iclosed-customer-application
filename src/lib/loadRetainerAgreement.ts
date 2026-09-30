@@ -1,14 +1,11 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLeadFirmKey } from "@/lib/leadFirm";
-import { ratesFromConfigRow } from "@/lib/closingCosts";
-import { readFirmAndSharedRow } from "@/lib/closingCostRates";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
 import {
-  QUOTE_LEGAL_FEES,
-  purchaseTaxableDisbursements,
-  quoteFigures,
-  saleTaxableDisbursements,
-} from "@/lib/quotePricing";
-import type { AgreementKind, RetainerAgreementData } from "@/lib/retainerAgreement";
+  buildRetainerAgreement,
+  type AgreementKind,
+  type RetainerAgreement,
+} from "@/lib/retainerAgreement";
 
 // Deal file number for the lead (or its primary); null if none yet.
 async function readFileNo(leadId: string, rootId: string): Promise<string | null> {
@@ -45,33 +42,18 @@ async function readDiscount(rootId: string): Promise<number | null> {
   }
 }
 
-/** Server-side figures for a lead's v7 purchase or sale retainer. */
-export async function loadRetainerAgreementData(
+/** Builds a lead's v9 purchase or sale retainer from the fee settings. */
+export async function loadRetainerAgreement(
   lead: { id: string; parent_lead_id?: string | null },
   property: string,
   kind: AgreementKind,
-): Promise<RetainerAgreementData> {
+  date: string,
+): Promise<RetainerAgreement> {
   const rootId = lead.parent_lead_id ?? lead.id;
-  const firmKey = await getLeadFirmKey(lead.id);
-  const [{ row }, fileNo, discount] = await Promise.all([
-    readFirmAndSharedRow(firmKey),
+  const [firmKey, fileNo, discount] = await Promise.all([
+    getLeadFirmKey(lead.id),
     readFileNo(lead.id, rootId),
     readDiscount(rootId),
   ]);
-  const rates = ratesFromConfigRow(row);
-  const side = kind === "purchase" ? "buying" : "selling";
-
-  return {
-    kind,
-    firmKey,
-    property,
-    fileNo,
-    legalFees: QUOTE_LEGAL_FEES[side],
-    discount,
-    disbursements: quoteFigures(side, rates).disbursements,
-    taxableDisbursements:
-      kind === "purchase" ? purchaseTaxableDisbursements(rates) : saleTaxableDisbursements(rates),
-    hstRate: rates.hstRate,
-    hstNumber: String(row.firm_hst_number ?? "").trim() || null,
-  };
+  return buildRetainerAgreement(loadIclosedFees(), { kind, firmKey, property, fileNo, discount, date });
 }

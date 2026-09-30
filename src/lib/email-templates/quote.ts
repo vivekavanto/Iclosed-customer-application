@@ -14,6 +14,8 @@ export interface QuoteEmailContent {
   propertyFull: string;
   legalFees: number;
   disbursements: number;
+  /** From fee settings, e.g. "Estimated disbursements". */
+  disbursementsLabel?: string;
   quoteUrl: string;
   siteUrl: string;
 }
@@ -25,8 +27,8 @@ const MUTED = "#6B7280";
 const FONT = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
 
 const CONGRATS: Record<QuoteSide, string> = {
-  buying: "Congratulations on the house.",
-  selling: "Congratulations on the sale.",
+  buying: "Congratulations on your purchase.",
+  selling: "Congratulations on your sale.",
   both: "Congratulations on the move.",
   refinance: "Thanks for choosing us for your refinance.",
   condo: "Congratulations on the new condo.",
@@ -39,13 +41,17 @@ const TAX_NOTE: Record<QuoteSide, string> = {
   buying: PURCHASE_TAX_NOTE,
   both: PURCHASE_TAX_NOTE,
   condo: PURCHASE_TAX_NOTE,
-  selling: "Those are our fees, before HST. Your quote sets out anything else payable on closing separately.",
+  selling: "Those are our fees, before HST. They come out of your sale proceeds, so you pay nothing upfront.",
   refinance:
     "Those are our fees, before HST. Your lender's title insurance is paid to the insurer, and your quote sets that out separately.",
 };
 
-export function quoteEmailSubject(propertyShort: string): string {
-  return propertyShort ? `Your quote for ${propertyShort}` : "Your iClosed quote";
+// Spec wording names the type for purchase and sale only.
+const SUBJECT_TYPE: Partial<Record<QuoteSide, string>> = { buying: "purchase ", selling: "sale " };
+
+export function quoteEmailSubject(propertyShort: string, side?: QuoteSide): string {
+  const type = (side && SUBJECT_TYPE[side]) ?? "";
+  return propertyShort ? `Your ${type}quote for ${propertyShort}` : "Your iClosed quote";
 }
 
 function step(n: number, text: string): string {
@@ -61,8 +67,12 @@ function step(n: number, text: string): string {
 export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; html: string } {
   const firm = getFirm(c.firmKey);
   const name = (c.firstName ?? "").trim() || "there";
-  const entity =
-    firm.key === "navawilson" ? `${firm.legalName}, operating as iClosed` : firm.legalName;
+  const specSide = c.side === "buying" || c.side === "selling";
+  const entity = specSide
+    ? firm.introName
+    : firm.key === "navawilson"
+      ? `${firm.legalName}, operating as iClosed`
+      : firm.legalName;
   const taxNote = TAX_NOTE[c.side];
 
   const html = `
@@ -82,7 +92,7 @@ export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; ht
             <div style="font-size:32px;font-weight:800;color:${INK};line-height:1.2;">${esc(money(c.legalFees))}</div>
           </td>
           <td style="padding:22px 24px;text-align:right;" valign="bottom">
-            <div style="font-size:14px;color:${MUTED};">Disbursements</div>
+            <div style="font-size:14px;color:${MUTED};">${esc(c.disbursementsLabel ?? "Disbursements")}</div>
             <div style="font-size:24px;font-weight:800;color:${INK};line-height:1.3;">${esc(money(c.disbursements))}</div>
           </td>
         </tr>
@@ -125,5 +135,5 @@ export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; ht
   </table>
 </div>`;
 
-  return { subject: quoteEmailSubject(c.propertyShort), html };
+  return { subject: quoteEmailSubject(c.propertyShort, c.side), html };
 }

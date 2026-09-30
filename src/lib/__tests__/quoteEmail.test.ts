@@ -14,12 +14,7 @@ describe("quoteSideFromLeadType", () => {
   });
 });
 
-describe("quoteFigures", () => {
-  it("prices a purchase from the rate card", () => {
-    // 150 + 250 + 54.80 + 133.60 + 85
-    expect(quoteFigures("buying", DEFAULT_RATES)).toEqual({ legalFees: 1199, disbursements: 673.4 });
-  });
-
+describe("quoteFigures (refinance and condo only)", () => {
   it("prices a refinance with mortgage registration", () => {
     // 150 + 250 + 54.80 + 133.60 + 85
     expect(quoteFigures("refinance", DEFAULT_RATES)).toEqual({ legalFees: 999, disbursements: 673.4 });
@@ -27,11 +22,6 @@ describe("quoteFigures", () => {
 
   it("totals condo occupancy and final closing, not the optional review", () => {
     expect(quoteFigures("condo", DEFAULT_RATES).legalFees).toBe(1699);
-  });
-
-  it("adds both sides for a purchase & sale", () => {
-    // 673.40 + (250 + 54.80 + 133.60)
-    expect(quoteFigures("both", DEFAULT_RATES)).toEqual({ legalFees: 2199, disbursements: 1111.8 });
   });
 });
 
@@ -44,18 +34,28 @@ describe("buildQuoteEmailHtml", () => {
     propertyFull: "424 Calderstone Crescent, Toronto",
     legalFees: 1199,
     disbursements: 715,
+    disbursementsLabel: "Estimated disbursements",
     quoteUrl: "https://example.com/login",
     siteUrl: "https://example.com",
   };
 
   it("fills in the client, property and figures", () => {
     const { subject, html } = buildQuoteEmailHtml(base);
-    expect(subject).toBe("Your quote for 424 Calderstone Crescent");
+    expect(subject).toBe("Your purchase quote for 424 Calderstone Crescent");
     expect(html).toContain("Hi Sam,");
+    expect(html).toContain("Congratulations on your purchase.");
+    expect(html).toContain("Estimated disbursements");
     expect(html).toContain("424 Calderstone Crescent, Toronto");
     expect(html).toContain("$1,199.00");
     expect(html).toContain("$715.00");
-    expect(html).toContain("Nava Wilson PC, operating as iClosed");
+    expect(html).toContain("iClosed, powered by Nava Wilson PC");
+  });
+
+  it("uses the sale subject and fee sentence", () => {
+    const { subject, html } = buildQuoteEmailHtml({ ...base, side: "selling", disbursementsLabel: "Disbursements" });
+    expect(subject).toBe("Your sale quote for 424 Calderstone Crescent");
+    expect(html).toContain("Congratulations on your sale.");
+    expect(html).toContain("They come out of your sale proceeds, so you pay nothing upfront.");
   });
 
   it("escapes user-supplied values", () => {

@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { getRetainerFaqItems, retainerAgreementLine } from "@/lib/retainerFaq";
 import { DEFAULT_FIRM_KEY, FIRMS, getFirm, type FirmKey } from "@/lib/firms";
-import { buildRetainerAgreement, longDate, type RetainerAgreementData } from "@/lib/retainerAgreement";
+import { longDate, type RetainerAgreement } from "@/lib/retainerAgreement";
 
 interface RetainerPdfParams {
   fullName: string;
@@ -24,8 +24,8 @@ interface RetainerPdfParams {
    * un-migrated caller reproduces the old document exactly.
    */
   firmKey?: FirmKey | string | null;
-  /** v7 purchase/sale agreement; replaces the FAQ body when present. */
-  agreement?: RetainerAgreementData | null;
+  /** v9 purchase/sale agreement; replaces the FAQ body when present. */
+  agreement?: RetainerAgreement | null;
 }
 
 /** Wrap long text into lines that fit within maxWidth */
@@ -212,9 +212,8 @@ export async function generateRetainerPdf(
     }
   }
 
-  // v7 agreement body: title, meta, sections, fee tables, definitions.
-  function drawAgreement(data: RetainerAgreementData) {
-    const a = buildRetainerAgreement(data, signedDate);
+  // v9 agreement body.
+  function drawAgreement(a: RetainerAgreement) {
     const ink = rgb(0.1, 0.1, 0.1);
     const body = rgb(0.3, 0.3, 0.3);
     const muted = rgb(0.45, 0.45, 0.45);
@@ -313,7 +312,7 @@ export async function generateRetainerPdf(
 
   // ── Signature Section ──
   if (params.agreement) {
-    // v7: one shaded row, "Signature ____" left and "Date ____" right.
+    // v9: signature left, date right, one shaded row.
     ensureSpace(60);
     const rowH = 30;
     const baseY = y - 18;

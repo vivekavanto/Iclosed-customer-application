@@ -6,7 +6,7 @@ import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
 import { getLeadFirmKey } from "@/lib/leadFirm";
 import { retainerAgreementKind } from "@/lib/retainerAgreement";
-import { loadRetainerAgreementData } from "@/lib/loadRetainerAgreement";
+import { loadRetainerAgreement } from "@/lib/loadRetainerAgreement";
 
 type Side = "purchase" | "sale" | null;
 
@@ -224,11 +224,11 @@ export async function GET(req: Request) {
 
     const displayLeadType = formatLeadTypeLabelForRecipient(lead);
 
-    // v7 purchase/sale agreement figures; other lead types keep the FAQ retainer.
+    // v9 purchase/sale agreement; others keep the FAQ.
     const agreementKind = retainerAgreementKind(lead?.lead_type);
     const retainerAgreement =
       lead && agreementKind
-        ? await loadRetainerAgreementData(lead, propertyAddress, agreementKind)
+        ? await loadRetainerAgreement(lead, propertyAddress, agreementKind, new Date().toISOString().split("T")[0])
         : null;
 
     return NextResponse.json({

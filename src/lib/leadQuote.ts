@@ -1,9 +1,11 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLeadFirmKey } from "@/lib/leadFirm";
-import { ratesFromConfigRow } from "@/lib/closingCosts";
+import { ratesFromConfigRow, round2 } from "@/lib/closingCosts";
 import { readFirmAndSharedRow } from "@/lib/closingCostRates";
 import type { FirmKey } from "@/lib/firms";
-import { quoteFigures, quoteSideFromLeadType, type QuoteSide } from "@/lib/quotePricing";
+import { QUOTE_LEGAL_FEES, quoteFigures, quoteSideFromLeadType, type QuoteSide } from "@/lib/quotePricing";
+import { computeFees, type IclosedFees } from "@/lib/iclosedFees";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
 
 type Addr = {
   street?: string | null;
@@ -30,8 +32,43 @@ export interface LeadQuote {
   purchaseClosingDate: string | null;
   saleClosingDate: string | null;
   createdAt: string | null;
+  /** From fee settings for purchase and sale, else "Disbursements". */
+  disbursementsLabel: string;
+  /** e.g. "26P-0411"; purchase and sale only, else null. */
+  quoteNumber: string | null;
   legalFees: number;
   disbursements: number;
+}
+
+// Purchase and sale figures come from src/config/iclosed-fees.yaml.
+function feeFileFigures(
+  fees: IclosedFees,
+  side: "buying" | "selling" | "both",
+): { legalFees: number; disbursements: number } {
+  if (side === "both") {
+    const disb = computeFees(fees, "purchase").disbursements + computeFees(fees, "sale").disbursements;
+    return { legalFees: QUOTE_LEGAL_FEES.both, disbursements: round2(disb) };
+  }
+  const f = computeFees(fees, side === "buying" ? "purchase" : "sale");
+  return { legalFees: f.legalFees, disbursements: f.disbursements };
+}
+
+// "26P-0411": count of same-type primary leads that year.
+async function quoteNumberFor(
+  lead: { id: string; lead_type: string; created_at: string | null },
+  prefix: string,
+): Promise<string | null> {
+  if (!lead.created_at) return null;
+  const year = new Date(lead.created_at).getUTCFullYear();
+  const { count, error } = await supabaseAdmin
+    .from("leads")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_type", lead.lead_type)
+    .is("parent_lead_id", null)
+    .gte("created_at", `${year}-01-01T00:00:00Z`)
+    .lte("created_at", lead.created_at);
+  if (error || !count) return null;
+  return `${String(year).slice(2)}${prefix}-${String(count).padStart(4, "0")}`;
 }
 
 function shortAddress(a: Addr): string {
@@ -88,8 +125,15 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
   const primary = side === "selling" ? saleAddr : purchase;
 
   const firmKey = await getLeadFirmKey(leadId);
-  const { row } = await readFirmAndSharedRow(firmKey);
-  const { legalFees, disbursements } = quoteFigures(side, ratesFromConfigRow(row));
+  const fees = loadIclosedFees();
+  const figures =
+    side === "refinance" || side === "condo"
+      ? quoteFigures(side, ratesFromConfigRow((await readFirmAndSharedRow(firmKey)).row))
+      : feeFileFigures(fees, side);
+  const { legalFees, disbursements } = figures;
+  const feeType = side === "buying" ? "purchase" : side === "selling" ? "sale" : null;
+  const prefix = feeType ? fees.file_types[feeType].quote_prefix : undefined;
+  const quoteNumber = prefix ? await quoteNumberFor(lead, prefix) : null;
 
   return {
     leadId: lead.id,
@@ -110,6 +154,8 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
     purchaseClosingDate: side === "selling" ? null : lead.closing_date ?? null,
     saleClosingDate: side === "selling" ? lead.closing_date ?? null : lead.selling_closing_date ?? null,
     createdAt: lead.created_at ?? null,
+    quoteNumber,
+    disbursementsLabel: feeType ? fees.file_types[feeType].disbursements_label : "Disbursements",
     legalFees,
     disbursements,
   };
