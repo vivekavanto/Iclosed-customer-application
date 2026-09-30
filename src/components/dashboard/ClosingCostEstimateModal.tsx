@@ -1,22 +1,15 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Info, Loader2, Mail, TriangleAlert, X } from "lucide-react";
-import {
-  BALANCE_LABELS,
-  DISCLAIMERS,
-  computeStatement,
-  ratesFromConfigRow,
-  type ClosingCostInputs,
-  type ClosingCostRates,
-} from "@/lib/closingCosts";
+import { Download, Loader2, Mail, TriangleAlert, X } from "lucide-react";
 import {
   defaultStatementType,
   type StatementTypeConfig,
 } from "@/lib/closingCostSettings";
 import { formatCurrency, parseAmountInput } from "@/lib/formatCurrency";
-import { estimatePdfFileName } from "@/lib/closingEstimateEmail";
-import ClosingCostBreakdown from "@/components/dashboard/ClosingCostBreakdown";
+import DraftStatementSections from "@/components/dashboard/DraftStatementSections";
+import { buildPurchaseDraft, draftStatementPdfFileName, type DraftFileInput } from "@/lib/draftStatement";
+import type { IclosedFees } from "@/lib/iclosedFees";
 import ClosingCostEmailPreview from "@/components/dashboard/ClosingCostEmailPreview";
 import ClosingCostIssuedStatement, {
   type IssuedEstimate,
@@ -127,22 +120,6 @@ function shortAddress(address: string | null | undefined): string | null {
   return parts.slice(0, 2).join(", ") || null;
 }
 
-const SummaryRow: React.FC<{
-  label: string;
-  amount: string;
-  hint?: React.ReactNode;
-}> = ({ label, amount, hint }) => (
-  <div className="flex items-start justify-between gap-3 py-2">
-    <span className="flex items-center gap-1.5 text-[13px] sm:text-sm text-gray-700">
-      {label}
-      {hint}
-    </span>
-    <span className="shrink-0 text-[13px] sm:text-sm tabular-nums text-gray-900">
-      {amount}
-    </span>
-  </div>
-);
-
 const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   onClose,
 }) => {
@@ -151,7 +128,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   const [reloadKey, setReloadKey] = useState(0);
 
   const [prefill, setPrefill] = useState<Prefill>({});
-  const [rates, setRates] = useState<ClosingCostRates | null>(null);
   /**
    * Every file this client owns, and which one they are looking at.
    *
@@ -185,21 +161,16 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     null,
   );
 
-  // What the client has TYPED, and what they have SUBMITTED with Calculate.
-  // Every figure on the right follows the submitted value alone: recomputing on
-  // each keystroke walked the balance through nonsense on the way to the real
-  // number ($5 → $50 → $500 …) and fired the background save at every step.
-  //
-  // The first-time-buyer checkbox is deliberately NOT held back — one click is
-  // already a complete answer, so there is nothing to commit.
+  // Figures follow the box as the client types; the save below is debounced.
   const [mortgage, setMortgage] = useState("");
-  const [submittedMortgage, setSubmittedMortgage] = useState("");
   const [isFirstTimeBuyer, setIsFirstTimeBuyer] = useState(false);
   // Open on arrival: the fee-by-fee breakdown is the substance of the estimate,
   // and a client who has to press "See the full breakdown" to reach it reads the
   // single balance figure as the whole answer.
   const [expanded, setExpanded] = useState(true);
-  const [showTaxHint, setShowTaxHint] = useState(false);
+  // v4 draft statement inputs from GET /api/closing-estimate.
+  const [iclosedFees, setIclosedFees] = useState<IclosedFees | null>(null);
+  const [draftInput, setDraftInput] = useState<DraftFileInput | null>(null);
   /** The email preview replaces the estimate body until it is sent or backed out of. */
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -252,7 +223,8 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
         }
         const p: Prefill = data.prefill ?? {};
         setPrefill(p);
-        setRates(data.rates ?? null);
+        setIclosedFees((data.iclosed_fees as IclosedFees | undefined) ?? null);
+        setDraftInput((data.draft_input as DraftFileInput | undefined) ?? null);
         setEnvelope(data.email_envelope ?? null);
         setFiles((data.files as FileOption[] | undefined) ?? []);
         // What the SERVER resolved — which on first load is its default choice,
@@ -268,15 +240,12 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
           setStatementType(data.statement_type as StatementTypeConfig);
         }
         const seededMortgage = Number(p.mortgage_amount ?? 0);
-        // A figure the file already carries arrives ALREADY submitted — the
-        // client answered this before, so the estimate opens on their number
-        // rather than on a Calculate button they have to press to get it back.
+        // Reopen on the mortgage the client gave before.
         const seededInput =
           Number.isFinite(seededMortgage) && seededMortgage > 0
             ? formatTypedAmount(String(seededMortgage))
             : "";
         setMortgage(seededInput);
-        setSubmittedMortgage(seededInput);
         setIsFirstTimeBuyer(Boolean(p.is_first_time_buyer));
       })
       .catch((err: unknown) => {
@@ -313,57 +282,25 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     setRequestedFileId(id);
   };
 
-  // Memoised: ratesFromConfigRow builds a fresh object, which would otherwise
-  // be a new identity every render and defeat the statement memo below.
-  const effectiveRates = useMemo(
-    () => rates ?? ratesFromConfigRow(null),
-    [rates],
-  );
-
-  /** Blank is "not answered yet" — 0 is a cash deal and a valid answer. */
-  const mortgageAmount = parseAmountInput(submittedMortgage);
+  /** Live from the box; blank counts as $0, a typed 0 is a cash deal. */
+  const mortgageAmount = parseAmountInput(mortgage);
   const answered = mortgageAmount !== null;
-
-  /** What is in the box right now, and whether it still needs submitting. */
-  const typedAmount = parseAmountInput(mortgage);
-  const pendingChange = typedAmount !== mortgageAmount;
-
-  /**
-   * Commit the typed amount. Blank is not submittable — it is the absence of an
-   * answer, not an answer of zero, and letting it through would silently
-   * retract a figure the client already gave.
-   */
-  const submitMortgage = () => {
-    if (typedAmount === null || !pendingChange) return;
-    setSubmittedMortgage(mortgage);
-    setNotice(null);
-  };
 
   const price = Number(prefill.purchase_price ?? 0) || 0;
 
-  const inputs: ClosingCostInputs = useMemo(
-    () => ({
-      price,
-      deposit: Number(prefill.deposit_paid ?? 0) || 0,
-      mortgage: mortgageAmount ?? 0,
-      isToronto: Boolean(prefill.is_toronto),
-      isFirstTimeBuyer,
-      titlePremiumOverride: prefill.title_premium_override ?? null,
-      propertyTaxAdjustment: prefill.property_tax_adjustment ?? null,
-      // The firm's "Is estimate" answers, so the chips the client sees match
-      // the statement the firm issued. Undefined = never said → line default.
-      titlePremiumIsEstimate: prefill.title_premium_is_estimate ?? undefined,
-      teraviewIsEstimate: prefill.teraview_is_estimate ?? undefined,
-      sheriffIsEstimate: prefill.sheriff_is_estimate ?? undefined,
-      propertyTaxIsEstimate: prefill.property_tax_is_estimate ?? undefined,
-    }),
-    [price, prefill, mortgageAmount, isFirstTimeBuyer],
+  const draft = useMemo(
+    () =>
+      iclosedFees && draftInput
+        ? buildPurchaseDraft(iclosedFees, {
+            ...draftInput,
+            mortgage: mortgageAmount,
+            firstTimeBuyer: isFirstTimeBuyer,
+          })
+        : null,
+    [iclosedFees, draftInput, mortgageAmount, isFirstTimeBuyer],
   );
-
-  const statement = useMemo(
-    () => computeStatement(inputs, effectiveRates),
-    [inputs, effectiveRates],
-  );
+  const fundsSection = draft?.sections.find((sec) => sec.title === "Funds you need on closing");
+  const breakdownSections = draft?.sections.filter((sec) => sec !== fundsSection) ?? [];
 
   /**
    * The exact body the save, PDF and email routes all receive.
@@ -377,10 +314,10 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
       // Not an input — it names which of the client's own files this is about,
       // and the server checks it against their session before reading anything.
       file_id: activeFileId,
-      mortgage_amount: inputs.mortgage,
-      is_first_time_buyer: inputs.isFirstTimeBuyer,
+      mortgage_amount: mortgageAmount ?? 0,
+      is_first_time_buyer: isFirstTimeBuyer,
     }),
-    [activeFileId, inputs.mortgage, inputs.isFirstTimeBuyer],
+    [activeFileId, mortgageAmount, isFirstTimeBuyer],
   );
 
   // ── Mirror the client's planning figures onto their file ──
@@ -442,10 +379,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
       a.href = url;
       // Same name the emailed attachment carries, so a client who does both
       // does not end up with two differently-named copies of one document.
-      a.download = estimatePdfFileName({
-        fileNo: prefill.file_no_display,
-        propertyAddress: prefill.property_address,
-      });
+      a.download = draftStatementPdfFileName(prefill.file_no_display, prefill.property_address);
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -516,7 +450,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   ].filter(Boolean) as string[];
 
   const closingLongDate = formatLongDate(prefill.closing_date);
-  const propertyTaxAmount = statement.propertyTax?.amount ?? 0;
 
   return (
     <div
@@ -577,9 +510,9 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
               firstName={(prefill.client_name ?? "").trim().split(/\s+/)[0] || null}
               fileNo={prefill.file_no_display}
               propertyAddress={prefill.property_address}
-              price={statement.balance.purchasePrice}
-              totalClosingCosts={statement.total}
-              balanceDue={statement.balance.balanceDue}
+              price={price}
+              totalClosingCosts={draft?.closingCostsTotal ?? 0}
+              balanceDue={draft?.fundsRequired ?? null}
               brand={brand}
               firmKey={firmKey}
               sending={sending}
@@ -696,14 +629,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     placeholder="0"
                     aria-label="Mortgage amount"
                     className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-8 pr-3 text-sm tabular-nums text-gray-900 outline-none transition"
-                    // Enter is what people press in a one-field form, so it
-                    // does what the button does rather than nothing at all.
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        submitMortgage();
-                      }
-                    }}
                     onFocus={(e) => {
                       e.currentTarget.style.borderColor = brand;
                       e.currentTarget.style.boxShadow = `0 0 0 1px ${brand}`;
@@ -714,38 +639,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                     }}
                   />
                 </div>
-
-                {/* Two resting states rather than a dimmed one: a filled button
-                    while there is something to submit, a quiet outline once the
-                    figures already reflect the box. A 40%-opacity primary button
-                    on open — which is what a seeded amount would show — reads as
-                    broken rather than as "nothing to do". */}
-                <button
-                  type="button"
-                  onClick={submitMortgage}
-                  disabled={typedAmount === null || !pendingChange}
-                  className={`mt-3 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity ${
-                    typedAmount !== null && pendingChange
-                      ? "text-white hover:opacity-90 cursor-pointer"
-                      : "border border-gray-200 bg-white text-gray-400 cursor-not-allowed"
-                  }`}
-                  style={
-                    typedAmount !== null && pendingChange
-                      ? { backgroundColor: brand }
-                      : undefined
-                  }
-                >
-                  Calculate
-                </button>
-
-                {/* Says out loud that the figures on the right are still the
-                    previous answer — otherwise a typed-but-unsubmitted number
-                    reads as though it had already been counted. */}
-                {pendingChange && typedAmount !== null && (
-                  <p className="mt-2 text-xs text-gray-500">
-                    Press Calculate to update the figures.
-                  </p>
-                )}
               </div>
 
               {/* First-time buyer */}
@@ -762,11 +655,11 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                   </span>
                   <span className="mt-1 block text-xs text-gray-500 leading-relaxed">
                     Applies the land transfer tax rebate &mdash; up to{" "}
-                    {formatCurrency(effectiveRates.rebateOntarioMax, {
+                    {formatCurrency(iclosedFees?.land_transfer_tax.ontario.first_time_buyer_rebate_max ?? 0, {
                       cents: false,
                     })}{" "}
                     in Ontario, plus{" "}
-                    {formatCurrency(effectiveRates.rebateTorontoMax, {
+                    {formatCurrency(iclosedFees?.land_transfer_tax.toronto.first_time_buyer_rebate_max ?? 0, {
                       cents: false,
                     })}{" "}
                     in Toronto.
@@ -826,18 +719,18 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                 className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest"
                 style={{ color: brand }}
               >
-                Funds you&rsquo;ll need on closing
+                Funds required from you
               </p>
 
               {/* A blank mortgage still computes — the figure then reads as
                   "before any mortgage advance", which the summary row below
                   says explicitly by showing an em dash rather than $0.00. */}
-              {price > 0 ? (
+              {price > 0 && draft?.fundsRequired != null ? (
                 <p
                   className="mt-1.5 text-3xl sm:text-5xl font-bold tabular-nums leading-tight"
                   style={{ color: brand }}
                 >
-                  {formatCurrency(statement.balance.balanceDue)}
+                  {formatCurrency(draft.fundsRequired)}
                 </p>
               ) : (
                 <p className="mt-1.5 text-3xl sm:text-5xl font-bold tabular-nums leading-tight text-gray-200">
@@ -855,67 +748,11 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                       : "Certified funds are due on or before your closing date."}
               </p>
 
-              {/* Summary */}
-              <div className="mt-5 divide-y divide-gray-100 border-t border-gray-100">
-                <SummaryRow
-                  label={BALANCE_LABELS.purchase_price}
-                  amount={formatCurrency(statement.balance.purchasePrice)}
-                />
-                <SummaryRow
-                  label={BALANCE_LABELS.deposit}
-                  amount={`− ${formatCurrency(statement.balance.depositPaid, {
-                    sign: false,
-                  })}`}
-                />
-                <SummaryRow
-                  label={BALANCE_LABELS.mortgage}
-                  amount={
-                    answered
-                      ? `− ${formatCurrency(statement.balance.mortgageAmount, {
-                          sign: false,
-                        })}`
-                      : "—"
-                  }
-                />
-                {/* Costs before adjustments, matching the PDF statement. */}
-                <SummaryRow
-                  label={BALANCE_LABELS.closing_costs}
-                  amount={`+ ${formatCurrency(statement.balance.closingCosts, {
-                    sign: false,
-                  })}`}
-                />
-                {propertyTaxAmount !== 0 && (
-                  <SummaryRow
-                    label={
-                      propertyTaxAmount > 0
-                        ? BALANCE_LABELS.adjustment_charge
-                        : BALANCE_LABELS.adjustment_credit
-                    }
-                    amount={`${propertyTaxAmount < 0 ? "−" : "+"} ${formatCurrency(
-                      propertyTaxAmount,
-                      { sign: false },
-                    )}`}
-                    hint={
-                      <button
-                        type="button"
-                        onClick={() => setShowTaxHint((v) => !v)}
-                        aria-label="What is this?"
-                        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 cursor-pointer"
-                      >
-                        <Info size={10} strokeWidth={2.5} />
-                      </button>
-                    }
-                  />
-                )}
-              </div>
-
-              {showTaxHint && (
-                <p className="mt-2 rounded-lg bg-gray-50 p-3 text-[11px] text-gray-500 leading-relaxed">
-                  Your share of property tax and common expenses the seller has
-                  already paid past the closing date. The exact figure is
-                  confirmed on the Statement of Adjustments from the
-                  seller&rsquo;s lawyer.
-                </p>
+              {/* Summary: the draft's funds section */}
+              {fundsSection && (
+                <div className="mt-5">
+                  <DraftStatementSections sections={[fundsSection]} brand={brand} />
+                </div>
               )}
 
               {/* Full breakdown */}
@@ -937,7 +774,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                 </button>
                 {expanded && (
                   <div className="border-t border-gray-100 px-4 py-4">
-                    <ClosingCostBreakdown statement={statement} brand={brand} />
+                    <DraftStatementSections sections={breakdownSections} brand={brand} />
                   </div>
                 )}
               </div>
@@ -960,26 +797,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
                 </div>
               )}
 
-              {/* ══ Disclaimers ══
-                  Composed as the admin statement and the PDF compose them: the
-                  configurable lead line, the shared legal paragraphs from the
-                  twin closingCosts.ts, then the firm's optional footer note.
-                  One source per piece of text.
-
-                  The lead is dropped when the warning box above already carries
-                  it — the same sentence twice on one screen reads as a mistake,
-                  and it is the box that gives it weight. */}
-              <p className="mt-4 text-[11px] leading-relaxed text-gray-400">
-                {[
-                  ...(statementType.show_watermark
-                    ? []
-                    : [statementType.disclaimer_intro || DISCLAIMERS[0]]),
-                  ...DISCLAIMERS.slice(1),
-                  statementType.footer_note,
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              </p>
             </div>
           </div>
           </>
