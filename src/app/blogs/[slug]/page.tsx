@@ -2,15 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import {
-  Calendar,
-  ArrowLeft,
-  Clock,
-  ShieldCheck,
-  Phone,
-  Mail,
-  MapPin,
-} from "lucide-react";
+import { Calendar, ArrowLeft, Phone, Mail, MapPin } from "lucide-react";
 import BlogSiteHeader from "@/components/layout/BlogSiteHeader";
 import {
   listPublishedPosts,
@@ -157,8 +149,12 @@ export default async function BlogPostPage({ params }: PageProps) {
                 Back to Blog
               </Link>
 
+              {/* The tags, printed once. They used to appear a second time as
+                  grey pills under the summary, and this row was capped at two,
+                  so every tag past the second only existed in that duplicate —
+                  all of them live here now. */}
               <div className="mb-5 flex flex-wrap items-center gap-2.5">
-                {post.tags.slice(0, 2).map((tag) => (
+                {post.tags.map((tag) => (
                   <span
                     key={tag}
                     className="rounded-full border border-red-100 bg-red-50 px-4 py-1 text-[10px] font-bold uppercase tracking-widest text-[#C10007]"
@@ -172,71 +168,36 @@ export default async function BlogPostPage({ params }: PageProps) {
                 {post.title}
               </h1>
 
+              {/* The article's own "Quick answer" — it answers the question in
+                  the title, where `excerpt` only describes the article. Posts
+                  without one fall back to the excerpt. It is stripped from the
+                  body below, so the page does not open with it twice. */}
               <p className="mb-6 text-[16.5px] leading-relaxed text-gray-500">
-                {post.excerpt}
+                {post.quickAnswer ?? post.excerpt}
               </p>
 
-              <div className="mb-8 flex flex-wrap items-center gap-2">
-                {post.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3.5 py-1 text-[11px] font-semibold text-gray-500 transition-colors duration-150 hover:border-red-100 hover:bg-red-50 hover:text-[#C10007]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-
-              {/* Author, date and reading time. Every value here is the one the
-                  article itself states: post.author and post.readTime are read
-                  off the body's own byline when it has one (see
-                  blogByline.ts), and that byline is stripped from the prose
-                  below so the page does not print it twice. */}
-              <div className="mt-auto border-t border-gray-100 pt-6">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-100 bg-red-50">
-                    <span className="text-[13px] font-bold text-[#C10007]">
+              {/* Who wrote it and when it was published, on one line. The name
+                  comes off the body's own byline when it has one (see
+                  blogByline.ts), which is also why that line no longer appears
+                  in the prose below. */}
+              <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-6">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-red-100 bg-red-50">
+                    <span className="text-[12px] font-bold text-[#C10007]">
                       {post.author.charAt(0)}
                     </span>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
-                      By {post.author}
-                    </p>
-                    {post.authorRole && (
-                      <p className="mt-0.5 text-[13px] leading-snug text-gray-500">
-                        {post.authorRole}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-gray-500">
-                  <span className="flex items-center gap-2">
-                    <Calendar size={13} strokeWidth={2} className="text-gray-400" />
-                    {post.date}
+                  <span className="text-sm font-semibold text-gray-800">
+                    By {post.author}
                   </span>
-                  <span className="flex items-center gap-2">
-                    <Clock size={13} strokeWidth={2} className="text-gray-400" />
-                    {post.readTime}
-                  </span>
-                  {post.reviewed && (
-                    <span className="flex items-center gap-2">
-                      <ShieldCheck
-                        size={13}
-                        strokeWidth={2}
-                        className="text-gray-400"
-                      />
-                      Last reviewed {post.reviewed}
-                    </span>
-                  )}
                 </div>
-
-                {post.authorCredentials && (
-                  <p className="mt-3 text-[12.5px] leading-relaxed text-gray-400">
-                    {post.authorCredentials}
-                  </p>
-                )}
+                <span aria-hidden className="text-gray-300">
+                  ·
+                </span>
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                  <Calendar size={13} strokeWidth={2} className="text-gray-400" />
+                  {post.date}
+                </span>
               </div>
             </div>
 

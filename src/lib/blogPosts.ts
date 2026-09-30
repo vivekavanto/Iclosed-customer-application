@@ -1,6 +1,7 @@
 import supabaseAdmin from "./supabaseAdmin";
 import { sanitizeBlogHtml, readingTimeFromHtml } from "./sanitizeBlogHtml";
 import { parseBlogByline } from "./blogByline";
+import { parseQuickAnswer } from "./blogQuickAnswer";
 import { slugify } from "./blogSlug";
 
 export { slugify };
@@ -87,10 +88,13 @@ export type BlogPost = {
   author: string;
   /** The byline's job title, e.g. "Real Estate Lawyer and Practice Lead". */
   authorRole: string | null;
-  /** The byline's licensing line, e.g. "Licensed by the Law Society…". */
-  authorCredentials: string | null;
-  /** The byline's "Last reviewed" value, e.g. "September 2026". */
-  reviewed: string | null;
+  /**
+   * The article's own "Quick answer" paragraph, label removed — the summary
+   * printed under the title on a card and on the article itself. Null for a
+   * post that does not open with one, and every surface falls back to
+   * `excerpt`. See blogQuickAnswer.ts.
+   */
+  quickAnswer: string | null;
   tags: string[];
   /** Sanitized. Safe to hand to dangerouslySetInnerHTML. */
   content: string;
@@ -187,8 +191,7 @@ export function toBlogPost(row: BlogPostRow): BlogPost {
     imageFromContent: !row.cover_image_url && borrowed !== null,
     author: byline?.author ?? row.author,
     authorRole: byline?.role ?? null,
-    authorCredentials: byline?.credentials ?? null,
-    reviewed: byline?.reviewed ?? null,
+    quickAnswer: parseQuickAnswer(content),
     tags: Array.isArray(row.tags) ? row.tags : [],
     content,
     metaTitle: row.meta_title,

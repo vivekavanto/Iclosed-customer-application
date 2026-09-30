@@ -73,11 +73,14 @@ export default function BlogToc({
   };
 
   // Every entry carries a serial number, h3s included — the list reads as a
-  // numbered run of sections the way a contents page does, and an article whose
-  // first entry happened to be an h3 ("Key takeaways") no longer opens with a
-  // blank where a number belongs. h3s keep their indent, so the hierarchy is
-  // still visible. Worked out here rather than with a counter inside the map,
-  // which would be a mutation during render.
+  // numbered run of sections the way a contents page does. Nothing is indented
+  // by heading level: an h3 used to be pushed right, which knocked its number
+  // out of the column the others share (and an article whose first entry is an
+  // h3, like "Key takeaways", started with the odd one out). Numbers sit in a
+  // fixed-width column instead, so they line up down the list and a wrapped
+  // title hangs under its own first line rather than under the number. Worked
+  // out here rather than with a counter inside the map, which would be a
+  // mutation during render.
   const numbered = items.map((item, index) => ({ ...item, number: index + 1 }));
 
   return (
@@ -104,8 +107,7 @@ export default function BlogToc({
                 onClick={(event) => onJump(event, item.id)}
                 aria-current={isActive ? "location" : undefined}
                 className={[
-                  "flex gap-3 rounded-lg px-3 py-2.5 text-[14.5px] leading-snug transition-colors duration-150",
-                  item.level === 3 ? "pl-7" : "",
+                  "flex items-start gap-3 rounded-lg px-3 py-2.5 text-[14.5px] leading-snug transition-colors duration-150",
                   isActive
                     ? "bg-red-50/70 font-semibold text-[#C10007]"
                     : "font-medium text-gray-700 hover:bg-gray-50 hover:text-[#C10007]",
@@ -113,13 +115,13 @@ export default function BlogToc({
               >
                 <span
                   aria-hidden
-                  className={`shrink-0 pt-px text-[13px] font-bold tabular-nums ${
+                  className={`w-6 shrink-0 pt-px text-left text-[13px] font-bold tabular-nums ${
                     isActive ? "text-[#C10007]" : "text-[#C10007]/55"
                   }`}
                 >
                   {String(item.number).padStart(2, "0")}
                 </span>
-                <span>{item.text}</span>
+                <span className="min-w-0">{item.text}</span>
               </a>
             </li>
           );

@@ -33,7 +33,11 @@ export default function DashboardBlogCards({
                   <span className="text-xs font-medium text-gray-400">{post.readTime}</span>
                 </div>
                 <h3 className="mb-3 line-clamp-2 text-[15px] font-bold leading-snug text-gray-900 transition-colors duration-200 group-hover:text-[#C10007]">{post.title}</h3>
-                <p className="mb-5 line-clamp-3 flex-1 text-[13px] leading-relaxed text-gray-500">{post.excerpt}</p>
+                {/* The article's own "Quick answer" under the title — it
+                    answers the question the title asks, where `excerpt` only
+                    describes the article. Clamped, because a quick answer runs
+                    a sentence or two longer than a blurb. */}
+                <p className="mb-5 line-clamp-3 flex-1 text-[13px] leading-relaxed text-gray-500">{post.quickAnswer ?? post.excerpt}</p>
                 <div className="flex items-center justify-between border-t border-gray-100 pt-4">
                   <div className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
                     <Calendar size={12} strokeWidth={2} />

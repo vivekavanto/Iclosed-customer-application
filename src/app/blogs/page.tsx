@@ -100,8 +100,11 @@ export default async function BlogsIndexPage() {
                 <h2 className="mb-4 text-2xl font-bold leading-snug text-gray-900 transition-colors duration-200 group-hover:text-[#C10007] lg:text-[1.85rem]">
                   {featured.title}
                 </h2>
-                <p className="mb-8 max-w-[520px] text-base leading-relaxed text-gray-500">
-                  {featured.excerpt}
+                {/* The article's own "Quick answer" under the title, which
+                    answers the question the title asks where `excerpt` only
+                    describes the article. Falls back for a post without one. */}
+                <p className="mb-8 max-w-[520px] text-base leading-relaxed text-gray-500 line-clamp-4">
+                  {featured.quickAnswer ?? featured.excerpt}
                 </p>
 
                 <div className="flex items-center justify-between border-t border-gray-100 pt-5">
