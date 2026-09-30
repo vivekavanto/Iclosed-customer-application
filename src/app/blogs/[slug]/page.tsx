@@ -5,11 +5,13 @@ import { notFound } from "next/navigation";
 import {
   Calendar,
   ArrowLeft,
+  Clock,
+  ShieldCheck,
   Phone,
   Mail,
   MapPin,
 } from "lucide-react";
-import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
+import BlogSiteHeader from "@/components/layout/BlogSiteHeader";
 import {
   listPublishedPosts,
   listPublishedSlugs,
@@ -89,22 +91,6 @@ export async function generateMetadata({
   };
 }
 
-function IClosedLogo() {
-  return (
-    <Link href="/" className="flex items-center select-none flex-shrink-0">
-      <span
-        className="text-[#C10007] font-bold italic text-xl leading-none"
-        style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
-      >
-        i
-      </span>
-      <span className="text-gray-900 font-bold text-xl leading-none tracking-tight">
-        Closed
-      </span>
-    </Link>
-  );
-}
-
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
   const post = await getPublishedPost(slug);
@@ -148,29 +134,12 @@ export default async function BlogPostPage({ params }: PageProps) {
           the same array rendered visibly further down this page. */}
       <BlogJsonLd post={post} />
 
-      {/* Public header */}
-      <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/90 backdrop-blur">
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
-          <IClosedLogo />
-          <nav className="hidden md:flex items-center gap-6">
-            <Link
-              href="/"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Home
-            </Link>
-            <Link href="/blogs" className="text-sm font-medium text-[#C10007]">
-              Blog
-            </Link>
-          </nav>
-          <div className="flex items-center gap-2">
-            <HomeHeaderAuth />
-          </div>
-        </div>
-      </header>
+      {/* The same header the listing page wears — see BlogSiteHeader. It is
+          fixed, so the section under it opens with pt-16 to clear it. */}
+      <BlogSiteHeader />
 
       {/* Hero + Image Row */}
-      <section className="relative bg-white">
+      <section className="relative bg-white pt-16">
         <div className="h-[3px] bg-[#C10007]" />
 
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-14 lg:px-8">
@@ -197,9 +166,6 @@ export default async function BlogPostPage({ params }: PageProps) {
                     {tag}
                   </span>
                 ))}
-                <span className="text-[11px] font-medium text-gray-400">
-                  {post.readTime}
-                </span>
               </div>
 
               <h1 className="mb-4 text-3xl font-bold leading-tight tracking-tight text-gray-900 sm:text-4xl lg:text-[2.4rem] lg:leading-[1.18]">
@@ -221,27 +187,56 @@ export default async function BlogPostPage({ params }: PageProps) {
                 ))}
               </div>
 
-              <div className="mt-auto flex flex-wrap items-center gap-6 border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2">
-                  <Calendar
-                    size={13}
-                    strokeWidth={2}
-                    className="text-gray-400"
-                  />
-                  <span className="text-sm font-medium text-gray-500">
-                    {post.date}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-100 bg-red-50">
-                    <span className="text-[11px] font-bold text-[#C10007]">
+              {/* Author, date and reading time. Every value here is the one the
+                  article itself states: post.author and post.readTime are read
+                  off the body's own byline when it has one (see
+                  blogByline.ts), and that byline is stripped from the prose
+                  below so the page does not print it twice. */}
+              <div className="mt-auto border-t border-gray-100 pt-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-100 bg-red-50">
+                    <span className="text-[13px] font-bold text-[#C10007]">
                       {post.author.charAt(0)}
                     </span>
                   </div>
-                  <span className="text-sm font-medium text-gray-600">
-                    By {post.author}
-                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">
+                      By {post.author}
+                    </p>
+                    {post.authorRole && (
+                      <p className="mt-0.5 text-[13px] leading-snug text-gray-500">
+                        {post.authorRole}
+                      </p>
+                    )}
+                  </div>
                 </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-gray-500">
+                  <span className="flex items-center gap-2">
+                    <Calendar size={13} strokeWidth={2} className="text-gray-400" />
+                    {post.date}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Clock size={13} strokeWidth={2} className="text-gray-400" />
+                    {post.readTime}
+                  </span>
+                  {post.reviewed && (
+                    <span className="flex items-center gap-2">
+                      <ShieldCheck
+                        size={13}
+                        strokeWidth={2}
+                        className="text-gray-400"
+                      />
+                      Last reviewed {post.reviewed}
+                    </span>
+                  )}
+                </div>
+
+                {post.authorCredentials && (
+                  <p className="mt-3 text-[12.5px] leading-relaxed text-gray-400">
+                    {post.authorCredentials}
+                  </p>
+                )}
               </div>
             </div>
 

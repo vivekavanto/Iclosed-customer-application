@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { Calendar, ArrowLeft, Clock, User } from "lucide-react";
+import { Calendar, ArrowLeft, Clock, ShieldCheck, User } from "lucide-react";
 import { getPublishedPost, listPublishedPosts } from "@/lib/blogPosts";
 import BlogArticleBody from "@/components/blog/BlogArticleBody";
 import BlogSeriesNav from "@/components/blog/BlogSeriesNav";
@@ -112,19 +112,38 @@ export default async function DashboardBlogPost({ params }: PageProps) {
             {post.title}
           </h1>
 
-          <div className="mb-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-gray-100 pb-6 text-sm text-gray-400">
-            <span className="inline-flex items-center gap-1.5">
-              <User size={14} strokeWidth={2} />
-              {post.author}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Calendar size={14} strokeWidth={2} />
-              {post.date}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Clock size={14} strokeWidth={2} />
-              {post.readTime}
-            </span>
+          {/* Author, date and reading time as the article itself states them:
+              post.author and post.readTime come off the body's own byline when
+              it carries one (see blogByline.ts), which is also why that line no
+              longer appears in the prose below. */}
+          <div className="mb-10 border-b border-gray-100 pb-6">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-400">
+              <span className="inline-flex items-center gap-1.5">
+                <User size={14} strokeWidth={2} />
+                {post.author}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Calendar size={14} strokeWidth={2} />
+                {post.date}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Clock size={14} strokeWidth={2} />
+                {post.readTime}
+              </span>
+              {post.reviewed && (
+                <span className="inline-flex items-center gap-1.5">
+                  <ShieldCheck size={14} strokeWidth={2} />
+                  Last reviewed {post.reviewed}
+                </span>
+              )}
+            </div>
+            {(post.authorRole || post.authorCredentials) && (
+              <p className="mt-2 text-[13px] leading-relaxed text-gray-400">
+                {[post.authorRole, post.authorCredentials]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
           </div>
 
           {/* Table of contents. Sticky beside the article on a wide screen,

@@ -13,6 +13,8 @@
  * with no attributes, which is what the match below relies on.
  */
 
+import { stripInlineByline } from "./blogByline";
+
 export interface BlogTocItem {
   /** The value of the heading's `id`, and the fragment the sidebar links to. */
   id: string;
@@ -164,10 +166,14 @@ export function stripInlineSeriesNav(html: string): string {
  * The body as the page should render it: the author's prose, minus the blocks
  * the layout now renders for itself.
  *
- * One function rather than three calls at each site, because the page (for the
- * sidebar) and BlogArticleBody (for the body) each run this independently and
- * have to agree exactly. Applying one stripper and forgetting another would
+ * One function rather than a list of calls at each site, because the page (for
+ * the sidebar) and BlogArticleBody (for the body) each run this independently
+ * and have to agree exactly. Applying one stripper and forgetting another would
  * put a heading in the sidebar that the body no longer contains.
+ *
+ * The byline goes with them: the page header now prints the author, review date
+ * and reading time the body's opening line carries (see blogByline.ts), so
+ * leaving it in the prose would print the same attribution twice.
  *
  * `hasRenderedFaq` must be the same answer both callers give — it is
  * `post.faq.length > 0`, the condition the page uses to decide whether to
@@ -180,7 +186,9 @@ export function cleanArticleBody(
   sanitizedHtml: string,
   { hasRenderedFaq = false }: { hasRenderedFaq?: boolean } = {}
 ): string {
-  const html = stripInlineSeriesNav(stripInlineToc(sanitizedHtml));
+  const html = stripInlineByline(
+    stripInlineSeriesNav(stripInlineToc(sanitizedHtml))
+  );
   return hasRenderedFaq ? stripInlineFaq(html) : html;
 }
 

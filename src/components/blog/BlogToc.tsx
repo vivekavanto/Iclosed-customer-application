@@ -72,16 +72,13 @@ export default function BlogToc({
     setActiveId(id);
   };
 
-  // h3s are indented under their h2 and left unnumbered; the numbering counts
-  // top-level sections only, so it matches how the article actually reads.
-  // Worked out here rather than with a counter inside the map, which would be
-  // a mutation during render.
-  const numbered: (BlogTocItem & { number: number | null })[] = [];
-  let section = 0;
-  for (const item of items) {
-    if (item.level === 2) section += 1;
-    numbered.push({ ...item, number: item.level === 2 ? section : null });
-  }
+  // Every entry carries a serial number, h3s included — the list reads as a
+  // numbered run of sections the way a contents page does, and an article whose
+  // first entry happened to be an h3 ("Key takeaways") no longer opens with a
+  // blank where a number belongs. h3s keep their indent, so the hierarchy is
+  // still visible. Worked out here rather than with a counter inside the map,
+  // which would be a mutation during render.
+  const numbered = items.map((item, index) => ({ ...item, number: index + 1 }));
 
   return (
     <nav
@@ -108,22 +105,20 @@ export default function BlogToc({
                 aria-current={isActive ? "location" : undefined}
                 className={[
                   "flex gap-3 rounded-lg px-3 py-2.5 text-[14.5px] leading-snug transition-colors duration-150",
-                  item.level === 3 ? "pl-10" : "",
+                  item.level === 3 ? "pl-7" : "",
                   isActive
                     ? "bg-red-50/70 font-semibold text-[#C10007]"
                     : "font-medium text-gray-700 hover:bg-gray-50 hover:text-[#C10007]",
                 ].join(" ")}
               >
-                {item.number !== null && (
-                  <span
-                    aria-hidden
-                    className={`shrink-0 pt-px text-[13px] font-bold tabular-nums ${
-                      isActive ? "text-[#C10007]" : "text-[#C10007]/55"
-                    }`}
-                  >
-                    {String(item.number).padStart(2, "0")}
-                  </span>
-                )}
+                <span
+                  aria-hidden
+                  className={`shrink-0 pt-px text-[13px] font-bold tabular-nums ${
+                    isActive ? "text-[#C10007]" : "text-[#C10007]/55"
+                  }`}
+                >
+                  {String(item.number).padStart(2, "0")}
+                </span>
                 <span>{item.text}</span>
               </a>
             </li>
