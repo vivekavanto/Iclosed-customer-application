@@ -87,6 +87,7 @@ interface FormField {
     | FieldOption[]
     | { accept?: string; max_mb?: number; doc_type?: string }
     | NoteContent
+    | { hint?: string }
     | null;
   visible_when?: unknown;
 }
@@ -165,6 +166,15 @@ interface PersonalInfoTaskDrawerProps {
 ───────────────────────────────────────────── */
 function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
+}
+
+// Grey helper line under a text input, from options.hint.
+function getFieldHint(opts: unknown): string | null {
+  if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+    const hint = (opts as { hint?: unknown }).hint;
+    return typeof hint === "string" && hint.trim() ? hint.trim() : null;
+  }
+  return null;
 }
 
 // Notes are never selects, so `options` is free-form for them.
@@ -1315,7 +1325,7 @@ export default function PersonalInfoTaskDrawer({
           { value: p.marital_status, match: (l) => l.includes("marital") },
           { value: p.citizenship_status, match: (l) => l.includes("citizenship") },
           { value: p.occupation, match: (l) => l.includes("occupation") },
-          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")) },
+          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("phone") && (l.includes("employer") || l.includes("business")) },
         ];
 
         const next: Record<string, string> = {};
@@ -3055,6 +3065,11 @@ export default function PersonalInfoTaskDrawer({
                       errors[field.id] ? inputError : inputNormal,
                     ].join(" ")}
                   />
+                  )}
+                  {getFieldHint(field.options) && (
+                    <p className="mt-1.5 text-xs text-gray-500">
+                      {getFieldHint(field.options)}
+                    </p>
                   )}
                   {errors[field.id] && (
                     <p className="mt-1.5 text-xs text-[#C10007]">

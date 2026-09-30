@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { closingCostPdfFileName, generateClosingCostPdf } from "@/lib/closingCostPdf";
+import { buildPurchaseDraft, draftStatementPdfFileName } from "@/lib/draftStatement";
+import { generateDraftStatementPdf } from "@/lib/draftStatementPdf";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
+import { draftFileInput } from "@/lib/loadDraftStatement";
 import {
   parseClientMortgage,
   parseFileId,
@@ -80,46 +82,27 @@ export async function POST(req: Request) {
     );
   }
 
-  const inputs: ClosingCostInputs = {
-    price: ctx.locked.price,
-    deposit: ctx.locked.deposit,
+  const fileInput = await draftFileInput(ctx);
+  const draft = buildPurchaseDraft(loadIclosedFees(), {
+    ...fileInput,
     mortgage,
-    isToronto: ctx.locked.isToronto,
-    isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: ctx.locked.titlePremiumOverride,
-    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
-    // null → undefined: the firm never said, so each line keeps its default.
-    titlePremiumIsEstimate: ctx.locked.titlePremiumIsEstimate ?? undefined,
-    teraviewIsEstimate: ctx.locked.teraviewIsEstimate ?? undefined,
-    sheriffIsEstimate: ctx.locked.sheriffIsEstimate ?? undefined,
-    propertyTaxIsEstimate: ctx.locked.propertyTaxIsEstimate ?? undefined,
-  };
-  const statement = computeStatement(inputs, ctx.rates);
+    firstTimeBuyer: body.is_first_time_buyer === true,
+  });
 
   try {
-    const bytes = await generateClosingCostPdf({
-      statement,
-      config: ctx.config,
-      statementType: ctx.statementType,
-      fileNo: ctx.locked.fileNo,
-      propertyAddress: ctx.locked.propertyAddress,
-      clientName: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
-      closingDate: ctx.locked.closingDate,
+    const bytes = await generateDraftStatementPdf({
+      draft,
+      firmKey: ctx.firmKey,
       preparedOn: new Date().toISOString().slice(0, 10),
-      // The client's own copy is always a planning estimate — there is no path
-      // here that produces a Final account, so it always carries the watermark.
-      draft: true,
-      // Stamped in the same format the firm's own statements carry, so the two
-      // can be told apart — or matched — at a glance.
-      configVersion: ctx.configVersion,
     });
 
     return new NextResponse(bytes as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${closingCostPdfFileName(
+        "Content-Disposition": `attachment; filename="${draftStatementPdfFileName(
           ctx.locked.fileNo,
+          ctx.locked.propertyAddress,
         )}"`,
         "Cache-Control": "private, no-store",
       },

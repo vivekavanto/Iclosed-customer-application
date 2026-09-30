@@ -27,7 +27,7 @@ async function readFileNo(leadId: string, rootId: string): Promise<string | null
 }
 
 // Optional leads.discount_amount; null when unset or the column is missing.
-async function readDiscount(rootId: string): Promise<number | null> {
+export async function readDiscount(rootId: string): Promise<number | null> {
   try {
     const { data, error } = await supabaseAdmin
       .from("leads")

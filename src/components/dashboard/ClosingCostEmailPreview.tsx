@@ -37,7 +37,7 @@ const ClosingCostEmailPreview: React.FC<{
   propertyAddress?: string | null;
   price: number;
   totalClosingCosts: number;
-  balanceDue: number;
+  balanceDue: number | null;
   /** The firm's brand colour, from Settings → Closing costs. */
   brand: string;
   /** The file's firm — decides the sign-off, exactly as the sent email will. */
@@ -152,7 +152,7 @@ const ClosingCostEmailPreview: React.FC<{
                   className="shrink-0 text-sm font-bold tabular-nums"
                   style={{ color: row.emphasis ? brand : "#1e293b" }}
                 >
-                  {money(row.amount)}
+                  {row.amount === null ? "[Amount]" : money(row.amount)}
                 </span>
               </div>
             ))}

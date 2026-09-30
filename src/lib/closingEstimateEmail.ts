@@ -45,7 +45,8 @@ export interface EstimateEmailContent {
   fileNo?: string | null;
   price: number;
   totalClosingCosts: number;
-  balanceDue: number;
+  /** null renders as [Amount]. */
+  balanceDue: number | null;
   /** False when the PDF could not be generated — the body then omits it. */
   hasAttachment: boolean;
 }
@@ -130,7 +131,7 @@ export function estimateEmailIntroParts(content: EstimateEmailContent): {
 /** The three figures the email summarises. The PDF carries the full breakdown. */
 export function estimateEmailRows(
   content: EstimateEmailContent,
-): Array<{ label: string; amount: number; emphasis?: boolean }> {
+): Array<{ label: string; amount: number | null; emphasis?: boolean }> {
   return [
     { label: "Purchase price", amount: content.price },
     { label: "Total closing costs", amount: content.totalClosingCosts },
@@ -160,7 +161,7 @@ export function estimateEmailHtml(content: EstimateEmailContent): string {
           r.emphasis ? "15px" : "14px"
         };font-weight:bold;color:${r.emphasis ? "#C10007" : "#1e293b"};${
           r.emphasis ? "" : "border-bottom:1px solid #e2e8f0;"
-        }">${esc(money(r.amount))}</td>
+        }">${esc(r.amount === null ? "[Amount]" : money(r.amount))}</td>
       </tr>`,
     )
     .join("");

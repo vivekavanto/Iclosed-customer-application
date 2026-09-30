@@ -19,6 +19,18 @@ export interface FileTypeFees {
   disbursements: Record<string, DisbursementLine>;
   disbursements_label: string;
   disbursements_range?: [number, number];
+  title_insurance_estimate?: number | null;
+}
+
+export interface LttBracket {
+  up_to: number | null;
+  rate: number;
+}
+
+export interface LttRegion {
+  brackets: LttBracket[];
+  first_time_buyer_rebate_max: number;
+  administration_fee?: number;
 }
 
 export interface ExtraFee {
@@ -36,6 +48,7 @@ export interface IclosedFees {
   tax: { hst_rate: number; hst_on_levy: boolean };
   file_types: Record<FeeFileType, FileTypeFees>;
   extras: Record<string, ExtraFee>;
+  land_transfer_tax: { ontario: LttRegion; toronto: LttRegion };
   intake_defaults: { has_mortgage: boolean; charges_count: number };
   retainer: { hst_registration_number: string | null };
 }
@@ -53,6 +66,8 @@ export interface FeeFigures {
   legalFees: number;
   discount: number;
   disbursements: number;
+  /** Each disbursement line that applies, in fee-file order. */
+  disbursementLines: { key: string; amount: number; estimate: boolean }[];
   hst: number;
   /** Net legal fees + disbursements + HST. */
   total: number;
@@ -74,17 +89,19 @@ export function computeFees(fees: IclosedFees, type: FeeFileType, input: FeeInpu
 
   let disbursements = 0;
   let taxable = 0;
+  const disbursementLines: FeeFigures["disbursementLines"] = [];
   for (const [key, line] of Object.entries(ft.disbursements)) {
     if (line.when === "has_mortgage" && !hasMortgage) continue;
     const amount = round2(line.amount * (line.per === "charge" ? charges : 1));
     disbursements += amount;
+    disbursementLines.push({ key, amount, estimate: Boolean(line.estimate) });
     if (line.hst && (key !== LEVY_KEY || fees.tax.hst_on_levy)) taxable += amount;
   }
   disbursements = round2(disbursements);
 
   const netLegal = round2(legalFees - discount);
   const hst = round2(fees.tax.hst_rate * (netLegal + taxable));
-  return { legalFees, discount, disbursements, hst, total: round2(netLegal + disbursements + hst) };
+  return { legalFees, discount, disbursements, disbursementLines, hst, total: round2(netLegal + disbursements + hst) };
 }
 
 /** "$250" for whole dollars, "$1,199.50" otherwise. */

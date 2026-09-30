@@ -3,13 +3,11 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/email/emailTransport";
 import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { resolveFirmKey } from "@/lib/firms";
-import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { generateClosingCostPdf } from "@/lib/closingCostPdf";
-import {
-  estimateEmailHtml,
-  estimateEmailSubject,
-  estimatePdfFileName,
-} from "@/lib/closingEstimateEmail";
+import { estimateEmailHtml, estimateEmailSubject } from "@/lib/closingEstimateEmail";
+import { buildPurchaseDraft, draftStatementPdfFileName } from "@/lib/draftStatement";
+import { generateDraftStatementPdf } from "@/lib/draftStatementPdf";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
+import { draftFileInput } from "@/lib/loadDraftStatement";
 import {
   parseClientMortgage,
   parseFileId,
@@ -111,21 +109,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const inputs: ClosingCostInputs = {
-    price: ctx.locked.price,
-    deposit: ctx.locked.deposit,
-    mortgage,
-    isToronto: ctx.locked.isToronto,
-    isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: ctx.locked.titlePremiumOverride,
-    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
-    // null → undefined: the firm never said, so each line keeps its default.
-    titlePremiumIsEstimate: ctx.locked.titlePremiumIsEstimate ?? undefined,
-    teraviewIsEstimate: ctx.locked.teraviewIsEstimate ?? undefined,
-    sheriffIsEstimate: ctx.locked.sheriffIsEstimate ?? undefined,
-    propertyTaxIsEstimate: ctx.locked.propertyTaxIsEstimate ?? undefined,
-  };
-  const statement = computeStatement(inputs, ctx.rates);
+  const fileInput = await draftFileInput(ctx);
+  const isFirstTimeBuyer = body.is_first_time_buyer === true;
+  const draft = buildPurchaseDraft(loadIclosedFees(), { ...fileInput, mortgage, firstTimeBuyer: isFirstTimeBuyer });
 
   // ── The attachment ──
   // Same generator, same inputs and the same statement type as the on-screen
@@ -133,25 +119,13 @@ export async function POST(req: Request) {
   // were looking at when they hit send.
   let attachment: { filename: string; content: Buffer } | null = null;
   try {
-    const bytes = await generateClosingCostPdf({
-      statement,
-      config: ctx.config,
-      statementType: ctx.statementType,
-      fileNo: ctx.locked.fileNo,
-      propertyAddress: ctx.locked.propertyAddress,
-      clientName: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
-      closingDate: ctx.locked.closingDate,
+    const bytes = await generateDraftStatementPdf({
+      draft,
+      firmKey: ctx.firmKey,
       preparedOn: new Date().toISOString().slice(0, 10),
-      // A client's own copy is always a planning estimate, whatever wording they
-      // previewed — so it always carries the draft watermark.
-      draft: true,
-      configVersion: ctx.configVersion,
     });
     attachment = {
-      filename: estimatePdfFileName({
-        fileNo: ctx.locked.fileNo,
-        propertyAddress: ctx.locked.propertyAddress,
-      }),
+      filename: draftStatementPdfFileName(ctx.locked.fileNo, ctx.locked.propertyAddress),
       content: Buffer.from(bytes),
     };
   } catch (err) {
@@ -169,9 +143,9 @@ export async function POST(req: Request) {
     firstName: ctx.client.firstName,
     propertyAddress: ctx.locked.propertyAddress,
     fileNo: ctx.locked.fileNo,
-    price: inputs.price,
-    totalClosingCosts: statement.total,
-    balanceDue: statement.balance.balanceDue,
+    price: fileInput.price,
+    totalClosingCosts: draft.closingCostsTotal,
+    balanceDue: draft.fundsRequired,
     hasAttachment: Boolean(attachment),
   });
 
@@ -215,12 +189,12 @@ export async function POST(req: Request) {
       resource_id: ctx.client.id,
       metadata: {
         to,
-        purchase_price: inputs.price,
-        deposit_paid: inputs.deposit,
+        purchase_price: fileInput.price,
+        deposit_paid: fileInput.deposit,
         mortgage_amount: mortgage,
-        is_toronto: inputs.isToronto,
-        is_first_time_buyer: inputs.isFirstTimeBuyer,
-        balance_due: statement.balance.balanceDue,
+        is_toronto: fileInput.isToronto,
+        is_first_time_buyer: isFirstTimeBuyer,
+        balance_due: draft.fundsRequired,
         statement_type: ctx.statementType.type_key,
         pdf_attached: Boolean(attachment),
         note: "Client's own planning estimate — not written to deal_closing_estimates",

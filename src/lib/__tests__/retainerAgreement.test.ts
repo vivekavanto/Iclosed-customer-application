@@ -11,7 +11,7 @@ const fees = loadIclosedFees();
 
 describe("computeFees (spec 5.1–5.3)", () => {
   it("T1: standard purchase with one mortgage", () => {
-    expect(computeFees(fees, "purchase")).toEqual({
+    expect(computeFees(fees, "purchase")).toMatchObject({
       legalFees: 1199,
       discount: 0,
       disbursements: 715,

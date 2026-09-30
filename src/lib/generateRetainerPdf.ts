@@ -29,7 +29,7 @@ interface RetainerPdfParams {
 }
 
 /** Wrap long text into lines that fit within maxWidth */
-function wrapText(
+export function wrapText(
   text: string,
   font: Awaited<ReturnType<typeof PDFDocument.prototype.embedFont>>,
   fontSize: number,
