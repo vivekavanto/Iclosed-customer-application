@@ -316,7 +316,9 @@ export default async function BlogPostPage({ params }: PageProps) {
         <BlogSeriesNav position={series} />
 
         {/* Share + Contact card */}
-        <ShareButtons title={post.title} />
+        <div className="mt-8">
+          <ShareButtons title={post.title} />
+        </div>
 
         {/* Contact details */}
         <div className="mt-8 rounded-2xl border border-gray-100 bg-gradient-to-br from-[#FEF2F2] to-white px-6 sm:px-10 py-8 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">

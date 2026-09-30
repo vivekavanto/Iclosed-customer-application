@@ -193,10 +193,27 @@ function publishedFilter<T>(q: T): T {
     .lte("published_at", new Date().toISOString()) as T;
 }
 
+/**
+ * Every published post, in reading order: oldest first.
+ *
+ * The blog is written as a series — each article ends by pointing at the next
+ * one, and BlogSeriesNav derives that pointer from publication order — so a
+ * newest-first listing printed the run backwards: the last instalment sat at
+ * the top of /blogs as the featured card, and a reader who started there was
+ * shown a "Previous" link and no "Next". The listing and the series navigation
+ * now agree, and the featured card is the first article in the series.
+ *
+ * The tie-break on slug matches inReadingOrder() in blogSeries.ts. It matters
+ * because a bulk import stamps a whole batch within the same second; without
+ * it the two could disagree, which is the one thing this ordering exists to
+ * prevent.
+ */
 export async function listPublishedPosts(): Promise<BlogPost[]> {
   const { data, error } = await publishedFilter(
     supabaseAdmin.from("blog_posts").select(SELECT_COLS),
-  ).order("published_at", { ascending: false });
+  )
+    .order("published_at", { ascending: true })
+    .order("slug", { ascending: true });
 
   if (error) {
     console.error("[blogPosts] listPublishedPosts failed:", error.message);
