@@ -237,7 +237,7 @@ export async function POST(req: Request) {
         const maritalVal = findVal((l) => l.includes("marital"));
         const occupationVal = findVal((l) => l.includes("occupation"));
         const employerPhoneVal = findVal(
-          (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")),
+          (l) => l.includes("phone") && (l.includes("employer") || l.includes("business")),
         );
         const citizenshipRaw = findVal((l) => l.includes("citizenship"));
         const citizenshipVal = citizenshipRaw

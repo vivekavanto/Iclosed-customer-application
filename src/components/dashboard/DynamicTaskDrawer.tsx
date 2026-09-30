@@ -959,7 +959,7 @@ export default function DynamicTaskDrawer({
           { value: p.marital_status, match: (l) => l.includes("marital") },
           { value: p.citizenship_status, match: (l) => l.includes("citizenship") },
           { value: p.occupation, match: (l) => l.includes("occupation") },
-          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")) },
+          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("phone") && (l.includes("employer") || l.includes("business")) },
         ];
 
         const next: Record<string, string> = {};
