@@ -300,7 +300,7 @@ export default async function BlogPostPage({ params }: PageProps) {
               </div>
             </a>
             <a
-              href="mailto:info@iclosed.ca"
+              href="mailto:hello@iclosed.ca"
               className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#C10007] hover:shadow-md"
             >
               <Mail size={16} className="text-[#C10007]" strokeWidth={2.2} />
@@ -309,7 +309,7 @@ export default async function BlogPostPage({ params }: PageProps) {
                   Email
                 </p>
                 <p className="text-sm font-semibold text-gray-800">
-                  info@iclosed.ca
+                  hello@iclosed.ca
                 </p>
               </div>
             </a>

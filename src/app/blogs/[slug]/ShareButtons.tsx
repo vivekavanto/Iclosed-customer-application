@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   Twitter,
   Facebook,
@@ -10,6 +10,9 @@ import {
   Check,
 } from "lucide-react";
 
+/** The page address is fixed for the life of the page: nothing to subscribe to. */
+const subscribeNever = () => () => {};
+
 interface ShareButtonsProps {
   title: string;
 }
@@ -17,8 +20,18 @@ interface ShareButtonsProps {
 export default function ShareButtons({ title }: ShareButtonsProps) {
   const [copied, setCopied] = useState(false);
 
-  const shareUrl =
-    typeof window !== "undefined" ? window.location.href : "";
+  // The server snapshot is "", and React uses it for hydration too, then
+  // switches to the real address right after. Reading window.location during
+  // render (as this used to) gives the server "" and the browser the real
+  // address, so the share hrefs differ between the two and React reports a
+  // hydration mismatch. The address never changes while the page is open, so
+  // there is nothing to subscribe to.
+  const shareUrl = useSyncExternalStore(
+    subscribeNever,
+    () => window.location.href,
+    () => "",
+  );
+
   const encodedUrl = encodeURIComponent(shareUrl);
   const encodedTitle = encodeURIComponent(title);
 
