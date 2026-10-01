@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
@@ -16,11 +16,14 @@ import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 import { spouseNameFromResponses, syncSpouseIdTask } from "@/lib/spouseIdTask";
 import { syncTreefortTasks } from "@/lib/treefortTask";
+import { fillDealDepositFromAps, isApsLabel } from "@/lib/fillDealDepositFromAps";
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
 // Resend never exposed this because it is an HTTPS fetch client.
 export const runtime = "nodejs";
+// Room for the background APS read after the response (see fillDealDepositFromAps).
+export const maxDuration = 180;
 
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
@@ -397,6 +400,19 @@ export async function POST(req: Request) {
       // reaching the trust account is what those two are waiting on, and it
       // can't wait for the whole file to finish. No-ops for every other task.
       await requestDepositProofAlert({ taskId: task.id, taskTitle: task.title });
+
+      // APS task upload: read its deposit after responding.
+      const apsUrls = (responses as { field_label?: string; file_url?: string | null }[])
+        .filter((r) => r?.file_url && (isApsLabel(r.field_label) || isApsLabel(task.title)))
+        .map((r) => String(r.file_url));
+      if (task.deal_id && apsUrls.length > 0) {
+        const dealId = task.deal_id;
+        after(() =>
+          fillDealDepositFromAps({ dealId, side: task.side, fileUrls: apsUrls }).catch((err) =>
+            console.error("[aps-deposit] failed:", err),
+          ),
+        );
+      }
 
       // Routed through the admin app so the alert carries the file's documents;
       // falls back to sending from here if it can't be reached.

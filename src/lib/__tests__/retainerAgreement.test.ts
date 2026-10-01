@@ -1,9 +1,10 @@
 // Spec section 11 cases, against the real src/config/iclosed-fees.yaml.
-import { computeFees, dollars, millions, type IclosedFees } from "../iclosedFees";
+import { bundleDiscountSide, computeBundle, computeFees, dollars, millions } from "../iclosedFees";
 import { loadIclosedFees } from "../loadIclosedFees";
 import {
   buildRetainerAgreement,
   retainerAgreementKind,
+  retainerAgreementPlans,
   type RetainerAgreementInput,
 } from "../retainerAgreement";
 
@@ -27,14 +28,43 @@ describe("computeFees (spec 5.1–5.3)", () => {
     expect(f.total).toBe(2032.97);
   });
 
-  it("T5: standard sale, levy taxed and not taxed", () => {
-    expect(computeFees(fees, "sale")).toMatchObject({ legalFees: 1099, disbursements: 485, hst: 205.92, total: 1789.92 });
-    const noLevyHst: IclosedFees = { ...fees, tax: { ...fees.tax, hst_on_levy: false } };
-    expect(computeFees(noLevyHst, "sale")).toMatchObject({ hst: 197.47, total: 1781.47 });
+  it("T5: standard sale, levy inclusive of tax", () => {
+    expect(computeFees(fees, "sale")).toMatchObject({ legalFees: 1099, disbursements: 485, hst: 197.47, total: 1781.47 });
   });
 
   it("T6: sale with two extra payouts", () => {
-    expect(computeFees(fees, "sale", { extraPayouts: 2 })).toMatchObject({ legalFees: 1299, hst: 231.92, total: 2015.92 });
+    expect(computeFees(fees, "sale", { extraPayouts: 2 })).toMatchObject({ legalFees: 1299, hst: 223.47, total: 2007.47 });
+  });
+
+  it("T7: standard refinance", () => {
+    const f = computeFees(fees, "refinance");
+    expect(f).toMatchObject({ legalFees: 999, disbursements: 655, hst: 184.47, total: 1838.47 });
+    expect(f.legalFees + f.disbursements).toBe(1654);
+    expect(fees.file_types.refinance.title_insurance_estimate).toBe(250);
+  });
+
+  // Spec T8 says $765; its own $85 fee gives $740.
+  it("T8: refinance with a discharge registration", () => {
+    expect(computeFees(fees, "refinance", { dischargeRegistration: true })).toMatchObject({
+      disbursements: 740,
+      hst: 184.47,
+      total: 1923.47,
+    });
+  });
+
+  it("T9: new build condo quote total excludes the agreement review", () => {
+    const f = computeFees(fees, "new_build_condo");
+    expect(f.legalFees + f.disbursements).toBe(2414);
+    expect(f.hst).toBe(268.97);
+  });
+
+  it("T15: sale title search adds a pass-through disbursement", () => {
+    expect(computeFees(fees, "sale", { sellerTitleSearch: true })).toMatchObject({
+      disbursements: 535,
+      hst: 197.47,
+      total: 1831.47,
+    });
+    expect(computeFees(fees, "purchase", { sellerTitleSearch: true }).disbursements).toBe(715);
   });
 
   it("T10: purchase with a $100 discount taxes the discounted fee", () => {
@@ -62,11 +92,12 @@ describe("retainer agreement (spec 8)", () => {
     date: "2026-09-29",
   };
 
-  it("applies to single-side purchases and sales only", () => {
+  it("applies to single-side purchases, sales and refinances", () => {
     expect(retainerAgreementKind("Purchase")).toBe("purchase");
     expect(retainerAgreementKind("Sale")).toBe("sale");
+    expect(retainerAgreementKind("Refinance")).toBe("refinance");
     expect(retainerAgreementKind("Purchase & Sale")).toBeNull();
-    expect(retainerAgreementKind("Refinance")).toBeNull();
+    expect(retainerAgreementKind("Condo")).toBeNull();
   });
 
   it("T13: subtitle omits the file number when absent", () => {
@@ -103,35 +134,143 @@ describe("retainer agreement (spec 8)", () => {
       { label: "Each payout beyond the one in your fee", amount: "$100" },
       { label: "Notice of Assignment of Rents required ($85 is paid to the ministry)", amount: "$150 plus $85 registration" },
       { label: "Bridge financing", amount: "$200" },
-      { label: "Your mortgage is from a B Lender or Private Lender", amount: "$250" },
+      { label: "Your mortgage is not from a major bank", amount: "$250" },
       { label: "Purchase price over $1.5M", amount: "$300, or quoted above $3M" },
       { label: "Tax Certificate from the Municipality (paid to Municipality)", amount: "Approx $100" },
     ]);
     expect(a.definitions.map((d) => d.label)).toEqual([
       "Title Insurance.",
-      "B Lender or Private Lender.",
+      "Mortgage not from a major bank.",
       "Notice of Assignment of Rents.",
       "Mortgage Instructions.",
     ]);
   });
 
-  it("sale uses its own fees, extras and single definition", () => {
+  it("purchase copy follows the v11 template", () => {
+    const a = buildRetainerAgreement(fees, base);
+    const body = (label: string) => a.sections.find((s) => s.label === label)?.body;
+    expect(body("What we do.")).toContain("notify the municipality that you have purchased your property");
+    expect(body("What we do not do.")).toContain("family law matters");
+    expect(body("Independent legal advice.")).toMatch(/\$250 to \$450 plus HST\.$/);
+    expect(body("Ending this retainer.")).toContain("If the relationship ends");
+    expect(a.feeNote).toMatch(/^Land transfer tax and your title insurance premium are based on the purchase price/);
+  });
+
+  it("sale uses its own fees and extras, with no definitions", () => {
     const a = buildRetainerAgreement(fees, { ...base, kind: "sale" });
     expect(a.title).toBe("Sale Retainer Agreement");
-    expect(a.fees.map((f) => f.amount)).toEqual(["$1,099.00", "$0.00", "$485.00", "$205.92"]);
-    expect(a.fees[2].label).toBe("Disbursements");
-    expect(a.changes.map((c) => c.label)).toEqual([
-      "If you require the closing date to be moved",
-      "Each payout beyond first mortgage, property tax and commission",
-      "Your mortgage is from a B Lender or Private Lender",
-      "Sale price over $1.5M",
+    expect(a.fees.map((f) => f.amount)).toEqual(["$1,099.00", "$0.00", "$485.00", "$197.47"]);
+    expect(a.fees[2].label).toBe("Estimated Disbursements");
+    expect(a.changes).toEqual([
+      { label: "If you require the closing date to be moved", amount: "$250 per extension request" },
+      { label: "Each payout beyond first mortgage, property tax and commission", amount: "$100" },
+      {
+        label: "No requisition letter (Title Search) from the buyer's lawyer 7 days before closing, so we search title ourselves",
+        amount: "Approx $50 ($40 to $75)",
+      },
+      { label: "Sale price over $1.5M", amount: "$300, or quoted above $3M" },
     ]);
-    expect(a.definitions.map((d) => d.label)).toEqual(["B Lender or Private Lender."]);
+    expect(a.definitions).toEqual([]);
+    expect(a.feeNote).toMatch(/^Our fees come out of your sale proceeds/);
+    expect(a.sections.find((s) => s.label === "Ending this retainer.")?.body).toContain("end this relationship in writing");
     expect(a.sections.find((s) => s.label === "Your information.")?.body).toContain("the buyer's lawyer");
   });
 
+  it("refinance follows the v11 template", () => {
+    const a = buildRetainerAgreement(fees, { ...base, kind: "refinance" });
+    expect(a.title).toBe("Refinance Retainer Agreement");
+    expect(a.fees).toEqual([
+      { label: "Legal fees (including first mortgage payout)", amount: "$999.00" },
+      { label: "Discount", amount: "$0.00" },
+      { label: "Estimated Disbursements (average is $650-$750)", amount: "$655.00" },
+      { label: "HST", amount: "$184.47" },
+    ]);
+    expect(a.changes).toEqual([
+      { label: "Closing date moves and documents must be redrafted", amount: "$250 per extension request" },
+      { label: "Mortgage instructions arrive under 3 business days of closing", amount: "$200" },
+      { label: "Each payout beyond the one in your fee", amount: "$100" },
+      { label: "Notice of Assignment of Rents required ($85 is paid to the ministry)", amount: "$150 plus $85 registration" },
+      { label: "Your mortgage is not from a major bank", amount: "$250" },
+      { label: "Mortgage amount over $1.5M", amount: "$300, or quoted above $3M" },
+      { label: "Your existing lender asks us to register the discharge ($85 is paid to the ministry)", amount: "$85" },
+    ]);
+    expect(a.definitions.map((d) => d.label)).toEqual([
+      "Title Insurance.",
+      "Mortgage not from a major bank.",
+      "Notice of Assignment of Rents.",
+      "Mortgage Instructions.",
+    ]);
+    expect(a.changesIntro).not.toContain("private or B lender");
+    expect(a.feeNote).toMatch(/^Your lender's title insurance premium is not included/);
+    expect(a.sections.find((s) => s.label === "Your information.")?.body).toContain("your mortgage broker");
+  });
+
   it("never renders internal notes", () => {
-    const text = JSON.stringify([buildRetainerAgreement(fees, base), buildRetainerAgreement(fees, { ...base, kind: "sale" })]);
+    const text = JSON.stringify(
+      (["purchase", "sale", "refinance"] as const).map((kind) => buildRetainerAgreement(fees, { ...base, kind })),
+    );
     expect(text).not.toMatch(/Discuss internally|Discuss with Angat|only when one is applied/);
+  });
+});
+
+describe("sale and purchase bundle (spec 5.3a, 7A)", () => {
+  it("T16: purchase closes later and takes the discount", () => {
+    const b = computeBundle(fees, { saleClosing: "2026-11-27", purchaseClosing: "2026-11-30" });
+    expect(b.discountSide).toBe("purchase");
+    expect(b.purchase.legalFees - b.purchase.discount).toBe(1099);
+    expect(b.purchase).toMatchObject({ hst: 190.97, total: 2004.97 });
+    expect(b.sale).toMatchObject({ legalFees: 1099, discount: 0, hst: 197.47, total: 1781.47 });
+    expect([b.legalFees, b.disbursements, b.legalFees + b.disbursements]).toEqual([2198, 1200, 3398]);
+  });
+
+  it("T17: purchase closes first, so the sale takes the discount", () => {
+    const b = computeBundle(fees, { saleClosing: "2026-11-30", purchaseClosing: "2026-11-27" });
+    expect(b.discountSide).toBe("sale");
+    expect(b.sale.legalFees - b.sale.discount).toBe(999);
+    expect(b.sale).toMatchObject({ hst: 184.47, total: 1668.47 });
+    expect(b.purchase).toMatchObject({ hst: 203.97, total: 2117.97 });
+    expect(Math.round((b.sale.total + b.purchase.total) * 100) / 100).toBe(3786.44);
+  });
+
+  it("T18: same day, or an unknown date, goes to the purchase", () => {
+    expect(bundleDiscountSide("2026-11-30", "2026-11-30")).toBe("purchase");
+    expect(bundleDiscountSide(null, "2026-11-30")).toBe("purchase");
+    expect(bundleDiscountSide("2026-11-30", null)).toBe("purchase");
+  });
+
+  const lead = { lead_type: "Purchase & Sale", selling_closing_date: "2026-11-27", closing_date: "2026-11-30" };
+  const addresses = { property: "both", purchaseAddress: "1 Buy St", saleAddress: "2 Sell St" };
+
+  it("plans two retainers in closing order, discount on the later file", () => {
+    expect(retainerAgreementPlans(lead, addresses)).toEqual([
+      { kind: "sale", property: "2 Sell St", bundle: "other" },
+      { kind: "purchase", property: "1 Buy St", bundle: "here" },
+    ]);
+    const flipped = { ...lead, selling_closing_date: "2026-12-05" };
+    expect(retainerAgreementPlans(flipped, addresses).map((p) => [p.kind, p.bundle])).toEqual([
+      ["purchase", "other"],
+      ["sale", "here"],
+    ]);
+  });
+
+  it("co-persons get only their own side", () => {
+    expect(retainerAgreementPlans(lead, { ...addresses, only: "sale" })).toEqual([
+      { kind: "sale", property: "2 Sell St", bundle: "other" },
+    ]);
+    expect(retainerAgreementPlans({ lead_type: "Purchase" }, addresses)).toEqual([
+      { kind: "purchase", property: "both", bundle: "none" },
+    ]);
+  });
+
+  it("v12 bundle paragraph and discount row", () => {
+    const base = { firmKey: "navawilson" as const, property: "x", fileNo: null, date: "2026-10-01", bundle: true };
+    const purchase = buildRetainerAgreement(fees, { ...base, kind: "purchase", discount: 100 });
+    expect(purchase.fees[1].amount).toBe("($100.00)");
+    expect(purchase.fees[3].amount).toBe("$190.97");
+    expect(purchase.bundleNote).toMatch(/^You are also selling with us\..*comes off this purchase\./);
+    const sale = buildRetainerAgreement(fees, { ...base, kind: "sale", discount: null });
+    expect(sale.fees[1].amount).toBe("$0.00");
+    expect(sale.bundleNote).toMatch(/^You are also buying with us\..*comes off your purchase\./);
+    expect(buildRetainerAgreement(fees, { ...base, kind: "sale", discount: null, bundle: false }).bundleNote).toBeUndefined();
   });
 });

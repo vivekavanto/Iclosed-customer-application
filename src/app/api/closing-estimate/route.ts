@@ -92,7 +92,7 @@ export async function GET(req: Request) {
       brand_color: (ctx.config.brand_color as string | null) ?? null,
     },
     statement_type: ctx.statementType,
-    // v4 draft statement: fee settings plus the file's inputs.
+    // v6 draft statement: fee settings plus the file's inputs.
     iclosed_fees: loadIclosedFees(),
     draft_input: await draftFileInput(ctx),
     // The addresses the "email it to me" preview shows before the client

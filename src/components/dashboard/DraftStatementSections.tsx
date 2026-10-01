@@ -1,5 +1,5 @@
 import { Info } from "lucide-react";
-import type { DraftSection } from "@/lib/draftStatement";
+import type { DraftLine, DraftSection } from "@/lib/draftStatement";
 
 // Info icon whose note shows on hover, keyboard focus or tap.
 function NoteIcon({ label, note, brand }: { label: string; note: string; brand: string }) {
@@ -8,9 +8,9 @@ function NoteIcon({ label, note, brand }: { label: string; note: string; brand: 
       <button
         type="button"
         aria-label={`What is ${label}?`}
-        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-400 transition-colors hover:bg-gray-200 focus:outline-none cursor-help"
+        className="inline-flex shrink-0 items-center justify-center text-gray-400 transition-colors hover:text-gray-600 focus:outline-none cursor-help"
       >
-        <Info size={10} strokeWidth={2.5} />
+        <Info size={15} strokeWidth={1.75} />
       </button>
       <span
         role="tooltip"
@@ -23,42 +23,76 @@ function NoteIcon({ label, note, brand }: { label: string; note: string; brand: 
   );
 }
 
-/** Renders v4 draft statement sections as shaded tables. */
+// "($45,000.00)" → "−$45,000.00"; a zero deduction reads "$0.00".
+function screenAmount(line: DraftLine): string {
+  const raw = line.screen?.amount ?? line.amount;
+  const m = /^\((.*)\)$/.exec(raw);
+  if (!m) return raw;
+  return /^\$0\.00$/.test(m[1]) ? m[1] : `−${m[1]}`;
+}
+
+/** Draft sections as one card; `highlight` tints one. */
 export default function DraftStatementSections({
   sections,
   brand,
+  highlight,
 }: {
   sections: DraftSection[];
   brand: string;
+  /** Title of the section shown as the tinted funds summary. */
+  highlight?: string;
 }) {
   return (
-    <div className="space-y-5">
-      {sections.map((section) => (
-        <section key={section.title}>
-          <h4 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: brand }}>
-            {section.title}
-          </h4>
-          <div className="mt-2 rounded-lg border border-gray-100">
-            {section.lines.map((line, i) => (
-              <div
-                key={line.label}
-                className={`flex items-center justify-between gap-4 px-3 py-2 text-[13px] first:rounded-t-lg last:rounded-b-lg ${
-                  i % 2 === 0 ? "bg-gray-50" : "bg-white"
-                } ${line.total ? "border-t border-gray-200 font-bold text-gray-900" : "text-gray-700"}`}
-              >
-                <span className="flex items-center gap-1.5">
-                  {line.label}
-                  {(line.note ?? line.tip) && (
-                    <NoteIcon label={line.label} note={(line.note ?? line.tip) as string} brand={brand} />
-                  )}
-                </span>
-                <span className="whitespace-nowrap font-semibold tabular-nums text-gray-900">{line.amount}</span>
-              </div>
-            ))}
-          </div>
-          {section.note && <p className="mt-2 text-[11px] leading-relaxed text-gray-500">{section.note}</p>}
-        </section>
-      ))}
+    <div className="overflow-hidden rounded-xl border border-gray-200 divide-y divide-gray-100">
+      {sections.map((section) => {
+        const tinted = section.title === highlight;
+        const lines = section.lines.filter((l) => !l.screen?.hidden);
+        return (
+          <section
+            key={section.title}
+            className="px-4 sm:px-6 py-4 sm:py-5"
+            style={tinted ? { backgroundColor: `${brand}0A` } : undefined}
+          >
+            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-gray-500">
+              {section.title}
+            </h4>
+            <div className="mt-2">
+              {lines.map((line) => {
+                const label = line.screen?.label ?? line.label;
+                const info = line.note ?? line.tip;
+                const big = tinted && line.total;
+                return (
+                  <div
+                    key={line.label}
+                    className={`flex items-center justify-between gap-4 ${
+                      line.total ? "mt-2 border-t border-gray-200 pt-3 font-bold text-gray-900" : "py-1 text-gray-700"
+                    } ${big ? "text-base sm:text-lg" : "text-[13px] sm:text-sm"}`}
+                  >
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {label}
+                      {info && !line.total && <NoteIcon label={label} note={info} brand={brand} />}
+                      {line.screen?.estimate && (
+                        <span className="rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#92400E]">
+                          Estimate
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className="whitespace-nowrap tabular-nums text-gray-900"
+                      style={big ? { color: brand } : undefined}
+                    >
+                      {screenAmount(line)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {(section.screenNote ?? section.note) && (
+              <p className="mt-2 text-xs leading-relaxed text-gray-500">{section.screenNote ?? section.note}</p>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

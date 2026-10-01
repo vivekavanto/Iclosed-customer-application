@@ -43,3 +43,5 @@ next-env.d.ts
 
 ONBOARDING.md
 REACT_FOR_ANGULAR_DEVS.md
+# Business specs and templates; contains client documents
+/docs/

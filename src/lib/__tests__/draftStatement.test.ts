@@ -1,5 +1,11 @@
 // Spec section 11 draft cases, against the real src/config/iclosed-fees.yaml.
-import { buildPurchaseDraft, landTransferTax, type PurchaseDraftInput } from "../draftStatement";
+import {
+  buildPurchaseDraft,
+  buildRefinanceDraft,
+  landTransferTax,
+  type PurchaseDraftInput,
+  type RefinanceDraftInput,
+} from "../draftStatement";
 import { loadIclosedFees } from "../loadIclosedFees";
 
 const fees = loadIclosedFees();
@@ -96,7 +102,59 @@ describe("buildPurchaseDraft (spec 9)", () => {
     expect(d.feesTotal).toBe(2004.97);
   });
 
+  it("uses the v6 labels and notes", () => {
+    const d = buildPurchaseDraft(fees, base);
+    const lines = d.sections.flatMap((s) => s.lines);
+    expect(line(d, "Legal fees", "Purchase legal fees")).toBe("$1,199.00");
+    expect(lines.find((l) => l.label === "Searches")?.note).toMatch(/\(Average range is \$150-\$250\)$/);
+    expect(lines.find((l) => l.label === "FCT policy premium, estimate")?.note).toMatch(/imposed by your lender\.$/);
+    expect(lines.find((l) => l.label === "Funds required from you")?.note).toMatch(/^We will confirm this figure in writing before closing,/);
+  });
+
   it("never renders template-only text", () => {
     expect(JSON.stringify(buildPurchaseDraft(fees, base))).not.toMatch(/Lines marked in red|If this happens|Discuss/);
+  });
+});
+
+describe("buildRefinanceDraft (spec 9)", () => {
+  const refi: RefinanceDraftInput = {
+    name: "Sam Client",
+    property: "424 Calderstone Crescent, Toronto",
+    lender: "Lender Bank",
+    closingDate: "2026-11-13",
+    mortgageAdvance: 500000,
+    existingPayout: 400000,
+    titlePremium: null,
+    discount: null,
+  };
+  const at = (d: ReturnType<typeof buildRefinanceDraft>, section: string, label: string) =>
+    d.sections.find((s) => s.title === section)?.lines.find((l) => l.label === label)?.amount;
+
+  it("T7 figures, sections and funds to you", () => {
+    const d = buildRefinanceDraft(fees, refi);
+    expect(d.sections.map((s) => s.title)).toEqual(["Title insurance", "Legal fees", "Disbursements", "HST", "Your funds"]);
+    expect(d.details.find((x) => x.label === "New lender")?.value).toBe("Lender Bank");
+    expect(at(d, "Title insurance", "FCT lender policy premium, estimate")).toBe("$250.00");
+    expect(at(d, "Disbursements", "Searches")).toBe("approx. $150.00");
+    expect(at(d, "Disbursements", "Total Disbursements")).toBe("$655.00");
+    expect(at(d, "HST", "HST at 13% on our legal fees and our own disbursements")).toBe("$184.47");
+    expect(at(d, "Your funds", "Less legal fees, disbursements and HST")).toBe("($1,838.47)");
+    // 500,000 - 400,000 - 1,838.47 - 250
+    expect(d.fundsToYou).toBe(97911.53);
+    expect(d.disclaimer).toMatch(/^This is a draft account/);
+  });
+
+  it("shows [Amount] until the advance and payout are known", () => {
+    const d = buildRefinanceDraft(fees, { ...refi, mortgageAdvance: null, existingPayout: null, lender: null });
+    expect(d.fundsToYou).toBeNull();
+    expect(at(d, "Your funds", "New mortgage advance")).toBe("[Amount]");
+    expect(at(d, "Your funds", "Less payout of existing mortgage")).toBe("([Amount])");
+    expect(d.details.find((x) => x.label === "New lender")?.value).toBe("[Lender]");
+  });
+
+  it("T8: discharge registration adds a line", () => {
+    const d = buildRefinanceDraft(fees, { ...refi, dischargeRegistration: true });
+    expect(at(d, "Disbursements", "Registration of discharge")).toBe("$85.00");
+    expect(d.feesTotal).toBe(1923.47);
   });
 });

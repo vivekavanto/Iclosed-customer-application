@@ -2,11 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, Mail, TriangleAlert, X } from "lucide-react";
-import {
-  defaultStatementType,
-  type StatementTypeConfig,
-} from "@/lib/closingCostSettings";
-import { formatCurrency, parseAmountInput } from "@/lib/formatCurrency";
+import { parseAmountInput } from "@/lib/formatCurrency";
 import DraftStatementSections from "@/components/dashboard/DraftStatementSections";
 import { buildPurchaseDraft, draftStatementPdfFileName, type DraftFileInput } from "@/lib/draftStatement";
 import type { IclosedFees } from "@/lib/iclosedFees";
@@ -76,30 +72,6 @@ interface Prefill {
   closing_date?: string | null;
 }
 
-/** "2026-08-12" → "12 August 2026", built from parts so it can't shift a day. */
-function formatLongDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const [y, m, d] = value.slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d).toLocaleDateString("en-CA", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
-
-/** "2026-08-12" → "August 12, 2026", for the header strip. */
-function formatShortDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const [y, m, d] = value.slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d).toLocaleDateString("en-CA", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 /** Group a typed amount as the client types: "399700" → "399,700". */
 function formatTypedAmount(raw: string): string {
   const cleaned = raw.replace(/[^0-9.]/g, "");
@@ -148,14 +120,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   const [firmKey, setFirmKey] = useState<string | null>(null);
   /** The firm's brand colour from Settings — never a literal on this screen. */
   const [brand, setBrand] = useState<string>(BRAND_FALLBACK);
-  /**
-   * The client-facing wording for this flavour of statement, from Settings →
-   * Closing costs. A client's copy is always the draft flavour; the server
-   * decides that, this only renders what it is handed.
-   */
-  const [statementType, setStatementType] = useState<StatementTypeConfig>(() =>
-    defaultStatementType("draft"),
-  );
   /** Who the email would come from and go to, resolved server-side. */
   const [envelope, setEnvelope] = useState<{ to: string; from: string } | null>(
     null,
@@ -164,11 +128,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
   // Figures follow the box as the client types; the save below is debounced.
   const [mortgage, setMortgage] = useState("");
   const [isFirstTimeBuyer, setIsFirstTimeBuyer] = useState(false);
-  // Open on arrival: the fee-by-fee breakdown is the substance of the estimate,
-  // and a client who has to press "See the full breakdown" to reach it reads the
-  // single balance figure as the whole answer.
-  const [expanded, setExpanded] = useState(true);
-  // v4 draft statement inputs from GET /api/closing-estimate.
+  // v6 draft statement inputs from GET /api/closing-estimate.
   const [iclosedFees, setIclosedFees] = useState<IclosedFees | null>(null);
   const [draftInput, setDraftInput] = useState<DraftFileInput | null>(null);
   /** The email preview replaces the estimate body until it is sent or backed out of. */
@@ -233,12 +193,9 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
         setIssued((data.issued as IssuedEstimate | null) ?? null);
         setFirmLabel((data.firm?.label as string | null) ?? null);
         setFirmKey((data.firm?.firm_key as string | null) ?? null);
-        // Branding and wording both come from Settings → Closing costs. The
+        // Branding comes from Settings → Closing costs. The
         // fallbacks only cover a config the migrations have not reached yet.
         setBrand((data.firm?.brand_color as string | null) || BRAND_FALLBACK);
-        if (data.statement_type) {
-          setStatementType(data.statement_type as StatementTypeConfig);
-        }
         const seededMortgage = Number(p.mortgage_amount ?? 0);
         // Reopen on the mortgage the client gave before.
         const seededInput =
@@ -275,9 +232,7 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     setLoading(true);
     setLoadError(null);
     setNotice(null);
-    // The whole body is replaced by the loading state while the new file is
-    // fetched, so the breakdown can stay open across the switch. The PDF preview
-    // cannot — it would keep showing the previous file's document.
+    // The email preview would keep showing the previous file's document.
     setPreviewOpen(false);
     setRequestedFileId(id);
   };
@@ -299,8 +254,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
         : null,
     [iclosedFees, draftInput, mortgageAmount, isFirstTimeBuyer],
   );
-  const fundsSection = draft?.sections.find((sec) => sec.title === "Funds you need on closing");
-  const breakdownSections = draft?.sections.filter((sec) => sec !== fundsSection) ?? [];
 
   /**
    * The exact body the save, PDF and email routes all receive.
@@ -441,16 +394,6 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
     }
   };
 
-  const headerBits = [
-    shortAddress(prefill.property_address),
-    prefill.file_no_display ? `File ${prefill.file_no_display}` : null,
-    formatShortDate(prefill.closing_date)
-      ? `Closing ${formatShortDate(prefill.closing_date)}`
-      : null,
-  ].filter(Boolean) as string[];
-
-  const closingLongDate = formatLongDate(prefill.closing_date);
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-[2px] sm:p-4"
@@ -460,28 +403,26 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
       onClick={sending ? undefined : onClose}
     >
       <div
-        className="relative w-full sm:max-w-5xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto overscroll-contain bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl"
+        className="relative w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto overscroll-contain bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-gray-100 bg-white px-5 sm:px-7 py-4 sm:py-5 rounded-t-3xl">
           <div className="min-w-0">
             <h2 className="text-base sm:text-lg font-bold text-gray-900">
-              {previewOpen ? "Review your email" : "Closing cost estimate"}
+              {previewOpen ? "Review your email" : "Estimate your closing costs"}
             </h2>
-            {headerBits.length > 0 && (
-              <p className="mt-0.5 text-[11px] sm:text-xs text-gray-500">
-                {headerBits.join(" · ")}
-              </p>
-            )}
+            <p className="mt-0.5 text-xs sm:text-sm text-gray-500">
+              Based on your quote and mortgage amount
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 sm:px-5 py-2 sm:py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+            aria-label="Close"
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600 transition-colors cursor-pointer"
           >
-            <X size={15} strokeWidth={2} className="sm:hidden" />
-            <span className="hidden sm:inline">Close</span>
+            <X size={20} strokeWidth={2} />
           </button>
         </div>
 
@@ -598,205 +539,106 @@ const ClosingCostEstimateModal: React.FC<{ onClose: () => void }> = ({
               </div>
             )}
 
-          <div className="grid grid-cols-1 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-6 md:gap-8 px-5 sm:px-7 py-5 sm:py-7">
-            {/* ══ Left: the two questions ══ */}
-            <div className="space-y-4">
-              {/* Mortgage amount */}
-              <div className="rounded-2xl border border-[#F6E3E3] bg-[#FEF9F9] p-4">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Enter your mortgage amount
-                  </h3>
-                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: brand }}>
-                    Required
-                  </span>
-                </div>
-                <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
-                  If you&rsquo;re still finalizing your mortgage, enter your best
-                  guess. Enter 0 if this is a cash deal.
-                </p>
-                <div className="relative mt-3">
-                  <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">
-                    $
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={mortgage}
-                    onChange={(e) =>
-                      setMortgage(formatTypedAmount(e.target.value))
-                    }
-                    placeholder="0"
-                    aria-label="Mortgage amount"
-                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-8 pr-3 text-sm tabular-nums text-gray-900 outline-none transition"
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = brand;
-                      e.currentTarget.style.boxShadow = `0 0 0 1px ${brand}`;
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = "";
-                      e.currentTarget.style.boxShadow = "";
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* First-time buyer */}
-              <label className="flex items-start gap-3 rounded-2xl border border-gray-200 p-4 cursor-pointer hover:bg-gray-50/70 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={isFirstTimeBuyer}
-                  onChange={(e) => setIsFirstTimeBuyer(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300" style={{ accentColor: brand }}
-                />
-                <span>
-                  <span className="block text-sm font-semibold text-gray-900">
-                    I&rsquo;m a first-time home buyer
-                  </span>
-                  <span className="mt-1 block text-xs text-gray-500 leading-relaxed">
-                    Applies the land transfer tax rebate &mdash; up to{" "}
-                    {formatCurrency(iclosedFees?.land_transfer_tax.ontario.first_time_buyer_rebate_max ?? 0, {
-                      cents: false,
-                    })}{" "}
-                    in Ontario, plus{" "}
-                    {formatCurrency(iclosedFees?.land_transfer_tax.toronto.first_time_buyer_rebate_max ?? 0, {
-                      cents: false,
-                    })}{" "}
-                    in Toronto.
-                  </span>
-                </span>
-              </label>
-
-              {/* Actions */}
-              <div className="border-t border-gray-100 pt-4">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                  <button
-                    type="button"
-                    onClick={handleDownload}
-                    disabled={downloading || price <= 0}
-                    className="flex items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer" style={{ color: brand }}
-                  >
-                    {downloading ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Download size={14} strokeWidth={2} />
-                    )}
-                    Download PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleEmailPreview}
-                    disabled={sending || price <= 0}
-                    className="flex items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer" style={{ color: brand }}
-                  >
-                    {sending ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Mail size={14} strokeWidth={2} />
-                    )}
-                    Email it to me
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-gray-400">
-                  We&rsquo;ll send it to the email on your file.
-                </p>
-                {notice && (
-                  <p
-                    className={`mt-2 text-xs ${
-                      notice.type === "error" ? "" : "text-emerald-600"
-                    }`}
-                    style={notice.type === "error" ? { color: brand } : undefined}
-                  >
-                    {notice.message}
-                  </p>
-                )}
-              </div>
+          <div className="space-y-4 px-5 sm:px-7 py-5 sm:py-7">
+            {/* Draft warning */}
+            <div className="flex items-start gap-3 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3.5">
+              <TriangleAlert size={20} strokeWidth={2} className="mt-0.5 shrink-0 text-[#D97706]" />
+              <p className="text-sm leading-relaxed text-[#92400E]">
+                <span className="font-bold">Draft estimate only.</span> These are not your final
+                figures. Your final amounts depend on your mortgage instructions and the final
+                statement of adjustments, and will be confirmed before closing.
+              </p>
             </div>
 
-            {/* ══ Right: the number ══ */}
+            {/* Mortgage amount */}
             <div>
-              <p
-                className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest"
-                style={{ color: brand }}
-              >
-                Funds required from you
+              <label htmlFor="estimate-mortgage" className="block text-sm font-semibold text-gray-900">
+                Mortgage amount ($)
+              </label>
+              <input
+                id="estimate-mortgage"
+                type="text"
+                inputMode="decimal"
+                value={mortgage}
+                onChange={(e) => setMortgage(formatTypedAmount(e.target.value))}
+                placeholder="Enter 0 for a cash purchase"
+                className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm tabular-nums text-gray-900 outline-none transition"
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = brand;
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "";
+                }}
+              />
+            </div>
+
+            {/* First-time buyer */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isFirstTimeBuyer}
+                onChange={(e) => setIsFirstTimeBuyer(e.target.checked)}
+                className="h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300"
+                style={{ accentColor: brand }}
+              />
+              <span className="text-sm text-gray-700">
+                I&rsquo;m a first-time home buyer (land transfer tax rebates)
+              </span>
+            </label>
+
+            {price <= 0 ? (
+              <p className="text-sm text-gray-500">
+                We don&rsquo;t have a purchase price on your file yet &mdash; please contact us.
               </p>
+            ) : (
+              draft && (
+                <DraftStatementSections
+                  sections={draft.sections}
+                  brand={brand}
+                  highlight="Funds you need on closing"
+                />
+              )
+            )}
 
-              {/* A blank mortgage still computes — the figure then reads as
-                  "before any mortgage advance", which the summary row below
-                  says explicitly by showing an em dash rather than $0.00. */}
-              {price > 0 && draft?.fundsRequired != null ? (
-                <p
-                  className="mt-1.5 text-3xl sm:text-5xl font-bold tabular-nums leading-tight"
-                  style={{ color: brand }}
-                >
-                  {formatCurrency(draft.fundsRequired)}
-                </p>
-              ) : (
-                <p className="mt-1.5 text-3xl sm:text-5xl font-bold tabular-nums leading-tight text-gray-200">
-                  &mdash;
-                </p>
-              )}
+            <p className="text-xs leading-relaxed text-gray-400">
+              This is a draft estimate only (E. &amp; O.E.). Your final figures depend on your
+              mortgage instructions and the final statement of adjustments, and will be confirmed
+              before closing.
+            </p>
 
-              <p className="mt-1.5 text-xs text-gray-500">
-                {price <= 0
-                  ? "We don't have a purchase price on your file yet — please contact us."
-                  : !answered
-                    ? "Enter your mortgage amount to see what you'll actually need."
-                    : closingLongDate
-                      ? `Certified funds due on or before ${closingLongDate}.`
-                      : "Certified funds are due on or before your closing date."}
-              </p>
-
-              {/* Summary: the draft's funds section */}
-              {fundsSection && (
-                <div className="mt-5">
-                  <DraftStatementSections sections={[fundsSection]} brand={brand} />
-                </div>
-              )}
-
-              {/* Full breakdown */}
-              <div className="mt-4 rounded-xl border border-gray-200">
+            {/* Actions */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                 <button
                   type="button"
-                  onClick={() => setExpanded((v) => !v)}
-                  aria-expanded={expanded}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left cursor-pointer"
+                  onClick={handleDownload}
+                  disabled={downloading || price <= 0}
+                  className="flex items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer"
+                  style={{ color: brand }}
                 >
-                  <span className="text-sm font-semibold text-gray-900">
-                    {expanded
-                      ? "Breakdown of closing costs"
-                      : "See the full breakdown"}
-                  </span>
-                  <span className="shrink-0 text-sm text-gray-500">
-                    {expanded ? "Hide" : "Expand"}
-                  </span>
+                  {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} strokeWidth={2} />}
+                  Download PDF
                 </button>
-                {expanded && (
-                  <div className="border-t border-gray-100 px-4 py-4">
-                    <DraftStatementSections sections={breakdownSections} brand={brand} />
-                  </div>
-                )}
+                <button
+                  type="button"
+                  onClick={handleEmailPreview}
+                  disabled={sending || price <= 0}
+                  className="flex items-center gap-1.5 text-sm font-semibold hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed cursor-pointer"
+                  style={{ color: brand }}
+                >
+                  {sending ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} strokeWidth={2} />}
+                  Email it to me
+                </button>
               </div>
-
-              {/* ══ The statement type's own warning ══
-                  Shown for a flavour that carries a watermark — that flag IS
-                  "this is not the final word", and the lead disclaimer is how
-                  Settings → Closing costs words it. Nothing here is a literal:
-                  staff change what the client reads by editing the statement
-                  type, not by asking for a deploy. */}
-              {statementType.show_watermark && (
-                <div className="mt-4 flex items-start gap-3 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-4">
-                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F59E0B] text-[11px] font-bold text-white">
-                    !
-                  </span>
-                  <p className="text-xs leading-relaxed text-[#92400E]">
-                    <span className="font-bold">{statementType.label}</span>{" "}
-                    {statementType.disclaimer_intro}
-                  </p>
-                </div>
+              <p className="mt-2 text-xs text-gray-400">We&rsquo;ll send it to the email on your file.</p>
+              {notice && (
+                <p
+                  className={`mt-2 text-xs ${notice.type === "error" ? "" : "text-emerald-600"}`}
+                  style={notice.type === "error" ? { color: brand } : undefined}
+                >
+                  {notice.message}
+                </p>
               )}
-
             </div>
           </div>
           </>

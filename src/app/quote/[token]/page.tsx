@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { verifyQuoteToken } from "@/lib/quoteToken";
 import { loadLeadQuote, type LeadQuote } from "@/lib/leadQuote";
-import { CONDO_FEES, QUOTE_LEGAL_FEES, QUOTE_TEAM } from "@/lib/quotePricing";
-import { dollars } from "@/lib/iclosedFees";
+import { QUOTE_TEAM } from "@/lib/quotePricing";
+import { dollars, type IclosedFees } from "@/lib/iclosedFees";
 import { loadIclosedFees } from "@/lib/loadIclosedFees";
 import { money } from "@/lib/closingEstimateEmail";
 
@@ -36,12 +36,13 @@ type Line = { title: string; note: string; short?: string; amount: number | null
 const INTRO: Record<Side, string> = {
   buying: "your purchase",
   selling: "your sale",
-  both: "your purchase and sale",
+  both: "your sale and your purchase",
   refinance: "your refinance",
   condo: "your new condo with us, from occupancy to final closing",
 };
 
-const LEGAL_LINES: Record<Side, Line[]> = {
+// Condo amounts come from fee settings.
+const legalLines = (fees: IclosedFees): Record<Side, Line[]> => ({
   buying: [
     {
       title: "Purchase, for title transfer and mortgage",
@@ -56,38 +57,33 @@ const LEGAL_LINES: Record<Side, Line[]> = {
       amount: null,
     },
   ],
-  both: [
-    {
-      title: "Purchase and sale, both closings",
-      note: "Flat fee for both files, coordinated together.",
-      amount: QUOTE_LEGAL_FEES.both,
-    },
-  ],
+  // Bundles render per-file groups instead; see bundleGroups().
+  both: [],
   refinance: [
     {
       title: "Refinance, including first mortgage payout",
-      note: "Flat fee. Paying out your existing mortgage and registering the new one. Each further payout is $100 plus HST.",
-      amount: QUOTE_LEGAL_FEES.refinance,
+      note: "Includes paying out your existing mortgage and registering the new one. Any other payout is {extra_payout} plus HST.",
+      amount: null,
     },
   ],
   condo: [
     {
       title: "Occupancy closing",
       note: "When you move in, before the condo is registered.",
-      amount: CONDO_FEES.occupancy,
+      amount: fees.file_types.new_build_condo.legal_fees.occupancy ?? null,
     },
     {
       title: "Final closing, for title transfer and mortgage",
       note: "When the condo registers and the unit is transferred to you.",
-      amount: CONDO_FEES.final,
+      amount: fees.file_types.new_build_condo.legal_fees.final_closing ?? null,
     },
     {
       title: "Agreement review, optional",
-      note: "Best done in your 10-day cooling-off period. $50 more if we write to the builder's lawyer. Not in the total above.",
-      amount: CONDO_FEES.agreementReview,
+      note: "Best done in your 10-day cooling-off period. {builder_correspondence} more if we write to the builder's lawyer. Not in the total above.",
+      amount: fees.file_types.new_build_condo.agreement_review?.fee ?? null,
     },
   ],
-};
+});
 
 const TITLE_INSURANCE: Line = {
   title: "Title insurance premium",
@@ -132,15 +128,15 @@ const DISBURSEMENT_NOTE: Record<Side, string> = {
   buying: "Typical range is {range}. Itemised in full on your draft statement of account.",
   selling: "Itemised in full on your draft statement of account.",
   both: "Itemised in full on your draft statement of account.",
-  refinance: "Itemised in full on your draft statement of account.",
-  condo: "Charged at final closing. Itemised in full on your draft statement of account.",
+  refinance: "Typical range is {range}. Itemised in full on your draft statement of account.",
+  condo: "Typical range is {range}. Charged at final closing. Itemised in full on your draft statement of account.",
 };
 
 const TRANSACTION: Record<Side, string> = {
   buying: "Purchase with one new mortgage",
   selling: "Sale with one mortgage payout",
   both: "Purchase and sale",
-  refinance: "Refinance",
+  refinance: "Refinance with one mortgage payout",
   condo: "New condo, occupancy and final closing",
 };
 
@@ -153,7 +149,13 @@ const MOVING_FIGURES: Record<Side, string> = {
   condo: "title insurance premiums and builder adjustments",
 };
 
-const TITLE: Partial<Record<Side, string>> = { buying: "Your purchase quote", selling: "Your sale quote" };
+const TITLE: Partial<Record<Side, string>> = {
+  both: "Your sale and purchase quote",
+  buying: "Your purchase quote",
+  selling: "Your sale quote",
+  refinance: "Your refinance quote",
+  condo: "Your new condo quote",
+};
 
 const RED = "#B3211E";
 
@@ -176,12 +178,71 @@ function Row({ title, note, short, amount }: { title: string; note: string; shor
   );
 }
 
-function SectionHead({ children }: { children: React.ReactNode }) {
+function SectionHead({ children, aside }: { children: React.ReactNode; aside?: string | null }) {
   return (
-    <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 text-[13px] font-semibold text-gray-600 first:border-t-0 sm:px-6">
-      {children}
+    <div className="flex justify-between gap-4 border-t border-gray-100 bg-gray-50 px-4 py-3 text-[13px] font-semibold text-gray-600 first:border-t-0 sm:px-6">
+      <span>{children}</span>
+      {aside && <span className="font-normal text-gray-500">{aside}</span>}
     </div>
   );
+}
+
+type GroupRow = { title: string; note: string; amount: string };
+type Group = { key: "sale" | "purchase"; head: string; closes: string | null; rows: GroupRow[] };
+
+// Spec 7A: one group per file, in closing order.
+function bundleGroups(quote: LeadQuote, fill: (t: string) => string): Group[] {
+  const b = quote.bundle!;
+  const discountRow = (side: "sale" | "purchase"): GroupRow[] =>
+    b.discountSide === side
+      ? [
+          {
+            title: "Discount for buying and selling with us",
+            note: `Comes off the closing that happens later, which is your ${side}. If both close on the same day, it comes off the purchase.`,
+            amount: `(${money(b.discount)})`,
+          },
+        ]
+      : [];
+  const sale: Group = {
+    key: "sale",
+    head: "Your sale",
+    closes: formatDate(quote.saleClosingDate),
+    rows: [
+      {
+        title: "Legal fees: sale, including first mortgage, property tax and commission payout",
+        note: fill("Includes your first mortgage, property tax and commission payouts. Any other payout is {extra_payout} plus HST."),
+        amount: money(b.sale.legalFees),
+      },
+      ...discountRow("sale"),
+      {
+        title: "Estimated disbursements: levy, software and file costs",
+        note: "Itemised in full on your draft statement of account.",
+        amount: money(b.sale.disbursements),
+      },
+    ],
+  };
+  const purchase: Group = {
+    key: "purchase",
+    head: "Your purchase",
+    closes: formatDate(quote.purchaseClosingDate),
+    rows: [
+      {
+        title: "Legal fees: purchase, for title transfer and mortgage",
+        note: "One property, one new mortgage.",
+        amount: money(b.purchase.legalFees),
+      },
+      ...discountRow("purchase"),
+      {
+        title: "Estimated disbursements: registration, searches and file costs",
+        note: fill("Typical range is {range}. Itemised in full on your draft statement of account."),
+        amount: money(b.purchase.disbursements),
+      },
+      ...TBD_LINES.buying.map((l) => ({ title: l.title, note: l.note, amount: TBD })),
+    ],
+  };
+  const purchaseFirst =
+    Boolean(quote.saleClosingDate && quote.purchaseClosingDate) && quote.purchaseClosingDate! < quote.saleClosingDate!;
+  return purchaseFirst ? [purchase, sale] : [sale, purchase];
 }
 
 function Detail({ label, value }: { label: string; value: string | null }) {
@@ -240,12 +301,18 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
   const fees = loadIclosedFees();
   const range = fees.file_types.purchase.disbursements_range;
   const payoutFee = fees.extras.extra_payout.fee;
+  const review = fees.file_types.new_build_condo.agreement_review;
   const fill = (text: string) =>
     text
       .replace("{range}", range ? `${dollars(range[0])} to ${dollars(range[1])}` : "")
-      .replace("{extra_payout}", typeof payoutFee === "number" ? dollars(payoutFee) : "");
-  const specSide = side === "buying" || side === "selling";
-  const contactHref = specSide ? `mailto:${csm.email}` : `tel:${csm.phone.replace(/\D/g, "")}`;
+      .replace("{extra_payout}", typeof payoutFee === "number" ? dollars(payoutFee) : "")
+      .replace("{builder_correspondence}", review ? dollars(review.builder_correspondence) : "");
+  const contactHref = `mailto:${csm.email}`;
+  const bundle = both ? quote.bundle : null;
+  const discountText = bundle ? dollars(bundle.discount) : "";
+  // "$1,100,000.00 · one mortgage payout · closes 27 November 2026"
+  const fileSummary = (amount: number | null, what: string, closing: string | null) =>
+    [price(amount), what, formatDate(closing) && `closes ${formatDate(closing)}`].filter(Boolean).join(" · ");
 
   return (
     <div className="min-h-screen bg-[#FAFAFA] px-4 py-6 sm:py-12">
@@ -264,13 +331,17 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
         <p className="mt-2 text-[15px] text-gray-600">
           Thanks for getting in touch. Here is what it costs to close {INTRO[side]}
           {condo ? "." : " with us."}
+          {bundle && ` Because we are closing both, you get ${discountText} off.`}
         </p>
 
         {/* Headline figures: stacked on phones, side by side on desktop */}
         <section className="mt-6 rounded-xl border border-gray-100 bg-gray-50 px-5 py-6 sm:mt-8 sm:flex sm:items-end sm:justify-between sm:px-8 sm:py-7">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Legal fees</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              {bundle ? "Legal fees, both closings" : "Legal fees"}
+            </p>
             <p className="mt-1 text-4xl font-extrabold text-gray-900">{money(quote.legalFees)}</p>
+            {bundle && <p className="mt-1 text-xs text-gray-500">After your {discountText} discount</p>}
           </div>
           <div className="mt-5 sm:mt-0 sm:flex sm:items-stretch sm:gap-8">
             <div className="flex items-center justify-between border-t border-gray-200 py-3 sm:block sm:border-0 sm:py-0 sm:text-right">
@@ -285,12 +356,24 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
         </section>
 
         {/* Breakdown */}
+        {bundle ? (
+          <section className="mt-5 overflow-hidden rounded-xl border border-gray-100 bg-white sm:mt-7">
+            {bundleGroups(quote, fill).map((g) => (
+              <div key={g.key}>
+                <SectionHead aside={g.closes && `Closes ${g.closes}`}>{g.head}</SectionHead>
+                {g.rows.map((r) => (
+                  <Row key={r.title} title={r.title} note={r.note} amount={r.amount} />
+                ))}
+              </div>
+            ))}
+          </section>
+        ) : (
         <section className="mt-5 overflow-hidden rounded-xl border border-gray-100 bg-white sm:mt-7">
           <SectionHead>Legal fees</SectionHead>
-          {LEGAL_LINES[side].map((l) => (
+          {legalLines(fees)[side].map((l) => (
             <Row key={l.title} title={l.title} note={fill(l.note)} short={l.short} amount={money(l.amount ?? quote.legalFees)} />
           ))}
-          <SectionHead>Disbursements</SectionHead>
+          <SectionHead>{quote.disbursementsLabel}</SectionHead>
           <Row
             title={DISBURSEMENT_TITLE[side] ?? "Registration, searches and file costs"}
             note={fill(DISBURSEMENT_NOTE[side])}
@@ -300,10 +383,12 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
             <Row key={l.title} title={l.title} note={l.note} short={l.short} amount={TBD} />
           ))}
         </section>
+        )}
 
         {/* Team: one compact card on phones */}
         <section className="mt-5 rounded-xl border border-gray-100 bg-white p-5 sm:hidden">
           <h2 className="text-base font-bold text-gray-900">Your team</h2>
+          {bundle && <p className="mt-1 text-[13px] text-gray-600">The same team handles both closings and times them together.</p>}
           <div className="mt-4 flex items-center gap-3">
             <Avatar name={lawyer.name} accent />
             <div>
@@ -322,13 +407,14 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
 
         <div className="hidden sm:block">
           <h2 className="mt-10 text-xl font-bold text-gray-900">Your team</h2>
+          {bundle && <p className="mt-2 text-[13px] text-gray-600">The same team handles both closings and times them together.</p>}
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div className="flex gap-4 rounded-xl border border-gray-100 bg-white p-5">
               <Avatar name={lawyer.name} accent />
               <div>
                 <p className="text-[15px] font-semibold text-gray-900">{lawyer.name}</p>
                 <p className="text-[13px] text-gray-500">Lawyer · Law Society number {lawyer.lsoNumber}</p>
-                <p className="mt-1 text-[13px] text-gray-700">Responsible for your file.</p>
+                <p className="mt-1 text-[13px] text-gray-700">{bundle ? "Responsible for both files." : "Responsible for your file."}</p>
               </div>
             </div>
             <div className="flex gap-4 rounded-xl border border-gray-100 bg-white p-5">
@@ -347,6 +433,15 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
           </div>
 
           <h2 className="mt-10 text-xl font-bold text-gray-900">Quote details</h2>
+          {bundle ? (
+            <section className="mt-4 rounded-xl border border-gray-100 bg-white px-6 py-1">
+              <Detail label="Property you are selling" value={quote.saleAddress || null} />
+              <Detail label="Sale" value={fileSummary(quote.salePrice, "one mortgage payout", quote.saleClosingDate)} />
+              <Detail label="Property you are buying" value={quote.purchaseAddress || null} />
+              <Detail label="Purchase" value={fileSummary(quote.purchasePrice, "one new mortgage", quote.purchaseClosingDate)} />
+              <Detail label="Your email" value={quote.email} />
+            </section>
+          ) : (
           <section className="mt-4 rounded-xl border border-gray-100 bg-white px-6 py-1">
             <Detail label={both ? "Purchase property" : "Property"} value={quote.purchaseAddress || null} />
             <Detail label={both ? "Sale property" : "Property"} value={quote.saleAddress || null} />
@@ -361,11 +456,16 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
             <Detail label={both ? "Sale closing date" : "Closing date"} value={formatDate(quote.saleClosingDate)} />
             <Detail label="Your email" value={quote.email} />
           </section>
+          )}
 
           <section className="mt-7 flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-white px-8 py-6">
             <div>
               <p className="text-lg font-bold text-gray-900">Ready to go ahead?</p>
-              <p className="mt-1 text-sm text-gray-700">Continuing opens your retainer.</p>
+              <p className="mt-1 text-sm text-gray-700">
+                {bundle
+                  ? "Continuing opens your two retainers, one for the sale and one for the purchase."
+                  : "Continuing opens your retainer."}
+              </p>
             </div>
             <ContinueButton href={continueHref} className="inline-flex px-7 py-3 text-[15px]" />
           </section>
@@ -378,7 +478,7 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
           <span className="hidden sm:inline">
             {" "}Government charges{side === "selling" ? " and " : ", "}{MOVING_FIGURES[side]} can move before closing.
           </span>{" "}
-          If something on your file falls outside a standard closing, we will tell you the fee in writing,
+          If something on {bundle ? "either file" : "your file"} falls outside a standard closing, we will tell you the fee in writing,
           and get your agreement, before we do the work.
         </p>
       </div>

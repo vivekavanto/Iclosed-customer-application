@@ -1447,6 +1447,10 @@ export default function DashboardPage() {
 
   // ── Closing cost estimate modal ──────────────────────────
   const [estimateOpen, setEstimateOpen] = useState(false);
+  // Estimate unlocks once the purchase APS is uploaded.
+  const apsUploaded = tasks.some(
+    (t) => t.completed && t.side !== "sale" && /agreement of purchase/i.test(t.title),
+  );
 
   // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string) {
@@ -1905,7 +1909,10 @@ export default function DashboardPage() {
               without appearing on the production portal. See
               src/lib/featureFlags.ts to flip it on for production. */}
           {SHOW_CLOSING_COST_ESTIMATE && (
-            <ClosingCostEstimateCard onEstimate={() => setEstimateOpen(true)} />
+            <ClosingCostEstimateCard
+              onEstimate={() => setEstimateOpen(true)}
+              locked={!apsUploaded}
+            />
           )}
 
           {/* ── Need Assistance ── */}

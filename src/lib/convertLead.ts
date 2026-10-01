@@ -213,6 +213,8 @@ export async function convertSingleLead(params: {
       ...(lead.selling_closing_date
         ? { selling_closing_date: lead.selling_closing_date }
         : {}),
+      // Deposit from intake; drafts read it here.
+      ...(lead.deposit_amount != null ? { deposit_amount: lead.deposit_amount } : {}),
     })
     .select("id")
     .single();
