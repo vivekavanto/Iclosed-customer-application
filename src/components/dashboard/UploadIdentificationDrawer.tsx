@@ -1544,6 +1544,11 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (hasUnsignedDocs) {
+      setGlobalError("Signature missing — the signature page of your ID is visible but unsigned. Please sign it and re-upload.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (completeDocCount < 2) {
       setGlobalError("Please provide two valid pieces of ID (2/2) before submitting.");
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1652,6 +1657,11 @@ export default function UploadIdentificationDrawer({
     }
     if (hasExpiredDocs) {
       setGlobalError("One of your IDs is expired. Please remove or replace it before submitting.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    if (hasUnsignedDocs) {
+      setGlobalError("Signature missing — the signature page of your ID is visible but unsigned. Please sign it and re-upload.");
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1777,7 +1787,7 @@ export default function UploadIdentificationDrawer({
   // `docAnalysis` from the sides actually present, so keeping a field here named
   // "isComplete" that no longer decides completeness would only mislead. Both
   // values are still persisted with the document by `detectionFields()`.
-  const detectedDocs: { type: string; side: string; fileId: string; expired: boolean }[] = [];
+  const detectedDocs: { type: string; side: string; fileId: string; expired: boolean; unsigned: boolean }[] = [];
   for (const s of selected) {
     if (s.detection?.isIdentification) {
       const expired = s.detection.expiryStatus === "expired";
@@ -1789,6 +1799,10 @@ export default function UploadIdentificationDrawer({
             side: doc.side,
             fileId: s.id,
             expired,
+            // Both required sides are present but the detector flagged the
+            // document itself incomplete — this is the signature-missing
+            // case (blank signature page/strip), not a missing-side case.
+            unsigned: doc.side === "front-and-back" && !doc.isComplete,
           });
         }
       } else if (s.detection.documentType) {
@@ -1798,6 +1812,7 @@ export default function UploadIdentificationDrawer({
           side: s.detection.side,
           fileId: s.id,
           expired,
+          unsigned: false,
         });
       }
     }
@@ -1829,7 +1844,7 @@ export default function UploadIdentificationDrawer({
     //
     // Expiry isn't persisted on previously-uploaded docs, so we can't re-check
     // it here — treat as not-expired (the draft save already screened them).
-    detectedDocs.push({ type, side, fileId: doc.id, expired: false });
+    detectedDocs.push({ type, side, fileId: doc.id, expired: false, unsigned: false });
   }
 
   // Group by document type
@@ -1841,7 +1856,7 @@ export default function UploadIdentificationDrawer({
   }, {});
 
   // Analyze each document type for side coverage
-  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; complete: boolean; expired: boolean }[] = [];
+  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; complete: boolean; expired: boolean; unsigned: boolean }[] = [];
   for (const [type, docs] of Object.entries(docTypeGroups)) {
     const hasFront = docs.some(d => d.side === "front");
     const hasBack = docs.some(d => d.side === "back");
@@ -1851,16 +1866,21 @@ export default function UploadIdentificationDrawer({
     // the model to require both sides, but a prompt is advice; this is the rule.
     // One image showing both sides counts, as does a separate front and back.
     const complete = hasBothSides || (hasFront && hasBack);
+    // Unlike side-presence completeness, the signature check DOES consult the
+    // detector's judgment — there's no way to tell a blank signature line
+    // from a signed one just by knowing which sides were uploaded.
+    const unsigned = docs.some(d => d.unsigned);
     // An expired ID is NOT a valid piece of ID — flag it so it doesn't count
     // toward the required two and so the UI can surface it.
     const expired = docs.some(d => d.expired);
-    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, complete, expired });
+    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, complete, expired, unsigned });
   }
 
   // A document only counts as a VALID/verified ID when it has all required
-  // sides AND is not expired. Expired IDs are surfaced as invalid below.
-  const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired).length;
-  const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired)).length;
+  // sides, is signed, and is not expired. Expired/unsigned IDs are surfaced
+  // as invalid below.
+  const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired && !d.unsigned).length;
+  const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired && !d.unsigned)).length;
 
   // Any recognised ID that is missing a side is a HARD BLOCK on submission, with
   // a message naming the document and the page still owed. This used to single
@@ -1896,6 +1916,19 @@ export default function UploadIdentificationDrawer({
     return false;
   });
 
+  // Signature check: the detector can see both required sides of a passport
+  // (or a credit card) and still mark it incomplete if the visible
+  // signature page/strip is blank. Side presence alone (docAnalysis above)
+  // doesn't catch this — it only looks at which sides were uploaded, not
+  // whether they were signed — so it's checked separately here from the
+  // detector's own per-document `isComplete` flag.
+  const unsignedDocs = selected.filter((s) => {
+    const docs = s.detection?.multipleDocuments;
+    if (!s.detection?.isIdentification || !docs) return false;
+    return docs.some((d) => d.side === "front-and-back" && !d.isComplete);
+  });
+  const hasUnsignedDocs = unsignedDocs.length > 0;
+
   // Check for expired or expiring-soon IDs
   const expiredDocs = selected.filter(
     s => s.detection?.isIdentification && s.detection.expiryStatus === "expired"
@@ -1917,12 +1950,13 @@ export default function UploadIdentificationDrawer({
     !uploading &&
     !hasPendingDetection &&
     !hasIncompleteIds &&
-    !hasExpiredDocs;
+    !hasExpiredDocs &&
+    !hasUnsignedDocs;
 
   // Display-only flag for the verification card: are the submission
   // REQUIREMENTS met (ignoring transient uploading / pending-detection states)?
   const readyToSubmit =
-    completeDocCount >= 2 && !hasIncompleteIds && !hasExpiredDocs;
+    completeDocCount >= 2 && !hasIncompleteIds && !hasExpiredDocs && !hasUnsignedDocs;
 
   return (
     <>
@@ -2406,18 +2440,22 @@ export default function UploadIdentificationDrawer({
                       <p className="text-sm font-bold text-gray-900">
                         {hasExpiredDocs
                           ? "Expired ID — action needed"
-                          : hasIncompleteIds
-                            ? incompleteIds.length === 1
-                              ? `${incompleteIds[0].type} — ${describeMissingSides(incompleteIds[0])} required`
-                              : "Both Sides of Every ID Required"
-                            : completeDocCount === 0
-                              ? "2 Valid Government IDs Required"
-                              : "1 More Valid Government ID Required"}
+                          : hasUnsignedDocs
+                            ? "Signature Missing"
+                            : hasIncompleteIds
+                              ? incompleteIds.length === 1
+                                ? `${incompleteIds[0].type} — ${describeMissingSides(incompleteIds[0])} required`
+                                : "Both Sides of Every ID Required"
+                              : completeDocCount === 0
+                                ? "2 Valid Government IDs Required"
+                                : "1 More Valid Government ID Required"}
                       </p>
                       <p className="text-xs text-gray-900">
                         {hasExpiredDocs
                           ? "An uploaded ID is expired — see details below"
-                          : `${completeDocCount}/2 verified — see details below`}
+                          : hasUnsignedDocs
+                            ? "The signature page is visible but unsigned — see details below"
+                            : `${completeDocCount}/2 verified — see details below`}
                       </p>
                     </div>
                   </>
@@ -2428,7 +2466,7 @@ export default function UploadIdentificationDrawer({
               {docAnalysis.length > 0 && (
                 <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
                   {docAnalysis.map((doc, idx) => {
-                    const valid = doc.complete && !doc.expired;
+                    const valid = doc.complete && !doc.expired && !doc.unsigned;
                     return (
                       <div key={idx} className="flex items-start gap-2.5 text-xs">
                         {valid ? (
@@ -2438,14 +2476,16 @@ export default function UploadIdentificationDrawer({
                         )}
                         <div className="min-w-0 flex-1 text-gray-900">
                           <span className="font-semibold">{doc.type}</span>
-                          <span className={doc.expired ? "text-[#C10007] font-semibold" : ""}>
+                          <span className={doc.expired || doc.unsigned ? "text-[#C10007] font-semibold" : ""}>
                             {doc.expired
                               ? " — expired (not a valid ID)"
-                              : doc.complete
-                                ? doc.hasBothSides
-                                  ? " — both sides in one image"
-                                  : " — both sides verified"
-                                : ` — missing ${describeMissingSides(doc)}`
+                              : doc.unsigned
+                                ? " — signature missing"
+                                : doc.complete
+                                  ? doc.hasBothSides
+                                    ? " — both sides in one image"
+                                    : " — both sides verified"
+                                  : ` — missing ${describeMissingSides(doc)}`
                             }
                           </span>
                         </div>
