@@ -1,10 +1,10 @@
-// v4 purchase draft statement PDF, laid out like the Word template.
+// v6 draft statement PDF, laid out like the template.
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_FIRM_KEY, FIRMS, getFirm, type FirmKey } from "@/lib/firms";
 import { wrapText } from "@/lib/generateRetainerPdf";
-import type { DraftLine, DraftStatement } from "@/lib/draftStatement";
+import type { DraftDocument, DraftLine } from "@/lib/draftStatement";
 import { longDate } from "@/lib/retainerAgreement";
 
 const PAGE_W = 595.28; // A4
@@ -19,7 +19,7 @@ const SHADE = rgb(0.97, 0.97, 0.98);
 const RULE = rgb(0.85, 0.85, 0.85);
 
 export async function generateDraftStatementPdf(opts: {
-  draft: DraftStatement;
+  draft: DraftDocument;
   firmKey?: FirmKey | string | null;
   /** YYYY-MM-DD. */
   preparedOn: string;
@@ -115,6 +115,12 @@ export async function generateDraftStatementPdf(opts: {
       paragraph(section.note, regular, 8.5);
     }
     y -= 6;
+  }
+
+  if (draft.disclaimer) {
+    ensureSpace(40);
+    y -= 4;
+    paragraph(draft.disclaimer, regular, 8.5);
   }
 
   // Footer on every page.

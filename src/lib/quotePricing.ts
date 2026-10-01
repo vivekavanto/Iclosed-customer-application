@@ -1,6 +1,3 @@
-import type { ClosingCostRates } from "./closingCosts";
-import { round2 } from "./closingCosts";
-
 // New-build condo legal fee parts; the agreement review is optional and untotalled.
 export const CONDO_FEES = { occupancy: 500, final: 1199, agreementReview: 300 } as const;
 
@@ -8,7 +5,8 @@ export const CONDO_FEES = { occupancy: 500, final: 1199, agreementReview: 300 } 
 export const QUOTE_LEGAL_FEES = {
   buying: 1199,
   selling: 1099,
-  both: 2199,
+  // Sale plus purchase, less the $100 bundle discount (iclosed-fees.yaml bundles).
+  both: 2198,
   refinance: 999,
   condo: CONDO_FEES.occupancy + CONDO_FEES.final,
 } as const;
@@ -26,26 +24,6 @@ export function quoteSideFromLeadType(leadType: string | null | undefined): Quot
   if (buy) return "buying";
   if (sell) return "selling";
   return null;
-}
-
-// Firm disbursements before HST; excludes LTT and title premium.
-function purchaseDisbursements(r: ClosingCostRates): number {
-  return r.legalTitleSubmission + r.adminFee + r.teraview + r.sheriff + r.regTransfer;
-}
-
-// Refinance: new mortgage registration plus lender title submission.
-function refinanceDisbursements(r: ClosingCostRates): number {
-  return r.legalTitleSubmission + r.adminFee + r.teraview + r.sheriff + r.regMortgage;
-}
-
-// Refinance and condo only; purchase and sale use src/config/iclosed-fees.yaml.
-export function quoteFigures(
-  side: "refinance" | "condo",
-  rates: ClosingCostRates,
-): { legalFees: number; disbursements: number } {
-  // Condo: charged at final closing, like a purchase.
-  const disbursements = side === "refinance" ? refinanceDisbursements(rates) : purchaseDisbursements(rates);
-  return { legalFees: QUOTE_LEGAL_FEES[side], disbursements: round2(disbursements) };
 }
 
 // Team named on the quote email and page.

@@ -1,5 +1,4 @@
-import { DEFAULT_RATES } from "../closingCosts";
-import { quoteFigures, quoteSideFromLeadType } from "../quotePricing";
+import { quoteSideFromLeadType } from "../quotePricing";
 import { buildQuoteEmailHtml } from "../email-templates/quote";
 import { signQuoteToken, verifyQuoteToken } from "../quoteToken";
 
@@ -11,17 +10,6 @@ describe("quoteSideFromLeadType", () => {
     expect(quoteSideFromLeadType("Refinance")).toBe("refinance");
     expect(quoteSideFromLeadType("Condo")).toBe("condo");
     expect(quoteSideFromLeadType("Other")).toBeNull();
-  });
-});
-
-describe("quoteFigures (refinance and condo only)", () => {
-  it("prices a refinance with mortgage registration", () => {
-    // 150 + 250 + 54.80 + 133.60 + 85
-    expect(quoteFigures("refinance", DEFAULT_RATES)).toEqual({ legalFees: 999, disbursements: 673.4 });
-  });
-
-  it("totals condo occupancy and final closing, not the optional review", () => {
-    expect(quoteFigures("condo", DEFAULT_RATES).legalFees).toBe(1699);
   });
 });
 
@@ -56,6 +44,36 @@ describe("buildQuoteEmailHtml", () => {
     expect(subject).toBe("Your sale quote for 424 Calderstone Crescent");
     expect(html).toContain("Congratulations on your sale.");
     expect(html).toContain("They come out of your sale proceeds, so you pay nothing upfront.");
+  });
+
+  it("uses the refinance and new condo wording", () => {
+    const refi = buildQuoteEmailHtml({ ...base, side: "refinance", disbursementsLabel: "Disbursements" });
+    expect(refi.subject).toBe("Your refinance quote for 424 Calderstone Crescent");
+    expect(refi.html).toContain("Thanks for thinking of us for your refinance.");
+    expect(refi.html).toContain("your quote sets it out separately.");
+    const condo = buildQuoteEmailHtml({ ...base, side: "condo" });
+    expect(condo.subject).toBe("Your new condo quote for 424 Calderstone Crescent");
+    expect(condo.html).toContain("Congratulations on your new condo.");
+    expect(condo.html).toContain("Those are our fees for your occupancy and final closing, before HST.");
+  });
+
+  it("uses the sale and purchase bundle wording", () => {
+    const { subject, html } = buildQuoteEmailHtml({
+      ...base,
+      side: "both",
+      propertyShort: "424 Calderstone Crescent and 1 New Home Road",
+      legalFees: 2198,
+      disbursements: 1200,
+      bundle: { saleProperty: "424 Calderstone Crescent", purchaseProperty: "1 New Home Road", discount: 100 },
+    });
+    expect(subject).toBe("Your sale and purchase quote for 424 Calderstone Crescent and 1 New Home Road");
+    expect(html).toContain("Congratulations on your sale and your new home.");
+    expect(html).toMatch(/selling <strong[^>]*>424 Calderstone Crescent<\/strong> and buying <strong[^>]*>1 New Home Road<\/strong>/);
+    expect(html).toContain("Legal fees, both closings");
+    expect(html).toContain("$2,198.00");
+    expect(html).toContain("They include $100 off because we are closing both.");
+    expect(html).toContain("That opens your two retainers, one for the sale and one for the purchase");
+    expect(html).toContain("every step of both closings");
   });
 
   it("escapes user-supplied values", () => {

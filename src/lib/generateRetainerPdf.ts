@@ -24,8 +24,8 @@ interface RetainerPdfParams {
    * un-migrated caller reproduces the old document exactly.
    */
   firmKey?: FirmKey | string | null;
-  /** v9 purchase/sale agreement; replaces the FAQ body when present. */
-  agreement?: RetainerAgreement | null;
+  /** v12 agreements; replace the FAQ body when present. */
+  agreements?: RetainerAgreement[];
 }
 
 /** Wrap long text into lines that fit within maxWidth */
@@ -150,9 +150,8 @@ export async function generateRetainerPdf(
     y -= 30;
   }
 
-  if (params.agreement) {
-    drawAgreement(params.agreement);
-  } else {
+  const agreements = params.agreements ?? [];
+  if (agreements.length === 0) {
     page.drawText("Retainer Agreement", { x: margin, y, font: bold, size: 18, color: rgb(0.1, 0.1, 0.1) });
     y -= 28;
 
@@ -212,7 +211,7 @@ export async function generateRetainerPdf(
     }
   }
 
-  // v9 agreement body.
+  // v12 agreement body.
   function drawAgreement(a: RetainerAgreement) {
     const ink = rgb(0.1, 0.1, 0.1);
     const body = rgb(0.3, 0.3, 0.3);
@@ -299,20 +298,27 @@ export async function generateRetainerPdf(
     heading("Your fees");
     table(a.fees);
     paragraph(a.feeNote, regular, 8, muted);
+    if (a.bundleNote) {
+      y -= 4;
+      paragraph(a.bundleNote, regular, 8, muted);
+    }
     heading("If something changes");
     paragraph(a.changesIntro, regular, 8, muted);
     y -= 4;
     table(a.changes, true);
-    heading("Definitions");
-    a.definitions.forEach((d) => labelled(d.label, d.body));
+    // Sale has no Definitions section.
+    if (a.definitions.length > 0) {
+      heading("Definitions");
+      a.definitions.forEach((d) => labelled(d.label, d.body));
+    }
     y -= 6;
     paragraph(a.acceptance, bold, 9, ink);
     y -= 12;
   }
 
   // ── Signature Section ──
-  if (params.agreement) {
-    // v9: signature left, date right, one shaded row.
+  // v12: signature left, date right, one shaded row.
+  function drawSignatureRow() {
     ensureSpace(60);
     const rowH = 30;
     const baseY = y - 18;
@@ -334,6 +340,16 @@ export async function generateRetainerPdf(
 
     y -= rowH + 12;
     page.drawText(`${fullName}  \u00b7  ${uniqueId}`, { x: margin, y, font: regular, size: 8, color: gray });
+    y -= 12;
+  }
+
+  if (agreements.length > 0) {
+    // One signature row per retainer; each starts a page.
+    agreements.forEach((a, i) => {
+      if (i > 0) ensureSpace(Number.POSITIVE_INFINITY);
+      drawAgreement(a);
+      drawSignatureRow();
+    });
     return doc.save();
   }
 

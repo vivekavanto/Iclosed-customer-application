@@ -17,7 +17,9 @@ const HEADING = "Estimate your closing cost";
 const ClosingCostEstimateCard: React.FC<{
   href?: string;
   onEstimate?: () => void;
-}> = ({ href, onEstimate }) => {
+  /** Disabled until the Agreement of Purchase and Sale is uploaded. */
+  locked?: boolean;
+}> = ({ href, onEstimate, locked = false }) => {
   const buttonClass =
     "w-full flex items-center justify-center rounded-xl bg-[#C10007] px-4 py-3 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#a30006] disabled:cursor-not-allowed disabled:opacity-60";
 
@@ -37,7 +39,7 @@ const ClosingCostEstimateCard: React.FC<{
         so you can plan ahead.
       </p>
 
-      {href ? (
+      {href && !locked ? (
         <Link href={href} className={buttonClass}>
           {HEADING}
         </Link>
@@ -45,7 +47,7 @@ const ClosingCostEstimateCard: React.FC<{
         <button
           type="button"
           onClick={onEstimate}
-          disabled={!onEstimate}
+          disabled={!onEstimate || locked}
           className={`${buttonClass} cursor-pointer`}
         >
           {HEADING}
@@ -53,7 +55,9 @@ const ClosingCostEstimateCard: React.FC<{
       )}
 
       <p className="mt-3 text-[11px] text-[#C10007]/60">
-        For planning only &mdash; no payment is due yet.
+        {locked
+          ? "Upload your Agreement of Purchase and Sale to see your estimate."
+          : <>For planning only &mdash; no payment is due yet.</>}
       </p>
     </div>
   );

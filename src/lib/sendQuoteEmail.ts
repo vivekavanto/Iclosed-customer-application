@@ -23,6 +23,7 @@ export async function sendQuoteEmail(leadId: string): Promise<boolean> {
       legalFees: quote.legalFees,
       disbursements: quote.disbursements,
       disbursementsLabel: quote.disbursementsLabel,
+      bundle: quote.bundle,
       quoteUrl: `${siteUrl}/quote/${signQuoteToken(leadId)}`,
       siteUrl,
     });

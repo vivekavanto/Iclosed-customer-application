@@ -4,8 +4,8 @@ import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { put } from "@vercel/blob";
 import { generateRetainerPdf } from "@/lib/generateRetainerPdf";
-import { retainerAgreementKind } from "@/lib/retainerAgreement";
-import { loadRetainerAgreement } from "@/lib/loadRetainerAgreement";
+import { retainerAgreementPlans } from "@/lib/retainerAgreement";
+import { loadRetainerAgreements } from "@/lib/loadRetainerAgreement";
 import { getLeadFirmKey } from "@/lib/leadFirm";
 import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { brandEmailHtml } from "@/lib/emailBrand";
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, client_id"
+        "id, first_name, last_name, email, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, closing_date, selling_closing_date, parent_lead_id, co_person_role, client_id"
       )
       .in("id", leadIds);
 
@@ -301,8 +301,15 @@ export async function POST(req: Request) {
 
       // 1. Generate PDF (P&S receives both addresses; single-side leads
       //    are unchanged and just receive propertyAddress)
-      // Same v9 terms shown on the page.
-      const agreementKind = retainerAgreementKind(lead?.lead_type);
+      // Same v12 terms shown on the page.
+      const agreementPlans = lead
+        ? retainerAgreementPlans(lead, {
+            property: propertyAddress,
+            purchaseAddress,
+            saleAddress,
+            only: coPurchaserOnly ? "purchase" : coSellerOnly ? "sale" : null,
+          })
+        : [];
       const pdfBytes = await generateRetainerPdf({
         fullName: full_name,
         signature,
@@ -317,10 +324,7 @@ export async function POST(req: Request) {
         // this decides which firm the signed agreement names, and the client
         // must not be able to choose that.
         firmKey: await getLeadFirmKey(leadId),
-        agreement:
-          lead && agreementKind
-            ? await loadRetainerAgreement(lead, propertyAddress, agreementKind, signedDate)
-            : null,
+        agreements: lead ? await loadRetainerAgreements(lead, agreementPlans, signedDate) : [],
       });
 
       // 2. Upload to Vercel Blob (combined PDF for P&S uses "main" segment)
