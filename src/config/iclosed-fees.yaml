@@ -2,7 +2,7 @@
 # Master source for every price, estimate, range and rate used by the quote email,
 # quote page, retainer and draft statement of account. Code reads from here; never hardcode.
 # Money is CAD. Amounts are dollars with two decimals; store and compute as integer cents.
-# Spec: docs/iclosed-documents-implementation-spec.md
+# Spec: iclosed-documents-implementation-spec.md (kept outside the repo)
 
 version: 4
 updated: 2026-10-01
