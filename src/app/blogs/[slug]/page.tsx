@@ -308,6 +308,7 @@ export default async function BlogPostPage({ params }: PageProps) {
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                   Email
                 </p>
+                
                 <p className="text-sm font-semibold text-gray-800">
                   hello@iclosed.ca
                 </p>
