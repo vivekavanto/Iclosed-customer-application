@@ -23,9 +23,10 @@ function NoteIcon({ label, note, brand }: { label: string; note: string; brand: 
   );
 }
 
-// "($45,000.00)" → "−$45,000.00"; a zero deduction reads "$0.00".
+// "($45,000.00)" → "−$45,000.00"; a zero deduction reads "$0.00". Overrides print as given.
 function screenAmount(line: DraftLine): string {
-  const raw = line.screen?.amount ?? line.amount;
+  if (line.screen?.amount) return line.screen.amount;
+  const raw = line.amount;
   const m = /^\((.*)\)$/.exec(raw);
   if (!m) return raw;
   return /^\$0\.00$/.test(m[1]) ? m[1] : `−${m[1]}`;

@@ -2,9 +2,11 @@
 import {
   buildPurchaseDraft,
   buildRefinanceDraft,
+  buildSaleDraft,
   landTransferTax,
   type PurchaseDraftInput,
   type RefinanceDraftInput,
+  type SaleDraftInput,
 } from "../draftStatement";
 import { loadIclosedFees } from "../loadIclosedFees";
 
@@ -156,5 +158,53 @@ describe("buildRefinanceDraft (spec 9)", () => {
     const d = buildRefinanceDraft(fees, { ...refi, dischargeRegistration: true });
     expect(at(d, "Disbursements", "Registration of discharge")).toBe("$85.00");
     expect(d.feesTotal).toBe(1923.47);
+  });
+});
+
+describe("buildSaleDraft", () => {
+  const sale: SaleDraftInput = {
+    name: "Sam Client",
+    property: "12 Elm Street, Toronto",
+    closingDate: "2026-12-01",
+    price: 1100000,
+    deposit: 55000,
+    commissionRate: 5,
+    mortgageBalance: 0,
+    discount: null,
+  };
+  const at = (d: ReturnType<typeof buildSaleDraft>, section: string, label: string) =>
+    d.sections.find((s) => s.title === section)?.lines.find((l) => l.label.startsWith(label));
+
+  it("deducts the commission balance the deposit does not cover", () => {
+    const d = buildSaleDraft(fees, sale);
+    expect(at(d, "Sale price", "Real estate commission (5%)")?.amount).toBe("($55,000.00)");
+    expect(at(d, "Sale price", "HST on commission (13%)")?.amount).toBe("($7,150.00)");
+    expect(at(d, "Sale price", "Less commission balance")?.amount).toBe("($7,150.00)");
+    expect(at(d, "Sale price", "Balance received from purchaser")?.amount).toBe("$1,037,850.00");
+  });
+
+  it("uses the fee file: no HST on the LAWPRO levy", () => {
+    const d = buildSaleDraft(fees, sale);
+    expect(at(d, "HST", "HST at 13%")?.amount).toBe("$197.47");
+    expect(d.feesTotal).toBe(1781.47);
+    expect(d.proceeds).toBe(1036068.53);
+  });
+
+  it("takes the mortgage payout off the proceeds", () => {
+    const d = buildSaleDraft(fees, { ...sale, mortgageBalance: 540000 });
+    expect(at(d, "Your proceeds", "Less payout to lender")?.amount).toBe("($540,000.00)");
+    expect(d.proceeds).toBe(496068.53);
+  });
+
+  it("hides the commission balance when the deposit covers it", () => {
+    const d = buildSaleDraft(fees, { ...sale, deposit: 100000 });
+    expect(at(d, "Sale price", "Less commission balance")?.screen?.hidden).toBe(true);
+    expect(at(d, "Sale price", "Balance received from purchaser")?.amount).toBe("$1,000,000.00");
+  });
+
+  it("leaves the figures open without a commission rate", () => {
+    const d = buildSaleDraft(fees, { ...sale, commissionRate: null });
+    expect(d.proceeds).toBeNull();
+    expect(at(d, "Your proceeds", "Proceeds to you")?.amount).toBe("[Amount]");
   });
 });

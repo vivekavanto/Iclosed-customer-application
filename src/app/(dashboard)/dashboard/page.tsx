@@ -1447,9 +1447,18 @@ export default function DashboardPage() {
 
   // ── Closing cost estimate modal ──────────────────────────
   const [estimateOpen, setEstimateOpen] = useState(false);
-  // Estimate unlocks once the purchase APS is uploaded.
+  // Sale files, or the Sale tab of a Buy & Sell file, get the sale estimate.
+  const estimateSide: "purchase" | "sale" =
+    activeDeal?.type === "Sale" ||
+    (activeDeal?.type === "Purchase & Sale" && selectedSide === "sale")
+      ? "sale"
+      : "purchase";
+  // Unlocks once that side's APS is uploaded.
   const apsUploaded = tasks.some(
-    (t) => t.completed && t.side !== "sale" && /agreement of purchase/i.test(t.title),
+    (t) =>
+      t.completed &&
+      (estimateSide === "sale" ? t.side !== "purchase" : t.side !== "sale") &&
+      /agreement of purchase/i.test(t.title),
   );
 
   // ── Mark task done + refresh ──────────────────────────────
@@ -1743,7 +1752,10 @@ export default function DashboardPage() {
 
       {/* ── Closing Cost Estimate Modal ── */}
       {estimateOpen && (
-        <ClosingCostEstimateModal onClose={() => setEstimateOpen(false)} />
+        <ClosingCostEstimateModal
+          onClose={() => setEstimateOpen(false)}
+          side={estimateSide}
+        />
       )}
 
       {/* ── 1. Property Selector Tabs (one per lead; Purchase & Sale deals split into 2 tabs) ── */}
@@ -1912,6 +1924,7 @@ export default function DashboardPage() {
             <ClosingCostEstimateCard
               onEstimate={() => setEstimateOpen(true)}
               locked={!apsUploaded}
+              kind={estimateSide}
             />
           )}
 

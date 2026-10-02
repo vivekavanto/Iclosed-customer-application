@@ -28,6 +28,14 @@ const MODEL_LADDER = [
   { id: "gemini-3.1-flash-lite", timeoutMs: 40_000 },
 ] as const;
 
+// Fast-first order for background reads: flash-lite answered in ~2s, the
+// stronger tiers stay behind it as fallbacks.
+const FAST_LADDER = [
+  { id: "gemini-3.1-flash-lite", timeoutMs: 25_000 },
+  { id: "gemini-3.5-flash", timeoutMs: 55_000 },
+  { id: "gemini-3.6-flash", timeoutMs: 45_000 },
+] as const;
+
 function endpointFor(model: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 }
@@ -472,13 +480,15 @@ export async function readApsDocument(opts: {
   mimeType: string;
   /** When the caller's clock started; the budget counts from here. */
   startedAt?: number;
+  /** "fast" tries flash-lite first; default is quality first. */
+  order?: "quality" | "fast";
 }): Promise<ApsReadOutcome> {
   const { apiKey, side, bytes, mimeType } = opts;
   const deadline = (opts.startedAt ?? Date.now()) + TOTAL_BUDGET_MS;
   let attempts = 0;
   let sawTimeout = false;
 
-  for (const model of MODEL_LADDER) {
+  for (const model of opts.order === "fast" ? FAST_LADDER : MODEL_LADDER) {
     const timeLeft = deadline - Date.now();
     if (timeLeft < MIN_ATTEMPT_MS) {
       console.error(`[extract-aps] out of budget before ${model.id}`);

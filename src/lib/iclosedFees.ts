@@ -61,7 +61,7 @@ export interface IclosedFees {
   extras: Record<string, ExtraFee>;
   land_transfer_tax: { ontario: LttRegion; toronto: LttRegion };
   bundles: { sale_and_purchase: SaleAndPurchaseBundle };
-  intake_defaults: { has_mortgage: boolean; charges_count: number };
+  intake_defaults: { has_mortgage: boolean; charges_count: number; sale_commission_rate?: number };
   retainer: { hst_registration_number: string | null };
 }
 

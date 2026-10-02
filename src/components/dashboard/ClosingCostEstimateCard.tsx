@@ -12,14 +12,15 @@ import { DollarSign } from "lucide-react";
    read as a live control that quietly does nothing.
 ════════════════════════════════════════════ */
 
-const HEADING = "Estimate your closing cost";
-
 const ClosingCostEstimateCard: React.FC<{
   href?: string;
   onEstimate?: () => void;
   /** Disabled until the Agreement of Purchase and Sale is uploaded. */
   locked?: boolean;
-}> = ({ href, onEstimate, locked = false }) => {
+  /** Sale files estimate proceeds instead of closing costs. */
+  kind?: "purchase" | "sale";
+}> = ({ href, onEstimate, locked = false, kind = "purchase" }) => {
+  const heading = kind === "sale" ? "Estimate your sale proceeds" : "Estimate your closing cost";
   const buttonClass =
     "w-full flex items-center justify-center rounded-xl bg-[#C10007] px-4 py-3 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#a30006] disabled:cursor-not-allowed disabled:opacity-60";
 
@@ -30,18 +31,27 @@ const ClosingCostEstimateCard: React.FC<{
         <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
           <DollarSign size={18} className="text-[#C10007]" strokeWidth={2} />
         </div>
-        <h3 className="text-sm font-bold text-gray-900">{HEADING}</h3>
+        <h3 className="text-sm font-bold text-gray-900">{heading}</h3>
       </div>
 
       <p className="text-xs text-gray-500 leading-relaxed mb-5">
-        Get an estimate of the funds you&rsquo;ll need on closing day &mdash;
-        land transfer tax, title insurance, legal fees and disbursements &mdash;
-        so you can plan ahead.
+        {kind === "sale" ? (
+          <>
+            Get an estimate of what you&rsquo;ll receive on closing day &mdash;
+            after commission, your mortgage payout, legal fees and disbursements.
+          </>
+        ) : (
+          <>
+            Get an estimate of the funds you&rsquo;ll need on closing day &mdash;
+            land transfer tax, title insurance, legal fees and disbursements &mdash;
+            so you can plan ahead.
+          </>
+        )}
       </p>
 
       {href && !locked ? (
         <Link href={href} className={buttonClass}>
-          {HEADING}
+          {heading}
         </Link>
       ) : (
         <button
@@ -50,7 +60,7 @@ const ClosingCostEstimateCard: React.FC<{
           disabled={!onEstimate || locked}
           className={`${buttonClass} cursor-pointer`}
         >
-          {HEADING}
+          {heading}
         </button>
       )}
 
