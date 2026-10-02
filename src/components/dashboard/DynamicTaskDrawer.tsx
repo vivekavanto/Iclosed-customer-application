@@ -19,7 +19,6 @@ import {
 } from "@/lib/addressValidation";
 import {
   X,
-  Upload,
   Trash2,
   AlertCircle,
   AlertTriangle,
@@ -32,7 +31,6 @@ import {
   ArrowRight,
   ChevronDown,
   FileText,
-  Info,
   Copy,
   Check,
 } from "lucide-react";
@@ -125,10 +123,14 @@ const MORTGAGEE_ADDRESSES: { lender: string; address: string }[] = [
 ];
 
 interface DynamicTaskDrawerProps {
+  /** Header line under the title, e.g. "Sale · 26S-0539". */
+  subtitle?: string;
   open: boolean;
   onClose: () => void;
   taskId: string | null;
   taskTitle: string;
+  /** Client-facing name shown in the header. */
+  heading?: string;
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
@@ -175,7 +177,7 @@ function DetailsCard({ details }: { details: TaskDetailsCard }) {
           ].join(" ")}
         >
           {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? "Copied" : "Copy details"}
         </button>
       </div>
       {details.lines.map((line) => (
@@ -190,9 +192,8 @@ function DetailsCard({ details }: { details: TaskDetailsCard }) {
 // Amber callout — used for task-description notes and "note" fields.
 function InfoNote({ text }: { text: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-      <Info size={14} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-amber-600" />
-      <p className="text-sm leading-relaxed text-amber-800">{text}</p>
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      <p className="text-xs leading-relaxed text-amber-800">{text}</p>
     </div>
   );
 }
@@ -229,6 +230,30 @@ function isValidPhone(v: string) {
 // Validate email format
 function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function optString(opts: unknown, key: string): string | null {
+  const v = isRecord(opts) ? opts[key] : null;
+  return typeof v === "string" && v ? v : null;
+}
+
+/** Text shown inside an empty file slot. */
+function getSlotLabel(opts: unknown): string | null {
+  return optString(opts, "slot_label");
+}
+
+/** Fixed text before an input, e.g. "$". */
+function getPrefix(opts: unknown): string | null {
+  return optString(opts, "prefix");
+}
+
+/** Half-width field, paired side by side on wider screens. */
+function isHalfField(opts: unknown): boolean {
+  return isRecord(opts) && opts.half === true;
 }
 
 function getFileConfig(opts: unknown): {
@@ -354,6 +379,90 @@ const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
 /* ─────────────────────────────────────────────
    SINGLE FILE UPLOAD SLOT
 ───────────────────────────────────────────── */
+/** Camera capture for upload slots; returns the photo as a JPEG file. */
+function PhotoCaptureDialog({
+  title,
+  onCapture,
+  onClose,
+}: {
+  title: string;
+  onCapture: (file: File) => void;
+  onClose: () => void;
+}) {
+  const webcamRef = useRef<Webcam>(null);
+  const [shot, setShot] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
+  async function acceptPhoto() {
+    if (shot) onCapture(await dataUrlToFile(shot, "photo.jpg"));
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true" aria-label="Take photo">
+      <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold text-gray-900">{title}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="cursor-pointer rounded-md p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+            aria-label="Close camera"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-gray-950">
+          {shot ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={shot} alt="Captured photo" className="absolute inset-0 h-full w-full object-contain" />
+          ) : (
+            <Webcam
+              ref={webcamRef}
+              audio={false}
+              screenshotFormat="image/jpeg"
+              screenshotQuality={0.95}
+              forceScreenshotSourceSize
+              videoConstraints={{ facingMode: "environment", width: { ideal: 1920 } }}
+              onUserMediaError={() => setCameraError("Unable to access camera. Please allow camera permissions.")}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          )}
+        </div>
+        {cameraError && <p className="text-xs text-[#C10007]">{cameraError}</p>}
+        <div className="flex gap-3">
+          {shot ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setShot(null)}
+                className="cursor-pointer flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                Retake
+              </button>
+              <button
+                type="button"
+                onClick={acceptPhoto}
+                className="cursor-pointer flex-1 rounded-lg bg-[#C10007] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#a30006]"
+              >
+                Use photo
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={!!cameraError}
+              onClick={() => setShot(webcamRef.current?.getScreenshot() ?? null)}
+              className="cursor-pointer flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#C10007] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#a30006] disabled:opacity-60"
+            >
+              <Camera size={15} /> Capture
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FileSlot({
   field,
   file,
@@ -374,8 +483,10 @@ function FileSlot({
   onError?: (fieldId: string, error: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const cfg = getFileConfig(field.options);
+  const slotLabel = getSlotLabel(field.options) ?? field.label;
 
   function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
@@ -472,29 +583,39 @@ function FileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200 select-none",
+          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center cursor-pointer transition-all duration-200 select-none",
           dragOver
             ? "border-[#C10007] bg-[#FEF2F2]"
             : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
-        <div
-          className={[
-            "w-9 h-9 rounded-full flex items-center justify-center",
-            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
-          ].join(" ")}
-        >
-          <Upload
-            size={16}
-            className={dragOver ? "text-[#C10007]" : "text-gray-400"}
-            strokeWidth={2}
-          />
-        </div>
         <div>
-          <p className="text-xs font-semibold text-gray-700">{field.label}</p>
+          <p className="text-sm font-semibold text-gray-800">{slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · {cfg.accept} · Max {cfg.max_mb}MB
+            Click or drag · {cfg.accept.split(",").join(", ")} · Max {cfg.max_mb}MB
           </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCameraOpen(true);
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Camera size={13} strokeWidth={2} /> Take photo
+          </button>
         </div>
         <input
           ref={inputRef}
@@ -508,6 +629,16 @@ function FileSlot({
           }}
         />
       </div>
+      {cameraOpen && (
+        <PhotoCaptureDialog
+          title={slotLabel}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(f) => {
+            handlePick(f);
+            setCameraOpen(false);
+          }}
+        />
+      )}
       {error && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
           <AlertCircle size={11} />
@@ -545,7 +676,10 @@ function MultiFileSlot({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const cfg = getFileConfig(field.options);
+  const slotLabel = getSlotLabel(field.options) ?? field.label;
+  const hasFiles = files.length > 0 || existing.length > 0;
 
   function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
@@ -650,25 +784,37 @@ function MultiFileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          "flex flex-col items-center gap-2 rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-all duration-200 select-none",
+          ["flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 text-center cursor-pointer transition-all duration-200 select-none", hasFiles ? "py-5" : "py-10"].join(" "),
           dragOver ? "border-[#C10007] bg-[#FEF2F2]" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
-        <div
-          className={[
-            "w-9 h-9 rounded-full flex items-center justify-center",
-            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
-          ].join(" ")}
-        >
-          <Upload size={16} className={dragOver ? "text-[#C10007]" : "text-gray-400"} strokeWidth={2} />
-        </div>
         <div>
-          <p className="text-xs font-semibold text-gray-700">
-            {files.length > 0 || existing.length > 0 ? "Add more files" : field.label}
-          </p>
+          <p className="text-sm font-semibold text-gray-800">{hasFiles ? "Add more files" : slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · multiple · {cfg.accept} · Max {cfg.max_mb}MB each
+            Click or drag · {cfg.accept.split(",").join(", ")} · Max {cfg.max_mb}MB
           </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCameraOpen(true);
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Camera size={13} strokeWidth={2} /> Take photo
+          </button>
         </div>
         <input
           ref={inputRef}
@@ -682,6 +828,16 @@ function MultiFileSlot({
           }}
         />
       </div>
+      {cameraOpen && (
+        <PhotoCaptureDialog
+          title={slotLabel}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(f) => {
+            handlePick([f]);
+            setCameraOpen(false);
+          }}
+        />
+      )}
       {error && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
           <AlertCircle size={11} />
@@ -786,11 +942,13 @@ export default function DynamicTaskDrawer({
   onClose,
   taskId,
   taskTitle,
+  heading,
   leadId,
   clientFirstName,
   clientLastName,
   firmKey,
   side = null,
+  subtitle,
   onTaskCompleted,
 }: DynamicTaskDrawerProps) {
   const firm = getFirm(firmKey);
@@ -834,7 +992,6 @@ export default function DynamicTaskDrawer({
   const [sharpnessOk, setSharpnessOk] = useState(false);
   const [cameraValidating, setCameraValidating] = useState(false);
   const [acceptableDocsOpen, setAcceptableDocsOpen] = useState(false);
-  const [mortgageeAddressesOpen, setMortgageeAddressesOpen] = useState(false);
   const [manualUploadOpen, setManualUploadOpen] = useState(false);
   const [manualUploadStep, setManualUploadStep] = useState(0);
   // Guards the one-time clients-table prefill per open/taskId (see effect below).
@@ -1080,7 +1237,9 @@ export default function DynamicTaskDrawer({
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
-    return field.required || !!getVisibleWhen(ruleSource(field));
+    const opts: unknown = field.options;
+    const optional = isRecord(opts) && opts.optional === true;
+    return field.required || (!!getVisibleWhen(ruleSource(field)) && !optional);
   }
 
   // Validate ONE field. Shared by submit and the on-blur check so a field the
@@ -1558,7 +1717,11 @@ export default function DynamicTaskDrawer({
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
   const isVoidChequeTask = taskTitle.toLowerCase().includes("void cheque");
-  const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
+  const hasDraftOption = !isCalendlyTask;
+  // Upload-only tasks submit with "Upload & Submit", per the redesign.
+  const isUploadTask = ["agreement of purchase", "home insurance", "void cheque", "property tax", "deposit funds"].some(
+    (k) => taskTitle.toLowerCase().includes(k),
+  );
   const taskCopy = getTaskCopy(taskTitle, side);
 
   function openCameraFlow() {
@@ -1679,7 +1842,7 @@ export default function DynamicTaskDrawer({
         className={[
           "fixed z-50 bg-white shadow-2xl flex flex-col",
           isLargeScreen
-            ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+            ? "inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-2xl border border-gray-100"
             : "top-0 right-0 h-full w-full max-w-[520px]",
           isLargeScreen
             ? open
@@ -1703,10 +1866,12 @@ export default function DynamicTaskDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
-              {taskTitle}
+              {heading ?? taskTitle}
             </h2>
             <p className="text-xs text-gray-400 mt-1">
-              {isUploadIdTask
+              {subtitle
+                ? subtitle
+                : isUploadIdTask
                 ? "Upload your identification documents to verify your identity for the property transaction."
                 : hasFileFields
                   ? "Upload the required documents to complete this task."
@@ -1725,13 +1890,23 @@ export default function DynamicTaskDrawer({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-5">
 
           {taskCopy && (
             <div className="space-y-3">
               <p className="text-sm text-gray-600 leading-relaxed">
                 {taskCopy.description}
               </p>
+              {taskCopy.blog && (
+                <a
+                  href={`/blog/${taskCopy.blog.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-[13px] font-semibold text-[#C10007] hover:underline"
+                >
+                  Read our blog: {taskCopy.blog.title} →
+                </a>
+              )}
               {taskCopy.details && <DetailsCard details={taskCopy.details} />}
               {taskCopy.note && <InfoNote text={taskCopy.note} />}
             </div>
@@ -1783,40 +1958,21 @@ export default function DynamicTaskDrawer({
                   ))}
                 </ul>
 
-                <div className="mt-4 pt-3 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setMortgageeAddressesOpen(!mortgageeAddressesOpen)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-[#C10007] hover:opacity-80 transition-opacity cursor-pointer"
-                    aria-expanded={mortgageeAddressesOpen}
-                  >
-                    <ChevronDown
-                      size={15}
-                      className={`transition-transform duration-200 ${mortgageeAddressesOpen ? "" : "-rotate-90"}`}
-                      strokeWidth={2.5}
-                    />
-                    See mortgagee addresses for common lenders
-                  </button>
+              </div>
 
-                  {mortgageeAddressesOpen && (
-                    <>
-                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {MORTGAGEE_ADDRESSES.map((m) => (
-                          <div key={m.lender} className="rounded-lg bg-gray-50 px-3 py-2.5">
-                            <p className="text-xs font-bold text-gray-900">{m.lender}</p>
-                            <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">
-                              {m.address}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
-                        This is not an exhaustive list. If your lender is not shown, use the
-                        mortgagee address given by your lender.
-                      </p>
-                    </>
-                  )}
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-bold text-gray-900 mb-3">Mortgagee addresses for common lenders</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {MORTGAGEE_ADDRESSES.map((m) => (
+                    <div key={m.lender} className="rounded-lg bg-gray-50 px-3 py-2.5">
+                      <p className="text-xs font-bold text-gray-900">{m.lender}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">{m.address}</p>
+                    </div>
+                  ))}
                 </div>
+                <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
+                  Not an exhaustive list. If your lender is not shown, use the mortgagee address from your lender.
+                </p>
               </div>
             </>
           )}
@@ -2060,8 +2216,10 @@ export default function DynamicTaskDrawer({
             />
           )}
 
-          {!fieldsLoading &&
-            fields.map((field) => {
+          {!fieldsLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+          {fields.map((field) => {
+            const node = ((): React.ReactNode => {
               // Hide fields whose visible_when condition isn't currently met.
               if (!isFieldVisible(field)) return null;
 
@@ -2085,7 +2243,7 @@ export default function DynamicTaskDrawer({
                 );
               }
 
-              // Pill choices (Yes / No / Partial) — options share the select shape.
+              // Radio choices; options share the select shape.
               if (field.field_type === "radio") {
                 const opts = isSelectOptions(field.options) ? field.options : [];
                 const selected = values[field.id] ?? "";
@@ -2097,25 +2255,23 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
-                    <div className="flex flex-wrap gap-2.5">
-                      {opts.map((o) => {
-                        const isOn = selected === o.value;
-                        return (
-                          <button
-                            key={o.value}
-                            type="button"
-                            onClick={() => setValue(field.id, o.value)}
-                            className={[
-                              "px-5 py-2 rounded-full border text-sm font-semibold transition-colors",
-                              isOn
-                                ? "border-[#C10007] text-[#C10007] bg-white"
-                                : "border-gray-200 text-gray-700 bg-white hover:border-gray-300",
-                            ].join(" ")}
-                          >
-                            {o.label}
-                          </button>
-                        );
-                      })}
+                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                      {opts.map((o) => (
+                        <label
+                          key={o.value}
+                          className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                        >
+                          <input
+                            type="radio"
+                            name={`field-${field.id}`}
+                            value={o.value}
+                            checked={selected === o.value}
+                            onChange={() => setValue(field.id, o.value)}
+                            className="h-4 w-4 accent-[#C10007] cursor-pointer"
+                          />
+                          {o.label}
+                        </label>
+                      ))}
                     </div>
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
@@ -2474,6 +2630,12 @@ export default function DynamicTaskDrawer({
                       <span className="text-[#C10007] ml-1">*</span>
                     )}
                   </label>
+                  <div className="relative">
+                  {getPrefix(field.options) && (
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                      {getPrefix(field.options)}
+                    </span>
+                  )}
                   <input
                     type={
                       field.field_type === "phone" ? "tel" : field.field_type
@@ -2489,8 +2651,10 @@ export default function DynamicTaskDrawer({
                     className={[
                       inputBase,
                       errors[field.id] ? inputError : inputNormal,
+                      getPrefix(field.options) ? "pl-8" : "",
                     ].join(" ")}
                   />
+                  </div>
                   {errors[field.id] && (
                     <p className="mt-1.5 text-xs text-[#C10007]">
                       {errors[field.id]}
@@ -2498,7 +2662,16 @@ export default function DynamicTaskDrawer({
                   )}
                 </div>
               );
-            })}
+            })();
+            if (!node) return null;
+            return (
+              <div key={field.id} className={isHalfField(field.options) ? "min-w-0" : "sm:col-span-2 min-w-0"}>
+                {node}
+              </div>
+            );
+          })}
+          </div>
+          )}
 
           
 
@@ -2545,7 +2718,11 @@ export default function DynamicTaskDrawer({
                   }}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
-                  {isUploadIdTask ? "Save & Continue" : "Submit Information"}
+                  {isPersonalInfoTask
+                    ? "Submit Information"
+                    : isUploadTask
+                      ? "Upload & Submit"
+                      : "Save & Continue"}
                 </Button>
               </>
             ) : (

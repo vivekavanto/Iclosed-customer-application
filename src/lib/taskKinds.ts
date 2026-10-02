@@ -49,9 +49,23 @@ export function isHoldTitleTask(title: string | null | undefined): boolean {
   return t.includes("hold title") || t.includes("ownership shares");
 }
 
+export function isPropertyDetailsTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("property details");
+}
+
+/** Locked on the dashboard until every other to-do is done. */
+export function isClosingFiguresTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("closing figures");
+}
+
+/** Listed under the dashboard's "After closing" section. */
+export function isAfterClosingTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("utilities");
+}
+
 /** Matched by label: a select's `options` holds its choice list, so there is
  * nowhere on it for a multi_party_only flag. */
 export function isHoldTitleField(label: string | null | undefined): boolean {
   const l = (label ?? "").toLowerCase();
-  return l.includes("hold title") && l.includes("tenants in common");
+  return l.includes("how would you like to hold title") || (l.includes("hold title") && l.includes("tenants in common"));
 }
