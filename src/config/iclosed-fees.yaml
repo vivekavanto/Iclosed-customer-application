@@ -185,6 +185,7 @@ rounding:
 intake_defaults:
   has_mortgage: true             # standard purchase: one property, one new mortgage
   charges_count: 1
+  sale_commission_rate: 5.0      # percent; sale estimate's starting commission rate
 
 retainer:
   hst_registration_number: "829252303RT0001"  # null prints the [number] placeholder

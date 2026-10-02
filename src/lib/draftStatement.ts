@@ -402,6 +402,168 @@ export function buildRefinanceDraft(fees: IclosedFees, input: RefinanceDraftInpu
   };
 }
 
+export interface SaleDraftInput {
+  name: string | null;
+  property: string | null;
+  /** YYYY-MM-DD. */
+  closingDate: string | null;
+  price: number;
+  /** Deposit held by the listing brokerage; null counts as $0. */
+  deposit: number | null;
+  /** Percent, e.g. 5; null leaves the commission unknown. */
+  commissionRate: number | null;
+  /** Mortgage balance owing; null counts as $0. */
+  mortgageBalance: number | null;
+  discount: number | null;
+}
+
+/** File inputs; the client adds mortgage balance and commission rate. */
+export type SaleFileInput = Omit<SaleDraftInput, "mortgageBalance" | "commissionRate">;
+
+export interface SaleDraft extends DraftDocument {
+  /** null only when the commission rate is unknown. */
+  proceeds: number | null;
+  /** Legal fees, disbursements and HST. */
+  feesTotal: number;
+}
+
+// Sale copy from the v6 template.
+const COMMISSION_NOTE =
+  "Set by your listing agreement. Your brokerage usually takes it from the buyer's deposit and sends you any balance by cheque. If the deposit is less than the commission, we pay the difference to your brokerage from your proceeds.";
+const SALE_DEPOSIT_TIP = "The buyer's deposit, held in trust by your listing brokerage until closing.";
+const COMMISSION_BALANCE_TIP = "The commission and HST not covered by the deposit. We pay it to your brokerage from your proceeds.";
+const LAWPRO_NOTE = "A levy that LAWPRO charges on every sale.";
+const SALE_FILE_ADMIN_NOTE =
+  "Secure document storage, certified funds, bank drafts, courier, the electronic transfer of your proceeds, and the platform your payouts run through.";
+const SALE_FUNDS_NOTE = "Your proceeds go out within 1 business day of closing.";
+const NO_TAX_ADJUSTMENT = "This estimate does not account for property tax adjustments.";
+
+function saleDisbursementCopy(key: string): { label: string; note?: string } | null {
+  switch (key) {
+    case "lawpro_levy":
+      return { label: "LAWPRO transaction levy", note: LAWPRO_NOTE };
+    case "software":
+      return { label: "Software and document preparation" };
+    case "file_administration":
+      return { label: "File administration", note: SALE_FILE_ADMIN_NOTE };
+    case "seller_title_search":
+      return { label: "Title search" };
+    default:
+      return null;
+  }
+}
+
+// "5" or "4.5", for the commission label.
+const pct = (n: number) => `${Number(n.toFixed(2))}%`;
+
+export function buildSaleDraft(fees: IclosedFees, input: SaleDraftInput): SaleDraft {
+  const f = computeFees(fees, "sale", { discount: input.discount });
+  const hstRate = fees.tax.hst_rate;
+  const deposit = input.deposit ?? 0;
+  const mortgage = input.mortgageBalance ?? 0;
+
+  const commission = input.commissionRate === null ? null : round2((input.price * input.commissionRate) / 100);
+  const commissionHst = commission === null ? null : round2(commission * hstRate);
+  // Brokerage keeps the deposit toward commission; we pay any shortfall.
+  const commissionBalance =
+    commission === null || commissionHst === null ? null : round2(Math.max(0, commission + commissionHst - deposit));
+  const balanceReceived = commissionBalance === null ? null : round2(input.price - deposit - commissionBalance);
+  const proceeds = balanceReceived === null ? null : round2(balanceReceived - mortgage - f.total);
+
+  const commissionLabel =
+    input.commissionRate === null
+      ? "Real estate commission, paid from the deposit"
+      : `Real estate commission (${pct(input.commissionRate)}), paid from the deposit`;
+
+  const disbLines: DraftLine[] = f.disbursementLines.flatMap((l) => {
+    const copy = saleDisbursementCopy(l.key);
+    if (!copy) return [];
+    return [
+      {
+        ...copy,
+        amount: `${l.estimate ? "approx. " : ""}${money(l.amount)}`,
+        screen: l.estimate ? { amount: money(l.amount), estimate: true } : undefined,
+      },
+    ];
+  });
+  disbLines.push({ label: "Estimated total disbursements", amount: money(f.disbursements), total: true });
+
+  return {
+    title: "Sale Draft Statement of Account",
+    details: [
+      { label: "Name", value: input.name || "[Name]" },
+      { label: "Property", value: input.property || "[Address]" },
+      { label: "Closing date", value: longDate(input.closingDate) },
+      { label: "Sale price", value: money(input.price) },
+    ],
+    sections: [
+      {
+        title: "Sale price",
+        lines: [
+          { label: "Sale price", amount: money(input.price) },
+          { label: "Less deposit held by your listing brokerage", amount: less(deposit), tip: SALE_DEPOSIT_TIP },
+          {
+            label: commissionLabel,
+            // Bracketed as information on screen too; only the balance is deducted.
+            amount: less(commission),
+            note: COMMISSION_NOTE,
+            screen: { amount: less(commission), estimate: true },
+          },
+          {
+            label: `HST on commission (${pct(hstRate * 100)})`,
+            amount: less(commissionHst),
+            screen: { amount: less(commissionHst), estimate: true },
+          },
+          {
+            label: "Less commission balance to your brokerage",
+            amount: less(commissionBalance),
+            tip: COMMISSION_BALANCE_TIP,
+            screen: { hidden: commissionBalance === 0 },
+          },
+          { label: "Balance received from purchaser", amount: amount(balanceReceived), total: true },
+        ],
+      },
+      {
+        title: "Legal fees",
+        lines: [
+          { label: "Sale, including first mortgage, property tax and commission payout", amount: money(f.legalFees) },
+          // Template: only when a discount is applied.
+          ...(f.discount > 0 ? [{ label: "Discount", amount: less(f.discount) }] : []),
+        ],
+      },
+      { title: "Estimated disbursements", lines: disbLines },
+      {
+        title: "HST",
+        lines: [
+          {
+            label: `HST at ${Math.round(hstRate * 100)}% on our legal fees and our own disbursements`,
+            amount: money(f.hst),
+            tip: EXPLANATIONS.hst,
+          },
+        ],
+      },
+      {
+        title: "Your proceeds",
+        lines: [
+          { label: "Balance received from purchaser", amount: amount(balanceReceived) },
+          { label: "Less payout to lender", amount: less(mortgage), screen: { estimate: true } },
+          { label: "Less legal fees, disbursements and HST", amount: less(f.total) },
+          {
+            label: "Proceeds to you",
+            amount: amount(proceeds),
+            total: true,
+            note: `${SALE_FUNDS_NOTE} ${NO_TAX_ADJUSTMENT}`,
+            screen: { label: "Proceeds to you from iClosed" },
+          },
+        ],
+        screenNote: `${SALE_FUNDS_NOTE} ${NO_TAX_ADJUSTMENT}`,
+      },
+    ],
+    proceeds,
+    feesTotal: f.total,
+  };
+}
+
 /** "iClosed Draft Statement of Account 26P-0411 424 Calderstone Crescent.pdf" */
 export function draftStatementPdfFileName(fileNo?: string | null, propertyAddress?: string | null): string {
   const street = (propertyAddress ?? "").split(",")[0];

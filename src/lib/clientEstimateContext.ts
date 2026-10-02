@@ -47,6 +47,8 @@ export {
   LOCKED_INPUT_KEYS,
   MAX_AMOUNT,
   parseClientMortgage,
+  parseCommissionRate,
+  parseDraftSideParam,
   parseFileId,
   rejectLockedInputs,
 } from "./clientEstimateLock";

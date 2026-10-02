@@ -153,7 +153,7 @@ export async function POST(req: Request) {
     const apsDeposit = (side: "purchase" | "sale") =>
       normalizeAmount(apsExtraction?.[side]?.result?.deposit?.value, { min: 1 });
     const cleanDeposit =
-      (sub_service === "selling" ? null : apsDeposit("purchase")) ?? cleanAmount(deposit_amount);
+      apsDeposit(sub_service === "selling" ? "sale" : "purchase") ?? cleanAmount(deposit_amount);
     const cleanSellingDeposit =
       sub_service === "both" ? apsDeposit("sale") ?? cleanAmount(selling_deposit_amount) : null;
 

@@ -35,6 +35,8 @@ const ClosingCostEmailPreview: React.FC<{
   firstName?: string | null;
   fileNo?: string | null;
   propertyAddress?: string | null;
+  /** Sale previews summarise proceeds. */
+  kind?: "purchase" | "sale";
   price: number;
   totalClosingCosts: number;
   balanceDue: number | null;
@@ -51,6 +53,7 @@ const ClosingCostEmailPreview: React.FC<{
   firstName,
   fileNo,
   propertyAddress,
+  kind,
   price,
   totalClosingCosts,
   balanceDue,
@@ -66,6 +69,7 @@ const ClosingCostEmailPreview: React.FC<{
     firstName,
     propertyAddress,
     fileNo,
+    kind,
     price,
     totalClosingCosts,
     balanceDue,
