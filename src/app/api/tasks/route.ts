@@ -494,9 +494,22 @@ export async function GET(req: Request) {
       };
     });
 
+    // Not yet switched on by an admin; dashboard shows them locked.
+    const { data: inactive } = await supabaseAdmin
+      .from("tasks")
+      .select("id, deal_id, title, side, order_index, role_type")
+      .in("deal_id", dealIds)
+      .eq("is_deleted", false)
+      .eq("activation_required", true)
+      .is("activated_at", null);
+    const lockedTasks = (inactive ?? [])
+      .filter((t) => (t.role_type ?? "").toLowerCase() !== "admin")
+      .map((t) => ({ id: t.id, deal_id: t.deal_id, title: t.title, side: t.side, order_index: t.order_index }));
+
     return NextResponse.json({
       success: true,
       tasks: enriched,
+      locked_tasks: lockedTasks,
       deal_ids: dealIds,
     });
   } catch (err) {

@@ -49,7 +49,7 @@ export async function GET() {
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key, selling_deposit_amount"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -88,7 +88,7 @@ export async function GET() {
     const { data: deals, error: dealError } = await supabaseAdmin
       .from("deals")
       .select(
-        "id, file_number, type, status, closing_date, property_address, price, selling_price, selling_property_address, lead_id"
+        "id, file_number, type, status, closing_date, selling_closing_date, property_address, price, selling_price, selling_property_address, deposit_amount, lead_id"
       )
       .eq("client_id", client.id)
       .eq("status", "Active")
@@ -194,9 +194,11 @@ export async function GET() {
         selling_address_province: lead.selling_address_province || null,
         selling_address_postal_code: lead.selling_address_postal_code || null,
         selling_address_unit: lead.selling_address_unit || null,
+        selling_deposit_amount: lead.selling_deposit_amount ?? null,
         first_name: client.first_name || lead.first_name,
         last_name: client.last_name || lead.last_name,
         phone: client.phone || lead.phone || null,
+        email: client.email || lead.email || null,
         lead_type: lead.lead_type || deal?.type || null,
         // The single side a co-purchaser/co-seller is party to on a Purchase &
         // Sale deal. The dashboard uses this to show only that side's property,
