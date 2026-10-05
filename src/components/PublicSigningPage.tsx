@@ -475,7 +475,7 @@ export default function PublicSigningPage({
                 </div>
               </div>
             ) : !lawyerInitials ? (
-              <div className="flex min-h-[260px] flex-col items-center justify-center py-10 text-center lg:hidden">
+              <div className="flex min-h-[260px] flex-col items-center justify-center py-10 text-center">
                 <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-gray-50">
                   <CalendarDays className="h-5 w-5 text-gray-400" />
                 </div>
