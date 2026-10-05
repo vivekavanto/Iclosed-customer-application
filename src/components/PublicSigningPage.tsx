@@ -244,6 +244,68 @@ export default function PublicSigningPage({
   const emailIncomplete =
     emailTouched && form.clientEmail.trim().length > 0 && !EMAIL_RE.test(form.clientEmail.trim());
 
+  // Prefill the form from the client's own intake/deal data when this page is
+  // hosted inside the dashboard (a real logged-in client, not the public
+  // unauthenticated /signing/[initials] link). Uses the client's most recent
+  // active property — the same data the main dashboard property card shows
+  // (src/app/api/dashboardproperty/route.ts). Runs once; the client can still
+  // edit any field afterward.
+  useEffect(() => {
+    if (showOwnHeader) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/dashboardproperty");
+        const json = await res.json();
+        if (cancelled || !json.success) return;
+
+        const property = json.properties?.[0];
+        if (!property) return;
+        const deal = (json.deals ?? []).find((d: { id: string }) => d.id === property.deal_id);
+
+        const side: "purchase" | "sale" | null =
+          property.recipient_side ??
+          (() => {
+            const lt = (property.lead_type ?? "").toLowerCase();
+            const combined = lt.includes("purchase") && lt.includes("sale");
+            if (combined) return null;
+            if (lt.includes("sale")) return "sale";
+            if (lt.includes("purchase")) return "purchase";
+            return null;
+          })();
+
+        const propertyAddress =
+          side === "sale"
+            ? [property.selling_address_street, property.selling_address_city, property.selling_address_postal_code]
+                .filter(Boolean)
+                .join(", ")
+            : [property.address_street, property.address_city, property.address_postal_code]
+                .filter(Boolean)
+                .join(", ");
+
+        const closingDate =
+          (side === "sale" ? deal?.selling_closing_date : deal?.closing_date) ?? "";
+
+        setForm((f) => ({
+          ...f,
+          clientName: f.clientName || `${property.first_name ?? ""} ${property.last_name ?? ""}`.trim(),
+          clientEmail: f.clientEmail || property.email || "",
+          clientPhone: f.clientPhone || property.phone || "",
+          propertyAddress: f.propertyAddress || propertyAddress,
+          closingDate: f.closingDate || closingDate,
+          dealType: f.dealType || side || "",
+          fileNumber: f.fileNumber || deal?.file_number || "",
+        }));
+      } catch {
+        // Best-effort prefill — an empty form is still fully usable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showOwnHeader]);
+
   // Always load the lawyer list — needed for the picker, and to let a
   // direct /signing/[initials] visitor switch lawyers without round-tripping.
   useEffect(() => {
