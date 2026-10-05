@@ -372,13 +372,13 @@ export default function PublicSigningPage({
   // width, padding) — so skip all of it here and render just the content. ───
   const page = (children: React.ReactNode) =>
     showOwnHeader ? (
-      <div className="min-h-screen bg-gray-50 px-4 py-8" style={{ ["--brand" as string]: BRAND }}>
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-5">
+      <div className="min-h-screen bg-gray-50" style={{ ["--brand" as string]: BRAND }}>
+        <header className="sticky top-0 z-40 border-b border-gray-200 bg-white">
+          <div className="mx-auto flex h-14 w-full max-w-7xl items-center px-4 sm:px-6 lg:px-8">
             <IClosedLogo />
           </div>
-          {children}
-        </div>
+        </header>
+        <div className="mx-auto max-w-6xl px-4 py-8">{children}</div>
       </div>
     ) : (
       <div style={{ ["--brand" as string]: BRAND }}>{children}</div>
@@ -473,16 +473,6 @@ export default function PublicSigningPage({
                     </p>
                   )}
                 </div>
-                <p className="mt-4 text-center text-sm text-gray-400">
-                  Need to change this?{" "}
-                  <a
-                    className="font-medium underline"
-                    style={{ color: BRAND }}
-                    href={confirmed.manageUrl}
-                  >
-                    Manage your appointment
-                  </a>
-                </p>
               </div>
             ) : !lawyerInitials ? (
               <div className="flex min-h-[260px] flex-col items-center justify-center py-10 text-center lg:hidden">
