@@ -39,6 +39,8 @@ import { getFirm, type FirmKey } from "@/lib/firms";
 export interface EstimateEmailContent {
   /** The file's firm — decides the sign-off. Null means the default. */
   firmKey?: FirmKey | null;
+  /** Sale emails summarise proceeds; default purchase. */
+  kind?: "purchase" | "sale";
   /** Client's first name, or null for the impersonal fallback. */
   firstName?: string | null;
   propertyAddress?: string | null;
@@ -120,7 +122,10 @@ export function estimateEmailIntroParts(content: EstimateEmailContent): {
 } {
   const address = (content.propertyAddress ?? "").trim() || null;
   return {
-    before: "Here is your draft closing cost estimate",
+    before:
+      content.kind === "sale"
+        ? "Here is your draft sale proceeds estimate"
+        : "Here is your draft closing cost estimate",
     address: address ? ` for ${address}` : null,
     after: content.hasAttachment
       ? ". The full statement is attached as a PDF."
@@ -132,6 +137,13 @@ export function estimateEmailIntroParts(content: EstimateEmailContent): {
 export function estimateEmailRows(
   content: EstimateEmailContent,
 ): Array<{ label: string; amount: number | null; emphasis?: boolean }> {
+  if (content.kind === "sale") {
+    return [
+      { label: "Sale price", amount: content.price },
+      { label: "Legal fees, disbursements and HST", amount: content.totalClosingCosts },
+      { label: "Estimated proceeds to you", amount: content.balanceDue, emphasis: true },
+    ];
+  }
   return [
     { label: "Purchase price", amount: content.price },
     { label: "Total closing costs", amount: content.totalClosingCosts },

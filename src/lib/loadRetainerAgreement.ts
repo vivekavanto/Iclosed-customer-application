@@ -3,7 +3,7 @@ import { getLeadFirmKey } from "@/lib/leadFirm";
 import { loadIclosedFees } from "@/lib/loadIclosedFees";
 import {
   buildRetainerAgreement,
-  type AgreementKind,
+  type AgreementPlan,
   type RetainerAgreement,
 } from "@/lib/retainerAgreement";
 
@@ -42,18 +42,32 @@ export async function readDiscount(rootId: string): Promise<number | null> {
   }
 }
 
-/** Builds a lead's v9 purchase or sale retainer from the fee settings. */
-export async function loadRetainerAgreement(
+/** Builds a lead's v12 retainers from the fee settings. */
+export async function loadRetainerAgreements(
   lead: { id: string; parent_lead_id?: string | null },
-  property: string,
-  kind: AgreementKind,
+  plans: AgreementPlan[],
   date: string,
-): Promise<RetainerAgreement> {
+): Promise<RetainerAgreement[]> {
+  if (plans.length === 0) return [];
   const rootId = lead.parent_lead_id ?? lead.id;
   const [firmKey, fileNo, discount] = await Promise.all([
     getLeadFirmKey(lead.id),
     readFileNo(lead.id, rootId),
     readDiscount(rootId),
   ]);
-  return buildRetainerAgreement(loadIclosedFees(), { kind, firmKey, property, fileNo, discount, date });
+  const fees = loadIclosedFees();
+  // Bundle: a staff discount replaces the $100.
+  const discountFor = (p: AgreementPlan) =>
+    p.bundle === "none" ? discount : p.bundle === "here" ? discount ?? fees.bundles.sale_and_purchase.discount : null;
+  return plans.map((p) =>
+    buildRetainerAgreement(fees, {
+      kind: p.kind,
+      firmKey,
+      property: p.property,
+      fileNo,
+      discount: discountFor(p),
+      date,
+      bundle: p.bundle !== "none",
+    }),
+  );
 }

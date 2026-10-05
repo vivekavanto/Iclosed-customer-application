@@ -1,10 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLeadFirmKey } from "@/lib/leadFirm";
-import { ratesFromConfigRow, round2 } from "@/lib/closingCosts";
-import { readFirmAndSharedRow } from "@/lib/closingCostRates";
 import type { FirmKey } from "@/lib/firms";
-import { QUOTE_LEGAL_FEES, quoteFigures, quoteSideFromLeadType, type QuoteSide } from "@/lib/quotePricing";
-import { computeFees, type IclosedFees } from "@/lib/iclosedFees";
+import { quoteSideFromLeadType, type QuoteSide } from "@/lib/quotePricing";
+import { computeBundle, computeFees, type BundleSide, type FeeFileType, type IclosedFees } from "@/lib/iclosedFees";
 import { loadIclosedFees } from "@/lib/loadIclosedFees";
 
 type Addr = {
@@ -32,24 +30,39 @@ export interface LeadQuote {
   purchaseClosingDate: string | null;
   saleClosingDate: string | null;
   createdAt: string | null;
-  /** From fee settings for purchase and sale, else "Disbursements". */
+  /** From fee settings. */
   disbursementsLabel: string;
-  /** e.g. "26P-0411"; purchase and sale only, else null. */
+  /** e.g. "26P-0411"; bundles use the C prefix. */
   quoteNumber: string | null;
+  /** Net of any bundle discount. */
   legalFees: number;
   disbursements: number;
+  /** Sale and purchase bundle only (spec 7A). */
+  bundle: QuoteBundle | null;
 }
 
-// Purchase and sale figures come from src/config/iclosed-fees.yaml.
-function feeFileFigures(
-  fees: IclosedFees,
-  side: "buying" | "selling" | "both",
-): { legalFees: number; disbursements: number } {
-  if (side === "both") {
-    const disb = computeFees(fees, "purchase").disbursements + computeFees(fees, "sale").disbursements;
-    return { legalFees: QUOTE_LEGAL_FEES.both, disbursements: round2(disb) };
-  }
-  const f = computeFees(fees, side === "buying" ? "purchase" : "sale");
+export interface QuoteBundle {
+  discountSide: BundleSide;
+  discount: number;
+  /** Street only, for the email opening. */
+  saleProperty: string;
+  purchaseProperty: string;
+  sale: { legalFees: number; disbursements: number };
+  purchase: { legalFees: number; disbursements: number };
+}
+
+// Fee-file type per quote side; null is a bundle.
+const FEE_TYPE: Record<QuoteSide, FeeFileType | null> = {
+  buying: "purchase",
+  selling: "sale",
+  refinance: "refinance",
+  condo: "new_build_condo",
+  both: null,
+};
+
+// Single-type figures from src/config/iclosed-fees.yaml.
+function feeFileFigures(fees: IclosedFees, type: FeeFileType): { legalFees: number; disbursements: number } {
+  const f = computeFees(fees, type);
   return { legalFees: f.legalFees, disbursements: f.disbursements };
 }
 
@@ -126,13 +139,21 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
 
   const firmKey = await getLeadFirmKey(leadId);
   const fees = loadIclosedFees();
-  const figures =
-    side === "refinance" || side === "condo"
-      ? quoteFigures(side, ratesFromConfigRow((await readFirmAndSharedRow(firmKey)).row))
-      : feeFileFigures(fees, side);
-  const { legalFees, disbursements } = figures;
-  const feeType = side === "buying" ? "purchase" : side === "selling" ? "sale" : null;
-  const prefix = feeType ? fees.file_types[feeType].quote_prefix : undefined;
+  const feeType = FEE_TYPE[side];
+  const saleClosing = side === "selling" ? lead.closing_date ?? null : lead.selling_closing_date ?? null;
+  const b = feeType
+    ? null
+    : computeBundle(fees, { saleClosing, purchaseClosing: lead.closing_date ?? null });
+  const { legalFees, disbursements } = b ?? feeFileFigures(fees, feeType!);
+  const bundle: QuoteBundle | null = b && {
+    discountSide: b.discountSide,
+    discount: b[b.discountSide].discount,
+    saleProperty: shortAddress(saleAddr),
+    purchaseProperty: shortAddress(purchase),
+    sale: { legalFees: b.sale.legalFees, disbursements: b.sale.disbursements },
+    purchase: { legalFees: b.purchase.legalFees, disbursements: b.purchase.disbursements },
+  };
+  const prefix = feeType ? fees.file_types[feeType].quote_prefix : fees.bundles.sale_and_purchase.quote_prefix;
   const quoteNumber = prefix ? await quoteNumberFor(lead, prefix) : null;
 
   return {
@@ -141,10 +162,11 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
     side,
     firstName: lead.first_name ?? null,
     email: lead.email ?? null,
+    // Bundles name the sale first (spec 7A).
     propertyShort:
-      side === "both" ? join(shortAddress(purchase), shortAddress(sale)) : shortAddress(primary),
+      side === "both" ? join(shortAddress(sale), shortAddress(purchase)) : shortAddress(primary),
     propertyFull:
-      side === "both" ? join(cityAddress(purchase), cityAddress(sale)) : cityAddress(primary),
+      side === "both" ? join(cityAddress(sale), cityAddress(purchase)) : cityAddress(primary),
     purchaseAddress: side === "selling" ? "" : postalAddress(purchase),
     saleAddress: side === "selling" || side === "both" ? postalAddress(saleAddr) : "",
     // Sale-only intakes store the sale price in `price`; a refinance has no price.
@@ -155,8 +177,9 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
     saleClosingDate: side === "selling" ? lead.closing_date ?? null : lead.selling_closing_date ?? null,
     createdAt: lead.created_at ?? null,
     quoteNumber,
-    disbursementsLabel: feeType ? fees.file_types[feeType].disbursements_label : "Disbursements",
+    disbursementsLabel: fees.file_types[feeType ?? "purchase"].disbursements_label,
     legalFees,
     disbursements,
+    bundle,
   };
 }

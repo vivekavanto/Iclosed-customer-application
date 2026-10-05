@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: "lead_id is required" }, { status: 400 });
   }
 
-  if (!requestedFirstName && !requestedLastName) {
+  if (!requestedFirstName && !requestedLastName && !message) {
     return NextResponse.json(
       { success: false, error: "Requested name cannot be empty" },
       { status: 400 },

@@ -2,17 +2,17 @@
 # Master source for every price, estimate, range and rate used by the quote email,
 # quote page, retainer and draft statement of account. Code reads from here; never hardcode.
 # Money is CAD. Amounts are dollars with two decimals; store and compute as integer cents.
-# Spec: docs/iclosed-documents-implementation-spec.md
+# Spec: iclosed-documents-implementation-spec.md (kept outside the repo)
 
-version: 1
-updated: 2026-09-29
+version: 4
+updated: 2026-10-01
 owner: Saru Kanapathipillai
 
 tax:
   hst_rate: 0.13
   # HST applies to legal fees plus our own disbursements (software, file administration).
   # Registration and search lines are shown tax included and passed through at cost.
-  hst_on_levy: true   # TODO(decision): LAWPRO says the levy is not subject to HST. false gives sale HST $197.47.
+  hst_on_levy: false  # Decided 2026-09-30: the $65 LAWPRO levy is inclusive of tax. No HST on top.
 
 file_types:
   purchase:
@@ -38,12 +38,11 @@ file_types:
       standard: 1099.00
       includes_payouts: [first_mortgage, property_tax, commission]
     disbursements:
-      law_society_levy:    { amount: 65.00, hst: true }   # see tax.hst_on_levy
-      searches:            { amount: 0.00, todo: "Should a sale include searches? Discuss with Angat" }
+      lawpro_levy:         { amount: 65.00, hst: false, note: "LAWPRO transaction levy, inclusive of tax" }
       software:            { amount: 285.00, hst: true }
       file_administration: { amount: 135.00, hst: true, note: "includes SureFund" }
-    disbursements_label: Disbursements
-    disbursements_fixed: 485.00
+    disbursements_label: Estimated disbursements
+    disbursements_standard: 485.00   # a title search may be added: see extras.seller_title_search
     title_insurance_estimate: null
     land_transfer_tax: false
 
@@ -55,7 +54,7 @@ file_types:
       includes_payouts: [first_mortgage]
     disbursements:
       registration_of_charge: { amount: 85.00, when: always, per: charge }
-      searches:               { amount: 175.00, estimate: true, range: [150.00, 250.00] }
+      searches:               { amount: 150.00, estimate: true, range: [100.00, 200.00] }
       software:               { amount: 285.00, hst: true }
       file_administration:    { amount: 135.00, hst: true, note: "includes SureFund" }
     disbursements_label: Disbursements
@@ -88,6 +87,17 @@ file_types:
     title_insurance_estimate: 1500.00
     land_transfer_tax: true      # base is price net of HST plus certain builder adjustments (input, not calculated)
 
+# A sale and a purchase for the same client, closed by us. One quote, two retainers,
+# two draft statements of account.
+bundles:
+  sale_and_purchase:
+    quote_prefix: C
+    discount: 100.00             # off legal fees, before HST; HST is charged on the reduced fee
+    applies_to: later_closing    # the file with the later closing date
+    same_day: purchase           # both close the same day: it comes off the purchase
+    retainers: separate          # one sale retainer, one purchase retainer
+    quote: single
+
 # "If this happens" fees. Shown only in the retainer. Charged only once they apply and the
 # client has been told in writing. Never shown on the draft statement of account.
 extras:
@@ -111,9 +121,9 @@ extras:
   bridge_financing:
     fee: 200.00
     applies_to: [purchase, new_build_condo]
-  b_or_private_lender:
+  b_or_private_lender:           # purchase and refinance label: "Your mortgage is not from a major bank"
     fee: 250.00
-    applies_to: [purchase, sale, refinance, new_build_condo]
+    applies_to: [purchase, refinance, new_build_condo]
   price_tier:
     threshold: 1500000.00        # refinance uses mortgage amount
     fee: 300.00
@@ -130,6 +140,12 @@ extras:
   execution_search_at_occupancy:
     fee: at_cost
     applies_to: [new_build_condo]
+  seller_title_search:
+    fee: 50.00                   # disbursement, shown tax included
+    estimate: true
+    range: [40.00, 75.00]
+    trigger: no requisition letter from the buyer's lawyer 7 days before closing
+    applies_to: [sale]
 
 land_transfer_tax:
   # Rates are marginal: each rate applies to the part of the price inside its band.
@@ -169,6 +185,7 @@ rounding:
 intake_defaults:
   has_mortgage: true             # standard purchase: one property, one new mortgage
   charges_count: 1
+  sale_commission_rate: 5.0      # percent; sale estimate's starting commission rate
 
 retainer:
   hst_registration_number: "829252303RT0001"  # null prints the [number] placeholder

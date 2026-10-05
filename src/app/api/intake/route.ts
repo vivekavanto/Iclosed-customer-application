@@ -7,6 +7,7 @@ import { notifyNewLead } from "@/lib/notifyNewLead";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { normalizeEmailForStorage } from "@/lib/normalizeEmail";
+import { normalizeAmount } from "@/lib/apsExtraction";
 import { NextResponse } from "next/server";
 import {
   normalizePostalCode,
@@ -118,9 +119,6 @@ export async function POST(req: Request) {
       const digits = value ? String(value).replace(/[^0-9.]/g, "") : "";
       return digits ? digits : null;
     };
-    const cleanDeposit = cleanAmount(deposit_amount);
-    const cleanSellingDeposit =
-      sub_service === "both" ? cleanAmount(selling_deposit_amount) : null;
 
     // Closing date is optional and arrives as an ISO "YYYY-MM-DD" string from
     // the date input (or from an APS read, normalized to the same shape).
@@ -142,8 +140,7 @@ export async function POST(req: Request) {
       sub_service === "both" ? cleanClosingDate(selling_closing_date) : null;
 
     // Audit trail of what the APS reader returned, kept next to what the client
-    // accepted. Stored as-is; nothing here is trusted as a value — every field
-    // on the lead comes from the form the client submitted.
+    // accepted. Stored as-is; the deposit is taken from it, below.
     const apsExtraction =
       aps_extraction &&
       typeof aps_extraction === "object" &&
@@ -151,6 +148,15 @@ export async function POST(req: Request) {
       Object.keys(aps_extraction).length > 0
         ? aps_extraction
         : null;
+
+    // Deposit: the APS value, else the form's.
+    const apsDeposit = (side: "purchase" | "sale") =>
+      normalizeAmount(apsExtraction?.[side]?.result?.deposit?.value, { min: 1 });
+    const cleanDeposit =
+      apsDeposit(sub_service === "selling" ? "sale" : "purchase") ?? cleanAmount(deposit_amount);
+    const cleanSellingDeposit =
+      sub_service === "both" ? apsDeposit("sale") ?? cleanAmount(selling_deposit_amount) : null;
+
     const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
     const uploadMode =
       document_upload_mode === "me" ||

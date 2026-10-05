@@ -10,8 +10,10 @@ export async function sendQuoteEmail(leadId: string): Promise<boolean> {
     const quote = await loadLeadQuote(leadId);
     if (!quote?.email) return false;
 
+    // Link back to the deployment that signs it; keys differ per environment.
     const siteUrl = (
-      process.env.NEXT_PUBLIC_SITE_URL || "https://iclosed-customer-application-rosy.vercel.app"
+      process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://iclosed-customer-application-rosy.vercel.app")
     ).replace(/\/+$/, "");
 
     const { subject, html } = buildQuoteEmailHtml({
@@ -23,6 +25,7 @@ export async function sendQuoteEmail(leadId: string): Promise<boolean> {
       legalFees: quote.legalFees,
       disbursements: quote.disbursements,
       disbursementsLabel: quote.disbursementsLabel,
+      bundle: quote.bundle,
       quoteUrl: `${siteUrl}/quote/${signQuoteToken(leadId)}`,
       siteUrl,
     });

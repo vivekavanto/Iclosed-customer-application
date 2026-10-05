@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { buildPurchaseDraft, draftStatementPdfFileName } from "@/lib/draftStatement";
+import { draftStatementPdfFileName } from "@/lib/draftStatement";
 import { generateDraftStatementPdf } from "@/lib/draftStatementPdf";
 import { loadIclosedFees } from "@/lib/loadIclosedFees";
-import { draftFileInput } from "@/lib/loadDraftStatement";
+import { buildClientDraft } from "@/lib/loadDraftStatement";
 import {
   parseClientMortgage,
+  parseCommissionRate,
+  parseDraftSideParam,
   parseFileId,
   rejectLockedInputs,
   resolveClientEstimateContext,
@@ -75,19 +77,26 @@ export async function POST(req: Request) {
     );
   }
 
-  if (ctx.locked.price <= 0) {
+  const commissionRate = parseCommissionRate(body.commission_rate);
+  if (commissionRate !== null && typeof commissionRate !== "number") {
     return NextResponse.json(
-      { success: false, error: "We don't have a purchase price on your file yet." },
+      { success: false, error: commissionRate.error },
       { status: 400 },
     );
   }
 
-  const fileInput = await draftFileInput(ctx);
-  const draft = buildPurchaseDraft(loadIclosedFees(), {
-    ...fileInput,
+  const { draft, price, side } = await buildClientDraft(ctx, loadIclosedFees(), {
+    side: parseDraftSideParam(body.side),
     mortgage,
     firstTimeBuyer: body.is_first_time_buyer === true,
+    commissionRate,
   });
+  if (price <= 0) {
+    return NextResponse.json(
+      { success: false, error: `We don't have a ${side} price on your file yet.` },
+      { status: 400 },
+    );
+  }
 
   try {
     const bytes = await generateDraftStatementPdf({

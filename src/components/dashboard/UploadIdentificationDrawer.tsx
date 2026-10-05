@@ -12,13 +12,11 @@ import {
   Camera,
   RotateCcw,
   ArrowRight,
-  ChevronDown,
   FileText,
   Trash2,
   Plus,
   Loader2,
   ShieldCheck,
-  ShieldAlert,
   Clock,
 } from "lucide-react";
 import { upload } from "@vercel/blob/client";
@@ -599,94 +597,20 @@ function discardUploadedBlob(blobUrl: string | null | undefined) {
 
 // ── Acceptable Documents Section (LSO By-Law 7.1) ────────────────────────────
 
-function AcceptableDocumentsSection() {
-  const acceptableDocs = [
-    "Canadian Passport",
-    "Canadian Driver's License",
-    "Canadian Citizenship Card",
-    "Canadian Permanent Resident Card",
-    "US or Canadian NEXUS Card",
-    "Canadian SIN Card (plastic only)",
-    "Foreign Passport",
-    "Canadian Government-issued Photo ID Card",
-    "Credit Card (with signature)",
-    "Birth Certificate",
-  ];
+const ACCEPTED_IDS = [
+  "Canadian Passport",
+  "Canadian Driver's License",
+  "Canadian Citizenship Card",
+  "Permanent Resident Card",
+  "NEXUS Card",
+  "SIN Card (plastic)",
+  "Foreign Passport",
+  "Government-issued Photo ID",
+  "Credit card (with your name)",
+  "Birth Certificate",
+];
 
-  return (
-    <div className="rounded-xl border border-[#C10007]/20 bg-[#FEF2F2] overflow-hidden">
-      <div className="px-4 py-3.5 border-b border-[#C10007]/10">
-        <span className="text-sm font-bold text-gray-900">
-          Acceptable Identification Documents
-        </span>
-      </div>
-      <div className="px-4 py-4 bg-white space-y-4">
-        <p className="text-xs text-gray-600 leading-relaxed">
-          Please provide{" "}
-          <span className="font-bold text-[#C10007]">two different pieces of identification</span>{" "}
-          from the list below for identity verification. We need{" "}
-          <span className="font-semibold text-gray-800">both sides of each ID</span> — for a
-          passport, that is the photo page and the signature page, and for a credit card the back
-          must show your signature.
-        </p>
-
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-          {acceptableDocs.map((doc) => (
-            <div key={doc} className="flex items-center gap-2 text-xs text-gray-700">
-              <CheckCircle2 size={13} className="text-green-500 flex-shrink-0" />
-              <span>{doc}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
-          <AlertCircle size={13} className="text-[#C10007] flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-gray-500">
-            <span className="font-semibold text-gray-700">Note:</span> Health cards and
-            Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be
-            used for ID verification purposes.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Why Identification Required Dropdown ───────────────────────────────────────
-
-function WhyIdentificationRequiredDropdown() {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div className="rounded-xl border border-gray-200 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
-      >
-        <span className="text-sm font-medium text-gray-700">
-          Why is Identification Required?
-        </span>
-        <ChevronDown
-          size={18}
-          className={`text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
-        />
-      </button>
-      {isOpen && (
-        <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2 text-xs text-gray-600 leading-relaxed">
-          <p>
-            Government-issued identification is required to verify your identity and comply with
-            legal requirements for property transactions.
-          </p>
-          <p>
-            This helps prevent fraud and ensures all parties are properly identified before
-            proceeding with the closing.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
+const NOT_ACCEPTED_IDS = ["Health cards (e.g. OHIP)", "Paper citizenship certificates", "Expired ID"];
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -704,6 +628,7 @@ export default function UploadIdentificationDrawer({
   // Manual upload state
   const [selected, setSelected] = useState<SelectedFile[]>([]);
   const [existing, setExisting] = useState<ExistingDoc[]>([]);
+  const [uploadMode, setUploadMode] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -1947,7 +1872,7 @@ export default function UploadIdentificationDrawer({
             : [
                 "fixed z-50 bg-white shadow-2xl flex flex-col",
                 isLargeScreen
-                  ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+                  ? "inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-2xl border border-gray-100"
                   : "top-0 right-0 h-full w-full max-w-[540px]",
                 isLargeScreen
                   ? open
@@ -1972,7 +1897,7 @@ export default function UploadIdentificationDrawer({
             <h2 className="text-base font-bold text-gray-900 leading-snug">
               {spouseName
                 ? `Upload Identification for ${spouseName}`
-                : "Upload Identification Documents"}
+                : "Upload your ID"}
             </h2>
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
               {spouseName
@@ -1995,45 +1920,51 @@ export default function UploadIdentificationDrawer({
           className={
             embedded
               ? "px-4 py-4 space-y-6"
-              : "flex-1 overflow-y-auto px-6 py-5 space-y-6"
+              : "flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6"
           }
         >
-          {/* Acceptable Documents Section - Always visible */}
-          <AcceptableDocumentsSection />
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Government-issued identification is required to verify your identity and comply with legal
+            requirements for property transactions. Please provide two different pieces of ID, front and back.
+          </p>
 
-          {/* Why is Identification Required - Collapsible */}
-          <WhyIdentificationRequiredDropdown />
-
-          {/* Take Photos with Camera Option */}
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-                <Camera size={18} className="text-[#C10007]" strokeWidth={1.75} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900">Have a camera?</p>
-                <p className="text-xs text-gray-500">
-                  Capture each ID with your camera — no need to save the photo first.
-                </p>
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-gray-200 px-4 py-3">
+              <p className="text-[13px] font-bold text-gray-900 mb-2">Accepted</p>
+              <p className="text-[13px] text-gray-700 leading-relaxed">{ACCEPTED_IDS.join(" · ")}</p>
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={openCameraFlow}
-              disabled={uploading}
-              className="flex-shrink-0"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <Camera size={14} />
-                Use Camera
-              </span>
-            </Button>
+            <div className="rounded-xl border border-gray-200 px-4 py-3">
+              <p className="text-[13px] font-bold text-gray-900 mb-2">Not accepted</p>
+              <p className="text-[13px] text-gray-700 leading-relaxed">{NOT_ACCEPTED_IDS.join(" · ")}</p>
+            </div>
           </div>
 
-          {/* Manual Upload zone */}
-          <div>
-            <h3 className="text-sm font-bold text-gray-900 mb-2">Add Documents</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={openCameraFlow}
+              disabled={uploading}
+              className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60"
+            >
+              <Camera size={22} className="text-[#C10007]" strokeWidth={1.8} />
+              <span className="text-sm font-bold text-gray-900">Take photos</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUploadMode(true);
+                fileInputRef.current?.click();
+              }}
+              disabled={uploading}
+              className={`cursor-pointer rounded-xl border bg-white p-5 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60 ${uploadMode ? "border-[#C10007]" : "border-gray-200"}`}
+            >
+              <Upload size={22} className="text-[#C10007]" strokeWidth={1.8} />
+              <span className="text-sm font-bold text-gray-900">Upload files</span>
+            </button>
+          </div>
+
+          {/* Drop zone; the hidden input also serves the Upload files card */}
+          <div className={uploadMode ? "" : "hidden"}>
             <div
               onDragOver={(e) => {
                 e.preventDefault();

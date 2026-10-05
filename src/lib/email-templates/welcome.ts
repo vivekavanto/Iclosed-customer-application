@@ -38,7 +38,7 @@ export async function buildWelcomeEmailHtml(params: {
   const leadAddress = addressParts.combinedString;
   const leadType = formatLeadTypeLabelForRecipient(lead);
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://iclosed-customer-application-rosy.vercel.app";
+  const siteUrl = process.env.NEXT_PUBLIC_CUSTOMER_PORTAL_URL || "https://iclosed-customer-application-rosy.vercel.app";
 
   const variables = {
     "user.first_name": lead.first_name || "",

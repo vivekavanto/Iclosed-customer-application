@@ -15,7 +15,9 @@ export interface DisbursementLine {
 export interface FileTypeFees {
   label: string;
   quote_prefix: string;
-  legal_fees: { standard: number };
+  legal_fees: { standard: number; occupancy?: number; final_closing?: number };
+  /** New build condo only; never in totals. */
+  agreement_review?: { fee: number; builder_correspondence: number };
   disbursements: Record<string, DisbursementLine>;
   disbursements_label: string;
   disbursements_range?: [number, number];
@@ -42,6 +44,15 @@ export interface ExtraFee {
   manual_quote_above?: number;
   threshold_business_days?: number;
   approximate?: boolean;
+  estimate?: boolean;
+  range?: [number, number];
+}
+
+export interface SaleAndPurchaseBundle {
+  quote_prefix: string;
+  discount: number;
+  applies_to: "later_closing";
+  same_day: "purchase";
 }
 
 export interface IclosedFees {
@@ -49,7 +60,8 @@ export interface IclosedFees {
   file_types: Record<FeeFileType, FileTypeFees>;
   extras: Record<string, ExtraFee>;
   land_transfer_tax: { ontario: LttRegion; toronto: LttRegion };
-  intake_defaults: { has_mortgage: boolean; charges_count: number };
+  bundles: { sale_and_purchase: SaleAndPurchaseBundle };
+  intake_defaults: { has_mortgage: boolean; charges_count: number; sale_commission_rate?: number };
   retainer: { hst_registration_number: string | null };
 }
 
@@ -59,6 +71,10 @@ export interface FeeInputs {
   /** Positive dollars off the legal fee. */
   discount?: number | null;
   extraPayouts?: number;
+  /** Sale: no requisition letter 7 days before closing. */
+  sellerTitleSearch?: boolean;
+  /** Refinance: the existing lender asks us to register the discharge. */
+  dischargeRegistration?: boolean;
 }
 
 export interface FeeFigures {
@@ -73,7 +89,7 @@ export interface FeeFigures {
   total: number;
 }
 
-const LEVY_KEY = "law_society_levy";
+const LEVY_KEY = "lawpro_levy";
 
 /** Legal fees, disbursements and HST for one file (spec 5.1–5.3). */
 export function computeFees(fees: IclosedFees, type: FeeFileType, input: FeeInputs = {}): FeeFigures {
@@ -97,11 +113,59 @@ export function computeFees(fees: IclosedFees, type: FeeFileType, input: FeeInpu
     disbursementLines.push({ key, amount, estimate: Boolean(line.estimate) });
     if (line.hst && (key !== LEVY_KEY || fees.tax.hst_on_levy)) taxable += amount;
   }
+  // Pass-through extras that become disbursements, no HST (spec 5.2).
+  const passThrough: [string, boolean | undefined, boolean][] = [
+    ["seller_title_search", input.sellerTitleSearch, true],
+    ["discharge_registration", input.dischargeRegistration, false],
+  ];
+  for (const [key, on, estimate] of passThrough) {
+    const extra = fees.extras[key];
+    if (!on || !extra?.applies_to.includes(type) || typeof extra.fee !== "number") continue;
+    disbursements += extra.fee;
+    disbursementLines.push({ key, amount: round2(extra.fee), estimate });
+  }
   disbursements = round2(disbursements);
 
   const netLegal = round2(legalFees - discount);
   const hst = round2(fees.tax.hst_rate * (netLegal + taxable));
   return { legalFees, discount, disbursements, disbursementLines, hst, total: round2(netLegal + disbursements + hst) };
+}
+
+export type BundleSide = "sale" | "purchase";
+
+/** Spec 5.3a: later closing gets the discount; ties go to purchase. */
+export function bundleDiscountSide(saleClosing: string | null, purchaseClosing: string | null): BundleSide {
+  if (saleClosing && purchaseClosing && saleClosing.slice(0, 10) > purchaseClosing.slice(0, 10)) return "sale";
+  return "purchase";
+}
+
+export interface BundleFigures {
+  discountSide: BundleSide;
+  sale: FeeFigures;
+  purchase: FeeFigures;
+  /** Both legal fees, net of the bundle discount. */
+  legalFees: number;
+  disbursements: number;
+}
+
+/** Sale and purchase figures, discount on one file. */
+export function computeBundle(
+  fees: IclosedFees,
+  input: { saleClosing: string | null; purchaseClosing: string | null; sale?: FeeInputs; purchase?: FeeInputs },
+): BundleFigures {
+  const discountSide = bundleDiscountSide(input.saleClosing, input.purchaseClosing);
+  const off = fees.bundles.sale_and_purchase.discount;
+  const withDiscount = (side: BundleSide, i: FeeInputs = {}): FeeInputs =>
+    side === discountSide ? { ...i, discount: i.discount ?? off } : i;
+  const sale = computeFees(fees, "sale", withDiscount("sale", input.sale));
+  const purchase = computeFees(fees, "purchase", withDiscount("purchase", input.purchase));
+  return {
+    discountSide,
+    sale,
+    purchase,
+    legalFees: round2(sale.legalFees - sale.discount + purchase.legalFees - purchase.discount),
+    disbursements: round2(sale.disbursements + purchase.disbursements),
+  };
 }
 
 /** "$250" for whole dollars, "$1,199.50" otherwise. */

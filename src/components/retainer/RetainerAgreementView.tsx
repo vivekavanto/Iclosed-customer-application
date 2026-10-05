@@ -32,7 +32,7 @@ function FeeTable({ rows, head }: { rows: { label: string; amount: string }[]; h
   );
 }
 
-/** The v9 purchase or sale retainer body, above the signature form. */
+/** One v12 retainer body, above the signature form. */
 export default function RetainerAgreementView({
   agreement,
   badge,
@@ -63,19 +63,24 @@ export default function RetainerAgreementView({
       <SectionTitle>Your fees</SectionTitle>
       <FeeTable rows={a.fees} />
       <p className="mt-3 text-sm leading-relaxed text-gray-500">{a.feeNote}</p>
+      {a.bundleNote && <p className="mt-3 text-sm leading-relaxed text-gray-500">{a.bundleNote}</p>}
 
       <SectionTitle>If something changes</SectionTitle>
       <p className="mt-2 text-sm leading-relaxed text-gray-500">{a.changesIntro}</p>
       <FeeTable rows={a.changes} head />
 
-      <SectionTitle>Definitions</SectionTitle>
-      <div className="mt-3 space-y-3 text-[15px] leading-relaxed text-gray-700">
-        {a.definitions.map((s) => (
-          <p key={s.label}>
-            <strong className="text-gray-900">{s.label}</strong> {s.body}
-          </p>
-        ))}
-      </div>
+      {a.definitions.length > 0 && (
+        <>
+          <SectionTitle>Definitions</SectionTitle>
+          <div className="mt-3 space-y-3 text-[15px] leading-relaxed text-gray-700">
+            {a.definitions.map((s) => (
+              <p key={s.label}>
+                <strong className="text-gray-900">{s.label}</strong> {s.body}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
 
       <p className="mt-8 font-bold leading-relaxed text-gray-900">{a.acceptance}</p>
     </div>
