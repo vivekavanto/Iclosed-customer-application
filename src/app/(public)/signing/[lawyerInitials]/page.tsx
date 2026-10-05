@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import PublicSigningBookingPage from "@/components/PublicSigningBookingPage";
+import PublicSigningPage from "@/components/PublicSigningPage";
 
-// The client-facing signing-appointment booking page: /signing/AT
+// The client-facing signing-appointment page for a direct link: /signing/AT
 //
 // PUBLIC — no session, same (public) group as /login and
 // /closing-cost-calculator. The real booking logic (lawyer hours, Google
@@ -20,5 +20,5 @@ export default async function SigningPage({
   params: Promise<{ lawyerInitials: string }>;
 }) {
   const { lawyerInitials } = await params;
-  return <PublicSigningBookingPage lawyerInitials={lawyerInitials} />;
+  return <PublicSigningPage lawyerInitials={lawyerInitials} />;
 }
