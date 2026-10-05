@@ -2,7 +2,7 @@ import { Info } from "lucide-react";
 import type { DraftLine, DraftSection } from "@/lib/draftStatement";
 
 // Info icon whose note shows on hover, keyboard focus or tap.
-function NoteIcon({ label, note, brand }: { label: string; note: string; brand: string }) {
+function NoteIcon({ label, note }: { label: string; note: string }) {
   return (
     <span className="group relative inline-flex">
       <button
@@ -14,8 +14,7 @@ function NoteIcon({ label, note, brand }: { label: string; note: string; brand: 
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none invisible absolute -left-2 top-6 z-30 w-64 rounded-lg border bg-white p-2.5 text-[11px] font-normal leading-relaxed text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-        style={{ borderColor: `${brand}33` }}
+        className="pointer-events-none invisible absolute bottom-full left-1/2 z-30 mb-2 w-60 -translate-x-1/2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
       >
         {note}
       </span>
@@ -44,14 +43,15 @@ export default function DraftStatementSections({
   highlight?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 divide-y divide-gray-100">
+    // No overflow-hidden: tooltips must escape the card.
+    <div className="rounded-xl border border-gray-200 divide-y divide-gray-100">
       {sections.map((section) => {
         const tinted = section.title === highlight;
         const lines = section.lines.filter((l) => !l.screen?.hidden);
         return (
           <section
             key={section.title}
-            className="px-4 sm:px-6 py-4 sm:py-5"
+            className="px-4 sm:px-6 py-4 sm:py-5 first:rounded-t-xl last:rounded-b-xl"
             style={tinted ? { backgroundColor: `${brand}0A` } : undefined}
           >
             <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-widest text-gray-500">
@@ -60,7 +60,8 @@ export default function DraftStatementSections({
             <div className="mt-2">
               {lines.map((line) => {
                 const label = line.screen?.label ?? line.label;
-                const info = line.note ?? line.tip;
+                // Screen tip first; the note is the PDF's longer wording.
+                const info = line.tip ?? line.note;
                 const big = tinted && line.total;
                 return (
                   <div
@@ -71,7 +72,7 @@ export default function DraftStatementSections({
                   >
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       {label}
-                      {info && !line.total && <NoteIcon label={label} note={info} brand={brand} />}
+                      {info && !line.total && <NoteIcon label={label} note={info} />}
                       {line.screen?.estimate && (
                         <span className="rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#92400E]">
                           Estimate

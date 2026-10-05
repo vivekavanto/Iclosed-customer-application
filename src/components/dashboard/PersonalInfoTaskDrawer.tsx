@@ -683,6 +683,8 @@ function SpousePicker({
       className={[inputBase, invalid ? inputError : inputNormal].join(" ")}
     />
   );
+  // No co-party to pick from: just ask for the name.
+  if (suggestions.length === 0) return input;
   return (
     <div className="space-y-4">
       <select
@@ -2965,7 +2967,7 @@ export default function PersonalInfoTaskDrawer({
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
-                      {field.label}
+                      {spouseCandidates.length > 0 ? field.label : "Spouse\u2019s full legal name"}
                       {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}

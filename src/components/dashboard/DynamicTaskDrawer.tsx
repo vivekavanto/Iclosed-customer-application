@@ -19,11 +19,9 @@ import {
 } from "@/lib/addressValidation";
 import {
   X,
-  Trash2,
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
-  RefreshCw,
   Loader2,
   CalendarCheck,
   Camera,
@@ -294,17 +292,15 @@ function getFileConfig(opts: unknown): {
  * The APS detection means multi-file works even if the DB flag was never
  * applied, and covers every APS template variant (some have no doc_type).
  */
-function fileFieldAllowsMultiple(field: FormField): boolean {
+function fileFieldAllowsMultiple(field: FormField, side: TaskSide): boolean {
   if (field.field_type !== "file") return false;
   const cfg = getFileConfig(field.options);
   if (cfg.multiple) return true;
-  if (cfg.doc_type === "aps" || cfg.doc_type === "void_cheque") return true;
+  if (cfg.doc_type === "aps") return true;
   const label = (field.label ?? "").toLowerCase();
-  // Void cheque / direct deposit form: seller may need to upload one per
-  // account (e.g. a joint account, or one each for spouses on a matrimonial
-  // home sale). Detected by label so it works for the current "Provide Void
-  // Cheque" wording and the newer "Upload Void Cheque / Direct Deposit Form".
-  if (label.includes("void cheque")) return true;
+  // Sellers may need one per account; purchase is one per box.
+  const voidCheque = cfg.doc_type === "void_cheque" || label.includes("void cheque");
+  if (voidCheque) return side !== "purchase";
   return label.includes("agreement of purchase");
 }
 
@@ -394,7 +390,8 @@ function PhotoCaptureDialog({
   const [cameraError, setCameraError] = useState<string | null>(null);
 
   async function acceptPhoto() {
-    if (shot) onCapture(await dataUrlToFile(shot, "photo.jpg"));
+    // e.g. "Photo - Home insurance binder.jpg".
+    if (shot) onCapture(await dataUrlToFile(shot, `Photo - ${title.replace(/[\\/:*?"<>|]+/g, "")}.jpg`));
   }
 
   return (
@@ -463,6 +460,22 @@ function PhotoCaptureDialog({
   );
 }
 
+// "✓ name  Remove" for an uploaded file.
+function FileDoneLine({ name, action, onAction }: { name: string; action: string; onAction: () => void }) {
+  return (
+    <p className="flex min-w-0 max-w-full items-baseline justify-center gap-3">
+      <span className="min-w-0 truncate text-sm font-semibold text-green-700">&#10003; {name}</span>
+      <button
+        type="button"
+        onClick={onAction}
+        className="cursor-pointer shrink-0 text-xs text-gray-400 hover:text-[#C10007]"
+      >
+        {action}
+      </button>
+    </p>
+  );
+}
+
 function FileSlot({
   field,
   file,
@@ -510,22 +523,12 @@ function FileSlot({
 
   if (existingUrl && !file) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 p-5 text-center">
-        <CheckCircle2 size={22} className="text-green-600" strokeWidth={2} />
-        <div>
-          <p className="text-sm font-semibold text-green-700">
-            {existingName ?? "File uploaded"}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            Previously submitted
-          </p>
-        </div>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw size={11} strokeWidth={2.5} /> Replace
-        </button>
+      <div className="flex items-center justify-center rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-16 text-center">
+        <FileDoneLine
+          name={existingName ?? "File uploaded"}
+          action="Replace"
+          onAction={() => inputRef.current?.click()}
+        />
         <input
           ref={inputRef}
           type="file"
@@ -543,23 +546,8 @@ function FileSlot({
 
   if (file) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">
-            {file.name}
-          </p>
-          <p className="text-xs text-gray-400">
-            {file.size < 1000 * 1000
-              ? `${(file.size / 1000).toFixed(1)} KB`
-              : `${(file.size / 1000 / 1000).toFixed(2)} MB`}
-          </p>
-        </div>
-        <button
-          onClick={() => onClear(field.id)}
-          className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-        >
-          <Trash2 size={13} strokeWidth={2} />
-        </button>
+      <div className="flex items-center justify-center rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-16 text-center">
+        <FileDoneLine name={file.name} action="Remove" onAction={() => onClear(field.id)} />
       </div>
     );
   }
@@ -680,6 +668,9 @@ function MultiFileSlot({
   const cfg = getFileConfig(field.options);
   const slotLabel = getSlotLabel(field.options) ?? field.label;
   const hasFiles = files.length > 0 || existing.length > 0;
+  // The agreement is a single document.
+  const isAps = cfg.doc_type === "aps" || (field.label ?? "").toLowerCase().includes("agreement of purchase");
+  const canAddMore = !isAps;
 
   function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
@@ -692,7 +683,7 @@ function MultiFileSlot({
   }
 
   function handlePick(picked: FileList | File[]) {
-    const list = Array.from(picked);
+    const list = Array.from(picked).slice(0, canAddMore ? undefined : 1);
     const valid: File[] = [];
     for (const f of list) {
       const err = validateFile(f);
@@ -708,66 +699,47 @@ function MultiFileSlot({
     }
   }
 
-  function fmt(bytes: number) {
-    return bytes < 1000 * 1000
-      ? `${(bytes / 1000).toFixed(1)} KB`
-      : `${(bytes / 1000 / 1000).toFixed(2)} MB`;
-  }
-
   return (
     <div>
-      {/* Existing (previously submitted) files */}
-      {existing.length > 0 && (
-        <div className="space-y-2 mb-2">
+      {/* Picked and previously submitted files in one green box */}
+      {hasFiles && (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (canAddMore && e.dataTransfer.files?.length) handlePick(e.dataTransfer.files);
+          }}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-14 text-center"
+        >
           {existing.map((e, i) => (
-            <div
+            <FileDoneLine
               key={`ex-${i}`}
-              className="flex items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 px-4 py-3"
-            >
-              <CheckCircle2 size={16} className="text-green-600 shrink-0" strokeWidth={2} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-green-700 truncate">{e.name || "File uploaded"}</p>
-                <p className="text-[11px] text-gray-400">Previously submitted</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemoveExisting(field.id, i)}
-                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                aria-label={`Remove ${e.name}`}
-              >
-                <Trash2 size={13} strokeWidth={2} />
-              </button>
-            </div>
+              name={e.name || "File uploaded"}
+              action="Remove"
+              onAction={() => onRemoveExisting(field.id, i)}
+            />
           ))}
-        </div>
-      )}
-
-      {/* Newly picked files */}
-      {files.length > 0 && (
-        <div className="space-y-2 mb-2">
           {files.map((f, i) => (
-            <div
+            <FileDoneLine
               key={`new-${i}`}
-              className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{f.name}</p>
-                <p className="text-xs text-gray-400">{fmt(f.size)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemoveNew(field.id, i)}
-                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                aria-label={`Remove ${f.name}`}
-              >
-                <Trash2 size={13} strokeWidth={2} />
-              </button>
-            </div>
+              name={f.name}
+              action="Remove"
+              onAction={() => onRemoveNew(field.id, i)}
+            />
           ))}
+          {canAddMore && (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="mt-1 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
+            >
+              + Add another file
+            </button>
+          )}
         </div>
       )}
 
-      {/* Dropzone — always available so more files can be added */}
+      {/* Dropzone until the first file is in */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -784,12 +756,13 @@ function MultiFileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          ["flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 text-center cursor-pointer transition-all duration-200 select-none", hasFiles ? "py-5" : "py-10"].join(" "),
+          "flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center cursor-pointer transition-all duration-200 select-none",
+          hasFiles ? "hidden" : "flex",
           dragOver ? "border-[#C10007] bg-[#FEF2F2]" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
         <div>
-          <p className="text-sm font-semibold text-gray-800">{hasFiles ? "Add more files" : slotLabel}</p>
+          <p className="text-sm font-semibold text-gray-800">{slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
             Click or drag · {cfg.accept.split(",").join(", ")} · Max {cfg.max_mb}MB
           </p>
@@ -819,7 +792,7 @@ function MultiFileSlot({
         <input
           ref={inputRef}
           type="file"
-          multiple
+          multiple={canAddMore}
           accept={cfg.accept}
           className="hidden"
           onChange={(e) => {
@@ -1036,7 +1009,7 @@ export default function DynamicTaskDrawer({
           // Which fields accept multiple files (e.g. APS).
           const multipleFieldIds = new Set(
             fetchedFields
-              .filter((f) => fileFieldAllowsMultiple(f))
+              .filter((f) => fileFieldAllowsMultiple(f, side))
               .map((f) => f.id),
           );
           // Pre-fill existing text responses
@@ -1257,7 +1230,7 @@ export default function DynamicTaskDrawer({
     const val = values[field.id]?.trim() ?? "";
 
     if (field.field_type === "file") {
-      if (fileFieldAllowsMultiple(field)) {
+      if (fileFieldAllowsMultiple(field, side)) {
         // Multiple field: satisfied by any new OR kept existing file.
         const hasAny =
           (multiFiles[field.id]?.length ?? 0) > 0 ||
@@ -1384,7 +1357,7 @@ export default function DynamicTaskDrawer({
 
       // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
       for (const field of fields.filter(
-        (f) => fileFieldAllowsMultiple(f) && isFieldVisible(f)
+        (f) => fileFieldAllowsMultiple(f, side) && isFieldVisible(f)
       )) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
@@ -1592,7 +1565,7 @@ export default function DynamicTaskDrawer({
 
       // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
       for (const field of fields.filter(
-        (f) => fileFieldAllowsMultiple(f) && isFieldVisible(f)
+        (f) => fileFieldAllowsMultiple(f, side) && isFieldVisible(f)
       )) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
@@ -1723,6 +1696,17 @@ export default function DynamicTaskDrawer({
     (k) => taskTitle.toLowerCase().includes(k),
   );
   const taskCopy = getTaskCopy(taskTitle, side);
+  // Purchase void cheque: one box per purchaser.
+  const purchaserCount =
+    isVoidChequeTask && side === "purchase"
+      ? fields.filter((f) => f.field_type === "file" && isFieldVisible(f)).length
+      : 0;
+  const eachPurchaserNote =
+    purchaserCount === 2
+      ? " As you are both purchasers, we need one from each of you."
+      : purchaserCount > 2
+        ? ` As there are ${purchaserCount} purchasers, we need one from each of you.`
+        : "";
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {
@@ -1896,6 +1880,7 @@ export default function DynamicTaskDrawer({
             <div className="space-y-3">
               <p className="text-sm text-gray-600 leading-relaxed">
                 {taskCopy.description}
+                {eachPurchaserNote}
               </p>
               {taskCopy.blog && (
                 <a
@@ -2449,7 +2434,7 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
-                    {fileFieldAllowsMultiple(field) ? (
+                    {fileFieldAllowsMultiple(field, side) ? (
                       <MultiFileSlot
                         field={field}
                         files={multiFiles[field.id] ?? []}

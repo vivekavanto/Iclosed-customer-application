@@ -103,7 +103,7 @@ const RULES: TaskDescriptionRule[] = [
     match: "void cheque",
     sides: ["purchase"],
     description:
-      "We use your void cheque to return any excess funds after closing. If there is more than one purchaser, we need one from each of you.",
+      "We use your void cheque to return any excess funds after closing.",
     blog: { title: "What is a void cheque", slug: "void-cheques-why-your-lawyer-or-lender-may-ask-for-one" },
   },
   {

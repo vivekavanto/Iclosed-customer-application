@@ -14,6 +14,7 @@ import { buildRetainerEmailHtml } from "@/lib/email-templates/retainer";
 import { sendEmail } from "@/lib/email/emailTransport";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
+import { autoConvertAfterRetainer } from "@/lib/autoConvertAfterRetainer";
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
@@ -445,6 +446,9 @@ export async function POST(req: Request) {
     // for the delegated modes ("me"/"co") — in "both" each handles their own.
     // `uploaderName` = the person handling uploads on a SECONDARY signer's
     // behalf (the "someone else is handling it" screen). ──
+    // Create the deal now; never fails signing.
+    await autoConvertAfterRetainer(leadId);
+
     const primaryLeadId = isCoPerson ? (lead?.parent_lead_id ?? null) : leadId;
     let uploadMode: "me" | "co" | "both" | null = null;
     let isDocumentUploader = false;

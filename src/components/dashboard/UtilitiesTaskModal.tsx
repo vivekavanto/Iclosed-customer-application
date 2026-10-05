@@ -2,80 +2,7 @@
 
 import { useState } from "react";
 import { Loader2, X } from "lucide-react";
-
-// [service, provider, phone, client calls them]
-const PROVIDERS: Record<string, Array<[string, string, string, boolean]>> = {
-  Toronto: [
-    ["Hydro", "Toronto Hydro", "416-542-8000", true],
-    ["Water and property tax", "City of Toronto", "311 or 416-392-2489", false],
-  ],
-  Mississauga: [
-    ["Hydro", "Alectra Utilities", "1-833-253-2872", true],
-    ["Water", "Region of Peel", "905-791-8711", true],
-    ["Property tax", "City of Mississauga", "311", true],
-  ],
-  Brampton: [
-    ["Hydro", "Alectra Utilities", "905-840-6300", true],
-    ["Water", "Region of Peel", "905-791-8711", false],
-    ["Property tax", "City of Brampton", "905-874-2000", false],
-  ],
-  Markham: [
-    ["Hydro and water", "Alectra Utilities", "1-833-253-2872", true],
-    ["Property tax", "City of Markham", "905-477-5530", false],
-  ],
-  "Richmond Hill": [
-    ["Hydro", "Alectra Utilities", "1-833-253-2872", true],
-    ["Water and property tax", "City of Richmond Hill", "905-771-8800", false],
-  ],
-  Oakville: [
-    ["Hydro", "Oakville Hydro", "905-825-9400", true],
-    ["Water", "Oakville Hydro", "905-825-9400", false],
-    ["Property tax", "Town of Oakville", "905-845-6601", false],
-  ],
-  Burlington: [
-    ["Hydro", "Burlington Hydro", "905-332-1851", true],
-    ["Water", "Burlington Hydro", "905-332-1851", false],
-    ["Property tax", "City of Burlington", "905-335-7750", false],
-  ],
-  Milton: [
-    ["Hydro and water", "Milton Hydro", "905-876-4611", true],
-    ["Property tax", "Town of Milton", "905-864-4142", false],
-  ],
-  Pickering: [
-    ["Hydro", "Elexicon Energy", "905-427-9870", true],
-    ["Water", "Region of Durham", "905-666-6211", true],
-    ["Property tax", "City of Pickering", "905-420-4614", false],
-  ],
-  Ajax: [
-    ["Hydro", "Elexicon Energy", "905-427-9870", true],
-    ["Water", "Region of Durham", "905-666-6211", false],
-    ["Property tax", "Town of Ajax", "905-683-2718", false],
-  ],
-  Oshawa: [
-    ["Hydro", "Oshawa Power", "905-723-4623", true],
-    ["Water", "Region of Durham", "905-666-6211", false],
-    ["Property tax", "City of Oshawa", "905-436-3311", false],
-  ],
-  Newmarket: [
-    ["Hydro and water", "Newmarket-Tay Power", "905-895-2309", true],
-    ["Property tax", "Town of Newmarket", "905-895-5193", false],
-  ],
-  Barrie: [
-    ["Hydro", "Alectra Utilities", "1-877-963-6900", true],
-    ["Water and property tax", "City of Barrie", "705-726-4242", false],
-  ],
-  Hamilton: [
-    ["Hydro", "Alectra Utilities", "905-522-9200", true],
-    ["Water", "City of Hamilton", "905-546-8630", false],
-    ["Property tax", "City of Hamilton", "905-546-2489", false],
-  ],
-};
-
-function providersFor(city: string | null) {
-  const c = (city ?? "").trim().toLowerCase();
-  const key = Object.keys(PROVIDERS).find((k) => k.toLowerCase() === c);
-  return key ? { city: key, rows: PROVIDERS[key] } : null;
-}
+import { utilityContactsFor } from "@/lib/utilityContacts";
 
 const UtilitiesTaskModal: React.FC<{
   open: boolean;
@@ -90,7 +17,9 @@ const UtilitiesTaskModal: React.FC<{
 }> = ({ open, title, subtitle, city, onClose, onSaveDraft, onComplete }) => {
   const [busy, setBusy] = useState<"draft" | "complete" | null>(null);
 
-  const providers = providersFor(city);
+  const providers = utilityContactsFor(city);
+  // Header uses the client's own city, e.g. "Courtice" not "Clarington/Newcastle/Courtice".
+  const cityLabel = (city ?? "").trim() || providers?.name;
 
   if (!open) return null;
 
@@ -149,13 +78,29 @@ const UtilitiesTaskModal: React.FC<{
             {providers ? (
               <div className="rounded-xl border border-gray-200 px-5 py-4">
                 <p className="text-sm font-bold text-gray-900 mb-2">
-                  Your providers in {providers.city}
+                  Your providers in {cityLabel}
                 </p>
+                {providers.clientContactsAll && (
+                  <p className="text-sm text-gray-600">
+                    {providers.name} does not accept notices from law offices. Please contact your
+                    property tax, water and hydro providers yourself.
+                  </p>
+                )}
                 <ul className="space-y-2">
-                  {providers.rows.map(([service, provider, phone, youCall]) => (
-                    <li key={service} className="text-sm text-gray-600">
-                      {service} — {provider} · {phone} ·{" "}
-                      {youCall ? "Please call them" : "We notify them for you"}
+                  {providers.rows.map((row) => (
+                    <li key={row.service} className="text-sm text-gray-600">
+                      {row.service}
+                      {row.provider && ` \u2014 ${row.provider}`}
+                      {row.phone && ` \u00b7 ${row.phone}`}
+                      {/* Only where the contact sheet says CLIENT MUST CONTACT. */}
+                      {row.clientCalls && (
+                        <span className="font-semibold text-gray-900"> \u00b7 Call the provider</span>
+                      )}
+                      {row.verify && (
+                        <span className="block text-xs text-gray-400">
+                          The provider depends on your address. Check a recent bill.
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
