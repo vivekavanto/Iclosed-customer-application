@@ -12,7 +12,6 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle2,
-  RefreshCw,
   Loader2,
   CalendarCheck,
   Camera,
@@ -31,6 +30,7 @@ import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBe
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 import { getFirm, type FirmKey } from "@/lib/firms";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
+import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
 import {
   isCityField,
   isMailSameAsPropertyField,
@@ -752,6 +752,7 @@ function FileSlot({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const cfg = getFileConfig(field.options);
 
   function validateFile(f: File): string | null {
@@ -774,62 +775,39 @@ function FileSlot({
     }
   }
 
-  if (existingUrl && !file) {
+  const picker = (
+    <input
+      ref={inputRef}
+      type="file"
+      accept={cfg.accept}
+      className="hidden"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) handlePick(f);
+        e.target.value = "";
+      }}
+    />
+  );
+
+  if (file || existingUrl) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 p-5 text-center">
-        <CheckCircle2 size={22} className="text-green-600" strokeWidth={2} />
-        <div>
-          <p className="text-sm font-semibold text-green-700">
-            {existingName ?? "File uploaded"}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            Previously submitted
-          </p>
-        </div>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw size={11} strokeWidth={2.5} /> Replace
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={cfg.accept}
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handlePick(f);
-            e.target.value = "";
-          }}
-        />
+      <div className="flex items-center justify-center rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-16 text-center">
+        {file ? (
+          <FileDoneLine name={file.name} action="Remove" onAction={() => onClear(field.id)} />
+        ) : (
+          <FileDoneLine
+            name={existingName ?? "File uploaded"}
+            action="Replace"
+            onAction={() => inputRef.current?.click()}
+          />
+        )}
+        {picker}
       </div>
     );
   }
 
-  if (file) {
-    return (
-      <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">
-            {file.name}
-          </p>
-          <p className="text-xs text-gray-400">
-            {file.size < 1000 * 1000
-              ? `${(file.size / 1000).toFixed(1)} KB`
-              : `${(file.size / 1000 / 1000).toFixed(2)} MB`}
-          </p>
-        </div>
-        <button
-          onClick={() => onClear(field.id)}
-          className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-        >
-          <Trash2 size={13} strokeWidth={2} />
-        </button>
-      </div>
-    );
-  }
-
+  const buttonClass =
+    "cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors";
   return (
     <div>
       <div
@@ -849,42 +827,50 @@ function FileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200 select-none",
-          dragOver
-            ? "border-[#C10007] bg-[#FEF2F2]"
-            : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
+          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center cursor-pointer transition-all duration-200 select-none",
+          dragOver ? "border-[#C10007] bg-[#FEF2F2]" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
-        <div
-          className={[
-            "w-9 h-9 rounded-full flex items-center justify-center",
-            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
-          ].join(" ")}
-        >
-          <Upload
-            size={16}
-            className={dragOver ? "text-[#C10007]" : "text-gray-400"}
-            strokeWidth={2}
-          />
-        </div>
         <div>
-          <p className="text-xs font-semibold text-gray-700">{field.label}</p>
+          <p className="text-sm font-semibold text-gray-800">{field.label}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · {cfg.accept} · Max {cfg.max_mb}MB
+            Click or drag · {acceptLabel(cfg.accept)} · Max {cfg.max_mb}MB
           </p>
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={cfg.accept}
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handlePick(f);
-            e.target.value = "";
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+            className={buttonClass}
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCameraOpen(true);
+            }}
+            className={buttonClass}
+          >
+            <Camera size={13} strokeWidth={2} /> Take photo
+          </button>
+        </div>
+        {picker}
+      </div>
+      {cameraOpen && (
+        <PhotoCaptureDialog
+          title={field.label}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(f) => {
+            handlePick(f);
+            setCameraOpen(false);
           }}
         />
-      </div>
+      )}
       {error && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
           <AlertCircle size={11} />
