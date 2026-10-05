@@ -97,8 +97,8 @@ describe("buildPurchaseDraft (spec 9)", () => {
     expect(line(d, "Funds you need on closing", "Funds required from you")).toBe("[Amount]");
   });
 
-  it("always shows the discount row; T10 discount", () => {
-    expect(line(buildPurchaseDraft(fees, base), "Legal fees", "Discount")).toBe("$0.00");
+  it("shows the discount row only when applied; T10 discount", () => {
+    expect(line(buildPurchaseDraft(fees, base), "Legal fees", "Discount")).toBeUndefined();
     const d = buildPurchaseDraft(fees, { ...base, discount: 100 });
     expect(line(d, "Legal fees", "Discount")).toBe("($100.00)");
     expect(d.feesTotal).toBe(2004.97);
@@ -109,8 +109,9 @@ describe("buildPurchaseDraft (spec 9)", () => {
     const lines = d.sections.flatMap((s) => s.lines);
     expect(line(d, "Legal fees", "Purchase legal fees")).toBe("$1,199.00");
     expect(lines.find((l) => l.label === "Searches")?.note).toMatch(/\(Average range is \$150-\$250\)$/);
-    expect(lines.find((l) => l.label === "FCT policy premium, estimate")?.note).toMatch(/imposed by your lender\.$/);
-    expect(lines.find((l) => l.label === "Funds required from you")?.note).toMatch(/^We will confirm this figure in writing before closing,/);
+    const note = (title: string) => d.sections.find((s) => s.title === title)?.note;
+    expect(note("Title insurance")).toMatch(/imposed by your lender\.$/);
+    expect(note("Funds you need on closing")).toMatch(/^We will confirm this figure in writing before closing,/);
   });
 
   it("never renders template-only text", () => {

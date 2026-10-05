@@ -1,28 +1,45 @@
-// v6 draft statement PDF, laid out like the template.
+// Draft statement PDF, per the v6 Word template.
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import fs from "fs";
 import path from "path";
-import { DEFAULT_FIRM_KEY, FIRMS, getFirm, type FirmKey } from "@/lib/firms";
+import { getFirm, type FirmKey } from "@/lib/firms";
 import { wrapText } from "@/lib/generateRetainerPdf";
 import type { DraftDocument, DraftLine } from "@/lib/draftStatement";
-import { longDate } from "@/lib/retainerAgreement";
 
-const PAGE_W = 595.28; // A4
-const PAGE_H = 841.89;
-const MARGIN = 50;
-const CONTENT_W = PAGE_W - MARGIN * 2;
-const RED = rgb(0.757, 0, 0.027);
-const INK = rgb(0.1, 0.1, 0.1);
-const BODY = rgb(0.3, 0.3, 0.3);
-const MUTED = rgb(0.5, 0.5, 0.52);
-const SHADE = rgb(0.97, 0.97, 0.98);
-const RULE = rgb(0.85, 0.85, 0.85);
+// US Letter with the template's margins.
+const PAGE_W = 612;
+const PAGE_H = 792;
+const SIDE = 72;
+const TOP = 108;
+const BOTTOM = 54;
+const CONTENT_W = PAGE_W - SIDE * 2;
+
+// Template colours.
+const hex = (h: string) => rgb(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255);
+const INK = hex("101828");
+const LABEL = hex("4a5565");
+const NOTE = hex("6a7282");
+const FAINT = hex("99a1af");
+const RED = hex("c10007");
+const SHADE = hex("f9fafb");
+const BORDER = hex("f3f4f6");
+
+// Template sizes, in points.
+const TITLE_SIZE = 20;
+const ROW_SIZE = 10.5;
+const ROW_NOTE_SIZE = 8;
+const HEADING_SIZE = 9;
+const NOTE_SIZE = 9.5;
+const FOOTER_SIZE = 8.5;
+const PAD_X = 6.5;
+const PAD_Y = 4.5;
+
+// iClosed uses the template wordmark.
+const ICLOSED_LOGO = { file: "iclosed-wordmark.png", width: 139.5 };
 
 export async function generateDraftStatementPdf(opts: {
   draft: DraftDocument;
   firmKey?: FirmKey | string | null;
-  /** YYYY-MM-DD. */
-  preparedOn: string;
 }): Promise<Uint8Array> {
   const { draft } = opts;
   const firm = getFirm(opts.firmKey);
@@ -30,108 +47,111 @@ export async function generateDraftStatementPdf(opts: {
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  let page: PDFPage = doc.addPage([PAGE_W, PAGE_H]);
-  let y = PAGE_H - MARGIN;
+  let logo: { img: Awaited<ReturnType<PDFDocument["embedPng"]>>; w: number; h: number } | null = null;
+  try {
+    const file = firm.key === "iclosed" ? ICLOSED_LOGO.file : firm.pdfLogo.file;
+    const img = await doc.embedPng(fs.readFileSync(path.join(process.cwd(), "public", file)));
+    const w = firm.key === "iclosed" ? ICLOSED_LOGO.width : img.width * (firm.pdfLogo.height / img.height);
+    logo = { img, w, h: img.height * (w / img.width) };
+  } catch {
+    // Falls back to the firm name as text.
+  }
+
+  let page!: PDFPage;
+  let y = 0;
+  const newPage = () => {
+    page = doc.addPage([PAGE_W, PAGE_H]);
+    // Header on every page, like the Word header.
+    const top = PAGE_H - 35;
+    if (logo) page.drawImage(logo.img, { x: SIDE, y: top - logo.h, width: logo.w, height: logo.h });
+    else page.drawText(firm.legalName, { x: SIDE, y: top - 18, font: bold, size: 18, color: RED });
+    y = PAGE_H - TOP;
+  };
   const ensureSpace = (h: number) => {
-    if (y - h < MARGIN + 20) {
-      page = doc.addPage([PAGE_W, PAGE_H]);
-      y = PAGE_H - MARGIN;
-    }
+    if (y - h < BOTTOM) newPage();
   };
+  newPage();
 
-  // Logo: the firm's own, then Nava Wilson's, then its name as text.
-  let logoDrawn = false;
-  for (const logo of [firm.pdfLogo, FIRMS[DEFAULT_FIRM_KEY].pdfLogo]) {
-    try {
-      const img = await doc.embedPng(fs.readFileSync(path.join(process.cwd(), "public", logo.file)));
-      const w = img.width * (logo.height / img.height);
-      page.drawImage(img, { x: MARGIN - w * logo.inkLeft, y: y - logo.height + logo.lift, width: w, height: logo.height });
-      y -= logo.height + logo.gap + 10;
-      logoDrawn = true;
-      break;
-    } catch {
-      // Try the next logo.
-    }
-  }
-  if (!logoDrawn) {
-    page.drawText(firm.legalName, { x: MARGIN, y: y - 18, font: bold, size: 20, color: RED });
-    y -= 40;
-  }
-
-  page.drawText(draft.title, { x: MARGIN, y, font: bold, size: 19, color: INK });
-  y -= 22;
-
-  // Details: a narrow two-column table.
-  const detailsW = 280;
-  draft.details.forEach((d, i) => {
-    const h = 18;
-    if (i % 2 === 0) page.drawRectangle({ x: MARGIN, y: y - h + 12, width: detailsW, height: h, color: SHADE });
-    page.drawText(d.label, { x: MARGIN + 6, y, font: regular, size: 10, color: BODY });
-    const value = wrapText(d.value, bold, 10, detailsW - 110)[0] ?? "";
-    page.drawText(value, { x: MARGIN + detailsW - 6 - bold.widthOfTextAtSize(value, 10), y, font: bold, size: 10, color: INK });
-    y -= h;
-  });
-  y -= 10;
-
-  const paragraph = (text: string, font: PDFFont, size: number, color = MUTED) => {
+  const paragraph = (text: string, font: PDFFont, size: number, color = NOTE, gap = 4) => {
     for (const line of wrapText(text, font, size, CONTENT_W)) {
-      ensureSpace(size + 4);
-      page.drawText(line, { x: MARGIN, y, font, size, color });
-      y -= size + 4;
+      ensureSpace(size + gap);
+      y -= size;
+      page.drawText(line, { x: SIDE, y, font, size, color });
+      y -= gap;
     }
   };
 
-  const row = (line: DraftLine, shaded: boolean) => {
-    const amountFont = bold;
-    const amountW = amountFont.widthOfTextAtSize(line.amount, 10);
-    const labelW = CONTENT_W - amountW - 30;
-    const labelLines = wrapText(line.label, line.total ? bold : regular, 10, labelW);
-    const noteLines = line.note ? wrapText(line.note, regular, 8, labelW) : [];
-    const h = labelLines.length * 13 + noteLines.length * 10 + 8;
+  // One bordered table row.
+  const row = (line: DraftLine, shaded: boolean, labelFont = line.total ? bold : regular) => {
+    const amountW = bold.widthOfTextAtSize(line.amount, ROW_SIZE);
+    const labelW = CONTENT_W - amountW - PAD_X * 4;
+    const labelLines = wrapText(line.label, labelFont, ROW_SIZE, labelW);
+    const noteLines = line.note ? wrapText(line.note, regular, ROW_NOTE_SIZE, labelW) : [];
+    const h = PAD_Y * 2 + labelLines.length * (ROW_SIZE + 2.5) + noteLines.length * (ROW_NOTE_SIZE + 2);
     ensureSpace(h);
-    if (shaded) page.drawRectangle({ x: MARGIN, y: y - h + 13, width: CONTENT_W, height: h, color: SHADE });
-    if (line.total) page.drawLine({ start: { x: MARGIN, y: y + 13 }, end: { x: MARGIN + CONTENT_W, y: y + 13 }, thickness: 0.6, color: RULE });
-    let ly = y;
+    const top = y;
+    page.drawRectangle({
+      x: SIDE,
+      y: top - h,
+      width: CONTENT_W,
+      height: h,
+      color: shaded ? SHADE : undefined,
+      borderColor: BORDER,
+      borderWidth: 0.5,
+    });
+    let ty = top - PAD_Y - ROW_SIZE;
     for (const l of labelLines) {
-      page.drawText(l, { x: MARGIN + 6, y: ly, font: line.total ? bold : regular, size: 10, color: INK });
-      ly -= 13;
+      page.drawText(l, { x: SIDE + PAD_X, y: ty, font: labelFont, size: ROW_SIZE, color: line.total ? INK : LABEL });
+      ty -= ROW_SIZE + 2.5;
     }
     for (const n of noteLines) {
-      page.drawText(n, { x: MARGIN + 6, y: ly + 2, font: regular, size: 8, color: MUTED });
-      ly -= 10;
+      page.drawText(n, { x: SIDE + PAD_X, y: ty + 1, font: regular, size: ROW_NOTE_SIZE, color: FAINT });
+      ty -= ROW_NOTE_SIZE + 2;
     }
-    page.drawText(line.amount, { x: MARGIN + CONTENT_W - 6 - amountW, y, font: amountFont, size: 10, color: INK });
-    y -= h;
+    page.drawText(line.amount, {
+      x: SIDE + CONTENT_W - PAD_X - amountW,
+      y: top - PAD_Y - ROW_SIZE,
+      font: bold,
+      size: ROW_SIZE,
+      color: INK,
+    });
+    y = top - h;
   };
 
-  for (const section of draft.sections) {
-    ensureSpace(50);
-    y -= 8;
-    page.drawText(section.title.toUpperCase(), { x: MARGIN, y, font: bold, size: 10, color: RED });
-    y -= 18;
+  // Title and details.
+  y -= TITLE_SIZE;
+  page.drawText(draft.title, { x: SIDE, y, font: bold, size: TITLE_SIZE, color: INK });
+  y -= 14;
+  draft.details.forEach((d, i) => row({ label: d.label, amount: d.value }, i % 2 === 0, regular));
+  y -= 10;
+
+  for (const section of draft.pdfSections ?? draft.sections) {
+    ensureSpace(HEADING_SIZE + 40);
+    y -= 12 + HEADING_SIZE;
+    page.drawText(section.title, { x: SIDE, y, font: bold, size: HEADING_SIZE, color: RED });
+    y -= 6;
     section.lines.forEach((l, i) => row(l, i % 2 === 0));
     if (section.note) {
-      y -= 4;
-      paragraph(section.note, regular, 8.5);
+      y -= 6;
+      paragraph(section.note, regular, NOTE_SIZE);
     }
-    y -= 6;
   }
 
   if (draft.disclaimer) {
-    ensureSpace(40);
-    y -= 4;
-    paragraph(draft.disclaimer, regular, 8.5);
+    y -= 10;
+    paragraph(draft.disclaimer, regular, FOOTER_SIZE, FAINT);
   }
 
-  // Footer on every page.
-  const footer = `Draft statement of account  ·  Prepared ${longDate(opts.preparedOn)}`;
+  // Template footer on every page.
+  const site = firm.supportEmail.split("@")[1] ?? "";
+  const footer = [site, "Draft statement of account", "E. & O.E."].filter(Boolean).join("  ·  ");
   for (const p of doc.getPages()) {
     p.drawText(footer, {
-      x: (PAGE_W - regular.widthOfTextAtSize(footer, 8)) / 2,
-      y: MARGIN - 20,
+      x: (PAGE_W - regular.widthOfTextAtSize(footer, FOOTER_SIZE)) / 2,
+      y: 25,
       font: regular,
-      size: 8,
-      color: MUTED,
+      size: FOOTER_SIZE,
+      color: FAINT,
     });
   }
 

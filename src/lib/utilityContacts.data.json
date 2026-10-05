@@ -1,0 +1,2326 @@
+[
+ {
+  "name": "Ajax",
+  "aliases": [
+   "ajax"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-683-2718",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-427-9870",
+    "provider": "Elexicon Energy Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Aurora",
+  "aliases": [
+   "aurora"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-727-1375",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-727-1375",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-963-6900",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Alliston / New Tecumseth",
+  "aliases": [
+   "alliston",
+   "new tecumseth"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-435-3900 / 905-729-0057",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-435-3900 / 905-729-0057",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-963-6900",
+    "provider": "Hydro One OR Alectra Utilities",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Asphodel Norwood",
+  "aliases": [
+   "asphodel norwood"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-639-5343",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "888-664-9376",
+    "provider": "Hydro One Networks Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Bailieboro",
+  "aliases": [
+   "bailieboro",
+   "otonabee-south monaghan"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-295-6852",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-295-6852",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Network Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Bancroft",
+  "aliases": [
+   "bancroft"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "613 332 3331 Ext. 205",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "(613) 332-3331 Ext. 203",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Barrie",
+  "aliases": [
+   "barrie"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-726-4242",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-726-4242",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-963-6900",
+    "provider": "Alectra Utilities Corporation",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Belleville",
+  "aliases": [
+   "belleville"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "613-967-3243",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "613-966-3657",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-420-0070",
+    "provider": "Elexicon Energy",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Blandford-Blenheim",
+  "aliases": [
+   "blandford-blenheim"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-463-5347",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-485-1820",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "The Blue Mountains",
+  "aliases": [
+   "the blue mountains"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-599-3131 Ext:221",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-599-3131 Ext. 223",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Bowmanville",
+  "aliases": [
+   "bowmanville"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-623-3379 Ext. 2650",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-420-0070",
+    "provider": "Elexicon Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Bracebridge",
+  "aliases": [
+   "bracebridge"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-645-5264 ext. 3321",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-645-2231",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "705-789-5442 / 1-888-282-7711",
+    "provider": "Lakeland Power Distribution Ltd.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Bradford West Gwillimbury",
+  "aliases": [
+   "bradford west gwillimbury"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-775-5366 ext. 6030",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-963-6900",
+    "provider": "Alectra Energy Solutions",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Brampton",
+  "aliases": [
+   "brampton"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-874-2000",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-791-8711",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-840-6300",
+    "provider": "Alectra Inc / Alectra Utilities",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Brantford",
+  "aliases": [
+   "brantford"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-759-4150",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-756-1360",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-871-2215",
+    "provider": "GrandBridge Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Brighton",
+  "aliases": [
+   "brighton"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "613-475-0670, ext. 201",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "613-475-0670, ext. 211",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Networks",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Brock/Beaverton",
+  "aliases": [
+   "beaverton",
+   "brock"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-432-2355",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211 / 1-800-465-6611",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-420-0070",
+    "provider": "Elexicon Energy (Beaverton service area)",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Burlington",
+  "aliases": [
+   "burlington"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-335-7750",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "905-332-1851",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Cambridge",
+  "aliases": [
+   "cambridge"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-623-1340",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-740-4524",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-871-2215",
+    "provider": "GrandBridge Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Chatham",
+  "aliases": [
+   "chatham"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-360-1998 Ext.311",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "1-866-804-7325 / 519-352-6300",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-866-804-7325",
+    "provider": "Entegrus Powerlines",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Cobourg",
+  "aliases": [
+   "cobourg"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-372-8944",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "(905) 372-2193",
+    "clientCalls": false
+   }
+  ]
+ },
+ {
+  "name": "Cobalt",
+  "aliases": [
+   "cobalt"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "(705) 679-8877",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Cornwall",
+  "aliases": [
+   "cornwall"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-930-2787 Ext. 2317",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "613-932-0123",
+    "provider": "Cornwall Electric",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Cramahe",
+  "aliases": [
+   "colborne",
+   "cramahe"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-355-2821 / 1-877-272-4263",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "1-905-372-2193",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Caledon",
+  "aliases": [
+   "caledon"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-584-2272 Ext 311",
+    "clientCalls": true
+   },
+   {
+    "service": "Water",
+    "phone": "905-791-8711",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Cavan Monaghan",
+  "aliases": [
+   "cavan monaghan"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "(705) 932-2929 Toll-Free:1-877-906-5556",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Clarington/Newcastle/Courtice",
+  "aliases": [
+   "clarington",
+   "courtice",
+   "newcastle"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-623-3379 ext. 2650",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211 / 1-800-465-6611",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-420-0070",
+    "provider": "Elexicon Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Collingwood",
+  "aliases": [
+   "collingwood"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-445-1030 ext. 3625",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "705-445-1800",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "County of Brant",
+  "aliases": [
+   "brant"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-442-7268 / 1-855-442-7268",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-621-3530 / 1-877-871-2215",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-871-2215",
+    "provider": "GrandBridge Energy OR Hydro One",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "County of Haldimand",
+  "aliases": [
+   "haldimand"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-318-5932",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "1-844-361-1871",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Dundalk",
+  "aliases": [
+   "dundalk"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-923-2110 ext. 225",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Erin",
+  "aliases": [
+   "erin"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-855-4407 ext. 226",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-855-4407",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Essa",
+  "aliases": [
+   "essa"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-424-9917 ext. 127",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-424-9917 ext. 114",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Fort Erie",
+  "aliases": [
+   "fort erie"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-871-1600",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-871-1600",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-871-0330",
+    "provider": "Canadian Niagara Power",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "County of Frontenac",
+  "aliases": [
+   "frontenac"
+  ],
+  "rows": [],
+  "clientContactsAll": true
+ },
+ {
+  "name": "Georgina",
+  "aliases": [
+   "georgina"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-476-4301 / 705-437-2210",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Town of East Gwillimbury",
+  "aliases": [
+   "east gwillimbury"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-478-4282",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Networks Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Guelph",
+  "aliases": [
+   "guelph"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-822-1260 ext. 5605",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-837-5627",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "519-822-3010",
+    "provider": "Alectra Utilities",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Grand Valley",
+  "aliases": [
+   "grand valley"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-928-5652 ext. 227",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-942-8000",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Grimsby",
+  "aliases": [
+   "grimsby"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-945-9634",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-945-9634 ext. 2029",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-945-5437",
+    "provider": "Grimsby Power Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Grey Highlands",
+  "aliases": [
+   "grey highlands"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-986-1216 ext. 400",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-986-2811 ext. 400",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "generally Hydro One",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Hamilton",
+  "aliases": [
+   "hamilton"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-546-2489",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-546-8630",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-522-9200",
+    "provider": "Alectra Utilities",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Highlands East",
+  "aliases": [
+   "highlands east"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-448-2981 ext. 424",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Innisfil",
+  "aliases": [
+   "innisfil"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-436-3710",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-431-4321",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "705-431-4321",
+    "provider": "InnPower",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Kirkland Lakes",
+  "aliases": [
+   "kirkland lake",
+   "kirkland lakes"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-567-9361 ext. 229 / 232",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Kitchener",
+  "aliases": [
+   "kitchener"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-741-2450",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "226-896-2200 / 888-420-0070",
+    "provider": "Enova Power",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Kingston",
+  "aliases": [
+   "kingston"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "613-546-0000",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "613-546-1181",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "King City",
+  "aliases": [
+   "king city"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "(905) 833-5321",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Kawartha Lakes",
+  "aliases": [
+   "kawartha lakes"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-324-9411",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Networks Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "London",
+  "aliases": [
+   "london"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-661-4540",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "519-661-5503",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Loyalist",
+  "aliases": [
+   "loyalist"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-386-7351 ext. 119",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Markham",
+  "aliases": [
+   "markham"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-477-5530",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "1-833-253-2872",
+    "provider": "Alectra Utilities",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Marmora & Lake",
+  "aliases": [
+   "marmora & lake"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-472-2629 ext. 2223",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Middlesex Centre",
+  "aliases": [
+   "middlesex centre"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-666-0190 / 1-800-220-8968",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-666-0190 ext. 5220",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Milton",
+  "aliases": [
+   "milton"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-864-4142",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "(905) 876-4611",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Milverton",
+  "aliases": [
+   "milverton"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-595-2800 ext. 228",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Minesing",
+  "aliases": [
+   "minesing"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-728-4784 ext. 2300",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Minto",
+  "aliases": [
+   "minto"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-338-2511 ext. 233",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-866-978-2746",
+    "provider": "Westario Power (urban) / Hydro One (rural)",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Mississauga",
+  "aliases": [
+   "mississauga"
+  ],
+  "rows": [],
+  "clientContactsAll": true
+ },
+ {
+  "name": "Great Napanee",
+  "aliases": [
+   "great napanee"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-776-1008",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Newmarket",
+  "aliases": [
+   "newmarket"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-895-5193",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "(905) 895-2309",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Niagara Falls",
+  "aliases": [
+   "niagara falls"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-356-7521",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-356-2681",
+    "provider": "Niagara Peninsula Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Nipissing",
+  "aliases": [
+   "nipissing"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-724-2144 ext. 221 / 226",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "North Bay",
+  "aliases": [
+   "north bay"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-474-0400",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "705-474-8100",
+    "provider": "North Bay Hydro",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "North Glengarry",
+  "aliases": [
+   "north glengarry"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-525-1438",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Oakville",
+  "aliases": [
+   "oakville"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-845-6601",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "905-825-9400",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Orangeville",
+  "aliases": [
+   "orangeville"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-941-0440 ext. 7306",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "519-942-8000",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Orillia",
+  "aliases": [
+   "orillia"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-325-1311 / 705-329-7239",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Oshawa",
+  "aliases": [
+   "oshawa"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-436-3311",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "(905) 723-4623",
+    "provider": "Oshawa Power",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Otonabee-South Monaghan",
+  "aliases": [
+   "otonabee-south monaghan"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-295-6852 ext. 210",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Ottawa",
+  "aliases": [
+   "ottawa"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-580-2444",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "(613) 738 6400",
+    "provider": "Hydro Ottawa",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Paris",
+  "aliases": [
+   "paris"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-442-7268 / 1-855-442-7268",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-621-3530 / 1-877-871-2215",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-877-871-2215",
+    "provider": "GrandBridge Energy / Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Parry Sound",
+  "aliases": [
+   "parry sound"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-746-2101 ext. 232",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-746-2101 ext. 260",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "705-789-5442",
+    "provider": "Lakeland Power",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Pembroke",
+  "aliases": [
+   "pembroke"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-735-6821 ext. 1323",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "613-732-3687 / 1-877-332-3316",
+    "provider": "Ottawa River Power Corporation",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Peterborough",
+  "aliases": [
+   "peterborough"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-742-7777 ext. 1865",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Port Hope",
+  "aliases": [
+   "port hope"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-885-4544 ext. 2237",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Prince Edward",
+  "aliases": [
+   "prince edward"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-476-2148 ext. 1530",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Pickering",
+  "aliases": [
+   "pickering"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-420-4614",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211 / 1-800-465-6611",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "(905) 427-9870",
+    "provider": "Elexicon Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Ramara",
+  "aliases": [
+   "ramara"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-484-5374 ext. 265",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-484-5374 ext. 223",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Richmond Hill",
+  "aliases": [
+   "richmond hill"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-771-8949 / 905-771-8800",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-833-253-2872",
+    "provider": "Alectra Utilities",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Sault Ste. Marie",
+  "aliases": [
+   "sault ste. marie"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-759-5290",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "705-759-6500 / 705-759-6522",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "South Dundas",
+  "aliases": [
+   "south dundas"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-543-2673 ext. 4759",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Stratford",
+  "aliases": [
+   "stratford"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-271-0250 ext. 212",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "519-271-4700 / 1-866-444-9370",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Shelburne",
+  "aliases": [
+   "shelburne"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-925-2600 ext. 253",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "St. Catherines",
+  "aliases": [
+   "st. catharines",
+   "st. catherines"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-688-5600",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-833-253-2872",
+    "provider": "Alectra Utilities",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "St. Thomas",
+  "aliases": [
+   "st. thomas"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-631-1680 ext. 4400",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "(519) 631-5550",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Sudbury",
+  "aliases": [
+   "sudbury"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-671-2489 Ext 311",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "705-675-7536",
+    "provider": "Greater Sudbury Hydro",
+    "clientCalls": false
+   }
+  ]
+ },
+ {
+  "name": "Angus",
+  "aliases": [
+   "angus"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-424-9917 ext. 127",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Thorold",
+  "aliases": [
+   "thorold"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-227-6613 ext. 235",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Toronto",
+  "aliases": [
+   "toronto"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "311 / 416-392-2489",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "416-542-8000",
+    "provider": "Toronto Hydro",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Town of New Tecumseth",
+  "aliases": [
+   "new tecumseth"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-435-3900 / 905-729-0057",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Networks Inc",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Town of Scugog/Blackstock",
+  "aliases": [
+   "blackstock",
+   "scugog"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-985-7346 ext. 102 or 106",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Township of Alnwick/Haldimand",
+  "aliases": [
+   "alnwick",
+   "haldimand"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-349-2822 ext. 31",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Township of Centre Wellington",
+  "aliases": [
+   "centre wellington"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-846-9691 ext. 902",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "519-843-2900",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "provider": "Centre Wellington Hydro / Hydro One",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Township of Dawn-Euphemia",
+  "aliases": [
+   "dawn-euphemia"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-692-5148",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Networks",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Township of Tiny",
+  "aliases": [
+   "tiny"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705- 526-4204",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Trent Hill",
+  "aliases": [
+   "trent hill",
+   "trent hills"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-653-1900 ext. 230",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Trenton",
+  "aliases": [
+   "trenton"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-392-2841 ext. 4902",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Tweed",
+  "aliases": [
+   "tweed"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "613-478-2535",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Uxbridge",
+  "aliases": [
+   "uxbridge"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-852-9181 ext. 211 / 216",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "",
+    "verify": true,
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Vaughan",
+  "aliases": [
+   "vaughan"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-832-8502 / 905-832-2281",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "1-833-253-2872",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Wasaga Beach",
+  "aliases": [
+   "wasaga beach"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "705-429-3844 ext. 2234",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "705-429-2517",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Waterloo",
+  "aliases": [
+   "waterloo"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-747-8718",
+    "clientCalls": true
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "519-747-8718",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Welland",
+  "aliases": [
+   "welland"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-735-1700",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-732-1381",
+    "provider": "Welland Hydro-Electric",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Whitby",
+  "aliases": [
+   "whitby"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-430-4304",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "905-666-6211 / 1-800-465-6611",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "905-427-9870",
+    "provider": "Elexicon Energy",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Whitchurch-Stouffville",
+  "aliases": [
+   "whitchurch-stouffville"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "905-640-1910 ext. 2211 905-640-1900",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Windsor",
+  "aliases": [
+   "windsor"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-255-2489",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "519-255-2727",
+    "provider": "Enwin Power Lines Ltd.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Woodstock",
+  "aliases": [
+   "woodstock"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "519-539-2382 ext. 2311",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "1-877-485-6050",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One Networks",
+    "clientCalls": false
+   }
+  ]
+ },
+ {
+  "name": "Haldimand County",
+  "aliases": [
+   "haldimand",
+   "selkirk"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-318-5932",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "1-844-361-1871",
+    "clientCalls": true
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Halton Hills",
+  "aliases": [
+   "halton hills"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "905-873-2600",
+    "clientCalls": false
+   },
+   {
+    "service": "Water and hydro",
+    "phone": "519-853-3701 / 905-453-2222",
+    "provider": "Halton Hills Hydro Inc.",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Town of Leamington",
+  "aliases": [
+   "leamington"
+  ],
+  "rows": [
+   {
+    "service": "Property tax and water",
+    "phone": "519-326-5761",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ },
+ {
+  "name": "Springwater",
+  "aliases": [
+   "springwater"
+  ],
+  "rows": [
+   {
+    "service": "Property tax",
+    "phone": "705-728-4784 ext. 2300",
+    "clientCalls": false
+   },
+   {
+    "service": "Water",
+    "phone": "705-728-4784",
+    "clientCalls": false
+   },
+   {
+    "service": "Hydro",
+    "phone": "1-888-664-9376",
+    "provider": "Hydro One",
+    "clientCalls": true
+   }
+  ]
+ }
+]

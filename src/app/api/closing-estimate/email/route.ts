@@ -135,7 +135,6 @@ export async function POST(req: Request) {
     const bytes = await generateDraftStatementPdf({
       draft,
       firmKey: ctx.firmKey,
-      preparedOn: new Date().toISOString().slice(0, 10),
     });
     attachment = {
       filename: draftStatementPdfFileName(ctx.locked.fileNo, ctx.locked.propertyAddress),

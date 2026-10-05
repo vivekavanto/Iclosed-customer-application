@@ -1727,6 +1727,8 @@ export default function DashboardPage() {
         }}
         leadId={drawerLeadId}
         taskId={drawerTaskId ?? undefined}
+        clientFirstName={drawerFirstName}
+        clientLastName={drawerLastName}
         spouseName={directTarget ? directTarget.spouse_name : activeTask?.spouse_name}
         partyStatuses={
           activeTask ? familyStatus[activeTask.id]?.members : undefined
@@ -2028,7 +2030,7 @@ export default function DashboardPage() {
                       {m.phone && (
                         <>
                           <span className="h-3 w-px bg-gray-200" aria-hidden />
-                          <a href={`tel:${m.phone.replace(/\D/g, "")}`} className="font-semibold text-gray-900 hover:underline">
+                          <a href={`tel:${m.phone.replace(/\D/g, "")}`} className="font-semibold !text-gray-900 hover:underline">
                             {m.phone}
                           </a>
                         </>
@@ -2058,7 +2060,7 @@ export default function DashboardPage() {
                 <Copy size={11} />
               </button>
               <span className="h-3 w-px bg-gray-200" aria-hidden />
-              <a href={`tel:${activeFirm.supportPhone}`} className="font-semibold text-gray-900 hover:underline">
+              <a href={`tel:${activeFirm.supportPhone}`} className="font-semibold !text-gray-900 hover:underline">
                 {activeFirm.supportPhone}
               </a>
             </div>
