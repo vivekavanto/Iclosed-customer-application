@@ -360,7 +360,15 @@ export default function PublicSigningPage({
     setAvailability(null);
     setSelectedSlot(null);
     setLawyerInitials(initials);
-    router.replace(`/signing/${initials}`, { scroll: false });
+    // Only the standalone public page (/signing/[initials]) needs this in the
+    // URL, so a direct link is shareable. Inside the dashboard, navigating
+    // there would strip the dashboard layout (nav header, auth) and the
+    // showOwnHeader=false prefill, since (dashboard)/signing/page.tsx has no
+    // [lawyerInitials] route of its own — stay on /signing and just track the
+    // selection in state.
+    if (showOwnHeader) {
+      router.replace(`/signing/${initials}`, { scroll: false });
+    }
   }
 
   function changeLawyer() {
@@ -368,7 +376,9 @@ export default function PublicSigningPage({
     setAvailability(null);
     setSelectedSlot(null);
     setLawyerInitials(null);
-    router.replace("/signing", { scroll: false });
+    if (showOwnHeader) {
+      router.replace("/signing", { scroll: false });
+    }
   }
 
   async function submit(e: React.FormEvent) {
