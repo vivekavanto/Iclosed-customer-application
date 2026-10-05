@@ -47,8 +47,8 @@ const RULES: TaskDescriptionRule[] = [
     match: "latest property tax bill",
     sides: ["sale"],
     description:
-      "Please upload your latest property tax bill and proof of payment. We use these to adjust taxes between you and the buyer. If your bill has a customer number, please include it in the upload.",
-    note: "If your property taxes are paid by pre-authorized withdrawal, please contact the municipality to cancel it as of the closing date. This does not happen automatically when the property is sold, and withdrawals will continue after closing unless you cancel.",
+      "Please upload your latest property tax bill. We use it to split this year's taxes between you and the buyer.",
+    note: "Paying by pre-authorized withdrawal? Contact the municipality to cancel it as of the closing date.",
     blog: {
       title: "How property taxes are adjusted on closing",
       slug: "how-property-tax-is-adjusted-when-you-sell-your-ontario-home",
@@ -58,7 +58,7 @@ const RULES: TaskDescriptionRule[] = [
     match: "rental equipment information",
     sides: ["sale"],
     description:
-      "Many homes have rental equipment e.g hot water tank, furnace, water softener, etc. If your property has rental equipment, please provide the details below.",
+      "Many homes have rental equipment e.g. hot water tank, furnace, water softener. If your property has rental equipment, please provide the details below.",
     blog: {
       title: "What happens to rental equipment when you sell",
       slug: "what-happens-to-rental-equipment-when-you-sell-your-home",
@@ -98,6 +98,12 @@ const RULES: TaskDescriptionRule[] = [
     sides: ["purchase"],
     description:
       "Before releasing your mortgage funds, your lender requires proof that your new home is insured as of the closing date, with them listed on the policy.",
+  },
+  {
+    match: "void cheque",
+    sides: ["sale"],
+    description:
+      "After your mortgage and closing costs are paid, the rest of the money from your sale is yours. Tell us how you'd like to receive it.",
   },
   {
     match: "void cheque",

@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
+import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
+import RepeaterRows from "@/components/dashboard/RepeaterRows";
+import SharesTable, { formatShares, minorityNames, sharesFor, sharesTotal } from "@/components/dashboard/SharesTable";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { getVisibleWhen, isVisibleByRules, ruleSource } from "@/lib/visibleWhen";
@@ -20,7 +23,6 @@ import {
 import {
   X,
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
   Loader2,
   CalendarCheck,
@@ -58,6 +60,7 @@ interface FormField {
     | "checkbox"
     | "date"
     | "radio"
+    | "shares"
     | "note";
   label: string;
   placeholder: string | null;
@@ -143,6 +146,14 @@ interface DynamicTaskDrawerProps {
 /* ─────────────────────────────────────────────
    HELPERS
 ───────────────────────────────────────────── */
+// options.repeater turns a textarea into item rows.
+function getRepeater(opts: unknown): { columns: string[]; hint: string | null } | null {
+  if (!opts || typeof opts !== "object" || Array.isArray(opts)) return null;
+  const r = (opts as { repeater?: { columns?: unknown; hint?: unknown } }).repeater;
+  if (!r || !Array.isArray(r.columns) || r.columns.length === 0) return null;
+  return { columns: r.columns.map(String), hint: typeof r.hint === "string" ? r.hint : null };
+}
+
 function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
@@ -292,15 +303,14 @@ function getFileConfig(opts: unknown): {
  * The APS detection means multi-file works even if the DB flag was never
  * applied, and covers every APS template variant (some have no doc_type).
  */
-function fileFieldAllowsMultiple(field: FormField, side: TaskSide): boolean {
+function fileFieldAllowsMultiple(field: FormField): boolean {
   if (field.field_type !== "file") return false;
   const cfg = getFileConfig(field.options);
   if (cfg.multiple) return true;
   if (cfg.doc_type === "aps") return true;
   const label = (field.label ?? "").toLowerCase();
-  // Sellers may need one per account; purchase is one per box.
-  const voidCheque = cfg.doc_type === "void_cheque" || label.includes("void cheque");
-  if (voidCheque) return side !== "purchase";
+  // One void cheque per party box.
+  if (cfg.doc_type === "void_cheque" || label.includes("void cheque")) return false;
   return label.includes("agreement of purchase");
 }
 
@@ -375,107 +385,6 @@ const inputError = "border-[#C10007] ring-2 ring-[#C10007]/10";
 /* ─────────────────────────────────────────────
    SINGLE FILE UPLOAD SLOT
 ───────────────────────────────────────────── */
-/** Camera capture for upload slots; returns the photo as a JPEG file. */
-function PhotoCaptureDialog({
-  title,
-  onCapture,
-  onClose,
-}: {
-  title: string;
-  onCapture: (file: File) => void;
-  onClose: () => void;
-}) {
-  const webcamRef = useRef<Webcam>(null);
-  const [shot, setShot] = useState<string | null>(null);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-
-  async function acceptPhoto() {
-    // e.g. "Photo - Home insurance binder.jpg".
-    if (shot) onCapture(await dataUrlToFile(shot, `Photo - ${title.replace(/[\\/:*?"<>|]+/g, "")}.jpg`));
-  }
-
-  return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true" aria-label="Take photo">
-      <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-bold text-gray-900">{title}</p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="cursor-pointer rounded-md p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-            aria-label="Close camera"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-gray-950">
-          {shot ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={shot} alt="Captured photo" className="absolute inset-0 h-full w-full object-contain" />
-          ) : (
-            <Webcam
-              ref={webcamRef}
-              audio={false}
-              screenshotFormat="image/jpeg"
-              screenshotQuality={0.95}
-              forceScreenshotSourceSize
-              videoConstraints={{ facingMode: "environment", width: { ideal: 1920 } }}
-              onUserMediaError={() => setCameraError("Unable to access camera. Please allow camera permissions.")}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-          )}
-        </div>
-        {cameraError && <p className="text-xs text-[#C10007]">{cameraError}</p>}
-        <div className="flex gap-3">
-          {shot ? (
-            <>
-              <button
-                type="button"
-                onClick={() => setShot(null)}
-                className="cursor-pointer flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Retake
-              </button>
-              <button
-                type="button"
-                onClick={acceptPhoto}
-                className="cursor-pointer flex-1 rounded-lg bg-[#C10007] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#a30006]"
-              >
-                Use photo
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              disabled={!!cameraError}
-              onClick={() => setShot(webcamRef.current?.getScreenshot() ?? null)}
-              className="cursor-pointer flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-[#C10007] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#a30006] disabled:opacity-60"
-            >
-              <Camera size={15} /> Capture
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// "✓ name  Remove" for an uploaded file.
-function FileDoneLine({ name, action, onAction }: { name: string; action: string; onAction: () => void }) {
-  return (
-    <p className="flex min-w-0 max-w-full items-baseline justify-center gap-3">
-      <span className="min-w-0 truncate text-sm font-semibold text-green-700">&#10003; {name}</span>
-      <button
-        type="button"
-        onClick={onAction}
-        className="cursor-pointer shrink-0 text-xs text-gray-400 hover:text-[#C10007]"
-      >
-        {action}
-      </button>
-    </p>
-  );
-}
-
 function FileSlot({
   field,
   file,
@@ -580,7 +489,7 @@ function FileSlot({
         <div>
           <p className="text-sm font-semibold text-gray-800">{slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · {cfg.accept.split(",").join(", ")} · Max {cfg.max_mb}MB
+            Click or drag · {acceptLabel(cfg.accept)} · Max {cfg.max_mb}MB
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
@@ -764,7 +673,7 @@ function MultiFileSlot({
         <div>
           <p className="text-sm font-semibold text-gray-800">{slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · {cfg.accept.split(",").join(", ")} · Max {cfg.max_mb}MB
+            Click or drag · {acceptLabel(cfg.accept)} · Max {cfg.max_mb}MB
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-2">
@@ -1009,7 +918,7 @@ export default function DynamicTaskDrawer({
           // Which fields accept multiple files (e.g. APS).
           const multipleFieldIds = new Set(
             fetchedFields
-              .filter((f) => fileFieldAllowsMultiple(f, side))
+              .filter((f) => fileFieldAllowsMultiple(f))
               .map((f) => f.id),
           );
           // Pre-fill existing text responses
@@ -1230,7 +1139,7 @@ export default function DynamicTaskDrawer({
     const val = values[field.id]?.trim() ?? "";
 
     if (field.field_type === "file") {
-      if (fileFieldAllowsMultiple(field, side)) {
+      if (fileFieldAllowsMultiple(field)) {
         // Multiple field: satisfied by any new OR kept existing file.
         const hasAny =
           (multiFiles[field.id]?.length ?? 0) > 0 ||
@@ -1245,6 +1154,11 @@ export default function DynamicTaskDrawer({
       return required && values[field.id] !== "true"
         ? `${field.label} is required.`
         : null;
+    }
+    if (field.field_type === "shares") {
+      const total = sharesTotal(sharesFor(shareNames, val));
+      if (!val) return required ? `${field.label} is required.` : null;
+      return total === 100 ? null : `Shares must add up to 100% — they add up to ${total}%.`;
     }
     if (field.field_type === "email") {
       if (required && !val) return `${field.label} is required.`;
@@ -1357,7 +1271,7 @@ export default function DynamicTaskDrawer({
 
       // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
       for (const field of fields.filter(
-        (f) => fileFieldAllowsMultiple(f, side) && isFieldVisible(f)
+        (f) => fileFieldAllowsMultiple(f) && isFieldVisible(f)
       )) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
@@ -1565,7 +1479,7 @@ export default function DynamicTaskDrawer({
 
       // ── 1b. Upload new files for multiple-file fields (e.g. APS) ──
       for (const field of fields.filter(
-        (f) => fileFieldAllowsMultiple(f, side) && isFieldVisible(f)
+        (f) => fileFieldAllowsMultiple(f) && isFieldVisible(f)
       )) {
         const picked = multiFiles[field.id] ?? [];
         if (picked.length === 0) continue;
@@ -1692,10 +1606,15 @@ export default function DynamicTaskDrawer({
   const isVoidChequeTask = taskTitle.toLowerCase().includes("void cheque");
   const hasDraftOption = !isCalendlyTask;
   // Upload-only tasks submit with "Upload & Submit", per the redesign.
-  const isUploadTask = ["agreement of purchase", "home insurance", "void cheque", "property tax", "deposit funds"].some(
-    (k) => taskTitle.toLowerCase().includes(k),
-  );
+  const isUploadTask =
+    ["agreement of purchase", "home insurance", "void cheque", "property tax", "deposit funds"].some((k) =>
+      taskTitle.toLowerCase().includes(k),
+    ) && !(isVoidChequeTask && side === "sale");
   const taskCopy = getTaskCopy(taskTitle, side);
+  // Sellers for the proceeds split.
+  const shareNames = fields
+    .filter((f) => f.field_type === "file" && getFileConfig(f.options).doc_type === "void_cheque" && isFieldVisible(f))
+    .map((f) => f.label);
   // Purchase void cheque: one box per purchaser.
   const purchaserCount =
     isVoidChequeTask && side === "purchase"
@@ -1882,6 +1801,7 @@ export default function DynamicTaskDrawer({
                 {taskCopy.description}
                 {eachPurchaserNote}
               </p>
+              {taskCopy.note && <InfoNote text={taskCopy.note} />}
               {taskCopy.blog && (
                 <a
                   href={`/blog/${taskCopy.blog.slug}`}
@@ -1893,7 +1813,6 @@ export default function DynamicTaskDrawer({
                 </a>
               )}
               {taskCopy.details && <DetailsCard details={taskCopy.details} />}
-              {taskCopy.note && <InfoNote text={taskCopy.note} />}
             </div>
           )}
 
@@ -1957,25 +1876,6 @@ export default function DynamicTaskDrawer({
                 </div>
                 <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
                   Not an exhaustive list. If your lender is not shown, use the mortgagee address from your lender.
-                </p>
-              </div>
-            </>
-          )}
-
-          {/* ── Void Cheque / Direct Deposit static sections (sale only) ── */}
-          {isVoidChequeTask && side !== "purchase" && (
-            <>
-              <p className="text-sm text-gray-600 leading-relaxed">
-              Please upload a void cheque / direct deposit form for each party involved in the sale. 
-              </p>
-              <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                <AlertTriangle
-                  size={15}
-                  className="text-amber-500 flex-shrink-0 mt-0.5"
-                  strokeWidth={2}
-                />
-                <p className="text-xs text-amber-800 leading-relaxed">
-                If you are married and this is a sale of a primary residence, please upload a void cheque / direct deposit form for your spouse as well, or a joint account. 
                 </p>
               </div>
             </>
@@ -2228,6 +2128,37 @@ export default function DynamicTaskDrawer({
                 );
               }
 
+              if (field.field_type === "shares") {
+                const rows = sharesFor(shareNames, values[field.id] ?? "");
+                const minority = sharesTotal(rows) === 100 ? minorityNames(rows) : [];
+                const opts: unknown = field.options;
+                const hint = isRecord(opts) && typeof opts.hint === "string" ? opts.hint : null;
+                const first = (n: string) => n.split(" ")[0];
+                return (
+                  <div key={field.id} id={`field-${field.id}`} className="space-y-3">
+                    <div>
+                      <label className="text-sm font-semibold text-gray-800 block">
+                        {field.label}
+                        {fieldRequired(field) && <span className="text-[#C10007] ml-1">*</span>}
+                      </label>
+                      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+                    </div>
+                    <SharesTable
+                      rows={rows}
+                      invalid={!!errors[field.id]}
+                      onChange={(next) => setValue(field.id, formatShares(next))}
+                    />
+                    {errors[field.id] && <p className="text-xs text-[#C10007]">{errors[field.id]}</p>}
+                    {minority.map((name) => (
+                      <InfoNote
+                        key={name}
+                        text={`${first(name)} receives the minority share, so ${first(name)} needs Independent Legal Advice (ILA) \u2014 on their own, not together. We have added an ILA task. ILA is given by a lawyer outside our firm, who charges their own fee (usually $250 to $450, plus HST).`}
+                      />
+                    ))}
+                  </div>
+                );
+              }
+
               // Radio choices; options share the select shape.
               if (field.field_type === "radio") {
                 const opts = isSelectOptions(field.options) ? field.options : [];
@@ -2434,7 +2365,7 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
-                    {fileFieldAllowsMultiple(field, side) ? (
+                    {fileFieldAllowsMultiple(field) ? (
                       <MultiFileSlot
                         field={field}
                         files={multiFiles[field.id] ?? []}
@@ -2577,6 +2508,7 @@ export default function DynamicTaskDrawer({
               }
 
               if (field.field_type === "textarea") {
+                const repeater = getRepeater(field.options);
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
@@ -2585,6 +2517,17 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
+                    {repeater ? (
+                      <>
+                        {repeater.hint && <p className="-mt-1 mb-3 text-sm text-gray-500">{repeater.hint}</p>}
+                        <RepeaterRows
+                          placeholders={repeater.columns}
+                          value={values[field.id] ?? ""}
+                          invalid={!!errors[field.id]}
+                          onChange={(v) => setValue(field.id, v)}
+                        />
+                      </>
+                    ) : (
                     <textarea
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
@@ -2597,6 +2540,7 @@ export default function DynamicTaskDrawer({
                         "resize-none",
                       ].join(" ")}
                     />
+                    )}
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
                         {errors[field.id]}
