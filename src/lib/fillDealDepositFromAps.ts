@@ -21,32 +21,16 @@ export function isApsLabel(text: string | null | undefined): boolean {
   return (text ?? "").toLowerCase().includes("agreement of purchase");
 }
 
-/** Sets the deposit on the deal and linked deals; Buy & Sell sale side goes on the lead. */
-export async function fillDealDepositFromAps(opts: {
-  dealId: string;
-  side?: string | null;
-  fileUrls: string[];
-}): Promise<void> {
-  const { dealId, side, fileUrls } = opts;
-  if (fileUrls.length === 0) return;
-
-  const { data: deal } = await supabaseAdmin
-    .from("deals")
-    .select("id, type")
-    .eq("id", dealId)
-    .maybeSingle();
-  if (!deal) return;
-  const type = (deal.type ?? "").trim().toLowerCase();
-  const apsSide = side === "sale" || type === "sale" ? "sale" : "purchase";
-  // Buy & Sell keeps the sale deposit on the lead; deals has one deposit column.
-  const sellingColumn = apsSide === "sale" && type === "purchase & sale";
-
+/** Deposit read off APS files, fast model first. */
+export async function readApsDeposit(
+  fileUrls: string[],
+  apsSide: "purchase" | "sale",
+): Promise<{ merged: ApsExtractionResult; deposit: string | null } | null> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
   if (!apiKey) {
     console.error("[aps-deposit] GEMINI_API_KEY is not set; APS not read");
-    return;
+    return null;
   }
-
   const startedAt = Date.now();
   // One read per file, in parallel so several files fit the time limit; merged like intake.
   const readAll = async (order: "quality" | "fast") => {
@@ -70,11 +54,35 @@ export async function fillDealDepositFromAps(opts: {
     const deposit = merged.is_aps ? normalizeAmount(merged.deposit.value, { min: 1 }) : null;
     return { merged, deposit, answered: reads.length > 0 };
   };
-
-  // Fast model first; the stronger ladder only if a model answered without a deposit.
   const fast = await readAll("fast");
-  let { merged, deposit } = fast;
-  if (!deposit && fast.answered) ({ merged, deposit } = await readAll("quality"));
+  if (fast.deposit || !fast.answered) return fast;
+  return readAll("quality");
+}
+
+/** Sets the deal family's deposit from task APS uploads. */
+export async function fillDealDepositFromAps(opts: {
+  dealId: string;
+  side?: string | null;
+  fileUrls: string[];
+}): Promise<void> {
+  const { dealId, side, fileUrls } = opts;
+  if (fileUrls.length === 0) return;
+
+  const { data: deal } = await supabaseAdmin
+    .from("deals")
+    .select("id, type")
+    .eq("id", dealId)
+    .maybeSingle();
+  if (!deal) return;
+  const type = (deal.type ?? "").trim().toLowerCase();
+  const apsSide = side === "sale" || type === "sale" ? "sale" : "purchase";
+  // Buy & Sell sale deposit lives on the lead.
+  const sellingColumn = apsSide === "sale" && type === "purchase & sale";
+
+  const startedAt = Date.now();
+  const read = await readApsDeposit(fileUrls, apsSide);
+  if (!read) return;
+  const { merged, deposit } = read;
   const took = `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
   if (!deposit) {
     console.log(`[aps-deposit] deal=${dealId} no deposit read from ${fileUrls.length} file(s) in ${took}`);
@@ -99,6 +107,47 @@ export async function fillDealDepositFromAps(opts: {
     await supabaseAdmin.from("leads").update({ deposit_amount: deposit }).in("id", leadIds);
   }
   console.log(`[aps-deposit] deals=${updated?.length ?? 0} deposit=${deposit} (${merged.deposit.confidence}) in ${took}`);
+}
+
+/** Intake backup: sets the lead family's deposit from the APS. */
+export async function fillLeadDepositFromAps(opts: {
+  leadId: string;
+  side: "purchase" | "sale";
+  fileUrl: string;
+}): Promise<void> {
+  const { leadId, side, fileUrl } = opts;
+  const { data: lead } = await supabaseAdmin
+    .from("leads")
+    .select("id, parent_lead_id, lead_type, aps_extraction")
+    .eq("id", leadId)
+    .maybeSingle();
+  if (!lead) return;
+  const column =
+    side === "sale" && lead.lead_type === "Purchase & Sale" ? "selling_deposit_amount" : "deposit_amount";
+  // The browser read already supplied the APS deposit.
+  const extraction = lead.aps_extraction as Record<string, { result?: { deposit?: { value?: unknown } } }> | null;
+  if (normalizeAmount(extraction?.[side]?.result?.deposit?.value, { min: 1 })) return;
+
+  const read = await readApsDeposit([fileUrl], side);
+  if (!read?.deposit) {
+    console.log(`[aps-deposit] lead=${leadId} ${side}: no deposit read`);
+    return;
+  }
+
+  const primaryId = lead.parent_lead_id ?? lead.id;
+  const { data: family } = await supabaseAdmin
+    .from("leads")
+    .update({ [column]: read.deposit })
+    .or(`id.eq.${primaryId},parent_lead_id.eq.${primaryId}`)
+    .select("id");
+  // A deal made before the read finished takes it too.
+  if (column === "deposit_amount" && family?.length) {
+    await supabaseAdmin
+      .from("deals")
+      .update({ deposit_amount: read.deposit })
+      .in("lead_id", family.map((l) => l.id));
+  }
+  console.log(`[aps-deposit] lead=${leadId} ${side}: ${column}=${read.deposit} (backup)`);
 }
 
 // The read's budget plus slack for the upload and save.

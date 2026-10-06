@@ -1,7 +1,9 @@
 "use client";
 
+
 import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
+import ChoiceChips from "@/components/dashboard/ChoiceChips";
 
 const CORRECT_LABEL = "Are these details correct?";
 const CORRECTION_LABEL = "What needs to be corrected?";
@@ -18,6 +20,8 @@ const PropertyDetailsTaskModal: React.FC<{
   taskId: string | null;
   title: string;
   subtitle?: string;
+  /** Everyone on this side of the file. */
+  clientNames: string[];
   address: string;
   priceLabel: string;
   price: number | null;
@@ -32,6 +36,7 @@ const PropertyDetailsTaskModal: React.FC<{
   taskId,
   title,
   subtitle,
+  clientNames,
   address,
   priceLabel,
   price,
@@ -116,7 +121,12 @@ const PropertyDetailsTaskModal: React.FC<{
   };
 
   const details = [
-    { label: "Property address", value: address || "—" },
+    {
+      label: clientNames.length > 1 ? "Client names" : "Client name",
+      value: clientNames.join(", ") || "—",
+      wide: true,
+    },
+    { label: "Property address", value: address || "—", wide: true },
     { label: priceLabel, value: money(price) },
     { label: "Deposit", value: money(deposit) },
     { label: "Closing date", value: closingDate },
@@ -163,7 +173,7 @@ const PropertyDetailsTaskModal: React.FC<{
 
             <div className="rounded-xl border border-gray-200 px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
               {details.map((d) => (
-                <div key={d.label} className="min-w-0">
+                <div key={d.label} className={`min-w-0 ${"wide" in d ? "sm:col-span-3" : ""}`}>
                   <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
                     {d.label}
                   </p>
@@ -178,24 +188,12 @@ const PropertyDetailsTaskModal: React.FC<{
               <legend className="text-sm font-semibold text-gray-900 mb-2">
                 {CORRECT_LABEL} <span className="text-[#C10007]">*</span>
               </legend>
-              <div className="flex flex-wrap gap-x-6 gap-y-2">
-                {[YES, NO].map((opt) => (
-                  <label
-                    key={opt}
-                    className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="property-details-correct"
-                      value={opt}
-                      checked={answer === opt}
-                      onChange={() => setAnswer(opt)}
-                      className="h-4 w-4 accent-[#C10007] cursor-pointer"
-                    />
-                    {opt}
-                  </label>
-                ))}
-              </div>
+              <ChoiceChips
+                options={[YES, NO].map((o) => ({ value: o, label: o }))}
+                value={answer}
+                onChange={setAnswer}
+                label={CORRECT_LABEL}
+              />
               {answerError && (
                 <p className="text-xs text-[#C10007] mt-1.5">
                   Please choose an option.

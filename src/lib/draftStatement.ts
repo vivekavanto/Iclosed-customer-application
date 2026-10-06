@@ -1,7 +1,8 @@
 // v6 purchase and refinance draft statements (spec 9).
 import { money } from "@/lib/closingEstimateEmail";
 import { provincialLTT, round2, type Tier } from "@/lib/closingCosts";
-import { computeFees, dollars, type IclosedFees, type LttBracket } from "@/lib/iclosedFees";
+import { computeFees, dollars, titleInsuranceEstimate, type IclosedFees, type LttBracket } from "@/lib/iclosedFees";
+import { isCondo, type PropertyType } from "@/lib/propertyType";
 import { EXPLANATIONS } from "@/lib/closingCostExplanations";
 
 export interface PurchaseDraftInput {
@@ -21,6 +22,8 @@ export interface PurchaseDraftInput {
   /** The firm's FCT quote once known; null uses the fee-file estimate. */
   titlePremium: number | null;
   discount: number | null;
+  /** Picks the FCT condo or freehold rate. */
+  propertyType?: PropertyType | null;
 }
 
 /** File inputs; the client adds mortgage and first-time buyer. */
@@ -204,11 +207,12 @@ function disbursementTip(fees: IclosedFees, key: string): string | undefined {
 }
 
 export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput): DraftStatement {
+  const condo = input.propertyType ? isCondo(input.propertyType) : null;
   const ft = fees.file_types.purchase;
   const hasMortgage = input.mortgage === null ? undefined : input.mortgage > 0;
   const f = computeFees(fees, "purchase", { hasMortgage, discount: input.discount });
   const ltt = landTransferTax(fees, input.price, input.isToronto, input.firstTimeBuyer);
-  const title = round2(input.titlePremium ?? ft.title_insurance_estimate ?? 0);
+  const title = round2(input.titlePremium ?? titleInsuranceEstimate(ft, condo));
 
   const deposit = input.deposit ?? 0;
   const mortgage = input.mortgage ?? 0;
@@ -281,7 +285,15 @@ export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput)
       {
         title: "Title insurance",
         lines: [
-          { label: "FCT policy premium, estimate", amount: money(title), tip: TIPS.title, screen: { estimate: true } },
+          {
+            label: "FCT policy premium, estimate",
+            amount: money(title),
+            tip: TIPS.title,
+            screen: {
+              estimate: true,
+              label: condo === null ? undefined : `FCT policy premium (${condo ? "condo" : "freehold"}), estimate`,
+            },
+          },
         ],
         note: TITLE_NOTE,
         screenNote: TITLE_SCREEN_NOTE,

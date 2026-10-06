@@ -49,6 +49,11 @@ export function isHoldTitleTask(title: string | null | undefined): boolean {
   return t.includes("hold title") || t.includes("ownership shares");
 }
 
+/** Purchase task added only for resale condos. */
+export function isStatusCertificateTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("status certificate");
+}
+
 export function isPropertyDetailsTask(title: string | null | undefined): boolean {
   return (title ?? "").toLowerCase().includes("property details");
 }
