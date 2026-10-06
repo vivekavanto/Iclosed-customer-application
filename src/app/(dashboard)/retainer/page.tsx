@@ -521,25 +521,13 @@ export default function RetainerPage() {
               Thanks, {firstName} &mdash; your retainer is signed
             </h1>
             <p className="text-sm text-gray-500">
-              A copy is on its way to your inbox.{" "}
-              {uploaderName ? (
-                <>
-                  <span className="font-semibold text-gray-700">
-                    {uploaderName}
-                  </span>{" "}
-                  is handling document submission for this file, so there&apos;s
-                  nothing else you need to do right now.
-                </>
-              ) : (
-                <>
-                  The documents for this file are being handled for you, so
-                  there&apos;s nothing else you need to do right now.
-                </>
-              )}
+              Thank you.{" "}
+              <span className="font-semibold text-gray-700">
+                {uploaderName ?? "Your co-applicant"}
+              </span>{" "}
+              is taking the lead, so you can safely close this tab. A copy of
+              your retainer is on its way to your inbox.
             </p>
-            <div className="mt-6 flex justify-center">
-              <Button size="md" onClick={() => window.close()}>Close tab</Button>
-            </div>
           </ResultPopup>
         );
       }
@@ -574,9 +562,8 @@ export default function RetainerPage() {
               Retainer Signed
             </h1>
             <p className="text-sm text-gray-500">
-              Thank you for signing, {name.split(" ")[0] || "there"}. There&apos;s
-              nothing more you need to do — your co-applicant is handling the
-              document uploads, and our team will be in touch.
+              Thank you. Your co-applicant is taking the lead, so you can safely
+              close this tab.
             </p>
           </ResultPopup>
         );
@@ -888,9 +875,23 @@ export default function RetainerPage() {
             </a>
             , for more details on terms of service, and user agreement.
           </p>
-          <Button type="submit" size="md" loading={loading}>
-            I agree
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            <Button type="submit" size="md" loading={loading}>
+              I agree
+            </Button>
+            {/* For clients who disagree with the terms. */}
+            <p className="text-sm text-gray-500">
+              Questions or concerns?{" "}
+              <a
+                href="/contact"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-[#C10007] underline underline-offset-2 hover:text-[#9F0006]"
+              >
+                Contact us
+              </a>
+            </p>
+          </div>
         </div>
       </form>
     </div>

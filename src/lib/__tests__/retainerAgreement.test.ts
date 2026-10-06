@@ -114,7 +114,6 @@ describe("retainer agreement (spec 8)", () => {
     const a = buildRetainerAgreement(fees, base);
     expect(a.fees).toEqual([
       { label: "Legal fees (for title transfer and mortgage)", amount: "$1,199.00" },
-      { label: "Discount", amount: "$0.00" },
       { label: "Estimated Disbursements (average is $650-$750)", amount: "$715.00" },
       { label: "HST", amount: "$203.97" },
     ]);
@@ -159,14 +158,14 @@ describe("retainer agreement (spec 8)", () => {
   it("sale uses its own fees and extras, with no definitions", () => {
     const a = buildRetainerAgreement(fees, { ...base, kind: "sale" });
     expect(a.title).toBe("Sale Retainer Agreement");
-    expect(a.fees.map((f) => f.amount)).toEqual(["$1,099.00", "$0.00", "$485.00", "$197.47"]);
-    expect(a.fees[2].label).toBe("Estimated Disbursements");
+    expect(a.fees.map((f) => f.amount)).toEqual(["$1,099.00", "$485.00", "$197.47"]);
+    expect(a.fees[1].label).toBe("Estimated Disbursements");
     expect(a.changes).toEqual([
       { label: "If you require the closing date to be moved", amount: "$250 per extension request" },
       { label: "Each payout beyond first mortgage, property tax and commission", amount: "$100" },
       {
-        label: "No requisition letter (Title Search) from the buyer's lawyer 7 days before closing, so we search title ourselves",
-        amount: "Approx $50 ($40 to $75)",
+        label: "No requisition letter (Title Search) from the buyer's lawyer 7 days before closing, so we search title ourselves ($40 to $75)",
+        amount: "Approx $50",
       },
       { label: "Sale price over $1.5M", amount: "$300, or quoted above $3M" },
     ]);
@@ -181,7 +180,6 @@ describe("retainer agreement (spec 8)", () => {
     expect(a.title).toBe("Refinance Retainer Agreement");
     expect(a.fees).toEqual([
       { label: "Legal fees (including first mortgage payout)", amount: "$999.00" },
-      { label: "Discount", amount: "$0.00" },
       { label: "Estimated Disbursements (average is $650-$750)", amount: "$655.00" },
       { label: "HST", amount: "$184.47" },
     ]);
@@ -193,6 +191,7 @@ describe("retainer agreement (spec 8)", () => {
       { label: "Your mortgage is not from a major bank", amount: "$250" },
       { label: "Mortgage amount over $1.5M", amount: "$300, or quoted above $3M" },
       { label: "Your existing lender asks us to register the discharge ($85 is paid to the ministry)", amount: "$85" },
+      { label: "For private lenders, preparing the discharge documents", amount: "$450" },
     ]);
     expect(a.definitions.map((d) => d.label)).toEqual([
       "Title Insurance.",
@@ -262,15 +261,15 @@ describe("sale and purchase bundle (spec 5.3a, 7A)", () => {
     ]);
   });
 
-  it("v12 bundle paragraph and discount row", () => {
+  it("v13 bundle paragraph and discount row", () => {
     const base = { firmKey: "navawilson" as const, property: "x", fileNo: null, date: "2026-10-01", bundle: true };
     const purchase = buildRetainerAgreement(fees, { ...base, kind: "purchase", discount: 100 });
     expect(purchase.fees[1].amount).toBe("($100.00)");
     expect(purchase.fees[3].amount).toBe("$190.97");
-    expect(purchase.bundleNote).toMatch(/^You are also selling with us\..*comes off this purchase\./);
+    expect(purchase.bundleNote).toMatch(/^Because we are closing both.*comes off this purchase\.$/);
     const sale = buildRetainerAgreement(fees, { ...base, kind: "sale", discount: null });
-    expect(sale.fees[1].amount).toBe("$0.00");
-    expect(sale.bundleNote).toMatch(/^You are also buying with us\..*comes off your purchase\./);
+    expect(sale.fees.some((f) => f.label === "Discount")).toBe(false);
+    expect(sale.bundleNote).toBe("As we are closing both of your deals, you get a $100 discount on the legal fees of your purchase.");
     expect(buildRetainerAgreement(fees, { ...base, kind: "sale", discount: null, bundle: false }).bundleNote).toBeUndefined();
   });
 });

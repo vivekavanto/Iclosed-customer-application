@@ -140,6 +140,9 @@ extras:
   discharge_registration:
     fee: 85.00                   # paid to the ministry
     applies_to: [refinance]
+  private_discharge_documents:   # v13: private lender discharge prep
+    fee: 450.00
+    applies_to: [refinance]
   execution_search_at_occupancy:
     fee: at_cost
     applies_to: [new_build_condo]

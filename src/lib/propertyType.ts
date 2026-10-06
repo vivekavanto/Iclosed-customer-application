@@ -1,14 +1,16 @@
 // Purchase property type, chosen at intake.
 export const PROPERTY_TYPES = [
-  { value: "new_build_condo", label: "New build condo" },
-  { value: "resale_condo", label: "Resale condo" },
-  { value: "freehold", label: "Freehold" },
+  { value: "new_build_condo", label: "Condo - New build" },
+  { value: "resale_condo", label: "Condo - Resale" },
+  { value: "new_build_freehold", label: "Freehold (detached, semi or town house) - New build" },
+  { value: "resale_freehold", label: "Freehold (detached, semi or town house) - Resale" },
 ] as const;
 
-export type PropertyType = (typeof PROPERTY_TYPES)[number]["value"];
+// "freehold" is from leads saved before the new build/resale split.
+export type PropertyType = (typeof PROPERTY_TYPES)[number]["value"] | "freehold";
 
 export function parsePropertyType(raw: unknown): PropertyType | null {
-  return PROPERTY_TYPES.some((t) => t.value === raw) ? (raw as PropertyType) : null;
+  return raw === "freehold" || PROPERTY_TYPES.some((t) => t.value === raw) ? (raw as PropertyType) : null;
 }
 
 /** FCT prices both condo types at the condo rate. */

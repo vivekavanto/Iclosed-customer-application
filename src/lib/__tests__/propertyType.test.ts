@@ -8,6 +8,9 @@ describe("property type", () => {
     expect(isCondo("new_build_condo")).toBe(true);
     expect(isCondo("resale_condo")).toBe(true);
     expect(isCondo("freehold")).toBe(false);
+    expect(isCondo("new_build_freehold")).toBe(false);
+    expect(parsePropertyType("resale_freehold")).toBe("resale_freehold");
+    expect(parsePropertyType("freehold")).toBe("freehold");
     expect(parsePropertyType("bungalow")).toBeNull();
   });
 

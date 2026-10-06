@@ -110,7 +110,7 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
   const { data: lead } = await supabaseAdmin
     .from("leads")
     .select(
-      "id, first_name, email, lead_type, price, selling_price, closing_date, selling_closing_date, created_at, address_street, address_unit, address_city, address_province, address_postal_code, selling_address_street, selling_address_unit, selling_address_city, selling_address_province, selling_address_postal_code",
+      "id, parent_lead_id, first_name, email, lead_type, price, selling_price, closing_date, selling_closing_date, created_at, address_street, address_unit, address_city, address_province, address_postal_code, selling_address_street, selling_address_unit, selling_address_city, selling_address_province, selling_address_postal_code",
     )
     .eq("id", leadId)
     .maybeSingle();
@@ -154,7 +154,11 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
     purchase: { legalFees: b.purchase.legalFees, disbursements: b.purchase.disbursements },
   };
   const prefix = feeType ? fees.file_types[feeType].quote_prefix : fees.bundles.sale_and_purchase.quote_prefix;
-  const quoteNumber = prefix ? await quoteNumberFor(lead, prefix) : null;
+  // Co-persons share the primary's quote number.
+  const { data: parent } = lead.parent_lead_id
+    ? await supabaseAdmin.from("leads").select("id, lead_type, created_at").eq("id", lead.parent_lead_id).maybeSingle()
+    : { data: null };
+  const quoteNumber = prefix ? await quoteNumberFor(parent ?? lead, prefix) : null;
 
   return {
     leadId: lead.id,

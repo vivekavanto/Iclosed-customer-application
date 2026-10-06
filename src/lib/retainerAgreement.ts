@@ -1,4 +1,4 @@
-// v12 purchase, sale and refinance retainer wording. Pure.
+// v13 purchase, sale and refinance retainer wording. Pure.
 import { getFirm, type FirmKey } from "@/lib/firms";
 import { money } from "@/lib/closingEstimateEmail";
 import { QUOTE_TEAM } from "@/lib/quotePricing";
@@ -38,7 +38,7 @@ export interface RetainerAgreement {
   sections: AgreementSection[];
   fees: FeeRow[];
   feeNote: string;
-  /** v12 bundle paragraph under Your fees. */
+  /** v13 bundle paragraph under Your fees. */
   bundleNote?: string;
   changesIntro: string;
   changes: FeeRow[];
@@ -46,7 +46,7 @@ export interface RetainerAgreement {
   acceptance: string;
 }
 
-/** Purchase, sale and refinance leads get v12; others the FAQ. */
+/** Purchase, sale and refinance leads get v13; others the FAQ. */
 export function retainerAgreementKind(leadType: string | null | undefined): AgreementKind | null {
   const lt = (leadType ?? "").trim();
   if (lt === "Purchase") return "purchase";
@@ -151,8 +151,8 @@ const EXTRA_LABELS: Record<string, (e: ExtraFee) => Partial<Record<AgreementKind
     purchase: "Your mortgage is not from a major bank",
     refinance: "Your mortgage is not from a major bank",
   }),
-  seller_title_search: () => ({
-    sale: "No requisition letter (Title Search) from the buyer's lawyer 7 days before closing, so we search title ourselves",
+  seller_title_search: (e) => ({
+    sale: `No requisition letter (Title Search) from the buyer's lawyer 7 days before closing, so we search title ourselves${e.range ? ` (${dollars(e.range[0])} to ${dollars(e.range[1])})` : ""}`,
   }),
   price_tier: (e) => ({
     purchase: `Purchase price over ${millions(e.threshold ?? 0)}`,
@@ -163,6 +163,7 @@ const EXTRA_LABELS: Record<string, (e: ExtraFee) => Partial<Record<AgreementKind
   discharge_registration: (e) => ({
     refinance: `Your existing lender asks us to register the discharge (${dollars(typeof e.fee === "number" ? e.fee : 0)} is paid to the ministry)`,
   }),
+  private_discharge_documents: () => ({ refinance: "For private lenders, preparing the discharge documents" }),
 };
 
 function extraFeeText(key: string, e: ExtraFee): string {
@@ -170,8 +171,8 @@ function extraFeeText(key: string, e: ExtraFee): string {
   const fee = dollars(e.fee);
   if (key === "notice_of_assignment_of_rents") return `${fee} plus ${dollars(e.registration ?? 0)} registration`;
   if (key === "price_tier") return `${fee}, or quoted above ${millions(e.manual_quote_above ?? 0)}`;
-  if (e.estimate && e.range) return `Approx ${fee} (${dollars(e.range[0])} to ${dollars(e.range[1])})`;
-  if (e.approximate) return `Approx ${fee}`;
+  // v13 shows the range in the label.
+  if (e.estimate || e.approximate) return `Approx ${fee}`;
   return e.unit && e.unit.startsWith("per ") ? `${fee} ${e.unit}` : fee;
 }
 
@@ -257,7 +258,7 @@ const COPY: Record<
     ],
     feeNote: "Our fees come out of your sale proceeds, not in advance. Your draft statement of account itemises every disbursement.",
     changesIntro:
-      "None of these apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as private or B lender mortgages, estates, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
+      "None of these apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as private or B lender mortgages, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
     definitions: [],
     acceptance:
       "By signing you agree to these terms and the fees above, and you understand we use AI-assisted tools with lawyer oversight.",
@@ -324,12 +325,12 @@ export function buildRetainerAgreement(fees: IclosedFees, input: RetainerAgreeme
 
   const hstNumber = fees.retainer?.hst_registration_number || "[number]";
   const off = dollars(fees.bundles.sale_and_purchase.discount);
-  // v12 bundle paragraph, sale and purchase wording.
+  // v13 bundle paragraph, sale and purchase wording.
   const bundleNote = !input.bundle
     ? undefined
     : kind === "sale"
-      ? `You are also buying with us. Because we are closing both, you get ${off} off the legal fees on whichever closes later. If both close on the same day, the ${off} comes off your purchase. When it applies here, the discount shows above and HST is charged on the reduced fee.`
-      : `You are also selling with us. Because we are closing both, you get ${off} off the legal fees on whichever closes later. If both close on the same day, the ${off} comes off this purchase. When it applies here, the discount shows above and HST is charged on the reduced fee.`;
+      ? `As we are closing both of your deals, you get a ${off} discount on the legal fees of your purchase.`
+      : `Because we are closing both, you get ${off} off the legal fees on whichever closes later. If both close on the same day, the ${off} comes off this purchase.`;
 
   return {
     title: copy.title,
@@ -343,7 +344,7 @@ export function buildRetainerAgreement(fees: IclosedFees, input: RetainerAgreeme
     ],
     fees: [
       { label: copy.legalFeeLabel, amount: money(f.legalFees) },
-      { label: "Discount", amount: bracketed(f.discount) },
+      ...(f.discount > 0 ? [{ label: "Discount", amount: bracketed(f.discount) }] : []),
       { label: disbursementsLabel, amount: money(f.disbursements) },
       { label: "HST", amount: money(f.hst) },
     ],
