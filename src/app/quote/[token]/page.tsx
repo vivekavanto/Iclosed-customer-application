@@ -288,7 +288,7 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
   const quote = leadId ? await loadLeadQuote(leadId) : null;
   if (!quote) notFound();
 
-  const { lawyer, csm } = QUOTE_TEAM;
+  const { lawyer, csm, clerk } = QUOTE_TEAM;
   const total = quote.legalFees + quote.disbursements;
   const side = quote.side;
   const both = side === "both";
@@ -403,12 +403,19 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
               <p className="text-[13px] text-gray-500">Customer Success Manager</p>
             </div>
           </div>
+          <div className="mt-4 flex items-center gap-3">
+            <Avatar name={clerk.name} />
+            <div>
+              <p className="text-[15px] font-semibold text-gray-900">{clerk.name}</p>
+              <p className="text-[13px] text-gray-500">Law Clerk</p>
+            </div>
+          </div>
         </section>
 
         <div className="hidden sm:block">
           <h2 className="mt-10 text-xl font-bold text-gray-900">Your team</h2>
           {bundle && <p className="mt-2 text-[13px] text-gray-600">The same team handles both closings and times them together.</p>}
-          <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
             <div className="flex gap-4 rounded-xl border border-gray-100 bg-white p-5">
               <Avatar name={lawyer.name} accent />
               <div>
@@ -422,12 +429,17 @@ export default async function QuotePage({ params }: { params: Promise<{ token: s
               <div>
                 <p className="text-[15px] font-semibold text-gray-900">{csm.fullName}</p>
                 <p className="text-[13px] text-gray-500">Customer Success Manager</p>
-                <p className="mt-1 text-[13px] text-gray-700">
-                  Your day to day contact.{" "}
-                  <a href={contactHref} className="font-semibold" style={{ color: RED }}>
-                    Get in touch
-                  </a>
-                </p>
+                <p className="mt-1 text-[13px] text-gray-700">Your day to day contact.</p>
+                <a href={contactHref} className="mt-1 inline-block text-[13px] font-semibold" style={{ color: RED }}>
+                  Get in touch
+                </a>
+              </div>
+            </div>
+            <div className="flex gap-4 rounded-xl border border-gray-100 bg-white p-5">
+              <Avatar name={clerk.name} />
+              <div>
+                <p className="text-[15px] font-semibold text-gray-900">{clerk.name}</p>
+                <p className="text-[13px] text-gray-500">Law Clerk</p>
               </div>
             </div>
           </div>

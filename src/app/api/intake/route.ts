@@ -697,8 +697,8 @@ export async function POST(req: Request) {
       console.error("[Intake] Welcome email failed:", err);
     }
 
-    // Quote email to the primary client only.
-    await sendQuoteEmail(lead.id);
+    // Quote to every buyer or seller, each with their own retainer.
+    await Promise.all([lead.id, ...coPersonLeadIds].map((id) => sendQuoteEmail(id)));
 
     // ── 6. Notify the iClosed team that a lead has arrived ─────────────
     // ONE alert per intake, for the primary lead — by email to the back office

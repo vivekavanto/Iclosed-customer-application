@@ -30,4 +30,5 @@ export function quoteSideFromLeadType(leadType: string | null | undefined): Quot
 export const QUOTE_TEAM = {
   lawyer: { name: "Gathya Manoharan", lsoNumber: "75591T" },
   csm: { firstName: "Aliya", fullName: "Aliya Ali", phone: "647-426-3769", email: "aliya@iclosed.ca" },
+  clerk: { name: "Marcella Pitella" },
 };
