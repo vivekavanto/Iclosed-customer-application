@@ -12,9 +12,16 @@ import { adminAppUrl } from "@/lib/adminAppUrl";
 export async function GET() {
   const target = new URL("/api/signing/lawyers", adminAppUrl());
   try {
-    const res = await fetch(target.toString(), { cache: "no-store" });
+    // The lawyer list rarely changes — cache it so the page doesn't wait on
+    // a round-trip to the admin app on every visit.
+    const res = await fetch(target.toString(), { next: { revalidate: 300 } });
     const json = await res.json();
-    return NextResponse.json(json, { status: res.status });
+    return NextResponse.json(json, {
+      status: res.status,
+      headers: res.ok
+        ? { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" }
+        : undefined,
+    });
   } catch {
     return NextResponse.json(
       { success: false, error: "Could not reach the booking service. Please try again." },
