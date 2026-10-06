@@ -28,7 +28,10 @@ file_types:
       file_administration:      { amount: 85.00, hst: true }
     disbursements_label: Estimated disbursements
     disbursements_range: [650.00, 750.00]
-    title_insurance_estimate: 1500.00
+    title_insurance_estimate: 1500.00   # property type unknown
+    title_insurance_by_property:        # FCT estimate by property type at intake
+      condo: 1200.00                    # new build and resale condos
+      freehold: 1500.00
     land_transfer_tax: true
 
   sale:

@@ -31,6 +31,7 @@ import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 import { getFirm, type FirmKey } from "@/lib/firms";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
+import ChoiceChips from "@/components/dashboard/ChoiceChips";
 import {
   isCityField,
   isMailSameAsPropertyField,
@@ -2891,6 +2892,9 @@ export default function PersonalInfoTaskDrawer({
                   return (
                     <div id={`field-${field.id}`} className="border-t border-gray-100 pt-5">
                       <p className="text-base font-bold text-gray-900">{field.label}</p>
+                      {getNoteContent(field.options).text && (
+                        <p className="mt-1 text-sm text-gray-500">{getNoteContent(field.options).text}</p>
+                      )}
                     </div>
                   );
                 }
@@ -2993,25 +2997,13 @@ export default function PersonalInfoTaskDrawer({
                       {renderLabelBadges(field.label)}
                     </label>
                     {renderAttachedNotes(field.label)}
-                    <div className="flex flex-wrap gap-x-6 gap-y-2">
-                      {opts.map((o) => (
-                        <label
-                          key={o.value}
-                          className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
-                        >
-                          <input
-                            type="radio"
-                            name={`field-${field.id}`}
-                            value={o.value}
-                            checked={values[field.id] === o.value}
-                            onChange={() => setValue(field.id, o.value)}
-                            onBlur={() => blurField(field)}
-                            className="h-4 w-4 accent-[#C10007] cursor-pointer"
-                          />
-                          {o.label}
-                        </label>
-                      ))}
-                    </div>
+                    <ChoiceChips
+                      options={opts}
+                      value={values[field.id] ?? ""}
+                      onChange={(v) => setValue(field.id, v)}
+                      onBlur={() => blurField(field)}
+                      label={field.label}
+                    />
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
                         {errors[field.id]}

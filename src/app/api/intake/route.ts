@@ -8,6 +8,7 @@ import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/c
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { normalizeEmailForStorage } from "@/lib/normalizeEmail";
 import { normalizeAmount } from "@/lib/apsExtraction";
+import { parsePropertyType } from "@/lib/propertyType";
 import { NextResponse } from "next/server";
 import {
   normalizePostalCode,
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
       selling_price,
       deposit_amount,
       selling_deposit_amount,
+      building_type,
       closing_date,
       selling_closing_date,
       address_street,
@@ -156,6 +158,9 @@ export async function POST(req: Request) {
       apsDeposit(sub_service === "selling" ? "sale" : "purchase") ?? cleanAmount(deposit_amount);
     const cleanSellingDeposit =
       sub_service === "both" ? apsDeposit("sale") ?? cleanAmount(selling_deposit_amount) : null;
+
+    // Purchase side only.
+    const propertyType = sub_service === "selling" ? null : parsePropertyType(building_type);
 
     const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
     const uploadMode =
@@ -480,6 +485,7 @@ export async function POST(req: Request) {
         // intake working before the deposit migration is applied.
         ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
         ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+        ...(propertyType ? { building_type: propertyType } : {}),
         // Optional closing date. Same conditional-spread convention as the
         // deposit above, so an intake without one never references the column
         // and keeps working before the migration is applied.
@@ -558,6 +564,7 @@ export async function POST(req: Request) {
               selling_price: cleanSellingPrice,
               ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
               ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+              ...(propertyType ? { building_type: propertyType } : {}),
               ...(closingDate ? { closing_date: closingDate } : {}),
               ...(sellingClosingDate ? { selling_closing_date: sellingClosingDate } : {}),
               address_street,

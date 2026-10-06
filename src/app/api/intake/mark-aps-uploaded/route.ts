@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
+import { apsTaskHasQuestions } from "@/lib/apsTaskCompletion";
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
@@ -115,7 +116,8 @@ async function completeApsTaskForDeal(
     ? await baseTaskQuery.is("side", null).maybeSingle()
     : await baseTaskQuery.eq("side", side).maybeSingle();
 
-  if (!apsTask) return null;
+  // Left open while it still has questions to answer.
+  if (!apsTask || (await apsTaskHasQuestions(apsTask.task_template_id))) return null;
 
   await supabaseAdmin
     .from("tasks")

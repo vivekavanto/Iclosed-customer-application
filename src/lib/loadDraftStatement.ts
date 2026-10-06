@@ -9,6 +9,7 @@ import {
   type SaleFileInput,
 } from "@/lib/draftStatement";
 import { bundleDiscountSide, type IclosedFees } from "@/lib/iclosedFees";
+import { parsePropertyType } from "@/lib/propertyType";
 import { loadIclosedFees } from "@/lib/loadIclosedFees";
 
 // Lead discount; bundles add $100 when the purchase closes later.
@@ -44,6 +45,7 @@ export async function draftFileInput(ctx: ClientEstimateContext): Promise<DraftF
     isToronto: ctx.locked.isToronto,
     titlePremium: ctx.locked.titlePremiumOverride ?? null,
     discount: await dealDiscount(ctx.deal?.id),
+    propertyType: parsePropertyType((await dealRow(ctx.deal?.id))?.building_type),
   };
 }
 

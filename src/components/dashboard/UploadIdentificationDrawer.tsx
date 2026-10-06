@@ -10,8 +10,11 @@ import {
   AlertCircle,
   RefreshCw,
   Camera,
+  RotateCcw,
+  ArrowRight,
   FileText,
   Trash2,
+  Plus,
   Loader2,
   ShieldCheck,
   Clock,
@@ -58,26 +61,18 @@ interface UploadIdentificationDrawerProps {
 
 type SlotKey = "primaryFront" | "primaryBack" | "secondaryFront" | "secondaryBack";
 
+const SLOT_LABELS: Record<SlotKey, string> = {
+  primaryFront: "First ID - Front",
+  primaryBack: "First ID - Back",
+  secondaryFront: "Second ID - Front",
+  secondaryBack: "Second ID - Back",
+};
+
 const SLOT_CUSTOM_TYPES: Record<SlotKey, LabelKey> = {
   primaryFront: "primary_front",
   primaryBack: "primary_back",
   secondaryFront: "secondary_front",
   secondaryBack: "secondary_back",
-};
-
-// Camera prompt and saved file name per photo.
-const CAMERA_PROMPTS: Record<SlotKey, string> = {
-  primaryFront: "Line up the front of ID 1",
-  primaryBack: "Line up the back of ID 1",
-  secondaryFront: "Line up the front of ID 2",
-  secondaryBack: "Line up the back of ID 2",
-};
-
-const CAMERA_FILE_NAMES: Record<SlotKey, string> = {
-  primaryFront: "ID 1 front",
-  primaryBack: "ID 1 back",
-  secondaryFront: "ID 2 front",
-  secondaryBack: "ID 2 back",
 };
 
 const ALL_CAMERA_STEPS: SlotKey[] = ["primaryFront", "primaryBack", "secondaryFront", "secondaryBack"];
@@ -86,15 +81,6 @@ const SECONDARY_CAMERA_STEPS: SlotKey[] = ["secondaryFront", "secondaryBack"];
 // ── Manual upload model (list of selected files with labels) ─────────────────
 
 type LabelKey = "primary_front" | "primary_back" | "secondary_front" | "secondary_back" | "other";
-
-// The two upload slots: first and second ID.
-type IdSlot = 1 | 2;
-
-function slotOf(label: LabelKey): IdSlot | null {
-  if (label.startsWith("primary")) return 1;
-  if (label.startsWith("secondary")) return 2;
-  return null;
-}
 
 type ExpiryStatus = "valid" | "expired" | "expiring_soon" | "unknown";
 
@@ -216,6 +202,13 @@ const LABEL_OPTIONS: { value: LabelKey; text: string }[] = [
   { value: "other", text: "Other" },
 ];
 
+const DEFAULT_ORDER: LabelKey[] = [
+  "primary_front",
+  "primary_back",
+  "secondary_front",
+  "secondary_back",
+];
+
 // Decode the `custom_type` stored on a previously-uploaded document back into a
 // human-readable label so the classification survives a Save-as-Draft → return
 // round trip. Stored values come in a few shapes:
@@ -253,6 +246,11 @@ function validateFile(f: File): string | null {
   if (!ALLOWED_EXTENSIONS.includes(ext)) return "Only PDF, JPG, PNG, or HEIC files are allowed.";
   if (f.size > MAX_SIZE) return "File size must not exceed 10 MB.";
   return null;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function isImageFile(f: File) {
@@ -614,59 +612,6 @@ const ACCEPTED_IDS = [
 
 const NOT_ACCEPTED_IDS = ["Health cards (e.g. OHIP)", "Paper citizenship certificates", "Expired ID"];
 
-// One file in an ID slot, with its check result.
-function SlotFileLine({ file, onReclassify }: { file: SelectedFile; onReclassify: () => void }) {
-  const d = file.detection;
-  const problem =
-    file.detectionError ??
-    (d && !d.isIdentification
-      ? "Not an accepted ID"
-      : d?.expiryStatus === "expired"
-        ? "Expired"
-        : file.isDuplicate
-          ? "Duplicate file"
-          : null);
-  const status = file.uploading
-    ? "Uploading…"
-    : file.detecting
-      ? "Checking…"
-      : (problem ??
-        (d?.documentType
-          ? `${d.documentType}${d.side === "front-and-back" ? " · both sides" : d.side !== "unknown" ? ` · ${d.side}` : ""}`
-          : null));
-  return (
-    <div className="min-w-0 max-w-full">
-      <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-800">
-        {file.uploading || file.detecting ? (
-          <Loader2 size={14} className="animate-spin text-gray-400" />
-        ) : problem ? (
-          <AlertCircle size={14} className="text-[#C10007]" />
-        ) : (
-          <span aria-hidden>&#10003;</span>
-        )}
-        <span className="truncate">{file.file.name}</span>
-      </p>
-      {status && (
-        <p className={`text-xs ${problem ? "text-[#C10007]" : "text-gray-500"}`}>
-          {status}
-          {problem && !file.uploading && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReclassify();
-              }}
-              className="ml-1.5 cursor-pointer font-semibold underline"
-            >
-              Reclassify
-            </button>
-          )}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function UploadIdentificationDrawer({
@@ -676,18 +621,15 @@ export default function UploadIdentificationDrawer({
   taskId,
   onSaved,
   embedded = false,
-  clientFirstName,
-  clientLastName,
   spouseName,
 }: UploadIdentificationDrawerProps) {
   const spouseTaskId = spouseName && taskId ? taskId : null;
-  // "For Alex Morgan" under the title.
-  const forName = spouseName || [clientFirstName, clientLastName].filter(Boolean).join(" ").trim() || null;
   const isLargeScreen = useIsLargeScreen();
   // Manual upload state
   const [selected, setSelected] = useState<SelectedFile[]>([]);
   const [existing, setExisting] = useState<ExistingDoc[]>([]);
   const [uploadMode, setUploadMode] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
@@ -695,8 +637,6 @@ export default function UploadIdentificationDrawer({
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [replacingId, setReplacingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Which ID slot the file picker is filling.
-  const pickSlotRef = useRef<IdSlot>(1);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const selectedRef = useRef<SelectedFile[]>([]);
   const verificationStatusRef = useRef<HTMLDivElement>(null);
@@ -810,9 +750,11 @@ export default function UploadIdentificationDrawer({
   const [cameraCapturedPreview, setCameraCapturedPreview] = useState<Partial<Record<SlotKey, string>>>({});
   const [currentCapture, setCurrentCapture] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [sharpnessScore, setSharpnessScore] = useState<number | null>(null);
   const [sharpnessOk, setSharpnessOk] = useState(false);
   const [validatingImage, setValidatingImage] = useState(false);
   const [cameraSubmitting, setCameraSubmitting] = useState(false);
+  const [retakingSlot, setRetakingSlot] = useState<SlotKey | null>(null);
 
   const resetAll = useCallback(() => {
     selected.forEach((s) => {
@@ -828,15 +770,18 @@ export default function UploadIdentificationDrawer({
     setUploading(false);
     setSavingDraft(false);
     setDraftSaved(false);
+    setDragOver(false);
     setCameraFlowOpen(false);
     setCameraStepIndex(0);
     setCameraCapturedFiles({});
     setCameraCapturedPreview({});
     setCurrentCapture(null);
     setCameraError(null);
+    setSharpnessScore(null);
     setSharpnessOk(false);
     setValidatingImage(false);
     setCameraSubmitting(false);
+    setRetakingSlot(null);
     setShowConfirmModal(false);
     errorModalQueueRef.current = [];
     errorModalOpenRef.current = false;
@@ -922,23 +867,14 @@ export default function UploadIdentificationDrawer({
 
   // ── Manual upload handlers ──────────────────────────────────────────────────
 
-  // Next free side of the slot's ID, or null.
-  function nextSlotLabel(currentSelected: SelectedFile[], slot: IdSlot): LabelKey | null {
-    const used = new Set(currentSelected.map((s) => s.label));
-    const prefix = slot === 1 ? "primary" : "secondary";
-    for (const label of [`${prefix}_front`, `${prefix}_back`] as LabelKey[]) {
-      if (!used.has(label)) return label;
+  function nextDefaultLabel(currentSelected: SelectedFile[], existingDocs: ExistingDoc[]): LabelKey {
+    const used = new Set<string>();
+    for (const s of currentSelected) used.add(s.label);
+    for (const d of existingDocs) if (d.custom_type) used.add(d.custom_type);
+    for (const key of DEFAULT_ORDER) {
+      if (!used.has(key)) return key;
     }
-    return null;
-  }
-
-  function removeSlot(slot: IdSlot) {
-    selected.filter((f) => slotOf(f.label) === slot).forEach((f) => removeSelected(f.id));
-  }
-
-  function pickForSlot(slot: IdSlot) {
-    pickSlotRef.current = slot;
-    fileInputRef.current?.click();
+    return "other";
   }
 
   // Recompute duplicate flags for all files — duplicates are detected ONLY when
@@ -1096,7 +1032,7 @@ export default function UploadIdentificationDrawer({
     }
   }
 
-  function addFiles(files: FileList | File[], slot: IdSlot) {
+  function addFiles(files: FileList | File[]) {
     const incoming = Array.from(files);
     const queuedForStaging: { id: string; file: File }[] = [];
     const additions: SelectedFile[] = [];
@@ -1119,11 +1055,6 @@ export default function UploadIdentificationDrawer({
         continue;
       }
 
-      const label = nextSlotLabel(working, slot);
-      if (!label) {
-        setGlobalError(`ID ${slot} already has a front and back. Remove a file to replace it.`);
-        continue;
-      }
       const id = makeId();
       const nextItem: SelectedFile = {
         id,
@@ -1133,7 +1064,7 @@ export default function UploadIdentificationDrawer({
         uploadError: null,
         previewUrl: isImageFile(f) ? URL.createObjectURL(f) : null,
         error: null,
-        label,
+        label: nextDefaultLabel(working, existing),
         detecting: true,
         detection: null,
         detectionError: null,
@@ -1149,8 +1080,9 @@ export default function UploadIdentificationDrawer({
 
     if (additions.length > 0) {
       setSelected((prev) => recomputeDuplicates([...prev, ...additions]));
-      setGlobalError(null);
     }
+
+    setGlobalError(null);
 
     // Upload each file to Blob, then run Gemini detection on it; hash it for
     // duplicate detection in parallel (fire-and-forget). Duplicate flags update
@@ -1299,6 +1231,10 @@ export default function UploadIdentificationDrawer({
   // ── Camera flow handlers ────────────────────────────────────────────────────
 
   const currentCameraSlot = cameraSteps[cameraStepIndex] ?? null;
+  const cameraCapturedCount = Object.keys(cameraCapturedFiles).length;
+  const cameraFlowReadyToSubmit =
+    cameraSteps.length > 0 && cameraSteps.every((k) => !!cameraCapturedFiles[k]);
+
   // Count IDs already provided in this drawer so the camera only asks for what's left
   function countAlreadyProvidedIds(): number {
     // Count complete IDs in the current selection (separate front + back, or a
@@ -1336,6 +1272,7 @@ export default function UploadIdentificationDrawer({
     setCameraCapturedPreview({});
     setCurrentCapture(null);
     setCameraError(null);
+    setSharpnessScore(null);
     setSharpnessOk(false);
     setValidatingImage(false);
     setCameraSubmitting(false);
@@ -1348,9 +1285,11 @@ export default function UploadIdentificationDrawer({
     setCameraCapturedPreview({});
     setCurrentCapture(null);
     setCameraError(null);
+    setSharpnessScore(null);
     setSharpnessOk(false);
     setValidatingImage(false);
     setCameraSubmitting(false);
+    setRetakingSlot(null);
   }
 
   async function handleCaptureImage() {
@@ -1367,12 +1306,14 @@ export default function UploadIdentificationDrawer({
     try {
       const score = await computeImageSharpnessScore(img);
       const isSharp = score >= 2200;
+      setSharpnessScore(score);
       setSharpnessOk(isSharp);
       if (!isSharp) {
         setCameraError("Image appears blurry. Please hold steady, improve lighting, and retake.");
       }
     } catch (err: unknown) {
       setCameraError(err instanceof Error ? err.message : "Unable to validate image quality.");
+      setSharpnessScore(null);
       setSharpnessOk(false);
     } finally {
       setValidatingImage(false);
@@ -1386,44 +1327,96 @@ export default function UploadIdentificationDrawer({
       return;
     }
 
-    const file = await dataUrlToFile(currentCapture, `${CAMERA_FILE_NAMES[currentCameraSlot]}.jpg`);
-    const files = { ...cameraCapturedFiles, [currentCameraSlot]: file };
-    const previews = { ...cameraCapturedPreview, [currentCameraSlot]: currentCapture };
-    setCameraCapturedFiles(files);
-    setCameraCapturedPreview(previews);
-    setCurrentCapture(null);
-    setCameraError(null);
-    setSharpnessOk(false);
-    setValidatingImage(false);
+    const file = await dataUrlToFile(currentCapture, `${currentCameraSlot}-${Date.now()}.jpg`);
+    setCameraCapturedFiles((prev) => ({ ...prev, [currentCameraSlot]: file }));
+    setCameraCapturedPreview((prev) => ({ ...prev, [currentCameraSlot]: currentCapture }));
+
+    // If retaking a single slot, return to review screen
+    if (retakingSlot) {
+      setCameraStepIndex(cameraSteps.length);
+      setCurrentCapture(null);
+      setCameraError(null);
+      setSharpnessScore(null);
+      setSharpnessOk(false);
+      setValidatingImage(false);
+      setRetakingSlot(null);
+      return;
+    }
 
     if (cameraStepIndex < cameraSteps.length - 1) {
       setCameraStepIndex((prev) => prev + 1);
+      setCurrentCapture(null);
+      setCameraError(null);
+      setSharpnessScore(null);
+      setSharpnessOk(false);
+      setValidatingImage(false);
       return;
     }
-    // Last photo: hand the captures to the ID slots.
-    finishCameraFlow(files, previews);
+
+    setCameraStepIndex(cameraSteps.length);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
   }
 
-  function finishCameraFlow(
-    files: Partial<Record<SlotKey, File>>,
-    previews: Partial<Record<SlotKey, string>>,
-  ) {
+  function openCameraStep(stepKey: SlotKey) {
+    const nextIndex = cameraSteps.indexOf(stepKey);
+    if (nextIndex < 0) return;
+    setCameraStepIndex(nextIndex);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+    setRetakingSlot(null);
+  }
+
+  function retakeSingleSlot(stepKey: SlotKey) {
+    const nextIndex = cameraSteps.indexOf(stepKey);
+    if (nextIndex < 0) return;
+    setCameraStepIndex(nextIndex);
+    setCurrentCapture(null);
+    setCameraError(null);
+    setSharpnessScore(null);
+    setSharpnessOk(false);
+    setValidatingImage(false);
+    setRetakingSlot(stepKey);
+  }
+
+  async function handleFinishCameraFlow() {
+    if (!cameraFlowReadyToSubmit) {
+      setCameraError(
+        cameraSteps.length === ALL_CAMERA_STEPS.length
+          ? "Please capture front and back for both IDs before finishing."
+          : "Please capture front and back of the remaining ID before finishing.",
+      );
+      return;
+    }
+
     if (!leadId) {
       setCameraError("Missing lead. Please refresh and try again.");
       return;
     }
 
+    // Convert camera captures to SelectedFile entries and add to selected state
     const newFiles: SelectedFile[] = [];
+    const queuedForStaging: { id: string; file: File }[] = [];
+
     for (const slotKey of cameraSteps) {
-      const file = files[slotKey];
+      const file = cameraCapturedFiles[slotKey];
+      const preview = cameraCapturedPreview[slotKey];
       if (!file) continue;
-      newFiles.push({
-        id: makeId(),
+
+      const id = makeId();
+      const newEntry: SelectedFile = {
+        id,
         file,
         blobUrl: null,
         uploading: true,
         uploadError: null,
-        previewUrl: previews[slotKey] ?? null,
+        previewUrl: preview ?? null,
         error: null,
         label: SLOT_CUSTOM_TYPES[slotKey],
         detecting: true,
@@ -1433,22 +1426,32 @@ export default function UploadIdentificationDrawer({
         duplicateReason: null,
         fromCamera: true,
         contentHash: null,
-      });
+      };
+      newFiles.push(newEntry);
+      queuedForStaging.push({ id, file });
     }
 
-    // Retaken slots replace what was there.
-    const replaced = new Set(newFiles.map((f) => f.label));
-    selected.filter((f) => replaced.has(f.label)).forEach((f) => removeSelected(f.id));
-    setSelected((prev) => recomputeDuplicates([...prev, ...newFiles]));
+    if (newFiles.length > 0) {
+      setSelected((prev) => recomputeDuplicates([...prev, ...newFiles]));
+    }
 
     closeCameraFlow();
-    setUploadMode(true);
 
-    // Upload, detect and hash each capture.
-    newFiles.forEach(({ id, file }) => {
+    // Upload each capture to Blob, then run AI detection on it, plus SHA-256
+    // hashing. Duplicate flags update automatically once each hash resolves.
+    queuedForStaging.forEach(({ id, file }) => {
       void stageFile(id, file, leadId);
       void attachContentHash(id, file);
     });
+  }
+
+  // Add camera captures to selected files for review
+  function handleFinishCameraFlowClick() {
+    if (!cameraFlowReadyToSubmit) {
+      setCameraError("Please capture front and back for both IDs before finishing.");
+      return;
+    }
+    handleFinishCameraFlow();
   }
 
   // ── Manual upload submit ────────────────────────────────────────────────────
@@ -1892,9 +1895,15 @@ export default function UploadIdentificationDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
-              {spouseName ? "Upload your spouse\u2019s ID" : "Upload your ID"}
+              {spouseName
+                ? `Upload Identification for ${spouseName}`
+                : "Upload your ID"}
             </h2>
-            {forName && <p className="text-xs text-gray-400 mt-1">For {forName}</p>}
+            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+              {spouseName
+                ? `As your consenting spouse, ${spouseName} must provide two pieces of identification for the signing.`
+                : "Upload your identification documents to verify your identity for the property transaction."}
+            </p>
           </div>
           <button
             onClick={handleClose}
@@ -1914,12 +1923,6 @@ export default function UploadIdentificationDrawer({
               : "flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6"
           }
         >
-          {spouseName && (
-            <p className="text-sm text-gray-600 leading-relaxed">
-              As your consenting spouse, {spouseName} must provide two pieces of identification for the
-              signing.
-            </p>
-          )}
           <p className="text-sm text-gray-600 leading-relaxed">
             Government-issued identification is required to verify your identity and comply with legal
             requirements for property transactions. Please provide two different pieces of ID, front and back.
@@ -1936,217 +1939,83 @@ export default function UploadIdentificationDrawer({
             </div>
           </div>
 
-          {/* One picker input serves both ID slots */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.jpg,.jpeg,.png,.heic"
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) addFiles(e.target.files, pickSlotRef.current);
-              e.target.value = "";
-            }}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={openCameraFlow}
+              disabled={uploading}
+              className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60"
+            >
+              <Camera size={22} className="text-[#C10007]" strokeWidth={1.8} />
+              <span className="text-sm font-bold text-gray-900">Take photos</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setUploadMode(true);
+                fileInputRef.current?.click();
+              }}
+              disabled={uploading}
+              className={`cursor-pointer rounded-xl border bg-white p-5 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60 ${uploadMode ? "border-[#C10007]" : "border-gray-200"}`}
+            >
+              <Upload size={22} className="text-[#C10007]" strokeWidth={1.8} />
+              <span className="text-sm font-bold text-gray-900">Upload files</span>
+            </button>
+          </div>
 
-          {cameraFlowOpen ? (
-            /* ── Guided camera, one photo at a time ── */
-            <div className="space-y-3">
-              <div className="relative h-80 sm:h-96 overflow-hidden rounded-2xl bg-gray-900">
-                {currentCapture ? (
-                  <NextImage
-                    src={currentCapture}
-                    alt="Captured ID preview"
-                    fill
-                    unoptimized
-                    className="object-contain"
-                  />
-                ) : (
-                  <>
-                    <Webcam
-                      ref={webcamRef}
-                      audio={false}
-                      screenshotFormat="image/jpeg"
-                      screenshotQuality={0.95}
-                      // Capture at the camera's resolution so ID fine print survives.
-                      forceScreenshotSourceSize
-                      videoConstraints={{ facingMode: "environment", width: { ideal: 1920 } }}
-                      onUserMediaError={() =>
-                        setCameraError("Unable to access camera. Please allow camera permissions.")
-                      }
-                      className="absolute inset-0 h-full w-full object-cover"
-                    />
-                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 px-6">
-                      <div className="w-full max-w-sm aspect-[1.6] rounded-xl border-2 border-dashed border-white/85" />
-                      {currentCameraSlot && (
-                        <p className="text-sm font-semibold text-white">
-                          {CAMERA_PROMPTS[currentCameraSlot]}
-                        </p>
-                      )}
-                    </div>
-                  </>
-                )}
+          {/* Drop zone; the hidden input also serves the Upload files card */}
+          <div className={uploadMode ? "" : "hidden"}>
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+              className={[
+                "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all select-none",
+                dragOver
+                  ? "border-[#C10007] bg-[#FEF2F2]"
+                  : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
+              ].join(" ")}
+            >
+              <div
+                className={[
+                  "w-12 h-12 rounded-full flex items-center justify-center transition-colors",
+                  dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
+                ].join(" ")}
+              >
+                <Upload size={20} className={dragOver ? "text-[#C10007]" : "text-gray-400"} strokeWidth={2} />
               </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {currentCapture ? (
-                  <>
-                    <Button
-                      variant="primary"
-                      disabled={!sharpnessOk || validatingImage}
-                      onClick={handleUseCapturedImageForStep}
-                    >
-                      Use photo
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setCurrentCapture(null);
-                        setCameraError(null);
-                        setSharpnessOk(false);
-                      }}
-                    >
-                      Retake
-                    </Button>
-                  </>
-                ) : (
-                  <Button variant="primary" onClick={handleCaptureImage}>
-                    Capture
-                  </Button>
-                )}
-                <span className="text-sm text-gray-500">
-                  Photo {Math.min(cameraStepIndex + 1, cameraSteps.length)} of {cameraSteps.length}
-                </span>
-                <button
-                  type="button"
-                  onClick={closeCameraFlow}
-                  className="ml-auto cursor-pointer text-sm font-semibold text-gray-500 hover:text-gray-800"
-                >
-                  Change method
-                </button>
+              <div>
+                <p className="text-sm font-semibold text-gray-700">
+                  Click to select or drag files here
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Select multiple files at once • PDF, JPG, PNG, HEIC • Max 10MB each
+                </p>
               </div>
-
-              {currentCapture && sharpnessOk && (
-                <p className="text-xs text-green-600">Image looks good. Check the text is readable.</p>
-              )}
-              {cameraError && (
-                <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
-                  <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
-                  <span>{cameraError}</span>
-                </div>
-              )}
-            </div>
-          ) : uploadMode ? (
-            /* ── Two ID slots ── */
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {([1, 2] as IdSlot[]).map((slot) => {
-                  const files = selected.filter((f) => slotOf(f.label) === slot);
-                  const busy = files.some((f) => f.uploading || f.detecting);
-                  const failed = files.some(
-                    (f) =>
-                      !!f.detectionError ||
-                      (f.detection && !f.detection.isIdentification) ||
-                      f.detection?.expiryStatus === "expired" ||
-                      f.isDuplicate,
-                  );
-                  // One file showing both sides already completes the ID.
-                  const bothSides = files.some((f) => f.detection?.side === "front-and-back");
-                  return (
-                    <div
-                      key={slot}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => (files.length ? removeSlot(slot) : pickForSlot(slot))}
-                      onKeyDown={(e) =>
-                        e.key === "Enter" && (files.length ? removeSlot(slot) : pickForSlot(slot))
-                      }
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files, slot);
-                      }}
-                      className={[
-                        "flex min-h-44 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed px-4 py-6 text-center cursor-pointer select-none transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C10007]/30",
-                        files.length === 0
-                          ? "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                          : busy
-                            ? "border-gray-200 bg-gray-50"
-                            : failed
-                              ? "border-red-300 bg-[#FEF2F2]"
-                              : "border-green-300 bg-green-50",
-                      ].join(" ")}
-                    >
-                      {files.length === 0 ? (
-                        <>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {slot === 1 ? "First" : "Second"} ID &mdash; front and back
-                          </p>
-                          <p className="text-xs text-gray-400">.pdf, .jpg, .png &middot; Max 10MB</p>
-                        </>
-                      ) : (
-                        <>
-                          {files.map((f) => (
-                            <SlotFileLine
-                              key={f.id}
-                              file={f}
-                              onReclassify={() => openManualClassify(f.id, f.file.name)}
-                            />
-                          ))}
-                          <p className="text-xs text-gray-400">Click to remove</p>
-                          {files.length < 2 && !busy && !bothSides && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                pickForSlot(slot);
-                              }}
-                              className="mt-1 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
-                            >
-                              + Add the other side
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  // Starting over: unsaved picks would otherwise submit unseen.
-                  selected.forEach((f) => removeSelected(f.id));
-                  setUploadMode(false);
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.heic"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files);
+                  e.target.value = "";
                 }}
-                className="cursor-pointer text-sm font-semibold text-gray-500 hover:text-gray-800"
-              >
-                Change method
-              </button>
+              />
             </div>
-          ) : (
-            /* ── Choose a method ── */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={openCameraFlow}
-                disabled={uploading}
-                className="cursor-pointer rounded-2xl border border-gray-200 bg-white p-6 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60"
-              >
-                <Camera size={22} className="text-[#C10007]" strokeWidth={1.8} />
-                <span className="text-sm font-bold text-gray-900">Take photos</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setUploadMode(true)}
-                disabled={uploading}
-                className="cursor-pointer rounded-2xl border border-gray-200 bg-white p-6 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60"
-              >
-                <Upload size={22} className="text-[#C10007]" strokeWidth={1.8} />
-                <span className="text-sm font-bold text-gray-900">Upload files</span>
-              </button>
-            </div>
-          )}
+          </div>
 
           {/* Existing uploaded docs */}
           {loadingExisting && (
@@ -2219,6 +2088,170 @@ export default function UploadIdentificationDrawer({
                   e.target.value = "";
                 }}
               />
+            </div>
+          )}
+
+          {/* Selected (pending) files */}
+          {selected.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 mb-2">
+                Uploaded Files ({selected.length})
+              </h3>
+              <ul className="space-y-2">
+                {selected.map((s) => {
+                  const hasError =
+                    !!s.detectionError ||
+                    (s.detection && !s.detection.isIdentification) ||
+                    s.detection?.expiryStatus === "expired" ||
+                    s.detection?.expiryStatus === "expiring_soon" ||
+                    s.isDuplicate;
+                  const isDetected = s.detection?.isIdentification && s.detection.documentType;
+                  const showDuplicate = s.isDuplicate;
+                  return (
+                    <li
+                      key={s.id}
+                      className={[
+                        "rounded-lg border bg-white",
+                        hasError
+                          ? "border-red-300"
+                          : isDetected
+                            ? "border-green-200"
+                            : "border-gray-200",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center gap-3 px-3 py-2.5">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {s.detecting ? (
+                            <Loader2 size={14} className="animate-spin text-gray-400 flex-shrink-0" />
+                          ) : hasError ? (
+                            <AlertCircle size={14} className="text-[#C10007] flex-shrink-0" />
+                          ) : s.detection?.isIdentification ? (
+                            <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
+                          ) : (
+                            <AlertCircle size={14} className="text-gray-400 flex-shrink-0" />
+                          )}
+                          <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                            {s.previewUrl ? (
+                              <NextImage
+                                src={s.previewUrl}
+                                alt={s.file.name}
+                                width={40}
+                                height={40}
+                                unoptimized
+                                className="object-cover w-full h-full"
+                              />
+                            ) : (
+                              <FileText size={16} className="text-gray-400" />
+                            )}
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-gray-800 truncate">{s.file.name}</p>
+                          {isDetected ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className={`text-[11px] font-medium truncate ${hasError ? "text-[#C10007]" : "text-green-600"}`}>
+                                {s.detection!.documentType}
+                                {s.detection!.side === "front-and-back"
+                                  ? " · both sides in one image"
+                                  : s.detection!.side !== "unknown"
+                                    ? ` (${s.detection!.side})`
+                                    : ""}
+                              </p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                              {s.detection!.expiryStatus === "expired" && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium">
+                                  <Clock size={10} />
+                                  <span>Expired{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
+                                </div>
+                              )}
+                              {s.detection!.expiryStatus === "expiring_soon" && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium">
+                                  <Clock size={10} />
+                                  <span>Expiring soon{s.detection!.expiryDate && ` (${s.detection!.expiryDate})`}</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : s.uploading || s.detecting ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] text-gray-500">
+                                {s.uploading
+                                  ? `Uploading… (${formatBytes(s.file.size)})`
+                                  : "Analyzing…"}
+                              </p>
+                            </div>
+                          ) : s.detectionError ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              {/* Show the ACTUAL reason. This used to always read
+                                  "Unable to process", which hid everything from an
+                                  oversized-payload rejection to an expired session. */}
+                              <p
+                                className="text-[11px] font-medium text-[#C10007] truncate"
+                                title={s.detectionError}
+                              >
+                                {s.detectionError}
+                              </p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : s.detection && !s.detection.isIdentification ? (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] font-medium text-[#C10007]">Invalid ID</p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-0.5 mt-0.5">
+                              <p className="text-[11px] text-gray-400">{formatBytes(s.file.size)}</p>
+                              {showDuplicate && (
+                                <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
+                                  <AlertCircle size={10} />
+                                  <span>Duplicate file</span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {/* Reclassify button - opens modal */}
+                        <button
+                          onClick={() => openManualClassify(s.id, s.file.name)}
+                          className="cursor-pointer flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-gray-600 bg-gray-50 border border-gray-200 hover:border-gray-300 hover:bg-gray-100 transition-colors"
+                          aria-label="Reclassify document"
+                        >
+                          Reclassify
+                        </button>
+                        <button
+                          onClick={() => removeSelected(s.id)}
+                          className="cursor-pointer flex-shrink-0 p-1.5 rounded-md text-gray-400 hover:text-[#C10007] hover:bg-red-50"
+                          aria-label="Remove"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[#C10007] hover:underline cursor-pointer"
+              >
+                <Plus size={12} />
+                Add more files
+              </button>
             </div>
           )}
 
@@ -2395,7 +2428,7 @@ export default function UploadIdentificationDrawer({
             onClick={handleUploadClick}
             className="sm:flex-1"
           >
-            Save &amp; Continue
+            Submit
           </Button>
         </div>
       </div>
@@ -2651,6 +2684,221 @@ export default function UploadIdentificationDrawer({
         </>
       )}
 
+      {/* Camera flow overlay (guided 4-step) */}
+      {cameraFlowOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[60] bg-black/55"
+            onClick={closeCameraFlow}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center px-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Capture ID with camera"
+          >
+            <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-gray-100">
+              <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+                <div className="pr-4">
+                  <h3 className="text-sm font-bold text-gray-900">Use Camera - Guided Capture</h3>
+                  {cameraStepIndex < cameraSteps.length ? (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Step {cameraStepIndex + 1} of {cameraSteps.length}:{" "}
+                      {SLOT_LABELS[currentCameraSlot as SlotKey]}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {cameraSteps.length === ALL_CAMERA_STEPS.length
+                        ? "Review all captured images, then click Finish."
+                        : "Review your captured image, then click Finish."}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={closeCameraFlow}
+                  className="cursor-pointer rounded-md p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  aria-label="Close camera"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                {cameraStepIndex < cameraSteps.length ? (
+                  !currentCapture ? (
+                    <>
+                      <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-xl bg-gray-950">
+                        <Webcam
+                          ref={webcamRef}
+                          audio={false}
+                          screenshotFormat="image/jpeg"
+                          screenshotQuality={0.95}
+                          // Capture at the CAMERA's resolution, not the preview box's. Without
+                          // forceScreenshotSourceSize react-webcam sizes its screenshot canvas to
+                          // the video element's clientWidth, so an ID was stored a few hundred
+                          // pixels wide and its fine print was gone before the file ever left the
+                          // browser. `ideal` degrades on its own where 1920 isn't available.
+                          forceScreenshotSourceSize
+                          videoConstraints={{ facingMode: "environment", width: { ideal: 1920 } }}
+                          onUserMediaError={() =>
+                            setCameraError("Unable to access camera. Please allow camera permissions.")
+                          }
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                        <div className="pointer-events-none absolute inset-3 rounded-xl border-2 border-dashed border-white/85" />
+                        <div className="pointer-events-none absolute inset-0 ring-1 ring-black/10" />
+                      </div>
+                      <p className="text-[11px] text-gray-500 text-center">
+                        Center the full ID in the square, avoid glare, and hold still before capture.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative mx-auto w-full max-w-sm aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-50">
+                        <NextImage
+                          src={currentCapture}
+                          alt="Captured ID preview"
+                          fill
+                          unoptimized
+                          className="object-cover"
+                        />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-gray-700">
+                          Review {SLOT_LABELS[currentCameraSlot as SlotKey]}
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Ensure text is readable and all corners of the ID are visible.
+                        </p>
+                        {sharpnessScore !== null && sharpnessOk && (
+                          <p className="text-[11px] mt-2 text-green-600">
+                            Image looks good!
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <div className="space-y-3">
+                    <div className={`grid gap-2 sm:gap-3 ${cameraSteps.length <= 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4"}`}>
+                      {cameraSteps.map((key) => (
+                        <div key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-2 sm:p-2.5">
+                          <p className="text-[10px] sm:text-xs font-semibold text-gray-700 mb-1.5 truncate">{SLOT_LABELS[key]}</p>
+                          {cameraCapturedPreview[key] ? (
+                            <div className="relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200">
+                              <NextImage
+                                src={cameraCapturedPreview[key] as string}
+                                alt={`${SLOT_LABELS[key]} preview`}
+                                fill
+                                unoptimized
+                                className="object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="aspect-[3/4] rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-[10px] sm:text-xs text-gray-400 text-center px-1">
+                              Not captured
+                            </div>
+                          )}
+                          <button
+                            onClick={() => retakeSingleSlot(key)}
+                            className="mt-1.5 cursor-pointer text-[10px] sm:text-xs font-semibold text-[#C10007] hover:underline"
+                          >
+                            Retake
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+                      Captured {cameraCapturedCount} of {cameraSteps.length} required photos.
+                    </div>
+                  </div>
+                )}
+
+                {cameraError && (
+                  <div className="flex items-start gap-2 text-xs text-[#C10007] bg-[#FEF2F2] border border-red-200 rounded-lg px-3 py-2.5">
+                    <AlertCircle size={13} strokeWidth={2} className="flex-shrink-0 mt-0.5" />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-100 flex flex-wrap gap-2">
+                {cameraStepIndex < cameraSteps.length ? (
+                  !currentCapture ? (
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      onClick={handleCaptureImage}
+                      className="sm:flex-1"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Camera size={14} />
+                        Capture {SLOT_LABELS[currentCameraSlot as SlotKey]}
+                      </span>
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        fullWidth
+                        onClick={() => {
+                          setCurrentCapture(null);
+                          setCameraError(null);
+                          setSharpnessScore(null);
+                          setSharpnessOk(false);
+                        }}
+                        className="sm:flex-1"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          <RotateCcw size={14} />
+                          Retake
+                        </span>
+                      </Button>
+                      <Button
+                        variant="primary"
+                        fullWidth
+                        disabled={!sharpnessOk || validatingImage}
+                        onClick={handleUseCapturedImageForStep}
+                        className="sm:flex-1"
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          {cameraStepIndex < cameraSteps.length - 1
+                            ? "Use & Next Step"
+                            : cameraSteps.length === 1
+                              ? "Use & Review"
+                              : "Use & Review All"}
+                          <ArrowRight size={14} />
+                        </span>
+                      </Button>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => openCameraStep(cameraSteps[0])}
+                      className="sm:flex-1"
+                    >
+                      Capture Again
+                    </Button>
+                    <Button
+                      variant="primary"
+                      fullWidth
+                      disabled={!cameraFlowReadyToSubmit}
+                      onClick={handleFinishCameraFlowClick}
+                      className="sm:flex-1"
+                    >
+                      Add to Review
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }

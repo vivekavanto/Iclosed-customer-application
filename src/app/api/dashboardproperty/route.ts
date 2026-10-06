@@ -49,7 +49,7 @@ export async function GET() {
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key, selling_deposit_amount"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key, selling_deposit_amount, aps_uploaded, aps_uploaded_purchase, aps_uploaded_sale"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -195,6 +195,9 @@ export async function GET() {
         selling_address_postal_code: lead.selling_address_postal_code || null,
         selling_address_unit: lead.selling_address_unit || null,
         selling_deposit_amount: lead.selling_deposit_amount ?? null,
+        aps_uploaded: !!lead.aps_uploaded,
+        aps_uploaded_purchase: !!lead.aps_uploaded_purchase,
+        aps_uploaded_sale: !!lead.aps_uploaded_sale,
         first_name: client.first_name || lead.first_name,
         last_name: client.last_name || lead.last_name,
         phone: client.phone || lead.phone || null,

@@ -139,6 +139,10 @@ interface PropertyData {
   selling_address_postal_code: string | null;
   selling_address_unit: string | null;
   selling_deposit_amount: number | null;
+  /** APS uploaded at intake. */
+  aps_uploaded?: boolean;
+  aps_uploaded_purchase?: boolean;
+  aps_uploaded_sale?: boolean;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
@@ -1386,7 +1390,13 @@ export default function DashboardPage() {
       ? "sale"
       : "purchase";
   // Unlocks once that side's APS is uploaded.
-  const apsUploaded = tasks.some(
+  const intakeAps =
+    activeDeal?.type === "Purchase & Sale"
+      ? estimateSide === "sale"
+        ? activeProperty?.aps_uploaded_sale
+        : activeProperty?.aps_uploaded_purchase
+      : activeProperty?.aps_uploaded;
+  const apsUploaded = !!intakeAps || tasks.some(
     (t) =>
       t.completed &&
       (estimateSide === "sale" ? t.side !== "purchase" : t.side !== "sale") &&
@@ -1615,6 +1625,20 @@ export default function DashboardPage() {
             familyStatus[t.id],
         )
       : activeTask;
+  // This side's names, from the Personal Info roster.
+  const sidePersonalInfo = tasks.find(
+    (t) =>
+      isPersonalInfoTask(t.title) &&
+      familyStatus[t.id] &&
+      (!isBothDeal || (t.side ?? null) === selectedSide),
+  );
+  const rosterNames = (sidePersonalInfo ? familyStatus[sidePersonalInfo.id].members : [])
+    .map((m) => m.name.trim())
+    .filter(Boolean);
+  const propertyDetailsNames = rosterNames.length
+    ? rosterNames
+    : [[activeProperty?.first_name, activeProperty?.last_name].filter(Boolean).join(" ")].filter(Boolean);
+
   const drawerPartyNames = (
     rosterTask ? (familyStatus[rosterTask.id]?.members ?? []) : []
   )
@@ -1753,6 +1777,7 @@ export default function DashboardPage() {
         taskId={activeTask?.id ?? null}
         title={activeTask?.title ?? "Confirm your property details"}
         subtitle={taskSubtitle}
+        clientNames={propertyDetailsNames}
         address={[heroAddress, heroPostal].filter(Boolean).join(" ")}
         priceLabel={activeSide === "sale" ? "Sale price" : "Purchase price"}
         price={showSale ? (activeDeal?.selling_price ?? null) : (activeDeal?.price ?? null)}

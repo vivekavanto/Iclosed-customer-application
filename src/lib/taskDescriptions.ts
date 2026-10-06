@@ -29,6 +29,12 @@ const RULES: TaskDescriptionRule[] = [
       "Please upload your Agreement of Purchase and Sale (APS), and any amendments/schedules so we can prepare your file accordingly.",
   },
   {
+    match: "status certificate",
+    sides: ["purchase"],
+    description:
+      "Please upload the condo's status certificate. We review it for fees, reserve fund health, special assessments and legal issues before you close.",
+  },
+  {
     match: "ownership shares",
     description:
       "Tell us how you would like to hold title. If you are not sure, read the explainer below or ask our team.",

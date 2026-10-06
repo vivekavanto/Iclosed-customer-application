@@ -1,7 +1,8 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isStatusCertificateTask, isTreefortTask } from "@/lib/taskKinds";
+import { apsTaskHasQuestions } from "@/lib/apsTaskCompletion";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -215,6 +216,7 @@ export async function convertSingleLead(params: {
         : {}),
       // Deposit from intake; drafts read it here.
       ...(lead.deposit_amount != null ? { deposit_amount: lead.deposit_amount } : {}),
+      ...(lead.building_type ? { building_type: lead.building_type } : {}),
     })
     .select("id")
     .single();
@@ -314,6 +316,7 @@ export async function convertSingleLead(params: {
           if (singleParty && isHoldTitleTask(t.name)) return false;
           // Only added once someone picks virtual signing.
           if (isTreefortTask(t.name)) return false;
+          if (isStatusCertificateTask(t.name) && (side === "sale" || lead.building_type !== "resale_condo")) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
         })
@@ -356,14 +359,15 @@ export async function convertSingleLead(params: {
         if (apsUploaded) {
           const apsQuery = supabaseAdmin
             .from("tasks")
-            .select("id, milestone_id")
+            .select("id, milestone_id, task_template_id")
             .eq("deal_id", deal.id)
             .ilike("title", "%agreement of purchase and sale%");
           const { data: apsTask } = side === null
             ? await apsQuery.is("side", null).maybeSingle()
             : await apsQuery.eq("side", side).maybeSingle();
 
-          if (apsTask) {
+          // Left open while it still has questions to answer.
+          if (apsTask && !(await apsTaskHasQuestions(apsTask.task_template_id))) {
             await supabaseAdmin
               .from("tasks")
               .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })

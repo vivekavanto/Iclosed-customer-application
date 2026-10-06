@@ -5,6 +5,7 @@ import NextImage from "next/image";
 import Webcam from "react-webcam";
 import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
 import RepeaterRows from "@/components/dashboard/RepeaterRows";
+import ChoiceChips from "@/components/dashboard/ChoiceChips";
 import SharesTable, { formatShares, minorityNames, sharesFor, sharesTotal } from "@/components/dashboard/SharesTable";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
@@ -105,6 +106,10 @@ const MORTGAGEE_ADDRESSES: { lender: string; address: string }[] = [
     address: "Bank of Montreal, 2465 Argentia Road, 8th Floor, Mississauga, ON L5N 0B4",
   },
   {
+    lender: "National Bank of Canada",
+    address: "National Bank of Canada, 800 Saint-Jacques Street, Suite 60001, Montreal, QC H3C 1A3",
+  },
+  {
     lender: "Equitable Bank",
     address: "Equitable Bank, 25 Ontario Street, Suite 2200, Toronto, ON M5A 0Y9",
   },
@@ -158,12 +163,13 @@ function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
-function DetailsCard({ details }: { details: TaskDetailsCard }) {
+/** Copies text; shows "Copied" for two seconds. */
+function CopyButton({ text, label, compact = false }: { text: string; label: string; compact?: boolean }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(details.lines.join("\n"));
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -172,22 +178,39 @@ function DetailsCard({ details }: { details: TaskDetailsCard }) {
   }
 
   return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={label}
+      className={[
+        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border text-xs font-semibold transition-colors",
+        compact ? "p-1.5" : "px-3 py-1.5",
+        copied
+          ? "border-green-200 bg-green-50 text-green-700"
+          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100",
+      ].join(" ")}
+    >
+      {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
+      {!compact && (copied ? "Copied" : label)}
+    </button>
+  );
+}
+
+const POLICY_CHECKLIST = [
+  "Policy effective date matches the closing date",
+  "Coverage amount meets lender requirements",
+  "Property address matches the purchase agreement",
+  "Policy contains a clause stating \u201ccost guaranteed insurance\u201d (not needed for condos)",
+  "Your lender is noted as the 1st mortgagee",
+  "Your lender\u2019s mortgagee address appears on the policy",
+];
+
+function DetailsCard({ details }: { details: TaskDetailsCard }) {
+  return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="text-sm font-bold text-gray-900">{details.heading}</p>
-        <button
-          type="button"
-          onClick={copy}
-          className={[
-            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
-            copied
-              ? "border-green-200 bg-green-50 text-green-700"
-              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100",
-          ].join(" ")}
-        >
-          {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
-          {copied ? "Copied" : "Copy details"}
-        </button>
+        <CopyButton text={details.lines.join("\n")} label="Copy details" />
       </div>
       {details.lines.map((line) => (
         <p key={line} className="text-sm leading-relaxed text-gray-700">
@@ -577,9 +600,6 @@ function MultiFileSlot({
   const cfg = getFileConfig(field.options);
   const slotLabel = getSlotLabel(field.options) ?? field.label;
   const hasFiles = files.length > 0 || existing.length > 0;
-  // The agreement is a single document.
-  const isAps = cfg.doc_type === "aps" || (field.label ?? "").toLowerCase().includes("agreement of purchase");
-  const canAddMore = !isAps;
 
   function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
@@ -592,7 +612,7 @@ function MultiFileSlot({
   }
 
   function handlePick(picked: FileList | File[]) {
-    const list = Array.from(picked).slice(0, canAddMore ? undefined : 1);
+    const list = Array.from(picked);
     const valid: File[] = [];
     for (const f of list) {
       const err = validateFile(f);
@@ -616,7 +636,7 @@ function MultiFileSlot({
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
-            if (canAddMore && e.dataTransfer.files?.length) handlePick(e.dataTransfer.files);
+            if (e.dataTransfer.files?.length) handlePick(e.dataTransfer.files);
           }}
           className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-14 text-center"
         >
@@ -636,15 +656,13 @@ function MultiFileSlot({
               onAction={() => onRemoveNew(field.id, i)}
             />
           ))}
-          {canAddMore && (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="mt-1 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
-            >
-              + Add another file
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="mt-1 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
+          >
+            + Add another file
+          </button>
         </div>
       )}
 
@@ -701,7 +719,7 @@ function MultiFileSlot({
         <input
           ref={inputRef}
           type="file"
-          multiple={canAddMore}
+          multiple
           accept={cfg.accept}
           className="hidden"
           onChange={(e) => {
@@ -1607,7 +1625,7 @@ export default function DynamicTaskDrawer({
   const hasDraftOption = !isCalendlyTask;
   // Upload-only tasks submit with "Upload & Submit", per the redesign.
   const isUploadTask =
-    ["agreement of purchase", "home insurance", "void cheque", "property tax", "deposit funds"].some((k) =>
+    ["agreement of purchase", "home insurance", "void cheque", "property tax", "deposit funds", "status certificate"].some((k) =>
       taskTitle.toLowerCase().includes(k),
     ) && !(isVoidChequeTask && side === "sale");
   const taskCopy = getTaskCopy(taskTitle, side);
@@ -1821,56 +1839,30 @@ export default function DynamicTaskDrawer({
             <>
               {/* Policy Requirements Checklist */}
               <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-bold text-gray-900 mb-3">Policy Requirements Checklist</p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-gray-900">Policy Requirements Checklist</p>
+                  <CopyButton text={POLICY_CHECKLIST.map((t) => `- ${t}`).join("\n")} label="Copy checklist" />
+                </div>
                 <ul className="space-y-2">
-                  {[
-                    { key: "effective-date", label: <>Policy effective date matches the closing date</> },
-                    { key: "coverage", label: <>Coverage amount meets lender requirements</> },
-                    { key: "address", label: <>Property address matches the purchase agreement</> },
-                    {
-                      key: "clause",
-                      label: (
-                        <>
-                          Policy contains a clause stating{" "}
-                          <span className="font-semibold text-gray-900">&ldquo;cost guaranteed insurance&rdquo;</span> (not needed for condos)
-                        </>
-                      ),
-                    },
-                    {
-                      key: "mortgagee-rank",
-                      label: (
-                        <>
-                          Your lender is noted as the{" "}
-                          <span className="font-semibold text-gray-900">1st mortgagee</span>
-                        </>
-                      ),
-                    },
-                    {
-                      key: "mortgagee-address",
-                      label: (
-                        <>
-                          Your lender&rsquo;s{" "}
-                          <span className="font-semibold text-gray-900">mortgagee address</span> appears on the policy
-                        </>
-                      ),
-                    },
-                  ].map((item) => (
-                    <li key={item.key} className="flex items-start gap-2 text-xs text-gray-600">
+                  {POLICY_CHECKLIST.map((item) => (
+                    <li key={item} className="flex items-start gap-2 text-xs text-gray-600">
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0 mt-1.5" />
-                      <span>{item.label}</span>
+                      <span>{item}</span>
                     </li>
                   ))}
                 </ul>
-
               </div>
 
               <div className="rounded-xl border border-gray-200 p-4">
                 <p className="text-sm font-bold text-gray-900 mb-3">Mortgagee addresses for common lenders</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {MORTGAGEE_ADDRESSES.map((m) => (
-                    <div key={m.lender} className="rounded-lg bg-gray-50 px-3 py-2.5">
-                      <p className="text-xs font-bold text-gray-900">{m.lender}</p>
-                      <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">{m.address}</p>
+                    <div key={m.lender} className="flex items-start justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-900">{m.lender}</p>
+                        <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">{m.address}</p>
+                      </div>
+                      <CopyButton text={m.address} label={`Copy ${m.lender} address`} compact />
                     </div>
                   ))}
                 </div>
@@ -2171,24 +2163,12 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
-                    <div className="flex flex-wrap gap-x-6 gap-y-2">
-                      {opts.map((o) => (
-                        <label
-                          key={o.value}
-                          className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
-                        >
-                          <input
-                            type="radio"
-                            name={`field-${field.id}`}
-                            value={o.value}
-                            checked={selected === o.value}
-                            onChange={() => setValue(field.id, o.value)}
-                            className="h-4 w-4 accent-[#C10007] cursor-pointer"
-                          />
-                          {o.label}
-                        </label>
-                      ))}
-                    </div>
+                    <ChoiceChips
+                      options={opts}
+                      value={selected}
+                      onChange={(v) => setValue(field.id, v)}
+                      label={field.label}
+                    />
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
                         {errors[field.id]}

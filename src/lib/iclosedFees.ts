@@ -22,6 +22,8 @@ export interface FileTypeFees {
   disbursements_label: string;
   disbursements_range?: [number, number];
   title_insurance_estimate?: number | null;
+  /** FCT premium estimate by property type. */
+  title_insurance_by_property?: Record<"condo" | "freehold", number>;
 }
 
 export interface LttBracket {
@@ -177,4 +179,11 @@ export function dollars(n: number): string {
 /** "$1.5M", "$3M". */
 export function millions(n: number): string {
   return `$${Number((n / 1_000_000).toFixed(2))}M`;
+}
+
+/** FCT estimate by property type, else the flat estimate. */
+export function titleInsuranceEstimate(ft: FileTypeFees, condo: boolean | null): number {
+  const byType = ft.title_insurance_by_property;
+  if (!byType || condo === null) return ft.title_insurance_estimate ?? 0;
+  return condo ? byType.condo : byType.freehold;
 }

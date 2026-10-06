@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { isPersonalInfoTask, isHoldTitleField } from "@/lib/taskKinds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
+import { cityIn } from "@/lib/cityMatch";
 
 /** `options` arrives as parsed JSONB, or as a JSON string in some setups. */
 function parseOptions(opts: unknown): Record<string, unknown> {
@@ -79,6 +80,57 @@ async function dropMultiPartyOnlyFields<T extends { label: string; options: unkn
 
   const dropped = new Set(block);
   return fields.filter((f) => !dropped.has(f));
+}
+
+// Drops only_cities fields, and what hangs off them, outside those cities.
+async function dropOtherCityFields<T extends { label: string; options: unknown; visible_when?: unknown }>(
+  fields: T[],
+  taskId: string,
+  leadId: string | null
+): Promise<T[]> {
+  const flagged = fields.filter((f) => Array.isArray(parseOptions(f.options).only_cities));
+  if (flagged.length === 0) return fields;
+  const [{ data: t }, { data: lead }] = await Promise.all([
+    supabaseAdmin.from("tasks").select("side").eq("id", taskId).maybeSingle(),
+    leadId
+      ? supabaseAdmin.from("leads").select("address_city, selling_address_city, lead_type").eq("id", leadId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const city =
+    t?.side === "sale" && lead?.lead_type === "Purchase & Sale" ? lead?.selling_address_city : lead?.address_city;
+  const out = flagged.filter((f) => !cityIn(city, parseOptions(f.options).only_cities as string[]));
+  const dropped = new Set(out.map((f) => f.label.trim().toLowerCase()));
+  for (const f of out) {
+    const target = parseOptions(f.options).attach_to;
+    if (typeof target === "string") dropped.add(target.trim().toLowerCase());
+  }
+  return fields.filter((f) => {
+    if (dropped.has(f.label.trim().toLowerCase())) return false;
+    const vw = f.visible_when ? { visible_when: f.visible_when } : parseOptions(f.options);
+    return !visibleWhenParents(vw).some((l) => dropped.has(l.trim().toLowerCase()));
+  });
+}
+
+// Intake APS files for this task's side.
+async function intakeApsDocs(
+  taskId: string,
+  dealId: string,
+  leadId: string
+): Promise<{ file_url: string; file_name: string | null }[]> {
+  const [{ data: t }, { data: deal }, { data: lead }] = await Promise.all([
+    supabaseAdmin.from("tasks").select("side").eq("id", taskId).maybeSingle(),
+    supabaseAdmin.from("deals").select("type").eq("id", dealId).maybeSingle(),
+    supabaseAdmin.from("leads").select("id, parent_lead_id").eq("id", leadId).maybeSingle(),
+  ]);
+  const sale = t?.side === "sale" || (deal?.type ?? "").trim() === "Sale";
+  const leadIds = [leadId, lead?.parent_lead_id].filter((x): x is string => !!x);
+  const { data: docs } = await supabaseAdmin
+    .from("lead_corporate_docs")
+    .select("file_url, file_name")
+    .in("lead_id", leadIds)
+    .eq("doc_type", sale ? "aps_sale" : "aps_purchase")
+    .order("created_at", { ascending: true });
+  return (docs ?? []).filter((d) => !!d.file_url);
 }
 
 const PURCHASER_TOKEN = /\bPurchaser (\d+)\b/g;
@@ -226,6 +278,7 @@ export async function GET(req: Request) {
     }
 
     let formFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
+    formFields = await dropOtherCityFields(formFields, task_id, leadId);
     if (leadId && formFields.some((f) => mentions(f, PURCHASER_TOKEN))) {
       formFields = withPartyNames(formFields, await getPartyNames(leadId, "purchaser"), PURCHASER_TOKEN);
     }
@@ -248,6 +301,24 @@ export async function GET(req: Request) {
         ? r
         : { ...r, field_id: fieldIdByLabel.get(r.field_label.trim().toLowerCase()) ?? null }
     );
+
+    // Show intake APS uploads until the task has its own.
+    const apsField = formFields.find(
+      (f) =>
+        f.field_type === "file" &&
+        (parseOptions(f.options).doc_type === "aps" || /agreement of purchase/i.test(f.label))
+    );
+    if (apsField && leadId && task.deal_id && !finalResponses.some((r) => r.field_id === apsField.id && r.file_url)) {
+      for (const doc of await intakeApsDocs(task_id, task.deal_id, leadId)) {
+        finalResponses.push({
+          field_id: apsField.id,
+          field_label: apsField.label,
+          value: null,
+          file_url: doc.file_url,
+          file_name: doc.file_name,
+        });
+      }
+    }
 
     // 5. Pre-fill the person's identity (name + email) from their own lead, plus
     // their phone on Personal Information — intake already asked every party for

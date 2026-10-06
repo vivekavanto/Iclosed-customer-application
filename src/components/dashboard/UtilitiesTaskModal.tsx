@@ -94,7 +94,7 @@ const UtilitiesTaskModal: React.FC<{
                       {row.phone && ` \u00b7 ${row.phone}`}
                       {/* Only where the contact sheet says CLIENT MUST CONTACT. */}
                       {row.clientCalls && (
-                        <span className="font-semibold text-gray-900"> \u00b7 Call the provider</span>
+                        <span className="font-semibold text-gray-900">{" \u00b7 "}Call the provider</span>
                       )}
                       {row.verify && (
                         <span className="block text-xs text-gray-400">
