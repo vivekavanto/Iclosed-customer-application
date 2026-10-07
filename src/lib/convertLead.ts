@@ -186,20 +186,31 @@ export async function convertSingleLead(params: {
     }
   }
   if (!generatedFileNumber) {
-    const { data: lastDeal } = await supabaseAdmin
-      .from("deals")
-      .select("file_number")
-      .like("file_number", `${prefix}%`)
-      .order("file_number", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    let nextNum = 1;
-    if (lastDeal?.file_number) {
-      const lastNum = parseInt(lastDeal.file_number.replace(prefix, ""), 10);
-      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    // True numeric max; text sort puts "26P-867" above "26P-0868".
+    let maxNum = 0;
+    for (let from = 0; ; from += 1000) {
+      const { data: page } = await supabaseAdmin
+        .from("deals")
+        .select("file_number")
+        .filter("file_number", "match", `^${prefix}[0-9]+$`)
+        .range(from, from + 999);
+      for (const d of page ?? []) maxNum = Math.max(maxNum, parseInt(d.file_number.slice(prefix.length), 10) || 0);
+      if (!page || page.length < 1000) break;
     }
-    generatedFileNumber = `${prefix}${String(nextNum).padStart(4, "0")}`;
+
+    // Skip any number a primary file already holds, as in the admin app.
+    for (let n = maxNum + 1; n <= maxNum + 10 && !generatedFileNumber; n++) {
+      const candidate = `${prefix}${String(n).padStart(4, "0")}`;
+      const { data: taken } = await supabaseAdmin
+        .from("deals")
+        .select("id")
+        .eq("file_number", candidate)
+        .eq("is_primary_file", true)
+        .limit(1)
+        .maybeSingle();
+      if (!taken) generatedFileNumber = candidate;
+    }
+    generatedFileNumber ??= `${prefix}${String(maxNum + 100).padStart(4, "0")}`;
   }
 
   // ── 3. Clean prices ─────────────────────────────────────────────────
