@@ -224,7 +224,7 @@ const COPY: Record<
       "None of the items below apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as private or B lender mortgages, estates, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
     definitions: [DEF.title, DEF.lender, DEF.noar, DEF.instructions],
     acceptance:
-      "By signing you agree to these terms and the fees above, you understand that in most cases we also act for your lender, you instruct us to obtain title insurance, and you understand we use AI-assisted tools with lawyer oversight.",
+      "By signing you agree to these terms and the fees above, you understand that in most cases we also act for your lender, you instruct us to obtain title insurance, and you understand we use AI-assisted tools with lawyer oversight. If there are multiple parties in the transaction, you agree that you are signing the retainer on their behalf.",
   },
   sale: {
     title: "Sale Retainer Agreement",
@@ -261,7 +261,7 @@ const COPY: Record<
       "None of these apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as private or B lender mortgages, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
     definitions: [],
     acceptance:
-      "By signing you agree to these terms and the fees above, and you understand we use AI-assisted tools with lawyer oversight.",
+      "By signing you agree to these terms and the fees above, and you understand we use AI-assisted tools with lawyer oversight. If there are multiple parties in the transaction, you agree that you are signing the retainer on their behalf.",
   },
   refinance: {
     title: "Refinance Retainer Agreement",
@@ -299,7 +299,7 @@ const COPY: Record<
       "None of these apply today, and we will tell you in writing before charging any of them. Work nobody can predict at this stage, such as estates, corporate parties, title defects, non-resident parties and builder or assignment deals, is quoted in writing and agreed before we do it.",
     definitions: [DEF.title, DEF.lender, DEF.noar, DEF.instructions],
     acceptance:
-      "By signing you agree to these terms and the fees above, you understand that in most cases we also act for your lender, you instruct us to obtain title insurance, and you understand we use AI-assisted tools with lawyer oversight.",
+      "By signing you agree to these terms and the fees above, you understand that in most cases we also act for your lender, you instruct us to obtain title insurance, and you understand we use AI-assisted tools with lawyer oversight. If there are multiple parties in the transaction, you agree that you are signing the retainer on their behalf.",
   },
 };
 
