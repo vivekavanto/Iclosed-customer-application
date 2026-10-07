@@ -2,7 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeal } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isStatusCertificateTask, isTreefortTask, isUnbuiltTask } from "@/lib/taskKinds";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -100,9 +100,19 @@ export async function GET(req: Request) {
       // Get deal type to filter correct templates
       const { data: dealData } = await supabaseAdmin
         .from("deals")
-        .select("type, lead_id")
+        .select("type, lead_id, building_type")
         .eq("id", dId)
         .single();
+
+      // Status certificate is for resale condo purchases only.
+      const resaleCondo = dealData?.building_type === "resale_condo";
+      await supabaseAdmin
+        .from("tasks")
+        .update({ is_deleted: true })
+        .eq("deal_id", dId)
+        .eq("is_deleted", false)
+        .ilike("title", "%status certificate%")
+        .or(resaleCondo ? "side.eq.sale" : "side.is.null,side.eq.purchase,side.eq.sale");
 
       // Hold-title is agreed between co-owners — a single-party file has no one to agree with.
       // Fails open: an unresolvable count keeps the task.
@@ -246,7 +256,8 @@ export async function GET(req: Request) {
             const titleKey = `${side ?? "_"}:${tt.name?.trim().toLowerCase()}`;
             if (existingTitleKeys.has(titleKey)) return false;
             if (singleParty && isHoldTitleTask(tt.name)) return false;
-            if (isTreefortTask(tt.name)) return false;
+            if (isTreefortTask(tt.name) || isUnbuiltTask(tt.name)) return false;
+            if (isStatusCertificateTask(tt.name) && (side === "sale" || !resaleCondo)) return false;
             const role = (tt.role_type ?? "").toLowerCase();
             return role === "client" || role === "both" || role === "";
           })
@@ -480,8 +491,8 @@ export async function GET(req: Request) {
     // Template-seeded tasks are only ever role_type client/both, so nothing the
     // client is meant to see is filtered out.
     const clientVisible = (tasks ?? []).filter(
-      (t: { role_type?: string | null }) =>
-        (t.role_type ?? "").toLowerCase() !== "admin",
+      (t: { role_type?: string | null; title?: string | null }) =>
+        (t.role_type ?? "").toLowerCase() !== "admin" && !isUnbuiltTask(t.title),
     );
 
     const enriched = clientVisible.map((t: any) => {

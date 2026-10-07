@@ -55,3 +55,17 @@ export function isHoldTitleField(label: string | null | undefined): boolean {
   const l = (label ?? "").toLowerCase();
   return l.includes("hold title") && l.includes("tenants in common");
 }
+
+export function isStatusCertificateTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("status certificate");
+}
+
+export function isPropertyDetailsTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("property details");
+}
+
+/** Dev-only tasks not built in this app yet; hidden here. */
+export function isUnbuiltTask(title: string | null | undefined): boolean {
+  const t = (title ?? "").toLowerCase();
+  return t.includes("signing appointment") || t.includes("utilities") || t.includes("closing figures");
+}

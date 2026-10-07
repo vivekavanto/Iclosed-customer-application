@@ -43,9 +43,10 @@ export interface PrefillEntry {
  * reformats on first keystroke, which reads as the form "changing" their value.
  */
 export function formatCurrencyValue(raw: string): string {
-  const numeric = raw.replace(/[^0-9]/g, "");
-  if (!numeric) return "";
-  return `$${new Intl.NumberFormat("en-US").format(parseInt(numeric, 10))}`;
+  // Keep the decimal point so "25000.50" isn't read as 2,500,050.
+  const numeric = parseFloat(raw.replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(numeric)) return "";
+  return `$${new Intl.NumberFormat("en-US").format(Math.round(numeric))}`;
 }
 
 /**

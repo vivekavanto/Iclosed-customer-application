@@ -7,6 +7,8 @@ import { notifyNewLead } from "@/lib/notifyNewLead";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { findOrCreatePartner, partnerTypeFromSource } from "@/lib/resolvePartner";
 import { normalizeEmailForStorage } from "@/lib/normalizeEmail";
+import { normalizeAmount } from "@/lib/apsExtraction";
+import { parsePropertyType } from "@/lib/propertyType";
 import { NextResponse } from "next/server";
 import {
   normalizePostalCode,
@@ -37,6 +39,7 @@ export async function POST(req: Request) {
       selling_price,
       deposit_amount,
       selling_deposit_amount,
+      building_type,
       closing_date,
       selling_closing_date,
       address_street,
@@ -118,9 +121,6 @@ export async function POST(req: Request) {
       const digits = value ? String(value).replace(/[^0-9.]/g, "") : "";
       return digits ? digits : null;
     };
-    const cleanDeposit = cleanAmount(deposit_amount);
-    const cleanSellingDeposit =
-      sub_service === "both" ? cleanAmount(selling_deposit_amount) : null;
 
     // Closing date is optional and arrives as an ISO "YYYY-MM-DD" string from
     // the date input (or from an APS read, normalized to the same shape).
@@ -142,8 +142,7 @@ export async function POST(req: Request) {
       sub_service === "both" ? cleanClosingDate(selling_closing_date) : null;
 
     // Audit trail of what the APS reader returned, kept next to what the client
-    // accepted. Stored as-is; nothing here is trusted as a value — every field
-    // on the lead comes from the form the client submitted.
+    // accepted. Stored as-is; the deposit is taken from it, below.
     const apsExtraction =
       aps_extraction &&
       typeof aps_extraction === "object" &&
@@ -151,6 +150,18 @@ export async function POST(req: Request) {
       Object.keys(aps_extraction).length > 0
         ? aps_extraction
         : null;
+
+    // Deposit: the APS value, else the form's.
+    const apsDeposit = (side: "purchase" | "sale") =>
+      normalizeAmount(apsExtraction?.[side]?.result?.deposit?.value, { min: 1 });
+    const cleanDeposit =
+      apsDeposit(sub_service === "selling" ? "sale" : "purchase") ?? cleanAmount(deposit_amount);
+    const cleanSellingDeposit =
+      sub_service === "both" ? apsDeposit("sale") ?? cleanAmount(selling_deposit_amount) : null;
+
+    // Purchase side only.
+    const propertyType = sub_service === "selling" ? null : parsePropertyType(building_type);
+
     const hasCoPersons = Array.isArray(co_persons) && co_persons.length > 0;
     const uploadMode =
       document_upload_mode === "me" ||
@@ -474,6 +485,7 @@ export async function POST(req: Request) {
         // intake working before the deposit migration is applied.
         ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
         ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+        ...(propertyType ? { building_type: propertyType } : {}),
         // Optional closing date. Same conditional-spread convention as the
         // deposit above, so an intake without one never references the column
         // and keeps working before the migration is applied.
@@ -552,6 +564,7 @@ export async function POST(req: Request) {
               selling_price: cleanSellingPrice,
               ...(cleanDeposit ? { deposit_amount: cleanDeposit } : {}),
               ...(cleanSellingDeposit ? { selling_deposit_amount: cleanSellingDeposit } : {}),
+              ...(propertyType ? { building_type: propertyType } : {}),
               ...(closingDate ? { closing_date: closingDate } : {}),
               ...(sellingClosingDate ? { selling_closing_date: sellingClosingDate } : {}),
               address_street,
@@ -684,8 +697,8 @@ export async function POST(req: Request) {
       console.error("[Intake] Welcome email failed:", err);
     }
 
-    // Quote email to the primary client only.
-    await sendQuoteEmail(lead.id);
+    // Quote to every buyer or seller, each with their own retainer.
+    await Promise.all([lead.id, ...coPersonLeadIds].map((id) => sendQuoteEmail(id)));
 
     // ── 6. Notify the iClosed team that a lead has arrived ─────────────
     // ONE alert per intake, for the primary lead — by email to the back office
