@@ -1940,10 +1940,7 @@ export default function DashboardPage() {
             loading={milestonesLoading}
           />
 
-          {/* ── Estimate your closing cost — dev deploys only ──
-              Gated by SHOW_CLOSING_COST_ESTIMATE so this code can live on main
-              without appearing on the production portal. See
-              src/lib/featureFlags.ts to flip it on for production. */}
+          {/* ── Estimate your closing cost ── */}
           {SHOW_CLOSING_COST_ESTIMATE && (
             <ClosingCostEstimateCard onEstimate={() => setEstimateOpen(true)} />
           )}

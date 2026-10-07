@@ -1,20 +1,4 @@
-/**
- * Client-visible feature flags.
- *
- * Why this exists: some work lands on the dev site long before it is allowed to
- * appear on the production portal, and "keep it commented out on main" does not
- * survive a dev → main merge — the merge brings the un-commented code with it.
- * A flag ships the code to both branches and lets the *deploy* decide.
- *
- * Resolution order (same shape as `adminAppUrl`):
- *   1. NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE — explicit wins, always
- *      ("true"/"1" shows it, "false"/"0" hides it).
- *   2. Derived from this deploy's own identity: shown everywhere EXCEPT a
- *      deploy that looks like the real production portal.
- *
- * The derivation fails safe toward hidden: anything that cannot be positively
- * identified as local / preview / dev is treated as production.
- */
+/** Client feature flags: env var wins, else decided by deploy. */
 
 function envFlag(raw: string | undefined): boolean | null {
   const value = raw?.trim().toLowerCase();
@@ -40,13 +24,9 @@ function isNonProductionDeploy(): boolean {
   return false;
 }
 
-/**
- * "Estimate your closing cost" card on the client dashboard — dev only for now.
- * Set NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE=true to force it on anywhere.
- */
+/** Closing cost estimate card; on everywhere, env "false" hides it. */
 export const SHOW_CLOSING_COST_ESTIMATE =
-  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ??
-  isNonProductionDeploy();
+  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ?? true;
 
 /** Digits in intake names, for test data; dev only by default. */
 export const ALLOW_DIGITS_IN_NAMES =
