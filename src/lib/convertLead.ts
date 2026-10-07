@@ -168,21 +168,49 @@ export async function convertSingleLead(params: {
   const prefix = `${year}${leadTypePrefix}-`;
 
   let generatedFileNumber = fileNumber ?? null;
-  if (!generatedFileNumber) {
-    const { data: lastDeal } = await supabaseAdmin
+  // Co-clients share the primary's file number, as in the admin app.
+  let isCoClient = false;
+  if (!generatedFileNumber && lead.parent_lead_id) {
+    const { data: primaryDeal } = await supabaseAdmin
       .from("deals")
       .select("file_number")
-      .like("file_number", `${prefix}%`)
-      .order("file_number", { ascending: false })
+      .eq("lead_id", lead.parent_lead_id)
+      .eq("is_primary_file", true)
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    let nextNum = 1;
-    if (lastDeal?.file_number) {
-      const lastNum = parseInt(lastDeal.file_number.replace(prefix, ""), 10);
-      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    if (primaryDeal?.file_number) {
+      generatedFileNumber = primaryDeal.file_number;
+      isCoClient = true;
     }
-    generatedFileNumber = `${prefix}${String(nextNum).padStart(4, "0")}`;
+  }
+  if (!generatedFileNumber) {
+    // True numeric max; text sort puts "26P-867" above "26P-0868".
+    let maxNum = 0;
+    for (let from = 0; ; from += 1000) {
+      const { data: page } = await supabaseAdmin
+        .from("deals")
+        .select("file_number")
+        .filter("file_number", "match", `^${prefix}[0-9]+$`)
+        .range(from, from + 999);
+      for (const d of page ?? []) maxNum = Math.max(maxNum, parseInt(d.file_number.slice(prefix.length), 10) || 0);
+      if (!page || page.length < 1000) break;
+    }
+
+    // Skip any number a primary file already holds, as in the admin app.
+    for (let n = maxNum + 1; n <= maxNum + 10 && !generatedFileNumber; n++) {
+      const candidate = `${prefix}${String(n).padStart(4, "0")}`;
+      const { data: taken } = await supabaseAdmin
+        .from("deals")
+        .select("id")
+        .eq("file_number", candidate)
+        .eq("is_primary_file", true)
+        .limit(1)
+        .maybeSingle();
+      if (!taken) generatedFileNumber = candidate;
+    }
+    generatedFileNumber ??= `${prefix}${String(maxNum + 100).padStart(4, "0")}`;
   }
 
   // ── 3. Clean prices ─────────────────────────────────────────────────
@@ -198,6 +226,7 @@ export async function convertSingleLead(params: {
       lead_id: lead.id,
       client_id: clientId,
       file_number: generatedFileNumber,
+      is_primary_file: !isCoClient,
       type: lead.lead_type ?? "Purchase",
       status: "Active",
       property_address: lead.address_street ?? "Address TBD",
