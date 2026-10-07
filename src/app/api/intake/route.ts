@@ -697,8 +697,14 @@ export async function POST(req: Request) {
       console.error("[Intake] Welcome email failed:", err);
     }
 
-    // Quote to every buyer or seller, each with their own retainer.
-    await Promise.all([lead.id, ...coPersonLeadIds].map((id) => sendQuoteEmail(id)));
+    // Quote and retainer go to the lead only; "both" means everyone leads.
+    const quoteLeadIds =
+      uploadMode === "both"
+        ? [lead.id, ...coPersonLeadIds]
+        : uploadMode === "co"
+          ? [coPersonLeadIdByFormId.get(document_uploader_co_person_id) ?? lead.id]
+          : [lead.id];
+    await Promise.all(quoteLeadIds.map((id) => sendQuoteEmail(id)));
 
     // ── 6. Notify the iClosed team that a lead has arrived ─────────────
     // ONE alert per intake, for the primary lead — by email to the back office
