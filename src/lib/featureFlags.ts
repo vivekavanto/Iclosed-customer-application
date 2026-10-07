@@ -40,15 +40,14 @@ function isNonProductionDeploy(): boolean {
   return false;
 }
 
-/**
- * "Estimate your closing cost" card on the client dashboard — dev only for now.
- * Set NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE=true to force it on anywhere.
- */
+/** Closing cost estimate card; on everywhere unless the env var says false. */
 export const SHOW_CLOSING_COST_ESTIMATE =
-  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ??
-  isNonProductionDeploy();
+  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ?? true;
 
-/** Digits in intake names, for test data; dev only by default. */
+/**
+ * Digits allowed in intake names (e.g. "RDTest1") — dev only, for test data.
+ * Set NEXT_PUBLIC_ALLOW_DIGITS_IN_NAMES=true/false to override.
+ */
 export const ALLOW_DIGITS_IN_NAMES =
   envFlag(process.env.NEXT_PUBLIC_ALLOW_DIGITS_IN_NAMES) ??
   isNonProductionDeploy();
