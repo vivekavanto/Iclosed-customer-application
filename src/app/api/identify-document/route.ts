@@ -148,6 +148,7 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
       "side": "front" | "back" | "front-and-back" | "unknown",
       "side_requirement": "front-and-back" | "unknown",
       "is_complete": boolean,
+      "signature_present": boolean | null,
       "confidence": "high" | "medium" | "low",
       "expiry_date": string | null
     }
@@ -159,6 +160,11 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
   },
   "reason": string
 }
+
+Rules for "signature_present" (PASSPORTS ONLY — return null for every other document type, including driver's licenses and credit cards):
+- true ONLY if the passport's signature page ("Signature of bearer" / "Signature du titulaire") is visible AND there is clearly visible handwritten ink on the signature line
+- false if the signature page is visible but the signature line is blank/empty. A faint printed line, security printing or background artwork is NOT a signature — if you cannot clearly see handwritten ink, return false
+- null if the signature page is not visible (e.g. only the photo page was uploaded)
 
 Rules for "is_complete":
 - true ONLY if side is "front-and-back" — i.e. both sides of that ID are visible in this file
@@ -189,6 +195,9 @@ interface DocumentEntry {
   side: Side;
   side_requirement: SideRequirement;
   is_complete: boolean;
+  // Passports only: true = signature page visible and signed, false = visible
+  // but blank, null = not visible / not a passport.
+  signature_present: boolean | null;
   confidence: Confidence;
   expiry_date: string | null;
   expiry_status: ExpiryStatus;
@@ -299,7 +308,7 @@ function parseGeminiJson(text: string): IdentificationResult {
       .filter((d) =>
         typeof d?.document_type === "string" && d.document_type.trim().length > 0
       )
-      .map((d) => d as { document_type: string; side?: unknown; side_requirement?: unknown; is_complete?: unknown; confidence?: unknown; expiry_date?: unknown })
+      .map((d) => d as { document_type: string; side?: unknown; side_requirement?: unknown; is_complete?: unknown; signature_present?: unknown; confidence?: unknown; expiry_date?: unknown })
       .map((d) => {
         const expiry = parseExpiryDate(d.expiry_date);
         return {
@@ -307,6 +316,7 @@ function parseGeminiJson(text: string): IdentificationResult {
           side: parseSide(d.side),
           side_requirement: parseSideRequirement(d.side_requirement),
           is_complete: Boolean(d.is_complete),
+          signature_present: typeof d.signature_present === "boolean" ? d.signature_present : null,
           confidence: parseConfidence(d.confidence),
           expiry_date: expiry.date,
           expiry_status: expiry.status,

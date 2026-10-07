@@ -91,9 +91,19 @@ interface DocumentEntry {
   side: "front" | "back" | "front-and-back" | "unknown";
   sideRequirement: "single-sided" | "front-and-back" | "unknown";
   isComplete: boolean;
+  // Passports only: true = signed, false = signature page visible but blank,
+  // null/undefined = not visible or not a passport.
+  signaturePresent?: boolean | null;
   confidence: "high" | "medium" | "low";
   expiryDate: string | null;
   expiryStatus: ExpiryStatus;
+}
+
+// A passport is unsigned when the detector saw the signature page and the line
+// was blank. Other IDs (credit cards) keep the is_complete-based check.
+function isUnsignedDoc(d: Pick<DocumentEntry, "documentType" | "side" | "isComplete" | "signaturePresent">): boolean {
+  if (/passport/i.test(d.documentType)) return d.signaturePresent === false;
+  return d.side === "front-and-back" && !d.isComplete;
 }
 
 interface DetectionResult {
@@ -112,6 +122,17 @@ interface DetectionResult {
     completeDocuments: number;
     documentTypesFound: string[];
   };
+}
+
+// custom_type stored with an uploaded document: "<type>_<side>", plus
+// "_unsigned" for a passport whose signature page is blank so the block
+// survives a Save-as-Draft → return round trip.
+function buildCustomType(det: DetectionResult | null): string {
+  if (!det?.documentType) return "identification";
+  const unsignedPassport =
+    /passport/i.test(det.documentType) &&
+    !!det.multipleDocuments?.some((d) => d.documentType === det.documentType && isUnsignedDoc(d));
+  return `${det.documentType}${det.side !== "unknown" ? `_${det.side}` : ""}${unsignedPassport ? "_unsigned" : ""}`;
 }
 
 interface SelectedFile {
@@ -226,8 +247,8 @@ function formatExistingDocLabel(customType: string | null): string {
 
   if (customType === "identification") return "Identification";
 
-  // Detection-derived format: "<Document Type>_<side>"
-  const match = /^(.*)_(front-and-back|front|back)$/i.exec(customType);
+  // Detection-derived format: "<Document Type>_<side>[_unsigned]"
+  const match = /^(.*)_(front-and-back|front|back)(_unsigned)?$/i.exec(customType);
   if (match) {
     const type = match[1];
     const side = match[2].toLowerCase();
@@ -422,6 +443,7 @@ async function fetchDetection(
         side: "front" | "back" | "front-and-back" | "unknown";
         side_requirement: "single-sided" | "front-and-back" | "unknown";
         is_complete: boolean;
+        signature_present?: boolean | null;
         confidence: "high" | "medium" | "low";
         expiry_date: string | null;
         expiry_status: ExpiryStatus;
@@ -438,6 +460,7 @@ async function fetchDetection(
       side: d.side,
       sideRequirement: d.side_requirement,
       isComplete: d.is_complete,
+      signaturePresent: d.signature_present ?? null,
       confidence: d.confidence,
       expiryDate: d.expiry_date ?? null,
       expiryStatus: d.expiry_status ?? "unknown",
@@ -1321,7 +1344,7 @@ export default function UploadIdentificationDrawer({
     for (const doc of existing) {
       if (!doc.custom_type) continue;
       const prefix = doc.custom_type
-        .replace(/_front$|_back$|_front-and-back$/i, "")
+        .replace(/_front(_unsigned)?$|_back(_unsigned)?$|_front-and-back(_unsigned)?$/i, "")
         .toLowerCase()
         .trim();
       if (prefix) existingPrefixes.add(prefix);
@@ -1575,9 +1598,7 @@ export default function UploadIdentificationDrawer({
           );
         }
         // Use detected document type and side as custom_type
-        const customType = s.detection?.documentType
-          ? `${s.detection.documentType}${s.detection.side !== "unknown" ? `_${s.detection.side}` : ""}`
-          : "identification";
+        const customType = buildCustomType(s.detection);
         try {
           const url = await registerUploadedDoc({
             leadId,
@@ -1719,9 +1740,7 @@ export default function UploadIdentificationDrawer({
             `${s.file.name}: ${s.uploadError ?? "this file was not uploaded successfully. Please remove it and try again."}`,
           );
         }
-        const customType = s.detection?.documentType
-          ? `${s.detection.documentType}${s.detection.side !== "unknown" ? `_${s.detection.side}` : ""}`
-          : "identification";
+        const customType = buildCustomType(s.detection);
         try {
           await registerUploadedDoc({
             leadId,
@@ -1802,7 +1821,7 @@ export default function UploadIdentificationDrawer({
             // Both required sides are present but the detector flagged the
             // document itself incomplete — this is the signature-missing
             // case (blank signature page/strip), not a missing-side case.
-            unsigned: doc.side === "front-and-back" && !doc.isComplete,
+            unsigned: isUnsignedDoc(doc),
           });
         }
       } else if (s.detection.documentType) {
@@ -1830,8 +1849,9 @@ export default function UploadIdentificationDrawer({
     if (ct === "identification") continue;
     if (LABEL_OPTIONS.some((o) => o.value === ct)) continue;
 
-    const match = /^(.*)_(front-and-back|front|back)$/i.exec(ct);
+    const match = /^(.*)_(front-and-back|front|back)(_unsigned)?$/i.exec(ct);
     const type = match ? match[1] : ct;
+    const unsignedDraft = !!match?.[3];
     // No side suffix means the side was never established — detection returned
     // "unknown" (custom_type is written without a suffix in that case), or the
     // row predates side tracking. Reading that as "front-and-back" would let a
@@ -1844,7 +1864,7 @@ export default function UploadIdentificationDrawer({
     //
     // Expiry isn't persisted on previously-uploaded docs, so we can't re-check
     // it here — treat as not-expired (the draft save already screened them).
-    detectedDocs.push({ type, side, fileId: doc.id, expired: false, unsigned: false });
+    detectedDocs.push({ type, side, fileId: doc.id, expired: false, unsigned: unsignedDraft });
   }
 
   // Group by document type
@@ -1921,13 +1941,14 @@ export default function UploadIdentificationDrawer({
   // signature page/strip is blank. Side presence alone (docAnalysis above)
   // doesn't catch this — it only looks at which sides were uploaded, not
   // whether they were signed — so it's checked separately here from the
-  // detector's own per-document `isComplete` flag.
+  // detector's own per-document flag (see isUnsignedDoc). Previously-saved
+  // draft documents are included via the "_unsigned" custom_type suffix.
   const unsignedDocs = selected.filter((s) => {
     const docs = s.detection?.multipleDocuments;
     if (!s.detection?.isIdentification || !docs) return false;
-    return docs.some((d) => d.side === "front-and-back" && !d.isComplete);
+    return docs.some((d) => isUnsignedDoc(d));
   });
-  const hasUnsignedDocs = unsignedDocs.length > 0;
+  const hasUnsignedDocs = unsignedDocs.length > 0 || docAnalysis.some((d) => d.unsigned);
 
   // Check for expired or expiring-soon IDs
   const expiredDocs = selected.filter(
@@ -2254,11 +2275,17 @@ export default function UploadIdentificationDrawer({
                             <div className="flex flex-col gap-0.5 mt-0.5">
                               <p className={`text-[11px] font-medium truncate ${hasError ? "text-[#C10007]" : "text-green-600"}`}>
                                 {s.detection!.documentType}
-                                {s.detection!.side === "front-and-back"
-                                  ? " · both sides in one image"
-                                  : s.detection!.side !== "unknown"
-                                    ? ` (${s.detection!.side})`
-                                    : ""}
+                                {/* An unsigned passport only cares about the
+                                    signature, so it says that instead of the sides. */}
+                                {s.detection!.multipleDocuments?.some(
+                                  (d) => d.documentType === s.detection!.documentType && /passport/i.test(d.documentType) && isUnsignedDoc(d),
+                                )
+                                  ? " · signature missing"
+                                  : s.detection!.side === "front-and-back"
+                                    ? " · both sides in one image"
+                                    : s.detection!.side !== "unknown"
+                                      ? ` (${s.detection!.side})`
+                                      : ""}
                               </p>
                               {showDuplicate && (
                                 <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
@@ -2476,7 +2503,7 @@ export default function UploadIdentificationDrawer({
                         )}
                         <div className="min-w-0 flex-1 text-gray-900">
                           <span className="font-semibold">{doc.type}</span>
-                          <span className={doc.expired || doc.unsigned ? "text-[#C10007] font-semibold" : ""}>
+                          <span className={doc.expired ? "text-[#C10007] font-semibold" : ""}>
                             {doc.expired
                               ? " — expired (not a valid ID)"
                               : doc.unsigned
