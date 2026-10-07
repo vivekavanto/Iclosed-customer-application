@@ -3,6 +3,7 @@ import { triggerMilestoneEmail } from "@/lib/triggerMilestoneEmail";
 import { findFamilySharedTaskPeers, isApsTemplate } from "@/lib/findFamilySharedTaskPeers";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { isTaskInactive } from "@/lib/depositTask";
+import { isUnbuiltTask } from "@/lib/taskKinds";
 
 /**
  * Helper: resolves the source task's title + APS-ness so the peer lookup can
@@ -234,13 +235,13 @@ export async function advanceMilestone(dealId: string, milestoneId: string) {
   // every party's copy of every task in this milestone) must be complete.
   const { data: tasksData } = await supabaseAdmin
     .from("tasks")
-    .select("id, completed, milestone_id, activation_required, activated_at")
+    .select("id, title, completed, milestone_id, activation_required, activated_at")
     .in("milestone_id", equivalents.map((m) => m.id))
     .eq("is_deleted", false);
   // A task the admin hasn't activated isn't on anyone's dashboard, so it can't
   // hold its milestone back — it would never complete and the stage would stay
   // Pending for the life of the file. See src/lib/depositTask.ts.
-  const tasks = (tasksData ?? []).filter((t) => !isTaskInactive(t));
+  const tasks = (tasksData ?? []).filter((t) => !isTaskInactive(t) && !isUnbuiltTask(t.title));
   const familyAllDone = tasks.length > 0 && tasks.every((t) => t.completed);
 
   if (familyAllDone) {

@@ -5,8 +5,8 @@ import { resolveRetainerLeadId } from "@/lib/retainerToken";
 import { formatLeadTypeLabelForRecipient } from "@/lib/leadEmailAddress";
 import { leadHasAccount } from "@/lib/leadHasAccount";
 import { getLeadFirmKey } from "@/lib/leadFirm";
-import { retainerAgreementKind } from "@/lib/retainerAgreement";
-import { loadRetainerAgreementData } from "@/lib/loadRetainerAgreement";
+import { retainerAgreementPlans } from "@/lib/retainerAgreement";
+import { loadRetainerAgreements } from "@/lib/loadRetainerAgreement";
 
 type Side = "purchase" | "sale" | null;
 
@@ -86,7 +86,7 @@ export async function GET(req: Request) {
     const { data: leads } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, parent_lead_id, co_person_role, upload_mode, client_id, email"
+        "id, first_name, last_name, lead_type, address_street, address_city, address_province, address_postal_code, selling_address_street, selling_address_city, selling_address_province, selling_address_postal_code, closing_date, selling_closing_date, parent_lead_id, co_person_role, upload_mode, client_id, email"
       )
       .in("id", leadIds);
 
@@ -224,12 +224,19 @@ export async function GET(req: Request) {
 
     const displayLeadType = formatLeadTypeLabelForRecipient(lead);
 
-    // v7 purchase/sale agreement figures; other lead types keep the FAQ retainer.
-    const agreementKind = retainerAgreementKind(lead?.lead_type);
-    const retainerAgreement =
-      lead && agreementKind
-        ? await loadRetainerAgreementData(lead, propertyAddress, agreementKind)
-        : null;
+    // v12 agreements; none keeps the FAQ.
+    const retainerAgreements = lead
+      ? await loadRetainerAgreements(
+          lead,
+          retainerAgreementPlans(lead, {
+            property: propertyAddress,
+            purchaseAddress,
+            saleAddress,
+            only: coPurchaserOnly ? "purchase" : coSellerOnly ? "sale" : null,
+          }),
+          new Date().toISOString().split("T")[0],
+        )
+      : [];
 
     return NextResponse.json({
       signed: false,
@@ -248,7 +255,7 @@ export async function GET(req: Request) {
       retainer_total: totalRetainers,
       is_co_person: isCoPerson,
       co_person_role: coRole,
-      retainer_agreement: retainerAgreement,
+      retainer_agreements: retainerAgreements,
     });
   } catch (err) {
     console.error("[Retainer Check] Server error:", err);

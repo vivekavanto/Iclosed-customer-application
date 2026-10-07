@@ -1,5 +1,10 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { fillLeadDepositFromAps } from "@/lib/fillDealDepositFromAps";
+
+export const runtime = "nodejs";
+// Room for the background deposit read.
+export const maxDuration = 180;
 
 export async function POST(req: Request) {
   try {
@@ -28,6 +33,16 @@ export async function POST(req: Request) {
       });
 
     if (error) throw new Error(error.message);
+
+    // Backup when the browser read missed the deposit.
+    if (doc_type === "aps_purchase" || doc_type === "aps_sale") {
+      const side = doc_type === "aps_sale" ? "sale" : "purchase";
+      after(() =>
+        fillLeadDepositFromAps({ leadId: lead_id, side, fileUrl: file_url }).catch((err) =>
+          console.error("[aps-deposit] backup failed:", err),
+        ),
+      );
+    }
 
     return NextResponse.json({ success: true, url: file_url, file_name });
   } catch (err: any) {

@@ -49,7 +49,7 @@ export async function GET() {
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key, selling_deposit_amount"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -88,7 +88,7 @@ export async function GET() {
     const { data: deals, error: dealError } = await supabaseAdmin
       .from("deals")
       .select(
-        "id, file_number, type, status, closing_date, property_address, price, selling_price, selling_property_address, lead_id"
+        "id, file_number, type, status, closing_date, property_address, price, selling_price, selling_property_address, deposit_amount, lead_id"
       )
       .eq("client_id", client.id)
       .eq("status", "Active")
@@ -202,6 +202,7 @@ export async function GET() {
         // Sale deal. The dashboard uses this to show only that side's property,
         // tasks and milestones. NULL for a primary client (sees both sides).
         recipient_side: recipientSideForLead(lead),
+        selling_deposit_amount: lead.selling_deposit_amount ?? null,
         // Which firm this file is retained by. The portal is shared by both
         // firms, so the client-facing contact details ("Need Assistance?") are
         // chosen from this rather than hard-coded to Nava Wilson.

@@ -47,3 +47,13 @@ function isNonProductionDeploy(): boolean {
 export const SHOW_CLOSING_COST_ESTIMATE =
   envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ??
   isNonProductionDeploy();
+
+/** Digits in intake names, for test data; dev only by default. */
+export const ALLOW_DIGITS_IN_NAMES =
+  envFlag(process.env.NEXT_PUBLIC_ALLOW_DIGITS_IN_NAMES) ??
+  isNonProductionDeploy();
+
+// Sign out when the APS doesn't name the client.
+export const ENFORCE_APS_NAME_MATCH =
+  envFlag(process.env.NEXT_PUBLIC_ENFORCE_APS_NAME_MATCH) ??
+  !isNonProductionDeploy();

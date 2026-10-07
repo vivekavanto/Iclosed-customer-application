@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, MapPin, Tag, ArrowRight } from "lucide-react";
 import FAQAccordion from "@/components/retainer/FAQAccordion";
 import RetainerAgreementView from "@/components/retainer/RetainerAgreementView";
-import { longDate, type RetainerAgreementData } from "@/lib/retainerAgreement";
+import { longDate, type RetainerAgreement } from "@/lib/retainerAgreement";
 import { getRetainerFaqItems, retainerAgreementLine } from "@/lib/retainerFaq";
 import { resolveFirmKey, type FirmKey } from "@/lib/firms";
 import Button from "@/components/ui/Button";
@@ -137,8 +137,9 @@ export default function RetainerPage() {
   // null so the form never renders a blank firm name in the moment between
   // first paint and /api/retainer/check answering.
   const [firm, setFirm] = useState<FirmKey>(resolveFirmKey(null));
-  // v7 purchase/sale agreement figures; null keeps the FAQ retainer.
-  const [agreement, setAgreement] = useState<RetainerAgreementData | null>(null);
+  // v12 agreements; empty keeps the FAQ retainer.
+  const [agreements, setAgreements] = useState<RetainerAgreement[]>([]);
+  const agreement = agreements[0] ?? null;
   const [retainerCurrent, setRetainerCurrent] = useState(1);
   const [retainerTotal, setRetainerTotal] = useState(1);
   const [isCoPerson, setIsCoPerson] = useState(false);
@@ -253,7 +254,7 @@ export default function RetainerPage() {
           data.side === "purchase" || data.side === "sale" ? data.side : null
         );
         setFirm(resolveFirmKey(data.firm_key));
-        setAgreement(data.retainer_agreement ?? null);
+        setAgreements(Array.isArray(data.retainer_agreements) ? data.retainer_agreements : []);
         setRetainerCurrent(data.retainer_current ?? 1);
         setRetainerTotal(data.retainer_total ?? 1);
         setIsCoPerson(Boolean(data.is_co_person));
@@ -520,25 +521,13 @@ export default function RetainerPage() {
               Thanks, {firstName} &mdash; your retainer is signed
             </h1>
             <p className="text-sm text-gray-500">
-              A copy is on its way to your inbox.{" "}
-              {uploaderName ? (
-                <>
-                  <span className="font-semibold text-gray-700">
-                    {uploaderName}
-                  </span>{" "}
-                  is handling document submission for this file, so there&apos;s
-                  nothing else you need to do right now.
-                </>
-              ) : (
-                <>
-                  The documents for this file are being handled for you, so
-                  there&apos;s nothing else you need to do right now.
-                </>
-              )}
+              Thank you.{" "}
+              <span className="font-semibold text-gray-700">
+                {uploaderName ?? "Your co-applicant"}
+              </span>{" "}
+              is taking the lead, so you can safely close this tab. A copy of
+              your retainer is on its way to your inbox.
             </p>
-            <div className="mt-6 flex justify-center">
-              <Button size="md" onClick={() => window.close()}>Close tab</Button>
-            </div>
           </ResultPopup>
         );
       }
@@ -573,9 +562,8 @@ export default function RetainerPage() {
               Retainer Signed
             </h1>
             <p className="text-sm text-gray-500">
-              Thank you for signing, {name.split(" ")[0] || "there"}. There&apos;s
-              nothing more you need to do — your co-applicant is handling the
-              document uploads, and our team will be in touch.
+              Thank you. Your co-applicant is taking the lead, so you can safely
+              close this tab.
             </p>
           </ResultPopup>
         );
@@ -664,17 +652,22 @@ export default function RetainerPage() {
   return (
     <div className="min-h-screen bg-white">
       {agreement ? (
-        <RetainerAgreementView
-          data={agreement}
-          date={date}
-          badge={
-            retainerTotal >= 2 && (
-              <span className="flex-shrink-0 w-11 h-11 rounded-full border-2 border-[#C10007] flex items-center justify-center text-sm font-bold text-[#C10007]">
-                {retainerCurrent}/{retainerTotal}
-              </span>
-            )
-          }
-        />
+        // Bundle: both retainers, one signature.
+        agreements.map((a, i) => (
+          <div key={a.title} className={i > 0 ? "border-t border-gray-200" : undefined}>
+            <RetainerAgreementView
+              agreement={a}
+              badge={
+                i === 0 &&
+                retainerTotal >= 2 && (
+                  <span className="flex-shrink-0 w-11 h-11 rounded-full border-2 border-[#C10007] flex items-center justify-center text-sm font-bold text-[#C10007]">
+                    {retainerCurrent}/{retainerTotal}
+                  </span>
+                )
+              }
+            />
+          </div>
+        ))
       ) : (
       <>
       {/* ═══════════════════════════════════════
@@ -745,7 +738,7 @@ export default function RetainerPage() {
       ═══════════════════════════════════════ */}
       <form onSubmit={handleSubmit} noValidate>
         {agreement ? (
-          // v7 signature line: prefilled, read-only name and date.
+          // v12 signature line: prefilled, read-only name and date.
           <div className="mx-6 sm:mx-10 lg:mx-16 mb-6">
             <div className="flex flex-col gap-4 rounded-md bg-gray-50 px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
               <div className="flex items-end gap-3">
@@ -882,9 +875,23 @@ export default function RetainerPage() {
             </a>
             , for more details on terms of service, and user agreement.
           </p>
-          <Button type="submit" size="md" loading={loading}>
-            I agree
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            <Button type="submit" size="md" loading={loading}>
+              I agree
+            </Button>
+            {/* For clients who disagree with the terms. */}
+            <p className="text-sm text-gray-500">
+              Questions or concerns?{" "}
+              <a
+                href="/contact"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-[#C10007] underline underline-offset-2 hover:text-[#9F0006]"
+              >
+                Contact us
+              </a>
+            </p>
+          </div>
         </div>
       </form>
     </div>

@@ -5,6 +5,10 @@ import {
 } from "@/lib/clientEstimateContext";
 import { firmFrom } from "@/lib/firmEmail";
 import { resolveFirmKey } from "@/lib/firms";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
+import { draftFileInput, resolveDraftSide, saleFileInput } from "@/lib/loadDraftStatement";
+import { parseDraftSideParam } from "@/lib/clientEstimateLock";
+import { apsDepositPending } from "@/lib/fillDealDepositFromAps";
 
 // GET /api/closing-estimate
 //
@@ -32,7 +36,8 @@ export async function GET(req: Request) {
   // `file_id` names WHICH of the client's own files to load — the only thing a
   // caller may say. It is a uuid, not PII, so it is safe in a query string; the
   // figures and identity it resolves to never travel that way.
-  const fileId = parseFileId(new URL(req.url).searchParams.get("file_id"));
+  const params = new URL(req.url).searchParams;
+  const fileId = parseFileId(params.get("file_id"));
   if (fileId !== null && typeof fileId !== "string") {
     return NextResponse.json(
       { success: false, error: fileId.error },
@@ -48,6 +53,9 @@ export async function GET(req: Request) {
     );
   }
   const ctx = resolved.context;
+  const draftSide = await resolveDraftSide(ctx, parseDraftSideParam(params.get("side")));
+  const draftInput = draftSide === "purchase" ? await draftFileInput(ctx) : null;
+  const saleInput = draftSide === "sale" ? await saleFileInput(ctx) : null;
 
   return NextResponse.json({
     success: true,
@@ -90,6 +98,16 @@ export async function GET(req: Request) {
       brand_color: (ctx.config.brand_color as string | null) ?? null,
     },
     statement_type: ctx.statementType,
+    // v6 draft statement: fee settings plus the file's inputs.
+    iclosed_fees: loadIclosedFees(),
+    draft_side: draftSide,
+    draft_input: draftInput,
+    sale_input: saleInput,
+    // APS just saved without a deposit: the modal waits.
+    deposit_pending:
+      ctx.deal && (draftInput ?? saleInput)?.deposit == null
+        ? await apsDepositPending(ctx.deal.id, draftSide)
+        : false,
     // The addresses the "email it to me" preview shows before the client
     // sends. Read-only: the route decides the real recipient itself.
     email_envelope: {

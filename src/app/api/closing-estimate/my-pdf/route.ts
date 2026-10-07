@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { closingCostPdfFileName, generateClosingCostPdf } from "@/lib/closingCostPdf";
+import { draftStatementPdfFileName } from "@/lib/draftStatement";
+import { generateDraftStatementPdf } from "@/lib/draftStatementPdf";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
+import { buildClientDraft } from "@/lib/loadDraftStatement";
 import {
   parseClientMortgage,
+  parseCommissionRate,
+  parseDraftSideParam,
   parseFileId,
   rejectLockedInputs,
   resolveClientEstimateContext,
@@ -73,53 +77,40 @@ export async function POST(req: Request) {
     );
   }
 
-  if (ctx.locked.price <= 0) {
+  const commissionRate = parseCommissionRate(body.commission_rate);
+  if (commissionRate !== null && typeof commissionRate !== "number") {
     return NextResponse.json(
-      { success: false, error: "We don't have a purchase price on your file yet." },
+      { success: false, error: commissionRate.error },
       { status: 400 },
     );
   }
 
-  const inputs: ClosingCostInputs = {
-    price: ctx.locked.price,
-    deposit: ctx.locked.deposit,
+  const { draft, price, side } = await buildClientDraft(ctx, loadIclosedFees(), {
+    side: parseDraftSideParam(body.side),
     mortgage,
-    isToronto: ctx.locked.isToronto,
-    isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: ctx.locked.titlePremiumOverride,
-    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
-    // null → undefined: the firm never said, so each line keeps its default.
-    titlePremiumIsEstimate: ctx.locked.titlePremiumIsEstimate ?? undefined,
-    teraviewIsEstimate: ctx.locked.teraviewIsEstimate ?? undefined,
-    sheriffIsEstimate: ctx.locked.sheriffIsEstimate ?? undefined,
-    propertyTaxIsEstimate: ctx.locked.propertyTaxIsEstimate ?? undefined,
-  };
-  const statement = computeStatement(inputs, ctx.rates);
+    firstTimeBuyer: body.is_first_time_buyer === true,
+    commissionRate,
+  });
+  if (price <= 0) {
+    return NextResponse.json(
+      { success: false, error: `We don't have a ${side} price on your file yet.` },
+      { status: 400 },
+    );
+  }
 
   try {
-    const bytes = await generateClosingCostPdf({
-      statement,
-      config: ctx.config,
-      statementType: ctx.statementType,
-      fileNo: ctx.locked.fileNo,
-      propertyAddress: ctx.locked.propertyAddress,
-      clientName: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
-      closingDate: ctx.locked.closingDate,
-      preparedOn: new Date().toISOString().slice(0, 10),
-      // The client's own copy is always a planning estimate — there is no path
-      // here that produces a Final account, so it always carries the watermark.
-      draft: true,
-      // Stamped in the same format the firm's own statements carry, so the two
-      // can be told apart — or matched — at a glance.
-      configVersion: ctx.configVersion,
+    const bytes = await generateDraftStatementPdf({
+      draft,
+      firmKey: ctx.firmKey,
     });
 
     return new NextResponse(bytes as unknown as BodyInit, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${closingCostPdfFileName(
+        "Content-Disposition": `attachment; filename="${draftStatementPdfFileName(
           ctx.locked.fileNo,
+          ctx.locked.propertyAddress,
         )}"`,
         "Cache-Control": "private, no-store",
       },

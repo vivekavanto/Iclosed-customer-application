@@ -17,6 +17,8 @@ export const MAX_AMOUNT = 1_000_000_000;
 export const CLIENT_EDITABLE_KEYS = [
   "mortgage_amount",
   "is_first_time_buyer",
+  // Sale estimates only.
+  "commission_rate",
 ] as const;
 
 /**
@@ -28,7 +30,21 @@ export const CLIENT_EDITABLE_KEYS = [
  * the session's own deals and answers 404 on a miss, so naming someone else's
  * file reveals nothing about it.
  */
-export const CLIENT_SELECTOR_KEYS = ["file_id"] as const;
+export const CLIENT_SELECTOR_KEYS = ["file_id", "side"] as const;
+
+/** Which side of a Buy & Sell file; anything else is "not said". */
+export function parseDraftSideParam(raw: unknown): "purchase" | "sale" | null {
+  return raw === "purchase" || raw === "sale" ? raw : null;
+}
+
+/** Commission percent; blank is unknown. */
+export function parseCommissionRate(raw: unknown): number | null | { error: string } {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return { error: "Commission rate must be a number" };
+  if (value < 0 || value > 20) return { error: "Commission rate must be between 0 and 20%" };
+  return value;
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

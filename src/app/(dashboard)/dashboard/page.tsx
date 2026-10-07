@@ -20,16 +20,16 @@ import {
   Users,
   Eye,
   Download,
-  Lock,
 } from "lucide-react";
 import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
 import ClosingCostEstimateModal from "@/components/dashboard/ClosingCostEstimateModal";
 import DynamicTaskDrawer from "@/components/dashboard/DynamicTaskDrawer";
 import DepositFundsDrawer from "@/components/dashboard/DepositFundsDrawer";
+import PropertyDetailsTaskModal from "@/components/dashboard/PropertyDetailsTaskModal";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
-import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isTreefortTask, isUploadIdTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isPropertyDetailsTask, isTreefortTask, isUploadIdTask } from "@/lib/taskKinds";
 import { isDepositTask } from "@/lib/depositTask";
 import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
@@ -132,6 +132,7 @@ interface PropertyData {
   // deal (party to only that one side). null for a primary client (sees both).
   // Computed authoritatively by /api/dashboardproperty.
   recipient_side: "purchase" | "sale" | null;
+  selling_deposit_amount?: number | null;
   // Which firm retains this file — "navawilson" or "iclosed". Resolved from
   // the transaction's ROOT lead by /api/dashboardproperty, and used to pick
   // the contact details shown to this client.
@@ -151,6 +152,7 @@ interface DealData {
   price: number | null;
   selling_price: number | null;
   selling_property_address: string | null;
+  deposit_amount?: number | null;
 }
 
 /* ─────────────────────────────────────────────
@@ -737,10 +739,12 @@ function CompletedTasksCard({
   tasks,
   loading,
   familyStatus,
+  onTaskClick,
 }: {
   tasks: Task[];
   loading: boolean;
   familyStatus: Record<string, FamilyTaskStatusSummary>;
+  onTaskClick: (task: Task) => void;
 }) {
   const [docsByTask, setDocsByTask] = useState<Record<string, TaskDocument[]>>({});
   // Last fetched key; differs while loading.
@@ -840,12 +844,12 @@ function CompletedTasksCard({
 
           return (
             <div key={task.id} className="rounded-xl border border-gray-200 bg-gray-50/60 overflow-hidden">
+              <div className="flex items-center">
+              {/* Reopens the task so answers can be viewed or edited. */}
               <button
                 type="button"
-                onClick={() => docs.length > 0 && toggle(task.id)}
-                disabled={docs.length === 0}
-                aria-expanded={docs.length > 0 ? isExpanded : undefined}
-                className={`w-full text-left px-4 sm:px-5 py-4 ${docs.length > 0 ? "cursor-pointer" : "cursor-default"}`}
+                onClick={() => onTaskClick(task)}
+                className="group flex-1 min-w-0 text-left px-4 sm:px-5 py-4 cursor-pointer hover:bg-gray-50"
               >
                 <div className="flex items-center gap-4">
                   <span
@@ -855,7 +859,7 @@ function CompletedTasksCard({
                     <Check size={15} className="text-[#C10007]" strokeWidth={2.5} />
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm sm:text-base font-bold text-gray-700 leading-snug">
+                    <p className="text-sm sm:text-base font-bold text-gray-700 leading-snug group-hover:text-[#C10007]">
                       {task.title}
                     </p>
                     <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
@@ -864,19 +868,27 @@ function CompletedTasksCard({
                         ` · ${docs.length} ${docs.length === 1 ? "document" : "documents"}`}
                     </p>
                   </div>
-                  {docsLoading && docs.length === 0 ? (
+                  {docsLoading && docs.length === 0 && (
                     <Loader2 size={16} className="text-gray-300 animate-spin flex-shrink-0" />
-                  ) : docs.length > 0 ? (
-                    <ChevronDown
-                      size={18}
-                      strokeWidth={2}
-                      className={`text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`}
-                    />
-                  ) : (
-                    <Lock size={14} className="text-gray-300 flex-shrink-0" aria-hidden />
                   )}
                 </div>
               </button>
+              {docs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => toggle(task.id)}
+                  aria-expanded={isExpanded}
+                  aria-label={isExpanded ? "Hide documents" : "Show documents"}
+                  className="self-stretch px-4 cursor-pointer text-gray-400 hover:text-gray-600"
+                >
+                  <ChevronDown
+                    size={18}
+                    strokeWidth={2}
+                    className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                  />
+                </button>
+              )}
+              </div>
 
               {/* Uploaded files, view/download only */}
               {isExpanded && docs.length > 0 && (
@@ -1192,6 +1204,7 @@ export default function DashboardPage() {
   const [idDrawerOpen, setIdDrawerOpen] = useState(false);
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
+  const [propertyDetailsOpen, setPropertyDetailsOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   // ── Direct per-party target (inline multi-party accordion) ──
@@ -1302,7 +1315,9 @@ export default function DashboardPage() {
     // Open the dedicated UploadIdentificationDrawer for any identification task.
     // Uses the shared isUploadIdTask() helper so routing, per-party family status
     // and the drawer's ID-doc counting all agree on what counts as an ID task.
-    if (isUploadIdTask(task.title)) {
+    if (isPropertyDetailsTask(task.title)) {
+      setPropertyDetailsOpen(true);
+    } else if (isUploadIdTask(task.title)) {
       if (!task.spouse_name) void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
     } else if (isDepositTask(task.title)) {
@@ -1668,6 +1683,30 @@ export default function DashboardPage() {
         }
       />
 
+      {/* ── Confirm Property Details Modal ── */}
+      <PropertyDetailsTaskModal
+        open={propertyDetailsOpen}
+        taskId={activeTask?.id ?? null}
+        title={activeTask?.title ?? "Confirm your property details"}
+        clientNames={
+          (activeProperty?.parties ?? []).length
+            ? activeProperty!.parties!.map((p) => `${p.first_name} ${p.last_name}`.trim()).filter(Boolean)
+            : [[activeProperty?.first_name, activeProperty?.last_name].filter(Boolean).join(" ")].filter(Boolean)
+        }
+        address={heroAddress}
+        priceLabel={showSale ? "Sale price" : "Purchase price"}
+        price={showSale ? (activeDeal?.selling_price ?? null) : (activeDeal?.price ?? null)}
+        deposit={showSale ? (activeProperty?.selling_deposit_amount ?? null) : (activeDeal?.deposit_amount ?? null)}
+        closingDate={closingFormatted}
+        onClose={() => setPropertyDetailsOpen(false)}
+        onSaved={(submitted) => {
+          setPropertyDetailsOpen(false);
+          toastSuccess(submitted ? "Property details confirmed" : "Draft saved");
+          void refreshActiveDeal();
+        }}
+        onError={toastError}
+      />
+
       {/* ── Deposit Funds Drawer (dedicated, standalone) ── */}
       <DepositFundsDrawer
         open={depositDrawerOpen}
@@ -1889,6 +1928,7 @@ export default function DashboardPage() {
             tasks={visibleTasks}
             loading={tasksLoading}
             familyStatus={familyStatus}
+            onTaskClick={handleTaskClick}
           />
         </div>
 

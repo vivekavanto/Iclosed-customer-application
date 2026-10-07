@@ -294,7 +294,8 @@ function NoteBlock({
 }) {
   const [open, setOpen] = useState(false);
   const collapsible = content.collapsible ?? (content.sections ?? []).length > 0;
-  const s = NOTE_STYLES[content.variant ?? "info"];
+  // Unknown variants (e.g. dev's "section") fall back to info.
+  const s = NOTE_STYLES[content.variant as keyof typeof NOTE_STYLES] ?? NOTE_STYLES.info;
   const inner = <NoteBody label={label} content={content} palette={s} />;
 
   if (!collapsible) {

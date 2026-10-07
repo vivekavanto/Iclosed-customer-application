@@ -1,7 +1,7 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isStatusCertificateTask, isTreefortTask, isUnbuiltTask } from "@/lib/taskKinds";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -213,6 +213,9 @@ export async function convertSingleLead(params: {
       ...(lead.selling_closing_date
         ? { selling_closing_date: lead.selling_closing_date }
         : {}),
+      // Deposit from intake; drafts read it here.
+      ...(lead.deposit_amount != null ? { deposit_amount: lead.deposit_amount } : {}),
+      ...(lead.building_type ? { building_type: lead.building_type } : {}),
     })
     .select("id")
     .single();
@@ -311,7 +314,8 @@ export async function convertSingleLead(params: {
         .filter((t) => {
           if (singleParty && isHoldTitleTask(t.name)) return false;
           // Only added once someone picks virtual signing.
-          if (isTreefortTask(t.name)) return false;
+          if (isTreefortTask(t.name) || isUnbuiltTask(t.name)) return false;
+          if (isStatusCertificateTask(t.name) && (side === "sale" || lead.building_type !== "resale_condo")) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
         })

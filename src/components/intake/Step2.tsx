@@ -13,6 +13,7 @@ import {
 import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
 import type { PrefillKey } from "@/lib/apsPrefill";
 import { useToast } from "@/components/ui/Toast";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 import {
     INTAKE_STEPS,
     STEP_AGREEMENT,
@@ -45,6 +46,8 @@ interface Step2Props {
     setSellingPrice: (value: string) => void;
     depositAmount: string;
     setDepositAmount: (value: string) => void;
+    propertyType: string;
+    setPropertyType: (value: string) => void;
     closingDate: string;
     setClosingDate: (value: string) => void;
     sellingClosingDate: string;
@@ -97,6 +100,8 @@ function PropertyDetailsForm({
     priceError,
     depositValue,
     onDepositChange,
+    propertyTypeValue,
+    onPropertyTypeChange,
     closingDateValue,
     onClosingDateChange,
     formatCurrency,
@@ -118,6 +123,9 @@ function PropertyDetailsForm({
     /** Omit on a sale card — deposits are only captured for purchases. */
     depositValue?: string;
     onDepositChange?: (value: string) => void;
+    /** Purchase cards only. */
+    propertyTypeValue?: string;
+    onPropertyTypeChange?: (value: string) => void;
     closingDateValue: string;
     onClosingDateChange: (value: string) => void;
     formatCurrency: (value: string) => string;
@@ -172,6 +180,32 @@ function PropertyDetailsForm({
                     />
                     {priceError && <p className="text-xs text-red-600">{priceError}</p>}
                 </Field>
+
+                {onPropertyTypeChange && (
+                    <div className="flex flex-col gap-1.5 w-full">
+                        <label htmlFor={`${prefix}-property-type`} className="text-sm font-medium text-[var(--color-text-heading)]">
+                            Property Type <span className="text-red-600 ml-1">*</span>
+                        </label>
+                        <select
+                            id={`${prefix}-property-type`}
+                            value={propertyTypeValue ?? ""}
+                            onChange={(e) => onPropertyTypeChange(e.target.value)}
+                            className={`w-full px-4 py-2.5 rounded-sm border text-sm bg-white ${
+                                submitAttempted && !propertyTypeValue ? "border-red-400" : "border-gray-200"
+                            } ${propertyTypeValue ? "text-gray-900" : "text-gray-400"}`}
+                        >
+                            <option value="">Select property type</option>
+                            {PROPERTY_TYPES.map((t) => (
+                                <option key={t.value} value={t.value}>
+                                    {t.label}
+                                </option>
+                            ))}
+                        </select>
+                        {submitAttempted && !propertyTypeValue && (
+                            <p className="text-xs text-red-600">Please select the property type.</p>
+                        )}
+                    </div>
+                )}
 
                 {/* Deposit. Still not REQUIRED to submit — it just isn't
                     labelled as optional: the hint invited people to skip a
@@ -318,6 +352,8 @@ const Step2: React.FC<Step2Props> = ({
     setSellingPrice,
     depositAmount,
     setDepositAmount,
+    propertyType,
+    setPropertyType,
     closingDate,
     setClosingDate,
     sellingClosingDate,
@@ -421,6 +457,11 @@ const Step2: React.FC<Step2Props> = ({
         }
         if (isBoth && !sellingPriceValid) {
             toastError(sellingPriceError || "Please enter a valid sale price.");
+            setSubmitAttempted(true);
+            return;
+        }
+        if (!isSelling && !propertyType) {
+            toastError("Please select the property type.");
             setSubmitAttempted(true);
             return;
         }
@@ -529,6 +570,8 @@ const Step2: React.FC<Step2Props> = ({
                                     priceError={priceError}
                                     depositValue={depositAmount}
                                     onDepositChange={setDepositAmount}
+                                    propertyTypeValue={propertyType}
+                                    onPropertyTypeChange={setPropertyType}
                                     closingDateValue={closingDate}
                                     onClosingDateChange={setClosingDate}
                                     formatCurrency={formatCurrency}
@@ -572,6 +615,8 @@ const Step2: React.FC<Step2Props> = ({
                                 priceError={priceError}
                                 depositValue={isSelling ? undefined : depositAmount}
                                 onDepositChange={isSelling ? undefined : setDepositAmount}
+                                propertyTypeValue={isSelling ? undefined : propertyType}
+                                onPropertyTypeChange={isSelling ? undefined : setPropertyType}
                                 closingDateValue={closingDate}
                                 onClosingDateChange={setClosingDate}
                                 formatCurrency={formatCurrency}
