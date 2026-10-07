@@ -24,9 +24,6 @@ function isNonProductionDeploy(): boolean {
   return false;
 }
 
-/** Closing cost estimate card; on everywhere, env "false" hides it. */
-export const SHOW_CLOSING_COST_ESTIMATE =
-  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ?? true;
 
 /** Digits in intake names, for test data; dev only by default. */
 export const ALLOW_DIGITS_IN_NAMES =
