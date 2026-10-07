@@ -31,6 +31,7 @@ import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificat
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isPropertyDetailsTask, isTreefortTask, isUploadIdTask } from "@/lib/taskKinds";
 import { isDepositTask } from "@/lib/depositTask";
+import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
 import { getFirm, type FirmKey } from "@/lib/firms";
 import { useToast } from "@/components/ui/Toast";
@@ -1940,7 +1941,9 @@ export default function DashboardPage() {
           />
 
           {/* ── Estimate your closing cost ── */}
-          <ClosingCostEstimateCard onEstimate={() => setEstimateOpen(true)} />
+          {SHOW_CLOSING_COST_ESTIMATE && (
+            <ClosingCostEstimateCard onEstimate={() => setEstimateOpen(true)} />
+          )}
 
           {/* ── Need Assistance ── */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
