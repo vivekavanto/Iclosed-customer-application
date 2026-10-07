@@ -167,6 +167,23 @@ export async function convertSingleLead(params: {
   const prefix = `${year}${leadTypePrefix}-`;
 
   let generatedFileNumber = fileNumber ?? null;
+  // Co-clients share the primary's file number, as in the admin app.
+  let isCoClient = false;
+  if (!generatedFileNumber && lead.parent_lead_id) {
+    const { data: primaryDeal } = await supabaseAdmin
+      .from("deals")
+      .select("file_number")
+      .eq("lead_id", lead.parent_lead_id)
+      .eq("is_primary_file", true)
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (primaryDeal?.file_number) {
+      generatedFileNumber = primaryDeal.file_number;
+      isCoClient = true;
+    }
+  }
   if (!generatedFileNumber) {
     const { data: lastDeal } = await supabaseAdmin
       .from("deals")
@@ -197,6 +214,7 @@ export async function convertSingleLead(params: {
       lead_id: lead.id,
       client_id: clientId,
       file_number: generatedFileNumber,
+      is_primary_file: !isCoClient,
       type: lead.lead_type ?? "Purchase",
       status: "Active",
       property_address: lead.address_street ?? "Address TBD",
