@@ -3,6 +3,7 @@ import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
 import { isHoldTitleTask, isIlaTask, isStatusCertificateTask, isTreefortTask } from "@/lib/taskKinds";
 import { apsTaskHasQuestions } from "@/lib/apsTaskCompletion";
+import { isVacantHomeTaxTask, vacantTaxApplies } from "@/lib/vacantHomeTax";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -381,6 +382,7 @@ export async function convertSingleLead(params: {
           if (singleParty && isHoldTitleTask(t.name)) return false;
           // Only added once someone picks virtual signing.
           if (isTreefortTask(t.name) || isIlaTask(t.name)) return false;
+          if (isVacantHomeTaxTask(t.name) && !vacantTaxApplies(lead, side)) return false;
           if (isStatusCertificateTask(t.name) && (side === "sale" || lead.building_type !== "resale_condo")) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
