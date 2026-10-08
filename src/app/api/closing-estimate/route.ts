@@ -103,7 +103,7 @@ export async function GET(req: Request) {
     draft_side: draftSide,
     draft_input: draftInput,
     sale_input: saleInput,
-    // APS just saved without a deposit: the modal waits.
+    // No deposit yet but an APS was just saved: the modal waits for the read.
     deposit_pending:
       ctx.deal && (draftInput ?? saleInput)?.deposit == null
         ? await apsDepositPending(ctx.deal.id, draftSide)

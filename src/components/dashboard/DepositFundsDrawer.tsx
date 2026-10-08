@@ -40,6 +40,8 @@ interface DepositFundsDrawerProps {
   onClose: () => void;
   taskId: string | null;
   taskTitle: string;
+  /** Client-facing name shown in the header. */
+  heading?: string;
   leadId: string | null;
   onTaskCompleted?: (taskId: string) => void;
 }
@@ -60,6 +62,7 @@ export default function DepositFundsDrawer({
   onClose,
   taskId,
   taskTitle,
+  heading,
   leadId,
   onTaskCompleted,
 }: DepositFundsDrawerProps) {
@@ -241,7 +244,7 @@ export default function DepositFundsDrawer({
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
-            <h2 className="text-base font-bold text-gray-900 leading-snug">{taskTitle}</h2>
+            <h2 className="text-base font-bold text-gray-900 leading-snug">{heading ?? taskTitle}</h2>
             <p className="text-xs text-gray-400 mt-1">
               Review the instructions below, send your funds, then upload your proof of deposit.
             </p>

@@ -94,4 +94,7 @@ UNION ALL SELECT 'create_calculator_estimates', EXISTS (
 UNION ALL SELECT 'move_hold_title_to_own_task', EXISTS (
   SELECT 1 FROM task_templates
   WHERE name = 'How Will You Hold Title?' AND is_deleted = false
+)
+UNION ALL SELECT 'add_employer_details_fields', EXISTS (
+  SELECT 1 FROM task_form_fields WHERE label = 'Employer or business name'
 );

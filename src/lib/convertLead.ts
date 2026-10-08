@@ -1,7 +1,9 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isStatusCertificateTask, isTreefortTask, isUnbuiltTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isIlaTask, isStatusCertificateTask, isTreefortTask } from "@/lib/taskKinds";
+import { apsTaskHasQuestions } from "@/lib/apsTaskCompletion";
+import { isVacantHomeTaxTask, vacantTaxApplies } from "@/lib/vacantHomeTax";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -23,6 +25,42 @@ export interface ConvertLeadResult {
  * Does NOT convert co-purchaser leads — call this separately for each.
  * Does NOT sync shared tasks — caller should do that after all leads are converted.
  */
+// Copies intake APS files into the APS task.
+async function bridgeIntakeAps(
+  taskId: string,
+  templateId: string | null,
+  lead: { id: string; parent_lead_id?: string | null },
+  sale: boolean,
+): Promise<void> {
+  const { data: existing } = await supabaseAdmin
+    .from("task_responses")
+    .select("id")
+    .eq("task_id", taskId)
+    .eq("field_type", "file")
+    .limit(1);
+  if (existing?.length || !templateId) return;
+  const { data: field } = await supabaseAdmin
+    .from("task_form_fields")
+    .select("id, label")
+    .eq("task_template_id", templateId)
+    .eq("field_type", "file")
+    .order("order_index", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!field) return;
+  const leadIds = [lead.id, lead.parent_lead_id].filter(Boolean);
+  const { data: docs } = await supabaseAdmin
+    .from("lead_corporate_docs")
+    .select("file_url, file_name")
+    .in("lead_id", leadIds)
+    .eq("doc_type", sale ? "aps_sale" : "aps_purchase")
+    .order("created_at", { ascending: true });
+  const rows = (docs ?? [])
+    .filter((d) => d.file_url)
+    .map((d) => ({ task_id: taskId, field_id: field.id, field_label: field.label, field_type: "file", file_url: d.file_url, file_name: d.file_name }));
+  if (rows.length) await supabaseAdmin.from("task_responses").insert(rows);
+}
+
 export async function convertSingleLead(params: {
   lead: any;
   parentClientId?: string | null;
@@ -343,7 +381,8 @@ export async function convertSingleLead(params: {
         .filter((t) => {
           if (singleParty && isHoldTitleTask(t.name)) return false;
           // Only added once someone picks virtual signing.
-          if (isTreefortTask(t.name) || isUnbuiltTask(t.name)) return false;
+          if (isTreefortTask(t.name) || isIlaTask(t.name)) return false;
+          if (isVacantHomeTaxTask(t.name) && !vacantTaxApplies(lead, side)) return false;
           if (isStatusCertificateTask(t.name) && (side === "sale" || lead.building_type !== "resale_condo")) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
@@ -387,7 +426,7 @@ export async function convertSingleLead(params: {
         if (apsUploaded) {
           const apsQuery = supabaseAdmin
             .from("tasks")
-            .select("id, milestone_id")
+            .select("id, milestone_id, task_template_id")
             .eq("deal_id", deal.id)
             .ilike("title", "%agreement of purchase and sale%");
           const { data: apsTask } = side === null
@@ -395,6 +434,11 @@ export async function convertSingleLead(params: {
             : await apsQuery.eq("side", side).maybeSingle();
 
           if (apsTask) {
+            await bridgeIntakeAps(apsTask.id, apsTask.task_template_id, lead, side === "sale" || templateType === "Sale");
+          }
+
+          // Left open while it still has questions to answer.
+          if (apsTask && !(await apsTaskHasQuestions(apsTask.task_template_id))) {
             await supabaseAdmin
               .from("tasks")
               .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })

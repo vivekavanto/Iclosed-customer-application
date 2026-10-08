@@ -71,6 +71,7 @@ export interface ApsExtractionResult {
   document_type: ApsDocumentType;
   purchase_price: ExtractedValue;
   deposit: ExtractedValue;
+  common_expenses?: ExtractedValue;
   closing_date: ExtractedValue;
   property_address: ExtractedAddress;
   buyers: ExtractedParty[];
@@ -437,6 +438,9 @@ export function parseApsExtraction(raw: unknown): ApsExtractionResult {
     deposit: normalizeValue(source.deposit, (v) =>
       normalizeAmount(v, { min: 1, max: MAX_DEPOSIT }),
     ),
+    common_expenses: normalizeValue(source.common_expenses, (v) =>
+      normalizeAmount(v, { min: 1, max: 20_000 }),
+    ),
     closing_date: normalizeValue(source.closing_date, normalizeIsoDate),
     property_address: normalizeAddress(source.property_address),
     buyers: normalizeParties(source.buyers),
@@ -607,6 +611,7 @@ export function mergeApsExtractions(
     document_type: "aps",
     purchase_price: mergeValue(ordered, (r) => r.purchase_price),
     deposit: mergeValue(ordered, (r) => r.deposit),
+    common_expenses: mergeValue(ordered, (r) => r.common_expenses ?? { value: null, confidence: "low" }),
     closing_date: mergeValue(ordered, (r) => r.closing_date),
     property_address: mergeAddress(ordered),
     buyers: mergeParties(ordered.map((r) => r.buyers)),

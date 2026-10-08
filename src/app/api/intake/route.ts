@@ -20,8 +20,8 @@ import {
 // Resend never exposed this because it is an HTTPS fetch client.
 export const runtime = "nodejs";
 
-// An SMTP attempt can take ~40s (connect+greeting+socket) and transport allows two.
-export const maxDuration = 60;
+// One SMTP send can take ~40s.
+export const maxDuration = 120;
 
 
 export async function POST(req: Request) {
@@ -688,15 +688,6 @@ export async function POST(req: Request) {
     // and, when the invite failed, with no email at all. The login and
     // welcome-email fallbacks filter on welcome_email_sent, so sending here
     // won't double-send.
-    try {
-      await sendWelcomeEmail(lead.id);
-      await Promise.all(
-        coPersonLeadIds.map((cpLeadId) => sendWelcomeEmail(cpLeadId))
-      );
-    } catch (err) {
-      console.error("[Intake] Welcome email failed:", err);
-    }
-
     // Quote and retainer go to the lead only; "both" means everyone leads.
     const quoteLeadIds =
       uploadMode === "both"
@@ -704,7 +695,13 @@ export async function POST(req: Request) {
         : uploadMode === "co"
           ? [coPersonLeadIdByFormId.get(document_uploader_co_person_id) ?? lead.id]
           : [lead.id];
-    await Promise.all(quoteLeadIds.map((id) => sendQuoteEmail(id)));
+    // Quote first, all emails in parallel.
+    await Promise.all([
+      ...quoteLeadIds.map((id) => sendQuoteEmail(id)),
+      ...[lead.id, ...coPersonLeadIds].map((id) =>
+        sendWelcomeEmail(id).catch((err) => console.error("[Intake] Welcome email failed:", id, err)),
+      ),
+    ]);
 
     // ── 6. Notify the iClosed team that a lead has arrived ─────────────
     // ONE alert per intake, for the primary lead — by email to the back office

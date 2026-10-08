@@ -59,14 +59,14 @@ describe("landTransferTax (spec 5.5)", () => {
 describe("buildPurchaseDraft (spec 9)", () => {
   it("T1 figures and funds required", () => {
     const d = buildPurchaseDraft(fees, base);
-    expect(d.feesTotal).toBe(2117.97);
+    expect(d.feesTotal).toBe(2140.72);
     expect(line(d, "Land transfer tax", "Land transfer tax")).toBe("$20,990.89");
     expect(line(d, "Land transfer tax", "Less Ontario first-time buyer rebate")).toBe("($4,000.00)");
     expect(line(d, "Estimated disbursements", "Searches")).toBe("approx. $175.00");
     expect(line(d, "Estimated disbursements", "Estimated total disbursements")).toBe("$715.00");
-    expect(line(d, "HST", "HST at 13% on our legal fees and our own disbursements")).toBe("$203.97");
+    expect(line(d, "HST", "HST at 13% where applicable as per Excise Tax Act")).toBe("$226.72");
     // 910,000 - 50,000 + 1,000 - 700,000 + 2,117.97 + 20,990.89 + 1,500
-    expect(d.fundsRequired).toBe(185608.86);
+    expect(d.fundsRequired).toBe(185631.61);
   });
 
   it("hides Toronto and rebate lines when they do not apply", () => {
@@ -88,7 +88,7 @@ describe("buildPurchaseDraft (spec 9)", () => {
     // Charge registration stays until the client answers 0.
     expect(line(d, "Estimated disbursements", "Estimated total disbursements")).toBe("$715.00");
     // 910,000 + 1,000 + 2,117.97 + 20,990.89 + 1,500
-    expect(d.fundsRequired).toBe(935608.86);
+    expect(d.fundsRequired).toBe(935631.61);
   });
 
   it("shows [Amount] when the property tax adjustment is unknown", () => {
@@ -101,7 +101,7 @@ describe("buildPurchaseDraft (spec 9)", () => {
     expect(line(buildPurchaseDraft(fees, base), "Legal fees", "Discount")).toBeUndefined();
     const d = buildPurchaseDraft(fees, { ...base, discount: 100 });
     expect(line(d, "Legal fees", "Discount")).toBe("($100.00)");
-    expect(d.feesTotal).toBe(2004.97);
+    expect(d.feesTotal).toBe(2027.72);
   });
 
   it("uses the v6 labels and notes", () => {
@@ -116,6 +116,27 @@ describe("buildPurchaseDraft (spec 9)", () => {
 
   it("never renders template-only text", () => {
     expect(JSON.stringify(buildPurchaseDraft(fees, base))).not.toMatch(/Lines marked in red|If this happens|Discuss/);
+  });
+});
+
+describe("common expense adjustment", () => {
+  it("adds a line and the balance for condos only", () => {
+    const condo = buildPurchaseDraft(fees, { ...base, propertyType: "resale_condo", commonExpenses: 600 });
+    const adj = "Estimated statement of adjustments";
+    expect(line(condo, adj, "Common expense adjustment")).toBe("$600.00");
+    expect(line(condo, adj, "Estimated balance due on closing")).toBe("$861,600.00");
+    const house = buildPurchaseDraft(fees, { ...base, propertyType: "resale_freehold", commonExpenses: 600 });
+    expect(line(house, adj, "Common expense adjustment")).toBeUndefined();
+  });
+});
+
+describe("HST asterisks", () => {
+  it("marks taxed lines and the HST line", () => {
+    const d = buildPurchaseDraft(fees, base);
+    const all = d.sections.flatMap((s) => s.lines);
+    const taxed = all.filter((l) => l.hst).map((l) => l.label);
+    expect(taxed).toEqual(["Purchase legal fees", "Searches", "Software and document preparation", "File administration"]);
+    expect(all.find((l) => l.hstFootnote)?.label).toMatch(/^HST at 13%/);
   });
 });
 
@@ -140,10 +161,10 @@ describe("buildRefinanceDraft (spec 9)", () => {
     expect(at(d, "Title insurance", "FCT lender policy premium, estimate")).toBe("$250.00");
     expect(at(d, "Disbursements", "Searches")).toBe("approx. $150.00");
     expect(at(d, "Disbursements", "Total Disbursements")).toBe("$655.00");
-    expect(at(d, "HST", "HST at 13% on our legal fees and our own disbursements")).toBe("$184.47");
-    expect(at(d, "Your funds", "Less legal fees, disbursements and HST")).toBe("($1,838.47)");
+    expect(at(d, "HST", "HST at 13% where applicable as per Excise Tax Act")).toBe("$203.97");
+    expect(at(d, "Your funds", "Less legal fees, disbursements and HST")).toBe("($1,857.97)");
     // 500,000 - 400,000 - 1,838.47 - 250
-    expect(d.fundsToYou).toBe(97911.53);
+    expect(d.fundsToYou).toBe(97892.03);
     expect(d.disclaimer).toMatch(/^This is a draft account/);
   });
 
@@ -158,7 +179,7 @@ describe("buildRefinanceDraft (spec 9)", () => {
   it("T8: discharge registration adds a line", () => {
     const d = buildRefinanceDraft(fees, { ...refi, dischargeRegistration: true });
     expect(at(d, "Disbursements", "Registration of discharge")).toBe("$85.00");
-    expect(d.feesTotal).toBe(1923.47);
+    expect(d.feesTotal).toBe(1942.97);
   });
 });
 

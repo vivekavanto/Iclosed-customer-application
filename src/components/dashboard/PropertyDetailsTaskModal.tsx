@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import ChoiceChips from "@/components/dashboard/ChoiceChips";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 
 const CORRECT_LABEL = "Are these details correct?";
 const CORRECTION_LABEL = "What needs to be corrected?";
@@ -27,6 +28,7 @@ const PropertyDetailsTaskModal: React.FC<{
   price: number | null;
   deposit: number | null;
   closingDate: string;
+  propertyType?: string | null;
   onClose: () => void;
   /** Called after a draft save or submit succeeds. */
   onSaved: (submitted: boolean) => void;
@@ -42,6 +44,7 @@ const PropertyDetailsTaskModal: React.FC<{
   price,
   deposit,
   closingDate,
+  propertyType,
   onClose,
   onSaved,
   onError,
@@ -120,16 +123,16 @@ const PropertyDetailsTaskModal: React.FC<{
     }
   };
 
+  const sale = priceLabel.toLowerCase().startsWith("sale");
+  const party = sale ? "Seller" : "Purchaser";
+  const typeLabel = PROPERTY_TYPES.find((t) => t.value === propertyType)?.label;
   const details = [
-    {
-      label: clientNames.length > 1 ? "Client names" : "Client name",
-      value: clientNames.join(", ") || "—",
-      wide: true,
-    },
-    { label: "Property address", value: address || "—", wide: true },
+    { label: clientNames.length > 1 ? `${party}s` : party, value: clientNames.join(", ") || "—" },
+    { label: "Property address", value: address || "—" },
     { label: priceLabel, value: money(price) },
     { label: "Deposit", value: money(deposit) },
-    { label: "Closing date", value: closingDate },
+    { label: "Closing date", value: closingDate || "—" },
+    ...(sale ? [] : [{ label: "Property type", value: typeLabel ?? (propertyType === "freehold" ? "Freehold" : "—") }]),
   ];
 
   return (
@@ -145,7 +148,7 @@ const PropertyDetailsTaskModal: React.FC<{
         aria-modal="true"
         aria-label={title}
       >
-        <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl">
+        <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl">
           {/* Header */}
           <div className="flex items-start justify-between gap-4 px-6 sm:px-8 pt-6 pb-4 border-b border-gray-100">
             <div className="min-w-0">
@@ -171,13 +174,13 @@ const PropertyDetailsTaskModal: React.FC<{
               let us know if anything is wrong.
             </p>
 
-            <div className="rounded-xl border border-gray-200 px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+            <div className="rounded-xl border border-gray-200 px-5 py-5 grid grid-cols-1 sm:grid-cols-3 gap-x-8 gap-y-5">
               {details.map((d) => (
-                <div key={d.label} className={`min-w-0 ${"wide" in d ? "sm:col-span-3" : ""}`}>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                <div key={d.label} className="min-w-0">
+                  <p className="text-[11px] text-gray-400 uppercase tracking-widest font-semibold">
                     {d.label}
                   </p>
-                  <p className="ph-mask text-sm font-bold text-gray-900">
+                  <p className="ph-mask mt-1 text-[15px] font-bold text-gray-900 leading-snug break-words">
                     {d.value}
                   </p>
                 </div>

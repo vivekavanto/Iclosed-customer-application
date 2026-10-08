@@ -1,4 +1,8 @@
-# iClosed fees: single source for quotes, retainers and drafts (CAD).
+# iClosed fee and rules settings
+# Master source for every price, estimate, range and rate used by the quote email,
+# quote page, retainer and draft statement of account. Code reads from here; never hardcode.
+# Money is CAD. Amounts are dollars with two decimals; store and compute as integer cents.
+# Spec: iclosed-documents-implementation-spec.md (kept outside the repo)
 
 version: 4
 updated: 2026-10-01
@@ -6,7 +10,7 @@ owner: Saru Kanapathipillai
 
 tax:
   hst_rate: 0.13
-  # HST on legal fees and own disbursements; pass-throughs include tax.
+  # HST on legal fees, searches, software and file administration; registrations at cost.
   hst_on_levy: false  # Decided 2026-09-30: the $65 LAWPRO levy is inclusive of tax. No HST on top.
 
 file_types:
@@ -18,7 +22,7 @@ file_types:
     disbursements:
       registration_of_transfer: { amount: 85.00, when: always }
       registration_of_charge:   { amount: 85.00, when: has_mortgage, per: charge }
-      searches:                 { amount: 175.00, estimate: true, range: [150.00, 250.00] }
+      searches:                 { amount: 175.00, estimate: true, hst: true, range: [150.00, 250.00] }
       software:                 { amount: 285.00, hst: true }
       file_administration:      { amount: 85.00, hst: true }
     disbursements_label: Estimated disbursements
@@ -52,13 +56,14 @@ file_types:
       includes_payouts: [first_mortgage]
     disbursements:
       registration_of_charge: { amount: 85.00, when: always, per: charge }
-      searches:               { amount: 150.00, estimate: true, range: [100.00, 200.00] }
+      searches:               { amount: 150.00, estimate: true, hst: true, range: [100.00, 200.00] }
       software:               { amount: 285.00, hst: true }
       file_administration:    { amount: 135.00, hst: true, note: "includes SureFund" }
     disbursements_label: Disbursements
     disbursements_range: [650.00, 750.00]
     title_insurance_estimate: 250.00
-    # From 50 FCT lender invoices, Apr 2025 to Sep 2026.
+    # From 50 FCT lender-policy invoices (Apr 2025 to Sep 2026): $194.40 incl. tax up to about
+    # $760,000 of mortgage, then about +$1 per $1,000. Median $248.40, mean $393.22.
     land_transfer_tax: false
 
   new_build_condo:
@@ -74,7 +79,7 @@ file_types:
     disbursements:               # all at final closing
       registration_of_transfer: { amount: 85.00, when: always }
       registration_of_charge:   { amount: 85.00, when: has_mortgage, per: charge }
-      searches:                 { amount: 175.00, estimate: true, range: [150.00, 250.00], note: "higher with several PINs (unit, parking, locker)" }
+      searches:                 { amount: 175.00, estimate: true, hst: true, range: [150.00, 250.00], note: "higher with several PINs (unit, parking, locker)" }
       software:                 { amount: 285.00, hst: true }
       file_administration:      { amount: 85.00, hst: true }
     occupancy_disbursements:
@@ -84,7 +89,8 @@ file_types:
     title_insurance_estimate: 1500.00
     land_transfer_tax: true      # base is price net of HST plus certain builder adjustments (input, not calculated)
 
-# Sale and purchase together: one quote, two retainers.
+# A sale and a purchase for the same client, closed by us. One quote, two retainers,
+# two draft statements of account.
 bundles:
   sale_and_purchase:
     quote_prefix: C
@@ -94,7 +100,8 @@ bundles:
     retainers: separate          # one sale retainer, one purchase retainer
     quote: single
 
-# "If this happens" fees; retainer only, charged once told.
+# "If this happens" fees. Shown only in the retainer. Charged only once they apply and the
+# client has been told in writing. Never shown on the draft statement of account.
 extras:
   closing_date_moved:
     fee: 250.00
@@ -146,7 +153,7 @@ extras:
     applies_to: [sale]
 
 land_transfer_tax:
-  # Marginal rates per price band.
+  # Rates are marginal: each rate applies to the part of the price inside its band.
   ontario:
     source: https://www.ontario.ca/document/land-transfer-tax
     verified: 2026-09-29
@@ -179,7 +186,7 @@ rounding:
   mode: half_up
   scale: 2
 
-# Assumed for every file.
+# Assumed for every file, as in the closing cost estimator; adjust here.
 intake_defaults:
   has_mortgage: true             # standard purchase: one property, one new mortgage
   charges_count: 1

@@ -1,4 +1,4 @@
-// APS reader shared by intake and tasks.
+// The APS reader: prompt, schema and model ladder, shared by intake and tasks.
 import {
   parseApsPayload,
   type ApsExtractionResult,
@@ -6,15 +6,30 @@ import {
 } from "@/lib/apsExtraction";
 
 // ── Models ────────────────────────────────────────────────────
-// Models are flaky under load; walk a ladder, best model first.
-// Verify new model ids against the models list before adding.
+// Reads were failing on the model, not on the document — a 700 KB agreement
+// failed exactly like a 7.5 MB one. Measured against the same twelve-page PDF
+// on our own key, gemini-3.5-flash returned in 7.6s, 10s and 94s on three runs,
+// answered "503 high demand" on several more, and — the part that actually
+// broke us — took 47 to 115 SECONDS to deliver that 503. A single-model call
+// behind one timeout could not survive that no matter how the timeout was set.
+//
+// So the read walks a ladder instead. Quality first: the strongest tier gets
+// the first look, and an ordinary read never sees the rest. Any failure — slow,
+// overloaded, rate-limited, malformed — hands the same document straight to the
+// next model rather than giving up, and the last rung is the flash-lite tier
+// that answered the identical prompt in ~2s on every attempt. In practice that
+// makes "we couldn't read it" require every tier to fail at once.
+//
+// Re-measure before reordering, and verify a new id exists first with:
+//   curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
 const MODEL_LADDER = [
   { id: "gemini-3.5-flash", timeoutMs: 55_000 },
   { id: "gemini-3.6-flash", timeoutMs: 45_000 },
   { id: "gemini-3.1-flash-lite", timeoutMs: 40_000 },
 ] as const;
 
-// Background reads: fastest model first, stronger ones as fallback.
+// Fast-first order for background reads: flash-lite answered in ~2s, the
+// stronger tiers stay behind it as fallbacks.
 const FAST_LADDER = [
   { id: "gemini-3.1-flash-lite", timeoutMs: 25_000 },
   { id: "gemini-3.5-flash", timeoutMs: 55_000 },
@@ -25,13 +40,18 @@ function endpointFor(model: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 }
 
-// No thinkingConfig: lower rungs reject it with a 400.
+// NOTE: do not add generationConfig.thinkingConfig here. Capping the thinking
+// budget looks like an obvious latency win, but the tiers on this ladder don't
+// agree on it — gemini-3.6-flash and the flash-lite tiers answer
+// `thinkingBudget: 0` with "400 Request contains an invalid argument", which
+// would take out the fallback rungs and leave nothing to fall back TO. The
+// ladder is what buys the latency instead.
 
 /** Hard wall for the whole ladder, comfortably inside maxDuration. */
 export const TOTAL_BUDGET_MS = 165_000;
 /** Never start a call that can't plausibly finish in the time left. */
 const MIN_ATTEMPT_MS = 8_000;
-/** Retries only a dropped connection. */
+/** Only for a connection that dropped — see the loop for why nothing else. */
 const NETWORK_RETRY_DELAY_MS = 1_000;
 export const SUPPORTED_MIME_TYPES = new Set([
   "application/pdf",
@@ -145,6 +165,12 @@ WHAT TO EXTRACT
      if the figures are unclear, use the words.
    - If several deposits are listed (initial plus increase), return their TOTAL.
 
+2b. common_expenses — condo agreements only: the MONTHLY common expenses
+   (maintenance fees). Same digits-only format.
+   - On an OREA Form 101 it is the "COMMON EXPENSES" paragraph: "...common
+     expenses ... are approximately $______ per month".
+   - null when the document is not a condo agreement or states no amount.
+
 3. closing_date — the completion / closing date.
    - Strictly "YYYY-MM-DD". Convert any written form ("the 15th day of March, 2026") to that format.
    - This is the COMPLETION date, not the offer date, not the irrevocable date, not the requisition date.
@@ -212,6 +238,7 @@ Respond with ONLY ONE valid JSON object (no markdown, no code fences, no comment
   "document_type": "aps" | "amendment" | "schedule" | "waiver" | "other",
   "purchase_price": { "value": string | null, "confidence": "high" | "medium" | "low" },
   "deposit":        { "value": string | null, "confidence": "high" | "medium" | "low" },
+  "common_expenses": { "value": string | null, "confidence": "high" | "medium" | "low" },
   "closing_date":   { "value": string | null, "confidence": "high" | "medium" | "low" },
   "property_address": {
     "street": string | null,
@@ -235,7 +262,23 @@ Respond with ONLY ONE valid JSON object (no markdown, no code fences, no comment
 }
 
 // ── Response shape ────────────────────────────────────────────
-// Schema stops models returning arrays; every rung must accept it.
+// responseMimeType alone only promises valid JSON — it says nothing about the
+// SHAPE of it, and the rungs disagree about what shape to pick. Asked to read a
+// PDF with five OREA forms stapled together, gemini-3.1-flash-lite answers with
+// an ARRAY of per-form objects about half the time. Downstream that used to
+// read as "this is not an Agreement of Purchase and Sale", which is the worst
+// possible failure here: the client is told their agreement is the wrong
+// document and asked to type every field in by hand, and nothing anywhere logs
+// an error, because every layer believes the read succeeded.
+//
+// The schema is what stops that at the source; parseApsPayload() is the belt to
+// its braces, and the "unusable" outcome below means a model that still answers
+// with something unrecognizable costs us the next rung, not the client's trust.
+//
+// VERIFY BEFORE EDITING: every rung on MODEL_LADDER must accept this. Unlike
+// generationConfig.thinkingConfig — see the note above — responseSchema is
+// accepted by all three today, but the ladder is only as strong as its weakest
+// rung, so re-check with a real agreement after any change here.
 const NULLABLE_STRING = { type: "STRING", nullable: true } as const;
 const CONFIDENCE_SCHEMA = {
   type: "STRING",
@@ -265,6 +308,7 @@ const RESPONSE_SCHEMA = {
     },
     purchase_price: VALUE_SCHEMA,
     deposit: VALUE_SCHEMA,
+    common_expenses: VALUE_SCHEMA,
     closing_date: VALUE_SCHEMA,
     property_address: {
       type: "OBJECT",
@@ -392,7 +436,7 @@ async function readWithModel(
   const json = (await res.json().catch(() => ({}))) as GeminiResponse;
 
   if (!res.ok) {
-    // Log upstream errors; they can carry key details.
+    // The upstream message can carry key/quota detail — log it, don't return it.
     console.error(
       `[extract-aps] ${model}: ${res.status} — ${json?.error?.message ?? "unknown"}`,
     );
@@ -413,7 +457,11 @@ async function readWithModel(
     return { kind: "unusable" };
   }
 
-  // No extraction found: a bad answer, so try the next model.
+  // parseApsPayload() finds the extraction whatever wrapper the model put it
+  // in, and answers null only when there is no extraction in there at all.
+  // That case is a broken ANSWER, not a rejected document, so it goes back as
+  // "unusable" and the ladder tries the next model — reporting it as
+  // is_aps:false would tell the client their agreement is the wrong file.
   const result = parseApsPayload(raw);
   if (!result) {
     console.error(
@@ -432,7 +480,7 @@ export type ApsReadOutcome =
   | { ok: true; result: ApsExtractionResult; model: string; attempts: number }
   | { ok: false; sawTimeout: boolean; attempts: number };
 
-/** Walks MODEL_LADDER until a usable read, within budget. */
+/** Walks MODEL_LADDER until one model returns a usable read, within the budget. */
 export async function readApsDocument(opts: {
   apiKey: string;
   side: ApsSide;
@@ -458,7 +506,11 @@ export async function readApsDocument(opts: {
     attempts++;
     let outcome = await readWithModel(apiKey, model.id, side, bytes, mimeType, Math.min(model.timeoutMs, timeLeft));
 
-    // Only a dropped connection retries the same model.
+    // A dropped connection is the one failure where the SAME model deserves
+    // an immediate second look — nothing reached it, so nothing about it is
+    // known to be wrong. Every other failure (slow, overloaded, rate-limited,
+    // 400, unparsable) is a verdict on this model right now, and the next
+    // rung is a better use of the budget than asking it again.
     if (outcome.kind === "network" && deadline - Date.now() > MIN_ATTEMPT_MS) {
       await new Promise((resolve) => setTimeout(resolve, NETWORK_RETRY_DELAY_MS));
       attempts++;

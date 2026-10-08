@@ -4,7 +4,7 @@ import { interpolateTokens, resolveTemplateSubject } from "@/lib/email-templates
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { adminAppUrl } from "@/lib/adminAppUrl";
 import { isTaskInactive } from "@/lib/depositTask";
-import { isUnbuiltTask } from "@/lib/taskKinds";
+import { isAfterClosingTask, isClosingFiguresTask } from "@/lib/taskKinds";
 
 /**
  * Tell the back office when a client AND their co-party have completed every
@@ -215,8 +215,10 @@ export async function notifyAllTasksComplete(
     // closing-funds task is created switched off until the firm has drawn up the
     // Final Statement of Account). Mirrors the admin repo — see its
     // 2026-08-26 migration and src/lib/depositTask.ts.
+    // Closing-figures and after-closing tasks come later.
     const pooled = [...(sharedTasks ?? []), ...(personalTasks ?? [])].filter(
-      (t) => !isTaskInactive(t) && !isUnbuiltTask(t.title),
+      (t) =>
+        !isTaskInactive(t) && !isClosingFiguresTask(t.title) && !isAfterClosingTask(t.title),
     );
 
     // A file with no client-visible tasks hasn't "completed" anything.

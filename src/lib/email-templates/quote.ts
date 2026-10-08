@@ -78,7 +78,7 @@ function step(n: number, text: string): string {
 export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; html: string } {
   const firm = getFirm(c.firmKey);
   const name = (c.firstName ?? "").trim() || "there";
-  const entity = firm.introName;
+  const entity = firm.introName.replace("iClosed LLP", "iClosed powered by Nava Wilson");
   const both = c.side === "both";
   const taxNote = TAX_NOTE[c.side].replace("{discount}", dollars(c.bundle?.discount ?? 0));
   const b = both ? c.bundle : null;

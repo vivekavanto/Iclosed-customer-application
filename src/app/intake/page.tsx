@@ -93,7 +93,7 @@ export default function ServiceSelection() {
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
-  // Optional deposit held under the agreement — purchase side only.
+  // Filled from the APS read.
   const [depositAmount, setDepositAmount] = useState("");
   const [propertyType, setPropertyType] = useState("");
   // Closing (completion) date — on the APS, so it prefills from an upload.
@@ -764,9 +764,9 @@ export default function ServiceSelection() {
     },
   ];
 
-  // Only Property Closing is offered right now. The others stay defined, and the
+  // Only Property Closing and Refinance are offered right now. The others stay defined, and the
   // API still maps their ids, so re-enabling one means adding it back here.
-  const OFFERED_SERVICE_IDS = ["closing"];
+  const OFFERED_SERVICE_IDS = ["closing", "refinance"];
   const offeredServices = services.filter((s) =>
     OFFERED_SERVICE_IDS.includes(s.id),
   );
@@ -862,8 +862,6 @@ export default function ServiceSelection() {
             setPurchasePrice={setPurchasePrice}
             sellingPrice={sellingPrice}
             setSellingPrice={setSellingPrice}
-            depositAmount={depositAmount}
-            setDepositAmount={setDepositAmount}
             propertyType={propertyType}
             setPropertyType={setPropertyType}
             closingDate={closingDate}

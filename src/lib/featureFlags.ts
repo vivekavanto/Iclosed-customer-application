@@ -40,7 +40,10 @@ function isNonProductionDeploy(): boolean {
   return false;
 }
 
-/** Closing cost estimate card; on everywhere unless the env var says false. */
+/**
+ * "Estimate your closing cost" card on the client dashboard — dev only for now.
+ * Set NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE=true to force it on anywhere.
+ */
 export const SHOW_CLOSING_COST_ESTIMATE =
   envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ?? true;
 
