@@ -9,7 +9,6 @@ import {
   Clock,
   Loader2,
   MapPin,
-  Scale,
   TriangleAlert,
   Video,
 } from "lucide-react";
@@ -44,6 +43,14 @@ interface AvailabilityData {
   officeAddress: string;
   disclaimer: string;
   slots: string[];
+}
+
+interface ExistingBooking {
+  startAt: string;
+  endAt: string;
+  appointmentType: "virtual" | "in_person";
+  meetLink: string | null;
+  location: string | null;
 }
 
 interface ConfirmedBooking {
@@ -98,17 +105,32 @@ function formatFileNumber(value: string): string {
 export default function PublicSigningPage({
   lawyerInitials: initialLawyerInitials,
   showOwnHeader = true,
+  dealId,
+  side: sideProp,
+  initialState,
 }: {
   lawyerInitials?: string;
   /** false when hosted inside a layout that already renders its own header (e.g. the dashboard nav). */
   showOwnHeader?: boolean;
+  /** Dashboard only: the file being booked for, from the signing task. */
+  dealId?: string;
+  /** Dashboard only: which side of a Purchase & Sale file the task is for. */
+  side?: "purchase" | "sale";
+  /** Dashboard only: calendar + existing booking resolved on the server, so an already-booked property shows its card on first paint. */
+  initialState?: { initials: string; booked: ExistingBooking | null };
 }) {
   const router = useRouter();
+  // Inside the dashboard the client never chooses the calendar: the admin's
+  // "Signing with" for the file decides it, resolved server-side.
+  const locked = !showOwnHeader;
+  const [lockedError, setLockedError] = useState<string | null>(null);
+  const [existing, setExisting] = useState<ExistingBooking | null>(initialState?.booked ?? null);
+  const [lockedLoading, setLockedLoading] = useState(locked && !initialState);
 
   const [lawyers, setLawyers] = useState<LawyerOption[] | null>(null);
   const [lawyersError, setLawyersError] = useState<string | null>(null);
   const [lawyerInitials, setLawyerInitials] = useState<string | null>(
-    initialLawyerInitials ?? null,
+    initialState?.initials ?? initialLawyerInitials ?? null,
   );
 
   const [date, setDate] = useState(todayLocalIso());
@@ -167,11 +189,14 @@ export default function PublicSigningPage({
         const json = await res.json();
         if (cancelled || !json.success) return;
 
-        const property = json.properties?.[0];
+        const property =
+          (dealId && json.properties?.find((p: { deal_id: string | null }) => p.deal_id === dealId)) ||
+          json.properties?.[0];
         if (!property) return;
         const deal = (json.deals ?? []).find((d: { id: string }) => d.id === property.deal_id);
 
         const side: "purchase" | "sale" | null =
+          sideProp ??
           property.recipient_side ??
           (() => {
             const lt = (property.lead_type ?? "").toLowerCase();
@@ -217,6 +242,7 @@ export default function PublicSigningPage({
   // Always load the lawyer list — needed for the picker, and to let a
   // direct /signing/[initials] visitor switch lawyers without round-tripping.
   useEffect(() => {
+    if (locked) return;
     let cancelled = false;
     (async () => {
       try {
@@ -235,7 +261,37 @@ export default function PublicSigningPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [locked]);
+
+  // Locked mode: ask the server which calendar this file books with, and
+  // whether the property already has an appointment.
+  useEffect(() => {
+    if (!locked || initialState) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const qs = new URLSearchParams();
+        if (dealId) qs.set("deal", dealId);
+        if (sideProp) qs.set("side", sideProp);
+        const res = await fetch(`/api/signing/for-deal?${qs.toString()}`, { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !json?.success) {
+          setLockedError(json?.error ?? "Could not load the booking calendar. Please try again.");
+        } else {
+          setExisting(json.data.booked ?? null);
+          setLawyerInitials(json.data.initials);
+        }
+      } catch {
+        if (!cancelled) setLockedError("Could not reach the booking service. Please try again.");
+      } finally {
+        if (!cancelled) setLockedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [locked, dealId, sideProp]);
 
   useEffect(() => {
     if (!lawyerInitials) return;
@@ -323,6 +379,8 @@ export default function PublicSigningPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lawyerInitials,
+          dealId: locked ? dealId : undefined,
+          side: locked ? (sideProp ?? form.dealType) || undefined : undefined,
           startAt: selectedSlot,
           clientName: form.clientName,
           clientEmail: form.clientEmail,
@@ -368,6 +426,81 @@ export default function PublicSigningPage({
 
   const confirmedOrNotFound = confirmed || notFound;
 
+  // One appointment per property: if this one is already booked, show it
+  // instead of the booking form.
+  // Until the calendar/booking lookup returns, show a neutral spinner — never
+  // the booking form, which would flash before an "already booked" card.
+  if (locked && lockedLoading) {
+    return page(
+      <div className="flex justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+      </div>,
+    );
+  }
+
+  if (locked && existing && !confirmed) {
+    return page(
+      <div className="flex justify-center">
+        <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="h-1 w-full" style={{ backgroundColor: BRAND }} />
+          <div className="p-5 sm:p-6 lg:p-8">
+            <div
+              className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full"
+              style={{ backgroundColor: `${BRAND}1a` }}
+            >
+              <Check className="h-5 w-5" style={{ color: BRAND }} />
+            </div>
+            <h1 className="text-center text-base font-bold text-[#1a1a1a]">
+              Your signing appointment is booked
+            </h1>
+            <p className="mt-1 text-center text-sm text-gray-400">
+              Only one appointment can be booked for each property. To change it, please contact
+              our office.
+            </p>
+            <div className="mt-5 space-y-2.5 rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700">
+              <p className="flex items-center gap-2 font-semibold text-[#1a1a1a]">
+                <CalendarDays className="h-4 w-4 shrink-0" style={{ color: BRAND }} />
+                {new Date(existing.startAt).toLocaleString("en-US", {
+                  timeZone: "America/Toronto",
+                  dateStyle: "full",
+                  timeStyle: "short",
+                })}
+              </p>
+              {existing.appointmentType === "virtual" ? (
+                <p className="flex items-center gap-2">
+                  <Video className="h-4 w-4 shrink-0 text-gray-400" />
+                  {existing.meetLink ? (
+                    <a
+                      className="font-medium underline"
+                      style={{ color: BRAND }}
+                      href={existing.meetLink}
+                    >
+                      Join on Google Meet
+                    </a>
+                  ) : (
+                    "Google Meet"
+                  )}
+                </p>
+              ) : (
+                <p className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 shrink-0 text-gray-400" />
+                  {existing.location ?? "In person at our office"}
+                </p>
+              )}
+            </div>
+            <a
+              href="/dashboard"
+              className="mt-5 block text-center text-sm font-semibold underline"
+              style={{ color: BRAND }}
+            >
+              Back to dashboard
+            </a>
+          </div>
+        </div>
+      </div>,
+    );
+  }
+
   return page(
     <div className={confirmedOrNotFound ? "flex justify-center" : ""}>
       {confirmedOrNotFound ? (
@@ -385,14 +518,16 @@ export default function PublicSigningPage({
                     This signing-appointment link is not valid. Please contact the office for a
                     new link.
                   </p>
-                  <button
-                    type="button"
-                    onClick={changeLawyer}
-                    className="mt-4 text-sm font-semibold underline"
-                    style={{ color: BRAND }}
-                  >
-                    Choose a lawyer instead
-                  </button>
+                  {!locked && (
+                    <button
+                      type="button"
+                      onClick={changeLawyer}
+                      className="mt-4 text-sm font-semibold underline"
+                      style={{ color: BRAND }}
+                    >
+                      Choose a lawyer instead
+                    </button>
+                  )}
                 </div>
               ) : (
                 confirmed && (
@@ -418,10 +553,12 @@ export default function PublicSigningPage({
                           timeStyle: "short",
                         })}
                       </p>
-                      <p className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 shrink-0 text-gray-400" />
-                        With {confirmed.lawyerName}
-                      </p>
+                      {!locked && (
+                        <p className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 shrink-0 text-gray-400" />
+                          With {confirmed.lawyerName}
+                        </p>
+                      )}
                       {confirmed.meetLink ? (
                         <p className="flex items-center gap-2">
                           <Video className="h-4 w-4 shrink-0 text-gray-400" />
@@ -455,9 +592,18 @@ export default function PublicSigningPage({
               Book a Signing Appointment
             </h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              Step 1 of 2 — choose your lawyer, date and time.
+              {locked ? "Step 1 of 2 — choose your date and time." : "Step 1 of 2 — choose your lawyer, date and time."}
             </p>
 
+            {locked ? (
+              lockedLoading ? (
+                <div className="mt-5 flex items-center gap-2 py-2 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : lockedError ? (
+                <p className="mt-5 text-sm text-[#C10007]">{lockedError}</p>
+              ) : null
+            ) : (
             <div className="mt-5">
               <label className={labelClass}>Lawyer</label>
               {lawyers === null ? (
@@ -489,6 +635,7 @@ export default function PublicSigningPage({
                 </select>
               )}
             </div>
+            )}
 
             {lawyerInitials && (
               <>
@@ -575,23 +722,11 @@ export default function PublicSigningPage({
               <ChevronLeft className="h-3.5 w-3.5" /> Back to change
             </button>
 
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#C10007]/10 text-[#C10007]">
-                <Scale className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                  Lawyer
-                </p>
-                <p className="truncate text-sm font-semibold text-[#1a1a1a]">{selectedLawyerName}</p>
-              </div>
-            </div>
-
-            <div className="mt-5 border-t border-gray-100 pt-5">
+            <div className="border-t border-gray-100 pt-5">
               <h1 className="text-base font-bold leading-tight text-[#1a1a1a]">
                 Signing Appointment
               </h1>
-              <p className="mt-0.5 text-sm text-gray-500">{selectedLawyerName}</p>
+              {!locked && <p className="mt-0.5 text-sm text-gray-500">{selectedLawyerName}</p>}
 
               {availability?.durationMinutes ? (
                 <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
@@ -733,43 +868,36 @@ export default function PublicSigningPage({
 
                   <div>
                     <span className={labelClass}>Location *</span>
-                    <div className="space-y-2">
-                      <label
-                        className="flex cursor-pointer items-center gap-2.5 rounded-lg border p-3 text-sm text-gray-700 transition-colors"
-                        style={
-                          form.appointmentType === "in_person"
-                            ? { borderColor: BRAND, backgroundColor: `${BRAND}0d` }
-                            : { borderColor: "#e5e7eb" }
-                        }
-                      >
-                        <input
-                          type="radio"
-                          name="appointmentType"
-                          checked={form.appointmentType === "in_person"}
-                          onChange={() => setForm({ ...form, appointmentType: "in_person" })}
-                        />
-                        <MapPin className="h-4 w-4 shrink-0 text-gray-400" />
-                        In person
-                        {availability ? ` — ${availability.officeAddress}` : ""}
-                      </label>
-                      <label
-                        className="flex cursor-pointer items-center gap-2.5 rounded-lg border p-3 text-sm text-gray-700 transition-colors"
-                        style={
-                          form.appointmentType === "virtual"
-                            ? { borderColor: BRAND, backgroundColor: `${BRAND}0d` }
-                            : { borderColor: "#e5e7eb" }
-                        }
-                      >
-                        <input
-                          type="radio"
-                          name="appointmentType"
-                          checked={form.appointmentType === "virtual"}
-                          onChange={() => setForm({ ...form, appointmentType: "virtual" })}
-                        />
-                        <Video className="h-4 w-4 shrink-0 text-gray-400" />
-                        Google Meet
-                      </label>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ["in_person", "In person", MapPin],
+                          ["virtual", "Google Meet", Video],
+                        ] as const
+                      ).map(([value, label, Icon]) => {
+                        const selected = form.appointmentType === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setForm({ ...form, appointmentType: value })}
+                            className="inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
+                            style={
+                              selected
+                                ? { borderColor: BRAND, backgroundColor: BRAND, color: "#fff" }
+                                : { borderColor: "#e5e7eb", color: "#374151" }
+                            }
+                          >
+                            <Icon className="h-4 w-4 shrink-0" />
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
+                    {form.appointmentType === "in_person" && availability?.officeAddress && (
+                      <p className="mt-2 text-xs text-gray-500">{availability.officeAddress}</p>
+                    )}
                   </div>
 
                   <div>
@@ -798,29 +926,38 @@ export default function PublicSigningPage({
                     />
                   </div>
 
+                  {!(locked && sideProp) && (
                   <div>
                     <span className={labelClass}>Is this a purchase, sale or refinance? *</span>
-                    <div className="space-y-2">
-                      <label className="flex cursor-pointer items-center gap-2.5 text-sm text-gray-700">
-                        <input
-                          type="radio"
-                          name="dealType"
-                          checked={form.dealType === "purchase"}
-                          onChange={() => setForm({ ...form, dealType: "purchase" })}
-                        />
-                        Purchase
-                      </label>
-                      <label className="flex cursor-pointer items-center gap-2.5 text-sm text-gray-700">
-                        <input
-                          type="radio"
-                          name="dealType"
-                          checked={form.dealType === "sale"}
-                          onChange={() => setForm({ ...form, dealType: "sale" })}
-                        />
-                        Sale
-                      </label>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          ["purchase", "Purchase"],
+                          ["sale", "Sale"],
+                          ["refinance", "Refinance"],
+                        ] as const
+                      ).map(([value, label]) => {
+                        const selected = form.dealType === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => setForm({ ...form, dealType: value })}
+                            className="rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
+                            style={
+                              selected
+                                ? { borderColor: BRAND, backgroundColor: BRAND, color: "#fff" }
+                                : { borderColor: "#e5e7eb", color: "#374151" }
+                            }
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
+                  )}
 
                   <p className="text-xs leading-relaxed text-gray-400">
                     By proceeding, you confirm that you have read and agree to iClosed&apos;s

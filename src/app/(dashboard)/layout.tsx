@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Menu, X, LogOut, LogIn, LayoutDashboard, FileText, CalendarClock } from "lucide-react";
+import { Menu, X, LogOut, LogIn, LayoutDashboard, FileText } from "lucide-react";
 import ProfileDropdown from "@/components/layout/ProfileDropdown";
 import IdleLogoutGuard from "@/components/auth/IdleLogoutGuard";
 import { identifyUser, resetUser } from "@/lib/analytics";
@@ -13,10 +13,6 @@ import { endClientSession } from "@/lib/sessionClient";
 const navLinks = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Your Documents", href: "/documents", icon: FileText },
-  // Public page (no session) — see src/app/(public)/signing/. Linked from here
-  // so a signed-in client can find it without already having a direct
-  // /signing/[lawyerInitials] link from the office.
-  { label: "Book a Signing Appointment", href: "/signing", icon: CalendarClock },
 ];
 
 /* ════════════════════════════════════════════

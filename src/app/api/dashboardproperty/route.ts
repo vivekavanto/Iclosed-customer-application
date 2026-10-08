@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveFirmKey, type FirmKey } from "@/lib/firms";
+import { resolveSigningCalendarNames } from "@/lib/signingCalendar";
 
 export const dynamic = "force-dynamic";
 
@@ -116,6 +117,76 @@ export async function GET() {
       }
     }
 
+    // ── Upcoming signing appointment per deal ─────────────────────
+    // Linked by deal_id (set when booked from a logged-in session), or by the
+    // deal's file number for bookings made logged-out / before linking existed
+    // (co-clients share the primary's file number, so they see it too). Only
+    // confirmed, not-yet-ended appointments; the earliest one wins.
+    type SigningAppt = {
+      deal_id: string | null;
+      file_number: string | null;
+      start_at: string;
+      end_at: string;
+      appointment_type: "virtual" | "in_person";
+      google_meet_link: string | null;
+    };
+    const apptSelect =
+      "deal_id, file_number, start_at, end_at, appointment_type, google_meet_link";
+    const nowIso = new Date().toISOString();
+    // Name of the calendar each file books its signing with, so the dashboard
+    // task button is labelled on first load (no extra request when it opens).
+    const signingCalendarNames = await resolveSigningCalendarNames((deals ?? []).map((d) => d.id));
+    const dealIds = (deals ?? []).map((d) => d.id);
+    const fileNumbers = [
+      ...new Set((deals ?? []).map((d) => d.file_number).filter((f): f is string => !!f)),
+    ];
+    const apptRows: SigningAppt[] = [];
+    if (dealIds.length > 0) {
+      const { data } = await supabaseAdmin
+        .from("signing_appointments")
+        .select(apptSelect)
+        .in("deal_id", dealIds)
+        .eq("status", "confirmed")
+        .gt("end_at", nowIso);
+      apptRows.push(...((data ?? []) as unknown as SigningAppt[]));
+    }
+    if (fileNumbers.length > 0) {
+      const { data } = await supabaseAdmin
+        .from("signing_appointments")
+        .select(apptSelect)
+        .in("file_number", fileNumbers)
+        .eq("status", "confirmed")
+        .gt("end_at", nowIso);
+      apptRows.push(...((data ?? []) as unknown as SigningAppt[]));
+    }
+    let officeAddress: string | null = null;
+    if (apptRows.some((a) => a.appointment_type === "in_person")) {
+      const { data: st } = await supabaseAdmin
+        .from("signing_settings")
+        .select("office_address")
+        .limit(1)
+        .maybeSingle();
+      officeAddress = st?.office_address ?? null;
+    }
+    const signingForDeal = (deal: { id: string; file_number: string | null } | null) => {
+      if (!deal) return null;
+      const match = apptRows
+        .filter(
+          (a) =>
+            a.deal_id === deal.id ||
+            (!!deal.file_number && a.file_number === deal.file_number),
+        )
+        .sort((a, b) => a.start_at.localeCompare(b.start_at))[0];
+      if (!match) return null;
+      return {
+        start_at: match.start_at,
+        end_at: match.end_at,
+        appointment_type: match.appointment_type,
+        meet_link: match.google_meet_link,
+        location: match.appointment_type === "in_person" ? officeAddress : null,
+      };
+    };
+
     // ── Parties per transaction (primary + co-persons) ───────────
     // For the hero "Parties" panel. A transaction "family" is the primary lead
     // plus every lead whose parent_lead_id points at it. Co-persons may belong to
@@ -184,6 +255,8 @@ export async function GET() {
       return {
         lead_id: lead.id,
         deal_id: deal?.id ?? null,
+        signing_appointment: signingForDeal(deal),
+        signing_calendar_name: deal ? (signingCalendarNames[deal.id] ?? null) : null,
         address_street: deal?.property_address || lead.address_street || null,
         address_city: lead.address_city || null,
         address_province: lead.address_province || null,
