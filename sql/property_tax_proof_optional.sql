@@ -1,6 +1,7 @@
 -- Sale property tax: proof of payment upload is optional. Idempotent.
 UPDATE task_form_fields f
-SET required = false
+SET required = false,
+    options = COALESCE(f.options, '{}'::jsonb) || '{"optional":true}'::jsonb
 FROM task_templates t
 WHERE f.task_template_id = t.id
   AND t.lead_type = 'Sale'

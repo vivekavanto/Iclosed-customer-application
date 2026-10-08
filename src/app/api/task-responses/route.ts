@@ -16,7 +16,7 @@ import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 import { spouseNameFromResponses, syncSpouseIdTask } from "@/lib/spouseIdTask";
 import { syncTreefortTasks } from "@/lib/treefortTask";
-import { syncIlaTasks } from "@/lib/ilaTask";
+import { isSaleProceedsTask, syncIlaTasks } from "@/lib/ilaTask";
 import { isHoldTitleTask } from "@/lib/taskKinds";
 import { fillDealDepositFromAps, isApsLabel } from "@/lib/fillDealDepositFromAps";
 
@@ -369,7 +369,8 @@ export async function POST(req: Request) {
         });
         await syncTreefortTasks(task.id);
       }
-      if (isHoldTitleTask(task.title)) await syncIlaTasks(task.id);
+      if (isHoldTitleTask(task.title)) await syncIlaTasks(task.id, "purchase");
+      else if (await isSaleProceedsTask(task)) await syncIlaTasks(task.id, "sale");
 
       // Family-aware milestone advancement — completes only when EVERY party on
       // the file has finished this milestone's tasks. See advanceMilestone.

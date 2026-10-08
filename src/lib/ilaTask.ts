@@ -21,13 +21,16 @@ export function minorityOwners(shares: string): string[] {
   return rows.filter((r) => r.pct < max && r.name).map((r) => r.name);
 }
 
+// Purchase: tenants in common shares. Sale: a different proceeds split.
+export type IlaKind = "purchase" | "sale";
+
 // ILA task per minority owner on each family deal. Never throws.
-export async function syncIlaTasks(holdTitleTaskId: string): Promise<void> {
+export async function syncIlaTasks(sourceTaskId: string, kind: IlaKind): Promise<void> {
   try {
     const { data: task } = await supabaseAdmin
       .from("tasks")
       .select("id, deal_id, side, milestone_id, task_template_id")
-      .eq("id", holdTitleTaskId)
+      .eq("id", sourceTaskId)
       .maybeSingle();
     if (!task?.deal_id) return;
 
@@ -35,20 +38,23 @@ export async function syncIlaTasks(holdTitleTaskId: string): Promise<void> {
       .from("task_responses")
       .select("field_label, field_type, value")
       .eq("task_id", task.id);
-    const tenantsInCommon = (answers ?? []).some((r) => /tenants in common/i.test(String(r.value ?? "")));
+    const unequal = (answers ?? []).some((r) =>
+      kind === "purchase" ? /tenants in common/i.test(String(r.value ?? "")) : String(r.value ?? "") === "different",
+    );
     const shares = (answers ?? []).find((r) => r.field_type === "shares")?.value ?? "";
-    const wanted = tenantsInCommon ? minorityOwners(String(shares)).map((n) => n.split(/\s+/)[0]) : [];
+    const wanted = unequal ? minorityOwners(String(shares)).map((n) => n.split(/\s+/)[0]) : [];
+    const leadType = kind === "purchase" ? "Purchase" : "Sale";
 
     const { data: tpl } = await supabaseAdmin
       .from("task_templates")
       .select("id, order_index, role_type")
-      .eq("lead_type", "Purchase")
+      .eq("lead_type", leadType)
       .ilike("name", "independent legal advice%")
       .eq("is_deleted", false)
       .limit(1)
       .maybeSingle();
     if (!tpl) {
-      if (wanted.length) console.error("[ILA] No Purchase ILA template — run sql/add_ila_task.sql.");
+      if (wanted.length) console.error(`[ILA] No ${leadType} ILA template — run sql/add_ila_task.sql.`);
       return;
     }
 
@@ -100,4 +106,17 @@ export async function syncIlaTasks(holdTitleTaskId: string): Promise<void> {
   } catch (err) {
     console.error("[ILA] sync failed:", err);
   }
+}
+
+/** The sale "Your sale proceeds" (void cheque) task. */
+export async function isSaleProceedsTask(task: {
+  title?: string | null;
+  side?: string | null;
+  task_template_id?: string | null;
+}): Promise<boolean> {
+  if (!/void cheque/i.test(task.title ?? "")) return false;
+  if (task.side) return task.side === "sale";
+  if (!task.task_template_id) return false;
+  const { data } = await supabaseAdmin.from("task_templates").select("lead_type").eq("id", task.task_template_id).maybeSingle();
+  return data?.lead_type === "Sale";
 }
