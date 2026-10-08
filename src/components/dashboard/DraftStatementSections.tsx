@@ -22,7 +22,7 @@ function NoteIcon({ label, note }: { label: string; note: string }) {
   );
 }
 
-// Deductions print with a minus sign; zero reads "$0.00".
+// "($45,000.00)" → "−$45,000.00"; a zero deduction reads "$0.00". Overrides print as given.
 function screenAmount(line: DraftLine): string {
   if (line.screen?.amount) return line.screen.amount;
   const raw = line.amount;
@@ -71,7 +71,11 @@ export default function DraftStatementSections({
                     } ${big ? "text-base sm:text-lg" : "text-[13px] sm:text-sm"}`}
                   >
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {label}
+                      <span>
+                        {line.hstFootnote && <sup>*</sup>}
+                        {label}
+                        {line.hst && <sup>*</sup>}
+                      </span>
                       {info && !line.total && <NoteIcon label={label} note={info} />}
                       {line.screen?.estimate && (
                         <span className="rounded-full border border-[#FDE68A] bg-[#FFFBEB] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#92400E]">

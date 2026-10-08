@@ -33,6 +33,29 @@ async function dealDiscount(dealId: string | undefined): Promise<number | null> 
   return manual ?? loadIclosedFees().bundles.sale_and_purchase.discount;
 }
 
+// Monthly condo fees read off the purchase APS at intake.
+async function apsCommonExpenses(dealId: string | undefined): Promise<number | null> {
+  const deal = await dealRow(dealId);
+  if (!deal?.lead_id) return null;
+  const { data: lead } = await supabaseAdmin
+    .from("leads")
+    .select("aps_extraction, parent_lead_id")
+    .eq("id", deal.lead_id as string)
+    .maybeSingle();
+  const read = (row: { aps_extraction?: unknown } | null) =>
+    amountOf((row?.aps_extraction as ApsBySide | null)?.purchase?.result?.common_expenses?.value);
+  const own = read(lead);
+  if (own !== null || !lead?.parent_lead_id) return own;
+  const { data: parent } = await supabaseAdmin
+    .from("leads")
+    .select("aps_extraction")
+    .eq("id", lead.parent_lead_id)
+    .maybeSingle();
+  return read(parent);
+}
+
+type ApsBySide = { purchase?: { result?: { common_expenses?: { value?: unknown } } } };
+
 export async function draftFileInput(ctx: ClientEstimateContext): Promise<DraftFileInput> {
   return {
     name: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
@@ -46,6 +69,7 @@ export async function draftFileInput(ctx: ClientEstimateContext): Promise<DraftF
     titlePremium: ctx.locked.titlePremiumOverride ?? null,
     discount: await dealDiscount(ctx.deal?.id),
     propertyType: parsePropertyType((await dealRow(ctx.deal?.id))?.building_type),
+    commonExpenses: await apsCommonExpenses(ctx.deal?.id),
   };
 }
 
@@ -78,7 +102,7 @@ export async function resolveDraftSide(ctx: ClientEstimateContext, requested: Dr
   return draftSideFor(deal?.type as string | null, requested);
 }
 
-/** Sale file inputs, incl. Buy & Sell sale side. */
+/** Sale file inputs; Buy & Sell reads the sale columns and the lead's sale deposit. */
 export async function saleFileInput(ctx: ClientEstimateContext): Promise<SaleFileInput> {
   const deal = await dealRow(ctx.deal?.id);
   const both = String(deal?.type ?? "").trim().toLowerCase() === "purchase & sale";
@@ -106,7 +130,7 @@ export interface ClientDraft {
   price: number;
   /** Funds required (purchase) or proceeds (sale). */
   headline: number | null;
-  /** Draft inputs for the purchase or sale side. */
+  /** Purchase: fees, tax and title insurance; sale: legal fees, disbursements and HST. */
   costsTotal: number;
 }
 

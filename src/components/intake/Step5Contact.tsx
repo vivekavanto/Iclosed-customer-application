@@ -492,7 +492,7 @@ export default function Step5Contact({
             name: partner.agent_name ?? "",
             company: partner.brokerage_name ?? "",
             email: partner.agent_email ?? "",
-            phone: partner.agent_phone ?? "",
+            phone: formatPrefilledPhone(partner.agent_phone),
             partnerId: partner.id,
         });
         setReferralAgentErrors({});
@@ -551,6 +551,11 @@ export default function Step5Contact({
         if (digits.length <= 3) return digits.length ? `(${digits}` : "";
         if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
         return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    };
+
+    const formatPrefilledPhone = (value: string | null | undefined): string => {
+        const digits = (value ?? "").replace(/\D/g, "");
+        return formatCoPhone(digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits);
     };
 
     const validateCoCard = (card: CoPersonCard): { fullName?: string; email?: string; phone?: string } => {
@@ -817,7 +822,7 @@ export default function Step5Contact({
                       name,
                       company: prev.company.trim() || apsAgent?.company || "",
                       email: prev.email.trim() || apsAgent?.email || "",
-                      phone: prev.phone.trim() || apsAgent?.phone || "",
+                      phone: prev.phone.trim() || formatPrefilledPhone(apsAgent?.phone),
                   },
         );
 

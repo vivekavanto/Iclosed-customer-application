@@ -16,16 +16,16 @@ describe("computeFees (spec 5.1–5.3)", () => {
       legalFees: 1199,
       discount: 0,
       disbursements: 715,
-      hst: 203.97,
-      total: 2117.97,
+      hst: 226.72,
+      total: 2140.72,
     });
   });
 
   it("T2: purchase without a mortgage drops charge registration", () => {
     const f = computeFees(fees, "purchase", { hasMortgage: false });
     expect(f.disbursements).toBe(630);
-    expect(f.hst).toBe(203.97);
-    expect(f.total).toBe(2032.97);
+    expect(f.hst).toBe(226.72);
+    expect(f.total).toBe(2055.72);
   });
 
   it("T5: standard sale, levy inclusive of tax", () => {
@@ -38,7 +38,7 @@ describe("computeFees (spec 5.1–5.3)", () => {
 
   it("T7: standard refinance", () => {
     const f = computeFees(fees, "refinance");
-    expect(f).toMatchObject({ legalFees: 999, disbursements: 655, hst: 184.47, total: 1838.47 });
+    expect(f).toMatchObject({ legalFees: 999, disbursements: 655, hst: 203.97, total: 1857.97 });
     expect(f.legalFees + f.disbursements).toBe(1654);
     expect(fees.file_types.refinance.title_insurance_estimate).toBe(250);
   });
@@ -47,15 +47,15 @@ describe("computeFees (spec 5.1–5.3)", () => {
   it("T8: refinance with a discharge registration", () => {
     expect(computeFees(fees, "refinance", { dischargeRegistration: true })).toMatchObject({
       disbursements: 740,
-      hst: 184.47,
-      total: 1923.47,
+      hst: 203.97,
+      total: 1942.97,
     });
   });
 
   it("T9: new build condo quote total excludes the agreement review", () => {
     const f = computeFees(fees, "new_build_condo");
     expect(f.legalFees + f.disbursements).toBe(2414);
-    expect(f.hst).toBe(268.97);
+    expect(f.hst).toBe(291.72);
   });
 
   it("T15: sale title search adds a pass-through disbursement", () => {
@@ -68,11 +68,11 @@ describe("computeFees (spec 5.1–5.3)", () => {
   });
 
   it("T10: purchase with a $100 discount taxes the discounted fee", () => {
-    expect(computeFees(fees, "purchase", { discount: 100 })).toMatchObject({ hst: 190.97, total: 2004.97 });
+    expect(computeFees(fees, "purchase", { discount: 100 })).toMatchObject({ hst: 213.72, total: 2027.72 });
   });
 
   it("T11: purchase with two mortgages", () => {
-    expect(computeFees(fees, "purchase", { chargesCount: 2 })).toMatchObject({ disbursements: 800, total: 2202.97 });
+    expect(computeFees(fees, "purchase", { chargesCount: 2 })).toMatchObject({ disbursements: 800, total: 2225.72 });
   });
 
   it("formats fee text", () => {
@@ -108,6 +108,7 @@ describe("retainer agreement (spec 8)", () => {
       "iClosed, powered by Nava Wilson PC",
     ]);
     expect(buildRetainerAgreement(fees, { ...base, fileNo: "26P-0411" }).meta[1]).toBe("File 26P-0411");
+    expect(buildRetainerAgreement(fees, { ...base, firmKey: "iclosed" }).meta.at(-1)).toBe("iClosed powered by Nava Wilson");
   });
 
   it("purchase fee table always shows the discount row", () => {
@@ -115,11 +116,11 @@ describe("retainer agreement (spec 8)", () => {
     expect(a.fees).toEqual([
       { label: "Legal fees (for title transfer and mortgage)", amount: "$1,199.00" },
       { label: "Estimated Disbursements (average is $650-$750)", amount: "$715.00" },
-      { label: "HST", amount: "$203.97" },
+      { label: "HST", amount: "$226.72" },
     ]);
     const discounted = buildRetainerAgreement(fees, { ...base, discount: 100 });
     expect(discounted.fees[1].amount).toBe("($100.00)");
-    expect(discounted.fees[3].amount).toBe("$190.97");
+    expect(discounted.fees[3].amount).toBe("$213.72");
     expect(a.feeNote).toMatch(/HST registration 829252303RT0001\.$/);
     const noNumber = { ...fees, retainer: { hst_registration_number: null } };
     expect(buildRetainerAgreement(noNumber, base).feeNote).toMatch(/HST registration \[number\]\.$/);
@@ -181,7 +182,7 @@ describe("retainer agreement (spec 8)", () => {
     expect(a.fees).toEqual([
       { label: "Legal fees (including first mortgage payout)", amount: "$999.00" },
       { label: "Estimated Disbursements (average is $650-$750)", amount: "$655.00" },
-      { label: "HST", amount: "$184.47" },
+      { label: "HST", amount: "$203.97" },
     ]);
     expect(a.changes).toEqual([
       { label: "Closing date moves and documents must be redrafted", amount: "$250 per extension request" },
@@ -217,7 +218,7 @@ describe("sale and purchase bundle (spec 5.3a, 7A)", () => {
     const b = computeBundle(fees, { saleClosing: "2026-11-27", purchaseClosing: "2026-11-30" });
     expect(b.discountSide).toBe("purchase");
     expect(b.purchase.legalFees - b.purchase.discount).toBe(1099);
-    expect(b.purchase).toMatchObject({ hst: 190.97, total: 2004.97 });
+    expect(b.purchase).toMatchObject({ hst: 213.72, total: 2027.72 });
     expect(b.sale).toMatchObject({ legalFees: 1099, discount: 0, hst: 197.47, total: 1781.47 });
     expect([b.legalFees, b.disbursements, b.legalFees + b.disbursements]).toEqual([2198, 1200, 3398]);
   });
@@ -227,8 +228,8 @@ describe("sale and purchase bundle (spec 5.3a, 7A)", () => {
     expect(b.discountSide).toBe("sale");
     expect(b.sale.legalFees - b.sale.discount).toBe(999);
     expect(b.sale).toMatchObject({ hst: 184.47, total: 1668.47 });
-    expect(b.purchase).toMatchObject({ hst: 203.97, total: 2117.97 });
-    expect(Math.round((b.sale.total + b.purchase.total) * 100) / 100).toBe(3786.44);
+    expect(b.purchase).toMatchObject({ hst: 226.72, total: 2140.72 });
+    expect(Math.round((b.sale.total + b.purchase.total) * 100) / 100).toBe(3809.19);
   });
 
   it("T18: same day, or an unknown date, goes to the purchase", () => {
@@ -265,7 +266,7 @@ describe("sale and purchase bundle (spec 5.3a, 7A)", () => {
     const base = { firmKey: "navawilson" as const, property: "x", fileNo: null, date: "2026-10-01", bundle: true };
     const purchase = buildRetainerAgreement(fees, { ...base, kind: "purchase", discount: 100 });
     expect(purchase.fees[1].amount).toBe("($100.00)");
-    expect(purchase.fees[3].amount).toBe("$190.97");
+    expect(purchase.fees[3].amount).toBe("$213.72");
     expect(purchase.bundleNote).toMatch(/^Because we are closing both.*comes off this purchase\.$/);
     const sale = buildRetainerAgreement(fees, { ...base, kind: "sale", discount: null });
     expect(sale.fees.some((f) => f.label === "Discount")).toBe(false);

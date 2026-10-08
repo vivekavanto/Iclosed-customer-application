@@ -32,7 +32,7 @@ export async function readApsDeposit(
     return null;
   }
   const startedAt = Date.now();
-  // Read files in parallel, merged like intake.
+  // One read per file, in parallel so several files fit the time limit; merged like intake.
   const readAll = async (order: "quality" | "fast") => {
     const settled = await Promise.all(
       fileUrls.map(async (url): Promise<ApsExtractionResult | null> => {
@@ -57,6 +57,23 @@ export async function readApsDeposit(
   const fast = await readAll("fast");
   if (fast.deposit || !fast.answered) return fast;
   return readAll("quality");
+}
+
+// Stores condo fees beside the intake read, where the draft looks.
+async function saveCommonExpenses(dealIds: string[], value: string, confidence: string): Promise<void> {
+  const { data: deals } = await supabaseAdmin.from("deals").select("lead_id").in("id", dealIds);
+  const leadIds = (deals ?? []).map((d) => d.lead_id).filter(Boolean);
+  if (leadIds.length === 0) return;
+  const { data: leads } = await supabaseAdmin.from("leads").select("id, aps_extraction").in("id", leadIds);
+  for (const lead of leads ?? []) {
+    const aps = (lead.aps_extraction ?? {}) as Record<string, { result?: Record<string, unknown> } | undefined>;
+    const purchase = aps.purchase ?? {};
+    const next = {
+      ...aps,
+      purchase: { ...purchase, result: { ...(purchase.result ?? {}), common_expenses: { value, confidence } } },
+    };
+    await supabaseAdmin.from("leads").update({ aps_extraction: next }).eq("id", lead.id);
+  }
 }
 
 /** Sets the deal family's deposit from task APS uploads. */
@@ -84,12 +101,14 @@ export async function fillDealDepositFromAps(opts: {
   if (!read) return;
   const { merged, deposit } = read;
   const took = `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+  const dealIds = [dealId, ...(await getLinkedDealIds(dealId))];
+  const commonExpenses = merged.is_aps ? normalizeAmount(merged.common_expenses?.value, { min: 1 }) : null;
+  if (apsSide === "purchase" && commonExpenses) await saveCommonExpenses(dealIds, commonExpenses, merged.common_expenses?.confidence ?? "low");
   if (!deposit) {
     console.log(`[aps-deposit] deal=${dealId} no deposit read from ${fileUrls.length} file(s) in ${took}`);
     return;
   }
 
-  const dealIds = [dealId, ...(await getLinkedDealIds(dealId))];
   if (sellingColumn) {
     const { data: linked } = await supabaseAdmin.from("deals").select("lead_id").in("id", dealIds);
     const ids = (linked ?? []).map((d) => d.lead_id).filter(Boolean);
@@ -153,7 +172,7 @@ export async function fillLeadDepositFromAps(opts: {
 // The read's budget plus slack for the upload and save.
 const PENDING_WINDOW_MS = TOTAL_BUDGET_MS + 20_000;
 
-/** True while a just-saved APS may still be reading. */
+/** True while an APS task on this side saved moments ago may still be reading. */
 export async function apsDepositPending(dealId: string, side: "purchase" | "sale" = "purchase"): Promise<boolean> {
   const since = new Date(Date.now() - PENDING_WINDOW_MS).toISOString();
   const { data } = await supabaseAdmin

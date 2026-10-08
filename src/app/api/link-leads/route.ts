@@ -19,7 +19,7 @@ export async function POST() {
     // Find all leads submitted with this client's email
     const { data: leads } = await supabaseAdmin
       .from("leads")
-      .select("id, lead_type, address_street, price, parent_lead_id")
+      .select("id, lead_type, address_street, price, deposit_amount, parent_lead_id")
       .eq("email", client.email.toLowerCase().trim());
 
     if (!leads || leads.length === 0) {
@@ -79,6 +79,8 @@ export async function POST() {
           status: "Pending",
           property_address: lead.address_street || null,
           price: lead.price ? parseFloat(String(lead.price).replace(/[^0-9.]/g, "")) : null,
+          // Deposit from intake (typed, or read off the APS).
+          ...(lead.deposit_amount != null ? { deposit_amount: lead.deposit_amount } : {}),
         };
 
         // Co-person: inherit the primary's number. If the primary deal doesn't

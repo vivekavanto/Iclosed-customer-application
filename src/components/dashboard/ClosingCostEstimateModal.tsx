@@ -95,7 +95,7 @@ function shortAddress(address: string | null | undefined): string | null {
   return parts.slice(0, 2).join(", ") || null;
 }
 
-/** Labelled text box with brand focus border. */
+/** Labelled text box; the border takes the brand colour on focus. */
 function AmountField({
   id,
   label,
@@ -137,13 +137,13 @@ function AmountField({
 
 const ClosingCostEstimateModal: React.FC<{
   onClose: () => void;
-  /** Buy & Sell side; others resolved on the server. */
+  /** Buy & Sell: the dashboard side; other files decide on the server. */
   side?: "purchase" | "sale";
 }> = ({ onClose, side: requestedSide }) => {
   const [loading, setLoading] = useState(true);
-  // APS deposit still reading; show estimate and re-check.
+  // An APS read is still filling the deposit; show the estimate and re-check.
   const [waitingForDeposit, setWaitingForDeposit] = useState(false);
-  // Seeded file and side; re-checks keep typed values.
+  // File and side the inputs were seeded for, so re-checks keep what was typed.
   const seededFor = useRef<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -174,13 +174,13 @@ const ClosingCostEstimateModal: React.FC<{
     null,
   );
 
-  // Figures update live; saving is debounced.
+  // Figures follow the box as the client types; the save below is debounced.
   const [mortgage, setMortgage] = useState("");
   const [isFirstTimeBuyer, setIsFirstTimeBuyer] = useState(false);
   // v6 draft statement inputs from GET /api/closing-estimate.
   const [iclosedFees, setIclosedFees] = useState<IclosedFees | null>(null);
   const [draftInput, setDraftInput] = useState<DraftFileInput | null>(null);
-  // Sale files: side, inputs and commission rate.
+  // Sale files: the server's side, its inputs, and the client's commission rate.
   const [draftSide, setDraftSide] = useState<"purchase" | "sale">("purchase");
   const [saleInput, setSaleInput] = useState<SaleFileInput | null>(null);
   const [commission, setCommission] = useState("");
@@ -255,7 +255,7 @@ const ClosingCostEstimateModal: React.FC<{
         // Branding comes from Settings → Closing costs. The
         // fallbacks only cover a config the migrations have not reached yet.
         setBrand((data.firm?.brand_color as string | null) || BRAND_FALLBACK);
-        // Seed inputs once per file and side.
+        // Seed inputs once per file and side; deposit re-checks keep the client's typing.
         const seedKey = `${data.deal?.id ?? ""}:${data.draft_side ?? ""}`;
         if (seededFor.current !== seedKey) {
           seededFor.current = seedKey;
@@ -305,7 +305,7 @@ const ClosingCostEstimateModal: React.FC<{
     setRequestedFileId(id);
   };
 
-  /** Blank is $0; a typed 0 is a cash deal. */
+  /** Live from the box; blank counts as $0, a typed 0 is a cash deal. */
   const mortgageAmount = parseAmountInput(mortgage);
   const answered = mortgageAmount !== null;
 
