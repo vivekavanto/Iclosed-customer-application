@@ -764,9 +764,9 @@ export default function ServiceSelection() {
     },
   ];
 
-  // Only Property Closing is offered right now. The others stay defined, and the
+  // Only Property Closing and Refinance are offered right now. The others stay defined, and the
   // API still maps their ids, so re-enabling one means adding it back here.
-  const OFFERED_SERVICE_IDS = ["closing"];
+  const OFFERED_SERVICE_IDS = ["closing", "refinance"];
   const offeredServices = services.filter((s) =>
     OFFERED_SERVICE_IDS.includes(s.id),
   );
