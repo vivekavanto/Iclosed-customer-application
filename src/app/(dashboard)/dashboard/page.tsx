@@ -125,21 +125,9 @@ interface Party {
   role: string;
 }
 
-/** Next confirmed signing appointment for a deal, from /api/dashboardproperty. */
-interface SigningAppointmentInfo {
-  start_at: string;
-  end_at: string;
-  appointment_type: "virtual" | "in_person";
-  meet_link: string | null;
-  location: string | null;
-}
-
 interface PropertyData {
   lead_id: string;
   deal_id: string | null;
-  signing_appointment?: SigningAppointmentInfo | null;
-  // Display name of the calendar this file books its signing with.
-  signing_calendar_name?: string | null;
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
@@ -1598,23 +1586,6 @@ export default function DashboardPage() {
     { month: "long", day: "numeric", year: "numeric" },
   );
 
-  // Booked signing appointment, shown in the hero card. Office time (Toronto),
-  // matching the booking page.
-  const signingAppt = activeProperty?.signing_appointment ?? null;
-  const signingWhen = signingAppt
-    ? `${new Date(signingAppt.start_at).toLocaleDateString("en-CA", {
-        timeZone: "America/Toronto",
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })} · ${new Date(signingAppt.start_at).toLocaleTimeString("en-CA", {
-        timeZone: "America/Toronto",
-        hour: "numeric",
-        minute: "2-digit",
-      })} ET`
-    : null;
-
   // Parties for the active property. On a Purchase & Sale deal each side has its
   // own parties — the primary is on both; co-persons show only on their side
   // (co-purchasers on Purchase, co-sellers on Sale). Single-type deals show all.
@@ -1848,8 +1819,6 @@ export default function DashboardPage() {
       <SigningTaskModal
         open={signingOpen}
         taskId={activeTask?.id ?? null}
-        dealId={activeDeal?.id ?? null}
-        calendarName={activeProperty?.signing_calendar_name ?? null}
         title={activeTaskHeading || "Book your signing appointment"}
         subtitle={taskSubtitle}
         side={activeSide}
@@ -1982,7 +1951,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Info chips row */}
-        <div className={`grid grid-cols-1 ${signingAppt ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} divide-y sm:divide-y-0 sm:divide-x divide-gray-100 border-t border-gray-100`}>
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 border-t border-gray-100">
           <div className="px-5 sm:px-6 py-4">
             <div>
               <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
@@ -2004,36 +1973,6 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-
-          {signingAppt && (
-            <div className="px-5 sm:px-6 py-4 min-w-0">
-              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                Signing Appointment
-              </p>
-              <p className="text-sm font-bold text-gray-900">{signingWhen}</p>
-              <p className="text-xs text-gray-500">
-                {signingAppt.appointment_type === "virtual" ? (
-                  signingAppt.meet_link ? (
-                    <>
-                      Google Meet ·{" "}
-                      <a
-                        href={signingAppt.meet_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-[#C10007] hover:underline"
-                      >
-                        Join
-                      </a>
-                    </>
-                  ) : (
-                    "Google Meet"
-                  )
-                ) : (
-                  `In person${signingAppt.location ? ` · ${signingAppt.location}` : ""}`
-                )}
-              </p>
-            </div>
-          )}
 
           {/* Parties — primary + co-persons on this transaction */}
           <div className="px-5 sm:px-6 py-4 min-w-0">
