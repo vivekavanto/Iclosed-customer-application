@@ -1934,7 +1934,7 @@ export default function DynamicTaskDrawer({
                     <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
                       <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       <p className="text-[11px] text-gray-500">
-                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be used for ID verification purposes.
+                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. Credit Card, if uploaded, will only be used for ID verification purposes.
                       </p>
                     </div>
                   </div>

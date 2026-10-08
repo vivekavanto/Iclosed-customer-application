@@ -308,6 +308,8 @@ function customerVisibleTasks(
 
 // Admin-configured order; unordered tasks sort last.
 const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
+const TASK_PAGE_SIZE = 5;
+
 function sortByOrder(a: Task, b: Task): number {
   // Template order first; per-deal order_index can be stale on older files.
   const ao = a.template_order_index ?? a.order_index ?? ORDER_FALLBACK;
@@ -340,6 +342,7 @@ function AttentionCard({
   side: "purchase" | "sale" | null;
 }) {
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
+  const [showAllTasks, setShowAllTasks] = useState(false);
   // Which multi-party task rows are expanded to show their per-party breakdown.
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const prevPendingIdsRef = useRef<string>("");
@@ -541,7 +544,7 @@ function AttentionCard({
         </div>
       ) : (
         <div className="p-3 sm:p-4 space-y-3">
-          {openTasks.map((task, idx) => {
+          {(showAllTasks ? openTasks : openTasks.slice(0, TASK_PAGE_SIZE)).map((task, idx) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
                 month: "long",
@@ -729,7 +732,7 @@ function AttentionCard({
             );
           })}
           {/* Locked until the rest of the list is done */}
-          {lockedTasks.map((task) => (
+          {(showAllTasks ? lockedTasks : lockedTasks.slice(0, Math.max(0, TASK_PAGE_SIZE - openTasks.length))).map((task) => (
             <div
               key={task.id}
               className="rounded-xl border border-dashed border-gray-200 bg-gray-50/70 px-4 sm:px-5 py-4"
@@ -749,6 +752,15 @@ function AttentionCard({
               </div>
             </div>
           ))}
+          {openTasks.length + lockedTasks.length > TASK_PAGE_SIZE && (
+            <button
+              type="button"
+              onClick={() => setShowAllTasks((v) => !v)}
+              className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
+            >
+              {showAllTasks ? "Show less" : `See more (${openTasks.length + lockedTasks.length - TASK_PAGE_SIZE})`}
+            </button>
+          )}
         </div>
       )}
     </div>
