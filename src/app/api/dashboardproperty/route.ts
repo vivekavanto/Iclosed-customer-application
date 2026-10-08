@@ -89,7 +89,7 @@ export async function GET() {
     const { data: deals, error: dealError } = await supabaseAdmin
       .from("deals")
       .select(
-        "id, file_number, type, status, closing_date, selling_closing_date, property_address, price, selling_price, selling_property_address, deposit_amount, lead_id"
+        "id, file_number, type, status, closing_date, selling_closing_date, property_address, price, selling_price, selling_property_address, deposit_amount, building_type, lead_id"
       )
       .eq("client_id", client.id)
       .eq("status", "Active")

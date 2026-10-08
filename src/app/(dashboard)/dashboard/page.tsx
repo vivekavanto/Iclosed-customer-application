@@ -185,6 +185,7 @@ interface DealData {
   selling_price: number | null;
   selling_property_address: string | null;
   deposit_amount: number | null;
+  building_type?: string | null;
 }
 
 /* ─────────────────────────────────────────────
@@ -387,11 +388,13 @@ function AttentionCard({
 
   // Closing-figures review stays locked until every other to-do is done.
   const figuresLocked = trulyPending.some((t) => !isClosingFiguresTask(t.title));
+  // The CSM books signing, so the client can't open it.
+  const isLockedOpen = (t: Task) => (figuresLocked && isClosingFiguresTask(t.title)) || isSigningAppointmentTask(t.title);
   const lockedTasks: LockedTask[] = [
-    ...(figuresLocked ? pending.filter((t) => isClosingFiguresTask(t.title)) : []),
+    ...pending.filter((t) => !isTaskComplete(t) && isLockedOpen(t)),
     ...inactiveTasks,
   ];
-  const openTasks = figuresLocked ? pending.filter((t) => !isClosingFiguresTask(t.title)) : pending;
+  const openTasks = pending.filter((t) => !isLockedOpen(t));
   const tasksForYou = trulyPending.length - (lockedTasks.length - inactiveTasks.length);
 
   // Detect a multi-party task flipping to fully-complete this session: flash it
@@ -750,7 +753,9 @@ function AttentionCard({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm sm:text-base font-bold text-gray-400 leading-snug">{taskDisplayTitle(task.title, side)}</p>
                   <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
-                    Pending — opens once your final closing figures are ready
+                    {isSigningAppointmentTask(task.title)
+                      ? "Your CSM will reach out to you to book a signing appointment"
+                      : "Pending — opens once your final closing figures are ready"}
                   </p>
                 </div>
               </div>
@@ -1401,19 +1406,19 @@ export default function DashboardPage() {
     (activeDeal?.type === "Purchase & Sale" && selectedSide === "sale")
       ? "sale"
       : "purchase";
-  // Unlocks once that side's APS is uploaded.
+  // APS task decides once it exists.
   const intakeAps =
     activeDeal?.type === "Purchase & Sale"
       ? estimateSide === "sale"
         ? activeProperty?.aps_uploaded_sale
         : activeProperty?.aps_uploaded_purchase
       : activeProperty?.aps_uploaded;
-  const apsUploaded = !!intakeAps || tasks.some(
+  const apsTask = tasks.find(
     (t) =>
-      t.completed &&
       (estimateSide === "sale" ? t.side !== "purchase" : t.side !== "sale") &&
       /agreement of purchase/i.test(t.title),
   );
+  const apsUploaded = apsTask ? !!apsTask.completed : !!intakeAps;
 
   // ── Mark task done + refresh ──────────────────────────────
   async function markDone(id: string): Promise<boolean> {
@@ -1816,6 +1821,7 @@ export default function DashboardPage() {
             : (activeDeal?.deposit_amount ?? null)
         }
         closingDate={closingFormatted}
+        propertyType={showSale ? null : (activeDeal?.building_type ?? null)}
         onClose={() => setPropertyDetailsOpen(false)}
         onSaved={(submitted) => {
           setPropertyDetailsOpen(false);

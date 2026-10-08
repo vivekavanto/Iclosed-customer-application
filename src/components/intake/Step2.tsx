@@ -44,8 +44,6 @@ interface Step2Props {
     setPurchasePrice: (value: string) => void;
     sellingPrice: string;
     setSellingPrice: (value: string) => void;
-    depositAmount: string;
-    setDepositAmount: (value: string) => void;
     propertyType: string;
     setPropertyType: (value: string) => void;
     closingDate: string;
@@ -98,8 +96,6 @@ function PropertyDetailsForm({
     priceValue,
     onPriceChange,
     priceError,
-    depositValue,
-    onDepositChange,
     propertyTypeValue,
     onPropertyTypeChange,
     closingDateValue,
@@ -120,9 +116,6 @@ function PropertyDetailsForm({
     priceValue: string;
     onPriceChange: (value: string) => void;
     priceError: string;
-    /** Omit on a sale card — deposits are only captured for purchases. */
-    depositValue?: string;
-    onDepositChange?: (value: string) => void;
     /** Purchase cards only. */
     propertyTypeValue?: string;
     onPropertyTypeChange?: (value: string) => void;
@@ -205,26 +198,6 @@ function PropertyDetailsForm({
                             <p className="text-xs text-red-600">Please select the property type.</p>
                         )}
                     </div>
-                )}
-
-                {/* Deposit. Still not REQUIRED to submit — it just isn't
-                    labelled as optional: the hint invited people to skip a
-                    figure the firm wants, and the closing-cost estimator
-                    prefills "Deposit already paid" from it. Purchases only. */}
-                {onDepositChange && (
-                    <Field>
-                        <Input
-                            label="Deposit Amount"
-                            id={`${prefix}-deposit`}
-                            type="text"
-                            value={depositValue}
-                            onChange={(e) => {
-                                onDepositChange(formatCurrency(e.target.value));
-                                onFieldTouched("depositAmount");
-                            }}
-                            placeholder="$50,000"
-                        />
-                    </Field>
                 )}
 
                 {/* Closing date. Printed on the APS, so it prefills from an
@@ -350,8 +323,6 @@ const Step2: React.FC<Step2Props> = ({
     setPurchasePrice,
     sellingPrice,
     setSellingPrice,
-    depositAmount,
-    setDepositAmount,
     propertyType,
     setPropertyType,
     closingDate,
@@ -568,8 +539,6 @@ const Step2: React.FC<Step2Props> = ({
                                     priceValue={purchasePrice}
                                     onPriceChange={setPurchasePrice}
                                     priceError={priceError}
-                                    depositValue={depositAmount}
-                                    onDepositChange={setDepositAmount}
                                     propertyTypeValue={propertyType}
                                     onPropertyTypeChange={setPropertyType}
                                     closingDateValue={closingDate}
@@ -613,8 +582,6 @@ const Step2: React.FC<Step2Props> = ({
                                 priceValue={purchasePrice}
                                 onPriceChange={setPurchasePrice}
                                 priceError={priceError}
-                                depositValue={isSelling ? undefined : depositAmount}
-                                onDepositChange={isSelling ? undefined : setDepositAmount}
                                 propertyTypeValue={isSelling ? undefined : propertyType}
                                 onPropertyTypeChange={isSelling ? undefined : setPropertyType}
                                 closingDateValue={closingDate}

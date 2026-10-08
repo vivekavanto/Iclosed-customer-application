@@ -85,7 +85,8 @@ export async function generateDraftStatementPdf(opts: {
   const row = (line: DraftLine, shaded: boolean, labelFont = line.total ? bold : regular) => {
     const amountW = bold.widthOfTextAtSize(line.amount, ROW_SIZE);
     const labelW = CONTENT_W - amountW - PAD_X * 4;
-    const labelLines = wrapText(line.label, labelFont, ROW_SIZE, labelW);
+    const text = `${line.hstFootnote ? "*" : ""}${line.label}${line.hst ? "*" : ""}`;
+    const labelLines = wrapText(text, labelFont, ROW_SIZE, labelW);
     const noteLines = line.note ? wrapText(line.note, regular, ROW_NOTE_SIZE, labelW) : [];
     const h = PAD_Y * 2 + labelLines.length * (ROW_SIZE + 2.5) + noteLines.length * (ROW_NOTE_SIZE + 2);
     ensureSpace(h);
@@ -143,7 +144,7 @@ export async function generateDraftStatementPdf(opts: {
   }
 
   // Template footer on every page.
-  const site = firm.supportEmail.split("@")[1] ?? "";
+  const site = "iclosed.ca";
   const footer = [site, "Draft statement of account", "E. & O.E."].filter(Boolean).join("  ·  ");
   for (const p of doc.getPages()) {
     p.drawText(footer, {

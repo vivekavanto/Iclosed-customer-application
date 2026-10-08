@@ -93,7 +93,7 @@ export default function ServiceSelection() {
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
-  // Optional deposit held under the agreement — purchase side only.
+  // Filled from the APS read.
   const [depositAmount, setDepositAmount] = useState("");
   const [propertyType, setPropertyType] = useState("");
   // Closing (completion) date — on the APS, so it prefills from an upload.
@@ -862,8 +862,6 @@ export default function ServiceSelection() {
             setPurchasePrice={setPurchasePrice}
             sellingPrice={sellingPrice}
             setSellingPrice={setSellingPrice}
-            depositAmount={depositAmount}
-            setDepositAmount={setDepositAmount}
             propertyType={propertyType}
             setPropertyType={setPropertyType}
             closingDate={closingDate}

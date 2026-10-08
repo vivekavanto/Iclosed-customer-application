@@ -2,7 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeal } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isIlaTask, isTreefortTask } from "@/lib/taskKinds";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -246,7 +246,7 @@ export async function GET(req: Request) {
             const titleKey = `${side ?? "_"}:${tt.name?.trim().toLowerCase()}`;
             if (existingTitleKeys.has(titleKey)) return false;
             if (singleParty && isHoldTitleTask(tt.name)) return false;
-            if (isTreefortTask(tt.name)) return false;
+            if (isTreefortTask(tt.name) || isIlaTask(tt.name)) return false;
             const role = (tt.role_type ?? "").toLowerCase();
             return role === "client" || role === "both" || role === "";
           })

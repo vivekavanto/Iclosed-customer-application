@@ -126,6 +126,7 @@ Edge-case policy:
   - side="front" is the photo / biodata page (photograph, name, date of birth, passport number, machine-readable zone).
   - side="back" is the reverse of that page or the facing page — typically the signature/endorsement page, the observations page, or the inside back cover. It usually has no photograph and may carry only printed text, a signature line, or a barcode. This is VALID and must be recognized as a passport back, not rejected as "not identification".
   - side="front-and-back" if both the photo page and its reverse/facing page are visible together (e.g. an open passport photographed across both pages, or two pages scanned into one file).
+  - SIGNATURE CHECK: Canadian passports have a dedicated "Signature of bearer" line on the inside front cover / signature page. If that signature page is visible as part of the upload and the signature line is blank/unsigned, set "is_complete": false and say in "reason" that the passport is missing the bearer's signature. If the signature page or signature line is not visible at all (e.g. only the photo page was uploaded), that is covered by the normal missing-back-side rule below, not this one.
 - Cards (Driver's License, PR Card, Citizenship Card, NEXUS, plastic SIN, generic Government-issued Photo ID Card, Credit Card) are "front-and-back" required.
 - DRIVER'S LICENSE BACK SIDE DETECTION: The back of a driver's license is VALID identification and must be recognized. Driver's license backs typically contain: a 2D barcode (PDF417), magnetic stripe, additional text/numbers, and sometimes a signature. If you see any of these elements along with a card format, classify it as "Driver's License" with side="back". Do NOT reject driver's license backs as invalid.
 - CREDIT CARD: a physical credit card (Visa / Mastercard / Amex etc.) IS acceptable. Use the exact label "Credit Card (with signature)". It requires BOTH sides: side_requirement="front-and-back". The front carries the card number, cardholder name and brand logo; the back must show the SIGNATURE STRIP WITH A HANDWRITTEN SIGNATURE. If the back is visible but the signature strip is blank/unsigned, set "is_complete": false and say in "reason" that the back of the credit card must be signed. Debit cards, bank cards and prepaid/gift cards remain REJECTED, as do credit card statements or photos of a card number on paper.
@@ -147,6 +148,7 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
       "side": "front" | "back" | "front-and-back" | "unknown",
       "side_requirement": "front-and-back" | "unknown",
       "is_complete": boolean,
+      "signature_present": boolean | null,
       "confidence": "high" | "medium" | "low",
       "expiry_date": string | null
     }
@@ -159,10 +161,17 @@ Respond with ONLY a valid JSON object (no markdown, no code fences, no commentar
   "reason": string
 }
 
+Rules for "signature_present" (PASSPORTS ONLY — return null for every other document type, including driver's licenses and credit cards):
+- true ONLY if the passport's signature page ("Signature of bearer" / "Signature du titulaire") is visible AND there is clearly visible handwritten ink on the signature line
+- false if the signature page is visible but the signature line is blank/empty. A faint printed line, security printing or background artwork is NOT a signature — if you cannot clearly see handwritten ink, return false
+- null if the signature page is not visible (e.g. only the photo page was uploaded)
+
 Rules for "is_complete":
 - true ONLY if side is "front-and-back" — i.e. both sides of that ID are visible in this file
 - false if only "front" or only "back" is shown, for every document type including passports
 - false if side is "unknown"
+- false if a Canadian or foreign passport's signature page is visible but the "Signature of bearer" line is blank/unsigned (see SIGNATURE CHECK above)
+- false if a credit card's signature strip is visible but blank/unsigned (see CREDIT CARD rule below)
 
 If "contains_identification" is false, return an empty documents array and explain in "reason" exactly what the document appears to be (e.g. "Ontario Health Card — not acceptable under LSO By-Law 7.1").`;
 }
@@ -186,6 +195,9 @@ interface DocumentEntry {
   side: Side;
   side_requirement: SideRequirement;
   is_complete: boolean;
+  // Passports only: true = signature page visible and signed, false = visible
+  // but blank, null = not visible / not a passport.
+  signature_present: boolean | null;
   confidence: Confidence;
   expiry_date: string | null;
   expiry_status: ExpiryStatus;
@@ -296,7 +308,7 @@ function parseGeminiJson(text: string): IdentificationResult {
       .filter((d) =>
         typeof d?.document_type === "string" && d.document_type.trim().length > 0
       )
-      .map((d) => d as { document_type: string; side?: unknown; side_requirement?: unknown; is_complete?: unknown; confidence?: unknown; expiry_date?: unknown })
+      .map((d) => d as { document_type: string; side?: unknown; side_requirement?: unknown; is_complete?: unknown; signature_present?: unknown; confidence?: unknown; expiry_date?: unknown })
       .map((d) => {
         const expiry = parseExpiryDate(d.expiry_date);
         return {
@@ -304,6 +316,7 @@ function parseGeminiJson(text: string): IdentificationResult {
           side: parseSide(d.side),
           side_requirement: parseSideRequirement(d.side_requirement),
           is_complete: Boolean(d.is_complete),
+          signature_present: typeof d.signature_present === "boolean" ? d.signature_present : null,
           confidence: parseConfidence(d.confidence),
           expiry_date: expiry.date,
           expiry_status: expiry.status,

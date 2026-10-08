@@ -10,8 +10,7 @@ owner: Saru Kanapathipillai
 
 tax:
   hst_rate: 0.13
-  # HST applies to legal fees plus our own disbursements (software, file administration).
-  # Registration and search lines are shown tax included and passed through at cost.
+  # HST on legal fees, searches, software and file administration; registrations at cost.
   hst_on_levy: false  # Decided 2026-09-30: the $65 LAWPRO levy is inclusive of tax. No HST on top.
 
 file_types:
@@ -23,7 +22,7 @@ file_types:
     disbursements:
       registration_of_transfer: { amount: 85.00, when: always }
       registration_of_charge:   { amount: 85.00, when: has_mortgage, per: charge }
-      searches:                 { amount: 175.00, estimate: true, range: [150.00, 250.00] }
+      searches:                 { amount: 175.00, estimate: true, hst: true, range: [150.00, 250.00] }
       software:                 { amount: 285.00, hst: true }
       file_administration:      { amount: 85.00, hst: true }
     disbursements_label: Estimated disbursements
@@ -57,7 +56,7 @@ file_types:
       includes_payouts: [first_mortgage]
     disbursements:
       registration_of_charge: { amount: 85.00, when: always, per: charge }
-      searches:               { amount: 150.00, estimate: true, range: [100.00, 200.00] }
+      searches:               { amount: 150.00, estimate: true, hst: true, range: [100.00, 200.00] }
       software:               { amount: 285.00, hst: true }
       file_administration:    { amount: 135.00, hst: true, note: "includes SureFund" }
     disbursements_label: Disbursements
@@ -80,7 +79,7 @@ file_types:
     disbursements:               # all at final closing
       registration_of_transfer: { amount: 85.00, when: always }
       registration_of_charge:   { amount: 85.00, when: has_mortgage, per: charge }
-      searches:                 { amount: 175.00, estimate: true, range: [150.00, 250.00], note: "higher with several PINs (unit, parking, locker)" }
+      searches:                 { amount: 175.00, estimate: true, hst: true, range: [150.00, 250.00], note: "higher with several PINs (unit, parking, locker)" }
       software:                 { amount: 285.00, hst: true }
       file_administration:      { amount: 85.00, hst: true }
     occupancy_disbursements:

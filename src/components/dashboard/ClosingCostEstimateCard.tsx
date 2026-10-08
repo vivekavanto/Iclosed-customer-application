@@ -20,19 +20,20 @@ const ClosingCostEstimateCard: React.FC<{
   kind?: "purchase" | "sale";
 }> = ({ href, onEstimate, locked = false, kind = "purchase" }) => {
   const heading = kind === "sale" ? "Estimate your sale proceeds" : "Estimate your closing cost";
+  const task = kind === "sale" ? "Upload your sale agreement" : "Upload your purchase agreement";
   const subtitle = locked
-    ? "Upload your Agreement of Purchase and Sale to unlock"
+    ? `To activate the Estimate button, upload your Agreement of Purchase and Sale in the “${task}” task.`
     : kind === "sale"
       ? "Based on your quote and mortgage balance"
       : "Based on your quote and purchase price";
   const buttonClass =
-    "flex-shrink-0 inline-flex items-center justify-center rounded-lg bg-[#C10007] px-4 py-2 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#a30006] disabled:cursor-not-allowed disabled:opacity-60";
+    "flex-shrink-0 inline-flex items-center justify-center rounded-lg bg-[#C10007] px-4 py-2 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#a30006] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500";
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 px-5 py-4 shadow-sm flex items-center gap-4">
       <div className="flex-1 min-w-0">
         <h3 className="text-sm font-bold text-gray-900">{heading}</h3>
-        <p className="text-xs text-gray-500 leading-snug mt-0.5">{subtitle}</p>
+        <p className={`text-xs leading-snug mt-0.5 ${locked ? "text-gray-400" : "text-gray-500"}`}>{subtitle}</p>
       </div>
 
       {href && !locked ? (

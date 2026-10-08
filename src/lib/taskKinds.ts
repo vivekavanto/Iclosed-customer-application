@@ -74,3 +74,7 @@ export function isHoldTitleField(label: string | null | undefined): boolean {
   const l = (label ?? "").toLowerCase();
   return l.includes("how would you like to hold title") || (l.includes("hold title") && l.includes("tenants in common"));
 }
+
+export function isIlaTask(title: string | null | undefined): boolean {
+  return (title ?? "").toLowerCase().includes("independent legal advice");
+}

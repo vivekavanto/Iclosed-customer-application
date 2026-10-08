@@ -334,7 +334,7 @@ export function buildRetainerAgreement(fees: IclosedFees, input: RetainerAgreeme
 
   return {
     title: copy.title,
-    meta: [input.property, input.fileNo ? `File ${input.fileNo}` : "", longDate(input.date), getFirm(input.firmKey).introName].filter(Boolean),
+    meta: [input.property, input.fileNo ? `File ${input.fileNo}` : "", longDate(input.date), getFirm(input.firmKey).introName.replace("iClosed LLP", "iClosed powered by Nava Wilson")].filter(Boolean),
     sections: [
       {
         label: "Your lawyer.",

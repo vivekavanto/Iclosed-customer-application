@@ -32,7 +32,7 @@ const RULES: TaskDescriptionRule[] = [
     match: "status certificate",
     sides: ["purchase"],
     description:
-      "Please upload the condo's status certificate. We review it for fees, reserve fund health, special assessments and legal issues before you close.",
+      "For resale condos, please upload the status certificate from the condo corporation. It shows the building’s finances, monthly fees and any legal issues.",
   },
   {
     match: "ownership shares",

@@ -24,6 +24,7 @@ export interface PurchaseDraftInput {
   discount: number | null;
   /** Picks the FCT condo or freehold rate. */
   propertyType?: PropertyType | null;
+  commonExpenses?: number | null;
 }
 
 /** File inputs; the client adds mortgage and first-time buyer. */
@@ -37,6 +38,8 @@ export interface DraftLine {
   tip?: string;
   amount: string;
   total?: boolean;
+  hst?: boolean;
+  hstFootnote?: boolean;
   /** Screen-only overrides; the PDF ignores them. */
   screen?: { label?: string; amount?: string; estimate?: boolean; hidden?: boolean };
 }
@@ -167,17 +170,17 @@ function disbursementCopy(
 
 // Item descriptions from the v6 template (spec Appendix A6).
 const LTT_NOTE =
-  "This is a government tax, not a fee we set. Ontario charges it everywhere in the province. The City of Toronto charges its own Land Transfer Tax on top for properties located in Toronto. We claim both first-time buyer rebates on your behalf so you pay the reduced amount and do not apply for anything afterwards.";
+  "This is a government tax, not a fee we set. Ontario charges it everywhere in the province. The City of Toronto charges its own Land Transfer Tax on top for properties located in Toronto.";
 const TITLE_NOTE =
-  "A one-time premium, set by the insurer, based on your price and property type. It covers title fraud, defects and survey issues for as long as you own the home. Obtaining Title Insurance is a requirement imposed by your lender.";
+  "A one-time premium, set by the insurer, based on your purchase price and property type. It covers title fraud, defects and survey issues for as long as you own the home. Obtaining Title Insurance is a requirement imposed by your lender.";
 const DISBURSEMENTS_NOTE =
-  "Registry and search lines are shown tax included. We pass them through at cost and do not mark them up. We do not charge for photocopies, printing, postage, phone calls, emails or meetings.";
+  "Registration lines are government fees, passed through at cost with no HST.";
 // Short info-icon text for the purchase estimate on screen.
 const TIPS = {
   propertyTax: "A credit or a charge, depending on what the seller has paid.",
+  commonExpense: "Monthly common expenses from your agreement of purchase and sale.",
   toronto: "Only inside City of Toronto limits.",
   title: "One-time premium set by the insurer, based on price and property type. Covers title fraud and defects.",
-  hst: "Charged on legal fees, searches, software and document preparation, file administration and the land transfer tax administration fee.",
 } as const;
 
 const DISBURSEMENT_TIPS: Record<string, string> = {
@@ -194,7 +197,7 @@ const LTT_SCREEN_NOTE =
 const LTT_SCREEN_NOTE_ONTARIO = "A government tax, not our fee. We claim any first-time buyer rebate for you.";
 const TITLE_SCREEN_NOTE = "Required by your lender. One-time premium, based on your price and property type.";
 const DISBURSEMENTS_SCREEN_NOTE =
-  "Registry and search lines are shown tax included. We pass them through at cost and do not mark them up.";
+  "Registration lines are government fees, passed through at cost with no HST.";
 const FUNDS_NOTE = "We will confirm this figure in writing before closing, once the final statement of adjustments is in.";
 
 // Fills the fee-file figures into a purchase disbursement tip.
@@ -216,8 +219,12 @@ export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput)
 
   const deposit = input.deposit ?? 0;
   const mortgage = input.mortgage ?? 0;
+  const commonExpense =
+    condo && input.commonExpenses ? round2(input.commonExpenses) : null;
   const balanceDue =
-    input.propertyTaxAdjustment === null ? null : round2(input.price - deposit + input.propertyTaxAdjustment);
+    input.propertyTaxAdjustment === null
+      ? null
+      : round2(input.price - deposit + input.propertyTaxAdjustment + (commonExpense ?? 0));
   const fundsRequired =
     balanceDue === null ? null : round2(balanceDue - mortgage + f.total + ltt.total + title);
 
@@ -246,6 +253,7 @@ export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput)
       {
         ...copy,
         tip: disbursementTip(fees, l.key),
+        hst: l.hst,
         amount: `${l.estimate ? "approx. " : ""}${money(l.amount)}`,
         screen: l.estimate ? { amount: money(l.amount), estimate: true } : undefined,
       },
@@ -273,6 +281,9 @@ export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput)
             tip: TIPS.propertyTax,
             screen: { estimate: true },
           },
+          ...(commonExpense === null
+            ? []
+            : [{ label: "Common expense adjustment", amount: money(commonExpense), tip: TIPS.commonExpense, screen: { estimate: true } }]),
           { label: "Estimated balance due on closing", amount: amount(balanceDue), total: true },
         ],
       },
@@ -304,6 +315,7 @@ export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput)
           {
             label: "Purchase legal fees",
             amount: money(f.legalFees),
+            hst: true,
             screen: { label: hasMortgage === false ? "Purchase, for title transfer" : "Purchase, for title transfer and mortgage" },
           },
           // Template: only when a discount is applied.
@@ -320,9 +332,9 @@ export function buildPurchaseDraft(fees: IclosedFees, input: PurchaseDraftInput)
         title: "HST",
         lines: [
           {
-            label: `HST at ${Math.round(fees.tax.hst_rate * 100)}% on our legal fees and our own disbursements`,
+            label: `HST at ${Math.round(fees.tax.hst_rate * 100)}% where applicable as per Excise Tax Act`,
             amount: money(f.hst),
-            tip: TIPS.hst,
+            hstFootnote: true,
           },
         ],
       },
@@ -396,7 +408,7 @@ export function buildRefinanceDraft(fees: IclosedFees, input: RefinanceDraftInpu
   const disbLines: DraftLine[] = f.disbursementLines.flatMap((l) => {
     const copy = disbursementCopy(fees, "refinance", l.key);
     if (!copy) return [];
-    return [{ ...copy, amount: `${l.estimate ? "approx. " : ""}${money(l.amount)}` }];
+    return [{ ...copy, hst: l.hst, amount: `${l.estimate ? "approx. " : ""}${money(l.amount)}` }];
   });
   disbLines.push({ label: "Total Disbursements", amount: money(f.disbursements), total: true });
 
@@ -417,7 +429,7 @@ export function buildRefinanceDraft(fees: IclosedFees, input: RefinanceDraftInpu
       {
         title: "Legal fees",
         lines: [
-          { label: "Refinance, including first mortgage payout", amount: money(f.legalFees) },
+          { label: "Refinance, including first mortgage payout", amount: money(f.legalFees), hst: true },
           ...(f.discount > 0 ? [{ label: "Discount", amount: less(f.discount) }] : []),
         ],
       },
@@ -426,8 +438,9 @@ export function buildRefinanceDraft(fees: IclosedFees, input: RefinanceDraftInpu
         title: "HST",
         lines: [
           {
-            label: `HST at ${Math.round(fees.tax.hst_rate * 100)}% on our legal fees and our own disbursements`,
+            label: `HST at ${Math.round(fees.tax.hst_rate * 100)}% where applicable as per Excise Tax Act`,
             amount: money(f.hst),
+            hstFootnote: true,
           },
         ],
       },
@@ -529,6 +542,7 @@ export function buildSaleDraft(fees: IclosedFees, input: SaleDraftInput): SaleDr
     return [
       {
         ...copy,
+        hst: l.hst,
         amount: `${l.estimate ? "approx. " : ""}${money(l.amount)}`,
         screen: l.estimate ? { amount: money(l.amount), estimate: true } : undefined,
       },
@@ -541,7 +555,7 @@ export function buildSaleDraft(fees: IclosedFees, input: SaleDraftInput): SaleDr
     {
       title: "Legal fees",
       lines: [
-        { label: "Sale, including first mortgage, property tax and commission payout", amount: money(f.legalFees) },
+        { label: "Sale, including first mortgage, property tax and commission payout", amount: money(f.legalFees), hst: true },
         // Template: only when a discount is applied.
         ...(f.discount > 0 ? [{ label: "Discount", amount: less(f.discount) }] : []),
       ],
@@ -551,9 +565,9 @@ export function buildSaleDraft(fees: IclosedFees, input: SaleDraftInput): SaleDr
       title: "HST",
       lines: [
         {
-          label: `HST at ${Math.round(hstRate * 100)}% on our legal fees and our own disbursements`,
+          label: `HST at ${Math.round(hstRate * 100)}% where applicable as per Excise Tax Act`,
           amount: money(f.hst),
-          tip: EXPLANATIONS.hst,
+          hstFootnote: true,
         },
       ],
     },

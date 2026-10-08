@@ -59,6 +59,23 @@ export async function readApsDeposit(
   return readAll("quality");
 }
 
+// Stores condo fees beside the intake read, where the draft looks.
+async function saveCommonExpenses(dealIds: string[], value: string, confidence: string): Promise<void> {
+  const { data: deals } = await supabaseAdmin.from("deals").select("lead_id").in("id", dealIds);
+  const leadIds = (deals ?? []).map((d) => d.lead_id).filter(Boolean);
+  if (leadIds.length === 0) return;
+  const { data: leads } = await supabaseAdmin.from("leads").select("id, aps_extraction").in("id", leadIds);
+  for (const lead of leads ?? []) {
+    const aps = (lead.aps_extraction ?? {}) as Record<string, { result?: Record<string, unknown> } | undefined>;
+    const purchase = aps.purchase ?? {};
+    const next = {
+      ...aps,
+      purchase: { ...purchase, result: { ...(purchase.result ?? {}), common_expenses: { value, confidence } } },
+    };
+    await supabaseAdmin.from("leads").update({ aps_extraction: next }).eq("id", lead.id);
+  }
+}
+
 /** Sets the deal family's deposit from task APS uploads. */
 export async function fillDealDepositFromAps(opts: {
   dealId: string;
@@ -84,12 +101,14 @@ export async function fillDealDepositFromAps(opts: {
   if (!read) return;
   const { merged, deposit } = read;
   const took = `${((Date.now() - startedAt) / 1000).toFixed(1)}s`;
+  const dealIds = [dealId, ...(await getLinkedDealIds(dealId))];
+  const commonExpenses = merged.is_aps ? normalizeAmount(merged.common_expenses?.value, { min: 1 }) : null;
+  if (apsSide === "purchase" && commonExpenses) await saveCommonExpenses(dealIds, commonExpenses, merged.common_expenses?.confidence ?? "low");
   if (!deposit) {
     console.log(`[aps-deposit] deal=${dealId} no deposit read from ${fileUrls.length} file(s) in ${took}`);
     return;
   }
 
-  const dealIds = [dealId, ...(await getLinkedDealIds(dealId))];
   if (sellingColumn) {
     const { data: linked } = await supabaseAdmin.from("deals").select("lead_id").in("id", dealIds);
     const ids = (linked ?? []).map((d) => d.lead_id).filter(Boolean);

@@ -12,11 +12,13 @@ import {
   Camera,
   RotateCcw,
   ArrowRight,
+  ChevronDown,
   FileText,
   Trash2,
   Plus,
   Loader2,
   ShieldCheck,
+  ShieldAlert,
   Clock,
 } from "lucide-react";
 import { upload } from "@vercel/blob/client";
@@ -89,9 +91,19 @@ interface DocumentEntry {
   side: "front" | "back" | "front-and-back" | "unknown";
   sideRequirement: "single-sided" | "front-and-back" | "unknown";
   isComplete: boolean;
+  // Passports only: true = signed, false = signature page visible but blank,
+  // null/undefined = not visible or not a passport.
+  signaturePresent?: boolean | null;
   confidence: "high" | "medium" | "low";
   expiryDate: string | null;
   expiryStatus: ExpiryStatus;
+}
+
+// A passport is unsigned when the detector saw the signature page and the line
+// was blank. Other IDs (credit cards) keep the is_complete-based check.
+function isUnsignedDoc(d: Pick<DocumentEntry, "documentType" | "side" | "isComplete" | "signaturePresent">): boolean {
+  if (/passport/i.test(d.documentType)) return d.signaturePresent === false;
+  return d.side === "front-and-back" && !d.isComplete;
 }
 
 interface DetectionResult {
@@ -110,6 +122,17 @@ interface DetectionResult {
     completeDocuments: number;
     documentTypesFound: string[];
   };
+}
+
+// custom_type stored with an uploaded document: "<type>_<side>", plus
+// "_unsigned" for a passport whose signature page is blank so the block
+// survives a Save-as-Draft → return round trip.
+function buildCustomType(det: DetectionResult | null): string {
+  if (!det?.documentType) return "identification";
+  const unsignedPassport =
+    /passport/i.test(det.documentType) &&
+    !!det.multipleDocuments?.some((d) => d.documentType === det.documentType && isUnsignedDoc(d));
+  return `${det.documentType}${det.side !== "unknown" ? `_${det.side}` : ""}${unsignedPassport ? "_unsigned" : ""}`;
 }
 
 interface SelectedFile {
@@ -224,8 +247,8 @@ function formatExistingDocLabel(customType: string | null): string {
 
   if (customType === "identification") return "Identification";
 
-  // Detection-derived format: "<Document Type>_<side>"
-  const match = /^(.*)_(front-and-back|front|back)$/i.exec(customType);
+  // Detection-derived format: "<Document Type>_<side>[_unsigned]"
+  const match = /^(.*)_(front-and-back|front|back)(_unsigned)?$/i.exec(customType);
   if (match) {
     const type = match[1];
     const side = match[2].toLowerCase();
@@ -420,6 +443,7 @@ async function fetchDetection(
         side: "front" | "back" | "front-and-back" | "unknown";
         side_requirement: "single-sided" | "front-and-back" | "unknown";
         is_complete: boolean;
+        signature_present?: boolean | null;
         confidence: "high" | "medium" | "low";
         expiry_date: string | null;
         expiry_status: ExpiryStatus;
@@ -436,6 +460,7 @@ async function fetchDetection(
       side: d.side,
       sideRequirement: d.side_requirement,
       isComplete: d.is_complete,
+      signaturePresent: d.signature_present ?? null,
       confidence: d.confidence,
       expiryDate: d.expiry_date ?? null,
       expiryStatus: d.expiry_status ?? "unknown",
@@ -597,20 +622,94 @@ function discardUploadedBlob(blobUrl: string | null | undefined) {
 
 // ── Acceptable Documents Section (LSO By-Law 7.1) ────────────────────────────
 
-const ACCEPTED_IDS = [
-  "Canadian Passport",
-  "Canadian Driver's License",
-  "Canadian Citizenship Card",
-  "Permanent Resident Card",
-  "NEXUS Card",
-  "SIN Card (plastic)",
-  "Foreign Passport",
-  "Government-issued Photo ID",
-  "Credit card (with your name)",
-  "Birth Certificate",
-];
+function AcceptableDocumentsSection() {
+  const acceptableDocs = [
+    "Canadian Passport",
+    "Canadian Driver's License",
+    "Canadian Citizenship Card",
+    "Canadian Permanent Resident Card",
+    "US or Canadian NEXUS Card",
+    "Canadian SIN Card (plastic only)",
+    "Foreign Passport",
+    "Canadian Government-issued Photo ID Card",
+    "Credit Card (with signature)",
+    "Birth Certificate",
+  ];
 
-const NOT_ACCEPTED_IDS = ["Health cards (e.g. OHIP)", "Paper citizenship certificates", "Expired ID"];
+  return (
+    <div className="rounded-xl border border-[#C10007]/20 bg-[#FEF2F2] overflow-hidden">
+      <div className="px-4 py-3.5 border-b border-[#C10007]/10">
+        <span className="text-sm font-bold text-gray-900">
+          Acceptable Identification Documents
+        </span>
+      </div>
+      <div className="px-4 py-4 bg-white space-y-4">
+        <p className="text-xs text-gray-600 leading-relaxed">
+          Please provide{" "}
+          <span className="font-bold text-[#C10007]">two different pieces of identification</span>{" "}
+          from the list below for identity verification. We need{" "}
+          <span className="font-semibold text-gray-800">both sides of each ID</span> — for a
+          passport, that is the photo page and the signature page, and for a credit card the back
+          must show your signature.
+        </p>
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          {acceptableDocs.map((doc) => (
+            <div key={doc} className="flex items-center gap-2 text-xs text-gray-700">
+              <CheckCircle2 size={13} className="text-green-500 flex-shrink-0" />
+              <span>{doc}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
+          <AlertCircle size={13} className="text-[#C10007] flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-500">
+            <span className="font-semibold text-gray-700">Note:</span> Health cards and
+            Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be
+            used for ID verification purposes.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Why Identification Required Dropdown ───────────────────────────────────────
+
+function WhyIdentificationRequiredDropdown() {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+      >
+        <span className="text-sm font-medium text-gray-700">
+          Why is Identification Required?
+        </span>
+        <ChevronDown
+          size={18}
+          className={`text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+      {isOpen && (
+        <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2 text-xs text-gray-600 leading-relaxed">
+          <p>
+            Government-issued identification is required to verify your identity and comply with
+            legal requirements for property transactions.
+          </p>
+          <p>
+            This helps prevent fraud and ensures all parties are properly identified before
+            proceeding with the closing.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -628,7 +727,6 @@ export default function UploadIdentificationDrawer({
   // Manual upload state
   const [selected, setSelected] = useState<SelectedFile[]>([]);
   const [existing, setExisting] = useState<ExistingDoc[]>([]);
-  const [uploadMode, setUploadMode] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -1246,7 +1344,7 @@ export default function UploadIdentificationDrawer({
     for (const doc of existing) {
       if (!doc.custom_type) continue;
       const prefix = doc.custom_type
-        .replace(/_front$|_back$|_front-and-back$/i, "")
+        .replace(/_front(_unsigned)?$|_back(_unsigned)?$|_front-and-back(_unsigned)?$/i, "")
         .toLowerCase()
         .trim();
       if (prefix) existingPrefixes.add(prefix);
@@ -1469,6 +1567,11 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (hasUnsignedDocs) {
+      setGlobalError("Signature missing — the signature page of your ID is visible but unsigned. Please sign it and re-upload.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (completeDocCount < 2) {
       setGlobalError("Please provide two valid pieces of ID (2/2) before submitting.");
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1495,9 +1598,7 @@ export default function UploadIdentificationDrawer({
           );
         }
         // Use detected document type and side as custom_type
-        const customType = s.detection?.documentType
-          ? `${s.detection.documentType}${s.detection.side !== "unknown" ? `_${s.detection.side}` : ""}`
-          : "identification";
+        const customType = buildCustomType(s.detection);
         try {
           const url = await registerUploadedDoc({
             leadId,
@@ -1580,6 +1681,11 @@ export default function UploadIdentificationDrawer({
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
+    if (hasUnsignedDocs) {
+      setGlobalError("Signature missing — the signature page of your ID is visible but unsigned. Please sign it and re-upload.");
+      verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (completeDocCount < 2) {
       setGlobalError("Please provide two valid pieces of ID (2/2) before submitting.");
       verificationStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1634,9 +1740,7 @@ export default function UploadIdentificationDrawer({
             `${s.file.name}: ${s.uploadError ?? "this file was not uploaded successfully. Please remove it and try again."}`,
           );
         }
-        const customType = s.detection?.documentType
-          ? `${s.detection.documentType}${s.detection.side !== "unknown" ? `_${s.detection.side}` : ""}`
-          : "identification";
+        const customType = buildCustomType(s.detection);
         try {
           await registerUploadedDoc({
             leadId,
@@ -1702,7 +1806,7 @@ export default function UploadIdentificationDrawer({
   // `docAnalysis` from the sides actually present, so keeping a field here named
   // "isComplete" that no longer decides completeness would only mislead. Both
   // values are still persisted with the document by `detectionFields()`.
-  const detectedDocs: { type: string; side: string; fileId: string; expired: boolean }[] = [];
+  const detectedDocs: { type: string; side: string; fileId: string; expired: boolean; unsigned: boolean }[] = [];
   for (const s of selected) {
     if (s.detection?.isIdentification) {
       const expired = s.detection.expiryStatus === "expired";
@@ -1714,6 +1818,10 @@ export default function UploadIdentificationDrawer({
             side: doc.side,
             fileId: s.id,
             expired,
+            // Both required sides are present but the detector flagged the
+            // document itself incomplete — this is the signature-missing
+            // case (blank signature page/strip), not a missing-side case.
+            unsigned: isUnsignedDoc(doc),
           });
         }
       } else if (s.detection.documentType) {
@@ -1723,6 +1831,7 @@ export default function UploadIdentificationDrawer({
           side: s.detection.side,
           fileId: s.id,
           expired,
+          unsigned: false,
         });
       }
     }
@@ -1740,8 +1849,9 @@ export default function UploadIdentificationDrawer({
     if (ct === "identification") continue;
     if (LABEL_OPTIONS.some((o) => o.value === ct)) continue;
 
-    const match = /^(.*)_(front-and-back|front|back)$/i.exec(ct);
+    const match = /^(.*)_(front-and-back|front|back)(_unsigned)?$/i.exec(ct);
     const type = match ? match[1] : ct;
+    const unsignedDraft = !!match?.[3];
     // No side suffix means the side was never established — detection returned
     // "unknown" (custom_type is written without a suffix in that case), or the
     // row predates side tracking. Reading that as "front-and-back" would let a
@@ -1754,7 +1864,7 @@ export default function UploadIdentificationDrawer({
     //
     // Expiry isn't persisted on previously-uploaded docs, so we can't re-check
     // it here — treat as not-expired (the draft save already screened them).
-    detectedDocs.push({ type, side, fileId: doc.id, expired: false });
+    detectedDocs.push({ type, side, fileId: doc.id, expired: false, unsigned: unsignedDraft });
   }
 
   // Group by document type
@@ -1766,7 +1876,7 @@ export default function UploadIdentificationDrawer({
   }, {});
 
   // Analyze each document type for side coverage
-  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; complete: boolean; expired: boolean }[] = [];
+  const docAnalysis: { type: string; hasFront: boolean; hasBack: boolean; hasBothSides: boolean; complete: boolean; expired: boolean; unsigned: boolean }[] = [];
   for (const [type, docs] of Object.entries(docTypeGroups)) {
     const hasFront = docs.some(d => d.side === "front");
     const hasBack = docs.some(d => d.side === "back");
@@ -1776,16 +1886,21 @@ export default function UploadIdentificationDrawer({
     // the model to require both sides, but a prompt is advice; this is the rule.
     // One image showing both sides counts, as does a separate front and back.
     const complete = hasBothSides || (hasFront && hasBack);
+    // Unlike side-presence completeness, the signature check DOES consult the
+    // detector's judgment — there's no way to tell a blank signature line
+    // from a signed one just by knowing which sides were uploaded.
+    const unsigned = docs.some(d => d.unsigned);
     // An expired ID is NOT a valid piece of ID — flag it so it doesn't count
     // toward the required two and so the UI can surface it.
     const expired = docs.some(d => d.expired);
-    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, complete, expired });
+    docAnalysis.push({ type, hasFront, hasBack, hasBothSides, complete, expired, unsigned });
   }
 
   // A document only counts as a VALID/verified ID when it has all required
-  // sides AND is not expired. Expired IDs are surfaced as invalid below.
-  const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired).length;
-  const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired)).length;
+  // sides, is signed, and is not expired. Expired/unsigned IDs are surfaced
+  // as invalid below.
+  const completeDocCount = docAnalysis.filter(d => d.complete && !d.expired && !d.unsigned).length;
+  const incompleteDocCount = docAnalysis.filter(d => !(d.complete && !d.expired && !d.unsigned)).length;
 
   // Any recognised ID that is missing a side is a HARD BLOCK on submission, with
   // a message naming the document and the page still owed. This used to single
@@ -1821,6 +1936,20 @@ export default function UploadIdentificationDrawer({
     return false;
   });
 
+  // Signature check: the detector can see both required sides of a passport
+  // (or a credit card) and still mark it incomplete if the visible
+  // signature page/strip is blank. Side presence alone (docAnalysis above)
+  // doesn't catch this — it only looks at which sides were uploaded, not
+  // whether they were signed — so it's checked separately here from the
+  // detector's own per-document flag (see isUnsignedDoc). Previously-saved
+  // draft documents are included via the "_unsigned" custom_type suffix.
+  const unsignedDocs = selected.filter((s) => {
+    const docs = s.detection?.multipleDocuments;
+    if (!s.detection?.isIdentification || !docs) return false;
+    return docs.some((d) => isUnsignedDoc(d));
+  });
+  const hasUnsignedDocs = unsignedDocs.length > 0 || docAnalysis.some((d) => d.unsigned);
+
   // Check for expired or expiring-soon IDs
   const expiredDocs = selected.filter(
     s => s.detection?.isIdentification && s.detection.expiryStatus === "expired"
@@ -1842,12 +1971,13 @@ export default function UploadIdentificationDrawer({
     !uploading &&
     !hasPendingDetection &&
     !hasIncompleteIds &&
-    !hasExpiredDocs;
+    !hasExpiredDocs &&
+    !hasUnsignedDocs;
 
   // Display-only flag for the verification card: are the submission
   // REQUIREMENTS met (ignoring transient uploading / pending-detection states)?
   const readyToSubmit =
-    completeDocCount >= 2 && !hasIncompleteIds && !hasExpiredDocs;
+    completeDocCount >= 2 && !hasIncompleteIds && !hasExpiredDocs && !hasUnsignedDocs;
 
   return (
     <>
@@ -1872,7 +2002,7 @@ export default function UploadIdentificationDrawer({
             : [
                 "fixed z-50 bg-white shadow-2xl flex flex-col",
                 isLargeScreen
-                  ? "inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-2xl border border-gray-100"
+                  ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
                   : "top-0 right-0 h-full w-full max-w-[540px]",
                 isLargeScreen
                   ? open
@@ -1897,7 +2027,7 @@ export default function UploadIdentificationDrawer({
             <h2 className="text-base font-bold text-gray-900 leading-snug">
               {spouseName
                 ? `Upload Identification for ${spouseName}`
-                : "Upload your ID"}
+                : "Upload Identification Documents"}
             </h2>
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
               {spouseName
@@ -1920,51 +2050,45 @@ export default function UploadIdentificationDrawer({
           className={
             embedded
               ? "px-4 py-4 space-y-6"
-              : "flex-1 min-h-0 overflow-y-auto px-6 py-5 space-y-6"
+              : "flex-1 overflow-y-auto px-6 py-5 space-y-6"
           }
         >
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Government-issued identification is required to verify your identity and comply with legal
-            requirements for property transactions. Please provide two different pieces of ID, front and back.
-          </p>
+          {/* Acceptable Documents Section - Always visible */}
+          <AcceptableDocumentsSection />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-gray-200 px-4 py-3">
-              <p className="text-[13px] font-bold text-gray-900 mb-2">Accepted</p>
-              <p className="text-[13px] text-gray-700 leading-relaxed">{ACCEPTED_IDS.join(" · ")}</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 px-4 py-3">
-              <p className="text-[13px] font-bold text-gray-900 mb-2">Not accepted</p>
-              <p className="text-[13px] text-gray-700 leading-relaxed">{NOT_ACCEPTED_IDS.join(" · ")}</p>
-            </div>
-          </div>
+          {/* Why is Identification Required - Collapsible */}
+          <WhyIdentificationRequiredDropdown />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button
-              type="button"
+          {/* Take Photos with Camera Option */}
+          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
+                <Camera size={18} className="text-[#C10007]" strokeWidth={1.75} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Have a camera?</p>
+                <p className="text-xs text-gray-500">
+                  Capture each ID with your camera — no need to save the photo first.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={openCameraFlow}
               disabled={uploading}
-              className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60"
+              className="flex-shrink-0"
             >
-              <Camera size={22} className="text-[#C10007]" strokeWidth={1.8} />
-              <span className="text-sm font-bold text-gray-900">Take photos</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setUploadMode(true);
-                fileInputRef.current?.click();
-              }}
-              disabled={uploading}
-              className={`cursor-pointer rounded-xl border bg-white p-5 flex flex-col items-center gap-2 hover:border-[#C10007] transition-colors disabled:opacity-60 ${uploadMode ? "border-[#C10007]" : "border-gray-200"}`}
-            >
-              <Upload size={22} className="text-[#C10007]" strokeWidth={1.8} />
-              <span className="text-sm font-bold text-gray-900">Upload files</span>
-            </button>
+              <span className="inline-flex items-center gap-1.5">
+                <Camera size={14} />
+                Use Camera
+              </span>
+            </Button>
           </div>
 
-          {/* Drop zone; the hidden input also serves the Upload files card */}
-          <div className={uploadMode ? "" : "hidden"}>
+          {/* Manual Upload zone */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-900 mb-2">Add Documents</h3>
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -2151,11 +2275,17 @@ export default function UploadIdentificationDrawer({
                             <div className="flex flex-col gap-0.5 mt-0.5">
                               <p className={`text-[11px] font-medium truncate ${hasError ? "text-[#C10007]" : "text-green-600"}`}>
                                 {s.detection!.documentType}
-                                {s.detection!.side === "front-and-back"
-                                  ? " · both sides in one image"
-                                  : s.detection!.side !== "unknown"
-                                    ? ` (${s.detection!.side})`
-                                    : ""}
+                                {/* An unsigned passport only cares about the
+                                    signature, so it says that instead of the sides. */}
+                                {s.detection!.multipleDocuments?.some(
+                                  (d) => d.documentType === s.detection!.documentType && /passport/i.test(d.documentType) && isUnsignedDoc(d),
+                                )
+                                  ? " · signature missing"
+                                  : s.detection!.side === "front-and-back"
+                                    ? " · both sides in one image"
+                                    : s.detection!.side !== "unknown"
+                                      ? ` (${s.detection!.side})`
+                                      : ""}
                               </p>
                               {showDuplicate && (
                                 <div className="flex items-center gap-1 text-[10px] text-[#C10007] font-medium" title={s.duplicateReason ?? undefined}>
@@ -2337,18 +2467,22 @@ export default function UploadIdentificationDrawer({
                       <p className="text-sm font-bold text-gray-900">
                         {hasExpiredDocs
                           ? "Expired ID — action needed"
-                          : hasIncompleteIds
-                            ? incompleteIds.length === 1
-                              ? `${incompleteIds[0].type} — ${describeMissingSides(incompleteIds[0])} required`
-                              : "Both Sides of Every ID Required"
-                            : completeDocCount === 0
-                              ? "2 Valid Government IDs Required"
-                              : "1 More Valid Government ID Required"}
+                          : hasUnsignedDocs
+                            ? "Signature Missing"
+                            : hasIncompleteIds
+                              ? incompleteIds.length === 1
+                                ? `${incompleteIds[0].type} — ${describeMissingSides(incompleteIds[0])} required`
+                                : "Both Sides of Every ID Required"
+                              : completeDocCount === 0
+                                ? "2 Valid Government IDs Required"
+                                : "1 More Valid Government ID Required"}
                       </p>
                       <p className="text-xs text-gray-900">
                         {hasExpiredDocs
                           ? "An uploaded ID is expired — see details below"
-                          : `${completeDocCount}/2 verified — see details below`}
+                          : hasUnsignedDocs
+                            ? "The signature page is visible but unsigned — see details below"
+                            : `${completeDocCount}/2 verified — see details below`}
                       </p>
                     </div>
                   </>
@@ -2359,7 +2493,7 @@ export default function UploadIdentificationDrawer({
               {docAnalysis.length > 0 && (
                 <div className="px-4 py-3 bg-white border-t border-gray-100 space-y-2">
                   {docAnalysis.map((doc, idx) => {
-                    const valid = doc.complete && !doc.expired;
+                    const valid = doc.complete && !doc.expired && !doc.unsigned;
                     return (
                       <div key={idx} className="flex items-start gap-2.5 text-xs">
                         {valid ? (
@@ -2372,11 +2506,13 @@ export default function UploadIdentificationDrawer({
                           <span className={doc.expired ? "text-[#C10007] font-semibold" : ""}>
                             {doc.expired
                               ? " — expired (not a valid ID)"
-                              : doc.complete
-                                ? doc.hasBothSides
-                                  ? " — both sides in one image"
-                                  : " — both sides verified"
-                                : ` — missing ${describeMissingSides(doc)}`
+                              : doc.unsigned
+                                ? " — signature missing"
+                                : doc.complete
+                                  ? doc.hasBothSides
+                                    ? " — both sides in one image"
+                                    : " — both sides verified"
+                                  : ` — missing ${describeMissingSides(doc)}`
                             }
                           </span>
                         </div>

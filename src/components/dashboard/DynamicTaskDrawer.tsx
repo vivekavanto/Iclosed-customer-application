@@ -230,8 +230,8 @@ function InfoNote({ text }: { text: string }) {
   );
 }
 
-// Note with variant "section" renders as heading + text.
-function getNoteSection(opts: unknown): { text: string } | null {
+// "section" is heading + text (boxed optional); "paragraph" is plain text.
+function getNoteSection(opts: unknown): { text: string; paragraph: boolean; boxed: boolean } | null {
   let parsed: unknown = opts;
   if (typeof opts === "string") {
     try {
@@ -241,9 +241,9 @@ function getNoteSection(opts: unknown): { text: string } | null {
     }
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const o = parsed as { variant?: unknown; text?: unknown };
-  if (o.variant !== "section") return null;
-  return { text: typeof o.text === "string" ? o.text : "" };
+  const o = parsed as { variant?: unknown; text?: unknown; boxed?: unknown };
+  if (o.variant !== "section" && o.variant !== "paragraph") return null;
+  return { text: typeof o.text === "string" ? o.text : "", paragraph: o.variant === "paragraph", boxed: o.boxed === true };
 }
 
 // Format phone as (416) 555-1234
@@ -2103,12 +2103,23 @@ export default function DynamicTaskDrawer({
               // Display-only callout — the label carries the message.
               if (field.field_type === "note") {
                 const section = getNoteSection(field.options);
+                if (section?.paragraph) {
+                  return (
+                    <p key={field.id} id={`field-${field.id}`} className="text-[15px] text-gray-600 leading-relaxed">
+                      {section.text}
+                    </p>
+                  );
+                }
                 if (section) {
                   return (
-                    <div key={field.id} id={`field-${field.id}`} className="space-y-1.5 pt-2">
+                    <div
+                      key={field.id}
+                      id={`field-${field.id}`}
+                      className={section.boxed ? "space-y-2 rounded-xl border border-gray-200 px-5 py-4" : "space-y-1.5 pt-2"}
+                    >
                       <p className="text-base font-semibold text-gray-900">{field.label}</p>
                       {section.text && (
-                        <p className="text-sm text-gray-600 leading-relaxed">{section.text}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{section.text}</p>
                       )}
                     </div>
                   );
@@ -2144,7 +2155,7 @@ export default function DynamicTaskDrawer({
                     {minority.map((name) => (
                       <InfoNote
                         key={name}
-                        text={`${first(name)} receives the minority share, so ${first(name)} needs Independent Legal Advice (ILA) \u2014 on their own, not together. We have added an ILA task. ILA is given by a lawyer outside our firm, who charges their own fee (usually $250 to $450, plus HST).`}
+                        text={`${first(name)} receives the minority share, so ${first(name)} needs Independent Legal Advice (ILA) \u2014 on their own, not together. ILA is given by a lawyer outside our firm, who charges their own fee (usually $250 to $450, plus HST).`}
                       />
                     ))}
                   </div>
