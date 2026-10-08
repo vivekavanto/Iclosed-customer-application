@@ -165,6 +165,12 @@ WHAT TO EXTRACT
      if the figures are unclear, use the words.
    - If several deposits are listed (initial plus increase), return their TOTAL.
 
+2b. common_expenses — condo agreements only: the MONTHLY common expenses
+   (maintenance fees). Same digits-only format.
+   - On an OREA Form 101 it is the "COMMON EXPENSES" paragraph: "...common
+     expenses ... are approximately $______ per month".
+   - null when the document is not a condo agreement or states no amount.
+
 3. closing_date — the completion / closing date.
    - Strictly "YYYY-MM-DD". Convert any written form ("the 15th day of March, 2026") to that format.
    - This is the COMPLETION date, not the offer date, not the irrevocable date, not the requisition date.
@@ -232,6 +238,7 @@ Respond with ONLY ONE valid JSON object (no markdown, no code fences, no comment
   "document_type": "aps" | "amendment" | "schedule" | "waiver" | "other",
   "purchase_price": { "value": string | null, "confidence": "high" | "medium" | "low" },
   "deposit":        { "value": string | null, "confidence": "high" | "medium" | "low" },
+  "common_expenses": { "value": string | null, "confidence": "high" | "medium" | "low" },
   "closing_date":   { "value": string | null, "confidence": "high" | "medium" | "low" },
   "property_address": {
     "street": string | null,
@@ -301,6 +308,7 @@ const RESPONSE_SCHEMA = {
     },
     purchase_price: VALUE_SCHEMA,
     deposit: VALUE_SCHEMA,
+    common_expenses: VALUE_SCHEMA,
     closing_date: VALUE_SCHEMA,
     property_address: {
       type: "OBJECT",

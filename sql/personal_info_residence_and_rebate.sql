@@ -61,7 +61,7 @@ BEGIN
 
       -- 3. Self-declaration under the rebate heading.
       UPDATE task_form_fields
-      SET options = options || '{"text":"This is a self declaration."}'::jsonb
+      SET options = options || '{"text":"Please note this is a self-declaration and we are relying on the accuracy of the information provided."}'::jsonb
       WHERE task_template_id = tpl.id AND label = 'First-time buyer rebate';
     END IF;
   END LOOP;

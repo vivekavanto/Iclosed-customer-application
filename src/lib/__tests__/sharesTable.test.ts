@@ -1,4 +1,4 @@
-import { formatShares, minorityNames, sharesFor, sharesTotal } from "@/components/dashboard/SharesTable";
+import { formatShares, minorityNames, sharesFor, sharesTotal, withRemainder } from "@/components/dashboard/SharesTable";
 
 describe("proceeds shares", () => {
   const names = ["Riley Dawson", "Kai Dawson"];
@@ -13,5 +13,16 @@ describe("proceeds shares", () => {
   it("names the minority seller only when shares differ", () => {
     expect(minorityNames(sharesFor(names, "Riley Dawson — 30%; Kai Dawson — 70%"))).toEqual(["Riley Dawson"]);
     expect(minorityNames(sharesFor(names, "Riley Dawson — 50%; Kai Dawson — 50%"))).toEqual([]);
+  });
+});
+
+describe("withRemainder", () => {
+  const rows = [{ name: "A", percent: "" }, { name: "B", percent: "" }];
+  it("fills the other share for two owners", () => {
+    expect(withRemainder(rows, 0, "60")).toEqual([{ name: "A", percent: "60" }, { name: "B", percent: "40" }]);
+  });
+  it("leaves three owners alone", () => {
+    const three = [...rows, { name: "C", percent: "" }];
+    expect(withRemainder(three, 0, "50").map((r) => r.percent)).toEqual(["50", "", ""]);
   });
 });

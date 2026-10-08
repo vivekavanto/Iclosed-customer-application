@@ -38,6 +38,13 @@ export function sharesFor(names: string[], value: string): Share[] {
   return names.map((name) => ({ name, percent: saved.find((s) => s.name === name)?.percent ?? "" }));
 }
 
+// With two owners, the other share is the remainder.
+export function withRemainder(rows: Share[], i: number, percent: string): Share[] {
+  const n = parseFloat(percent);
+  const rest = rows.length === 2 && n >= 0 && n <= 100 ? String(Math.round((100 - n) * 100) / 100) : null;
+  return rows.map((r, j) => (j === i ? { ...r, percent } : rest !== null ? { ...r, percent: rest } : r));
+}
+
 export default function SharesTable({
   rows,
   invalid,
@@ -61,7 +68,7 @@ export default function SharesTable({
               placeholder="0"
               aria-label={`${row.name} share`}
               onChange={(e) =>
-                onChange(rows.map((r, j) => (j === i ? { ...r, percent: e.target.value.replace(/[^\d.]/g, "") } : r)))
+                onChange(withRemainder(rows, i, e.target.value.replace(/[^\d.]/g, "")))
               }
               className="w-full rounded-lg border border-gray-200 bg-white py-2.5 pl-3 pr-8 text-right text-sm text-gray-900 outline-none focus:border-[#C10007] focus:ring-2 focus:ring-[#C10007]/10"
             />
@@ -71,7 +78,7 @@ export default function SharesTable({
       ))}
       <div className="flex items-center justify-between bg-gray-50 px-4 py-3">
         <span className="text-sm font-semibold text-gray-900">Total</span>
-        <span className={`text-sm font-semibold ${total === 100 ? "text-green-700" : "text-gray-500"}`}>{total}%</span>
+        <span className="text-sm font-semibold text-gray-900">{total}%</span>
       </div>
     </div>
   );

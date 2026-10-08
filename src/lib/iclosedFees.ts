@@ -85,7 +85,7 @@ export interface FeeFigures {
   discount: number;
   disbursements: number;
   /** Each disbursement line that applies, in fee-file order. */
-  disbursementLines: { key: string; amount: number; estimate: boolean }[];
+  disbursementLines: { key: string; amount: number; estimate: boolean; hst: boolean }[];
   hst: number;
   /** Net legal fees + disbursements + HST. */
   total: number;
@@ -112,8 +112,9 @@ export function computeFees(fees: IclosedFees, type: FeeFileType, input: FeeInpu
     if (line.when === "has_mortgage" && !hasMortgage) continue;
     const amount = round2(line.amount * (line.per === "charge" ? charges : 1));
     disbursements += amount;
-    disbursementLines.push({ key, amount, estimate: Boolean(line.estimate) });
-    if (line.hst && (key !== LEVY_KEY || fees.tax.hst_on_levy)) taxable += amount;
+    const taxed = Boolean(line.hst && (key !== LEVY_KEY || fees.tax.hst_on_levy));
+    disbursementLines.push({ key, amount, estimate: Boolean(line.estimate), hst: taxed });
+    if (taxed) taxable += amount;
   }
   // Pass-through extras that become disbursements, no HST (spec 5.2).
   const passThrough: [string, boolean | undefined, boolean][] = [
@@ -124,7 +125,7 @@ export function computeFees(fees: IclosedFees, type: FeeFileType, input: FeeInpu
     const extra = fees.extras[key];
     if (!on || !extra?.applies_to.includes(type) || typeof extra.fee !== "number") continue;
     disbursements += extra.fee;
-    disbursementLines.push({ key, amount: round2(extra.fee), estimate });
+    disbursementLines.push({ key, amount: round2(extra.fee), estimate, hst: false });
   }
   disbursements = round2(disbursements);
 

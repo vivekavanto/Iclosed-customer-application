@@ -32,6 +32,7 @@ import { getFirm, type FirmKey } from "@/lib/firms";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
 import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
 import ChoiceChips from "@/components/dashboard/ChoiceChips";
+import { withRemainder } from "@/components/dashboard/SharesTable";
 import {
   isCityField,
   isMailSameAsPropertyField,
@@ -573,7 +574,6 @@ function SharesEditor({
   }
 
   const total = sharesTotal(rows);
-  const totalOk = Math.abs(total - 100) < 0.01;
 
   return (
     <div
@@ -602,15 +602,7 @@ function SharesEditor({
                 type="text"
                 inputMode="decimal"
                 value={row.percent}
-                onChange={(e) =>
-                  update(
-                    rows.map((r, j) =>
-                      j === i
-                        ? { ...r, percent: e.target.value.replace(/[^\d.]/g, "") }
-                        : r,
-                    ),
-                  )
-                }
+                onChange={(e) => update(withRemainder(rows, i, e.target.value.replace(/[^\d.]/g, "")))}
                 placeholder="0"
                 className={`${inputBase} ${inputNormal} py-2.5 pr-7 text-right`}
               />
@@ -623,11 +615,7 @@ function SharesEditor({
       </div>
 
       <div className="mt-3 flex items-center justify-end">
-        <span
-          className={`text-sm font-semibold ${
-            totalOk ? "text-green-700" : "text-gray-500"
-          }`}
-        >
+        <span className="text-sm font-semibold text-gray-900">
           Total: {formatPercent(total)}%
         </span>
       </div>
