@@ -186,15 +186,6 @@ function SiteHeader() {
           >
             Blog
           </Link>
-          {/* Same public, no-session page the dashboard nav links to
-              (src/app/(dashboard)/layout.tsx) — lets a visitor book a
-              signing appointment without logging in. */}
-          <Link
-            href="/book-appointment"
-            className="hidden sm:inline-flex px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-gray-100 hover:text-gray-900 transition-colors"
-          >
-            Book an Appointment
-          </Link>
           <Link
             href="/intake"
             className="px-3 sm:px-5 py-2 text-sm font-semibold !text-white bg-[#C10007] rounded-sm hover:bg-[#a00006] transition-colors shadow-sm"

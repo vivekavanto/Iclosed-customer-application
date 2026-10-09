@@ -45,8 +45,7 @@ function isNonProductionDeploy(): boolean {
  * Set NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE=true to force it on anywhere.
  */
 export const SHOW_CLOSING_COST_ESTIMATE =
-  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ??
-  isNonProductionDeploy();
+  envFlag(process.env.NEXT_PUBLIC_SHOW_CLOSING_COST_ESTIMATE) ?? true;
 
 /**
  * Digits allowed in intake names (e.g. "RDTest1") — dev only, for test data.
