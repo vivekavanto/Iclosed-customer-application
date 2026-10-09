@@ -2,25 +2,18 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  Phone,
-  Mail,
   MapPin,
-  Calendar,
-  User,
   Check,
   CheckCircle2,
   Building2,
   Clock,
-  AlertTriangle,
   ChevronRight,
   ChevronDown,
   Loader2,
   Home,
   FileText,
-  Users,
-  Eye,
-  Download,
   Lock,
+  Copy,
 } from "lucide-react";
 import ClosingCostEstimateCard from "@/components/dashboard/ClosingCostEstimateCard";
 import ClosingCostEstimateModal from "@/components/dashboard/ClosingCostEstimateModal";
@@ -29,13 +22,31 @@ import DepositFundsDrawer from "@/components/dashboard/DepositFundsDrawer";
 import PersonalInfoTaskDrawer from "@/components/dashboard/PersonalInfoTaskDrawer";
 import UploadIdentificationDrawer from "@/components/dashboard/UploadIdentificationDrawer";
 import type { BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
-import { isHoldTitleTask, isPerPartyTask, isPersonalInfoTask, isTreefortTask, isUploadIdTask } from "@/lib/taskKinds";
+import {
+  isAfterClosingTask,
+  isClosingFiguresTask,
+  isHoldTitleTask,
+  isPerPartyTask,
+  isPersonalInfoTask,
+  isPropertyDetailsTask,
+  isTreefortTask,
+  isUploadIdTask,
+} from "@/lib/taskKinds";
+import { isTorontoAddress } from "@/lib/isTorontoAddress";
+import { taskDisplayTitle } from "@/lib/taskDisplayTitle";
+import { resolveStatusSteps } from "@/lib/statusSteps";
+import { PORTAL_TEAM, teamInitials } from "@/lib/portalTeam";
+import UtilitiesTaskModal from "@/components/dashboard/UtilitiesTaskModal";
+import TaskSubmittedModal from "@/components/dashboard/TaskSubmittedModal";
+import ChatWidget from "@/components/dashboard/ChatWidget";
+import PropertyDetailsTaskModal from "@/components/dashboard/PropertyDetailsTaskModal";
+import SigningTaskModal from "@/components/dashboard/SigningTaskModal";
+import { isSigningAppointmentTask } from "@/lib/signingAppointment";
 import { isDepositTask } from "@/lib/depositTask";
 import { SHOW_CLOSING_COST_ESTIMATE } from "@/lib/featureFlags";
 import { dealTypeToSide } from "@/lib/taskDescriptions";
 import { getFirm, type FirmKey } from "@/lib/firms";
 import { useToast } from "@/components/ui/Toast";
-import { docDownloadHref } from "@/lib/blobPrivacy";
 
 /** Per-party completion summary for a Personal Info / Upload ID task. */
 interface FamilyTaskStatusSummary {
@@ -88,6 +99,9 @@ interface Task {
   } | null;
 }
 
+/** Task an admin hasn't switched on yet. */
+type LockedTask = Pick<Task, "id" | "deal_id" | "title" | "side" | "order_index">;
+
 interface Milestone {
   id: string;
   title: string;
@@ -111,9 +125,21 @@ interface Party {
   role: string;
 }
 
+/** Next confirmed signing appointment for a deal, from /api/dashboardproperty. */
+interface SigningAppointmentInfo {
+  start_at: string;
+  end_at: string;
+  appointment_type: "virtual" | "in_person";
+  meet_link: string | null;
+  location: string | null;
+}
+
 interface PropertyData {
   lead_id: string;
   deal_id: string | null;
+  signing_appointment?: SigningAppointmentInfo | null;
+  // Display name of the calendar this file books its signing with.
+  signing_calendar_name?: string | null;
   address_street: string | null;
   address_city: string | null;
   address_province: string | null;
@@ -124,9 +150,15 @@ interface PropertyData {
   selling_address_province: string | null;
   selling_address_postal_code: string | null;
   selling_address_unit: string | null;
+  selling_deposit_amount: number | null;
+  /** APS uploaded at intake. */
+  aps_uploaded?: boolean;
+  aps_uploaded_purchase?: boolean;
+  aps_uploaded_sale?: boolean;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
+  email?: string | null;
   lead_type: string | null;
   // "purchase" | "sale" when this client is a co-person on a Purchase & Sale
   // deal (party to only that one side). null for a primary client (sees both).
@@ -147,10 +179,13 @@ interface DealData {
   type: string | null;
   status: string | null;
   closing_date: string | null;
+  selling_closing_date: string | null;
   property_address: string | null;
   price: number | null;
   selling_price: number | null;
   selling_property_address: string | null;
+  deposit_amount: number | null;
+  building_type?: string | null;
 }
 
 /* ─────────────────────────────────────────────
@@ -285,9 +320,12 @@ function customerVisibleTasks(
 
 // Admin-configured order; unordered tasks sort last.
 const ORDER_FALLBACK = Number.MAX_SAFE_INTEGER;
+const TASK_PAGE_SIZE = 5;
+
 function sortByOrder(a: Task, b: Task): number {
-  const ao = a.order_index ?? a.template_order_index ?? ORDER_FALLBACK;
-  const bo = b.order_index ?? b.template_order_index ?? ORDER_FALLBACK;
+  // Template order first; per-deal order_index can be stale on older files.
+  const ao = a.template_order_index ?? a.order_index ?? ORDER_FALLBACK;
+  const bo = b.template_order_index ?? b.order_index ?? ORDER_FALLBACK;
   return ao - bo;
 }
 
@@ -301,18 +339,24 @@ function AttentionCard({
   onTaskClick,
   onMemberClick,
   familyStatus,
+  partyNoun,
+  inactiveTasks,
+  side,
 }: {
   tasks: Task[];
   loading: boolean;
   onTaskClick: (task: Task) => void;
   onMemberClick: (task: Task, member: FamilyMemberRow) => void;
   familyStatus: Record<string, FamilyTaskStatusSummary>;
+  /** "sellers" / "purchasers" / "parties", for "Required from both …". */
+  partyNoun: string;
+  inactiveTasks: LockedTask[];
+  side: "purchase" | "sale" | null;
 }) {
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(new Set());
+  const [showAllTasks, setShowAllTasks] = useState(false);
   // Which multi-party task rows are expanded to show their per-party breakdown.
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
-  // Show only the first TASK_PAGE_SIZE pending tasks until "See more" is clicked.
-  const [showAllTasks, setShowAllTasks] = useState(false);
   const prevPendingIdsRef = useRef<string>("");
 
   // Multi-party tasks that just flipped to fully-complete THIS session. We keep
@@ -325,11 +369,12 @@ function AttentionCard({
   const completionTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // How long the green confirmation stays before the card disappears.
   const COMPLETION_FLASH_MS = 3000;
-  // How many pending tasks to show before "See more" is needed.
-  const TASK_PAGE_SIZE = 5;
 
   const isTaskComplete = (t: Task): boolean => isTaskDone(t, familyStatus);
-  const uniqueTasks = customerVisibleTasks(tasks, familyStatus);
+  // After-closing tasks have their own card.
+  const uniqueTasks = customerVisibleTasks(tasks, familyStatus).filter(
+    (t) => !isAfterClosingTask(t.title),
+  );
 
   // Tasks the user still has to action — drives the header count and the
   // "all done" state.
@@ -343,6 +388,17 @@ function AttentionCard({
     .filter((t) => !isTaskComplete(t) || justCompletedIds.has(t.id))
     .slice()
     .sort(sortByOrder);
+
+  // Closing-figures review stays locked until every other to-do is done.
+  const figuresLocked = trulyPending.some((t) => !isClosingFiguresTask(t.title));
+  // The CSM books signing, so the client can't open it.
+  const isLockedOpen = (t: Task) => (figuresLocked && isClosingFiguresTask(t.title)) || isSigningAppointmentTask(t.title);
+  const lockedTasks: LockedTask[] = [
+    ...pending.filter((t) => !isTaskComplete(t) && isLockedOpen(t)),
+    ...inactiveTasks,
+  ];
+  const openTasks = pending.filter((t) => !isLockedOpen(t));
+  const tasksForYou = trulyPending.length - (lockedTasks.length - inactiveTasks.length);
 
   // Detect a multi-party task flipping to fully-complete this session: flash it
   // green for COMPLETION_FLASH_MS, then remove it from the list.
@@ -431,8 +487,9 @@ function AttentionCard({
     }
   }, [loading, pendingIdsKey]);
 
-  const allDone = !loading && uniqueTasks.length > 0 && trulyPending.length === 0;
-  const isEmpty = !loading && uniqueTasks.length === 0;
+  const allDone =
+    !loading && uniqueTasks.length > 0 && trulyPending.length === 0 && inactiveTasks.length === 0;
+  const isEmpty = !loading && uniqueTasks.length === 0 && inactiveTasks.length === 0;
 
   // Right-side status chip for a per-party task. Counts parties completed out of
   // the total ("Pending 0/2"); once only one party is left, names them
@@ -452,38 +509,24 @@ function AttentionCard({
   const partySubtitle = (t: Task): string | null => {
     const fs = familyStatus[t.id];
     if (!fs?.is_multi_party) return null;
-    return fs.total_count === 2
-      ? "Required from both parties"
-      : "Required from all parties";
+    return `Required from ${fs.total_count === 2 ? "both" : "all"} ${partyNoun}`;
   };
 
   return (
     <div
       className={`rounded-2xl border overflow-hidden shadow-sm transition-all duration-300 ${allDone ? "bg-[#f0fdf4] border-[#bbf7d0]" : "bg-white border-gray-100"}`}
     >
-      {/* Header — gradient */}
-      <div
-        className={`flex items-center gap-3 px-5 sm:px-6 py-4 ${allDone ? "bg-[#dcfce7]" : "bg-[#C10007]/15"}`}
-      >
-        <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${allDone ? "bg-[#bbf7d0]" : "bg-[#C10007]"}`}
-        >
-          {allDone ? (
-            <CheckCircle2 size={18} className="text-[#15803d]" strokeWidth={2.2} />
-          ) : (
-            <AlertTriangle size={18} className="text-white" strokeWidth={2} />
-          )}
-        </div>
-        <div className="min-w-0">
-          <h2 className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-[#7a0004]"}`}>
-            Please Complete
-          </h2>
-          {!allDone && !isEmpty && trulyPending.length > 0 && (
-            <p className="text-xs text-[#7a0004]/70 mt-0.5">
-              {trulyPending.length} {trulyPending.length === 1 ? "task" : "tasks"}
-            </p>
-          )}
-        </div>
+      {/* Header */}
+      <div className={`px-5 sm:px-6 py-4 ${allDone ? "bg-[#dcfce7]" : "bg-[#C10007]/12"}`}>
+        <h2 className={`text-lg font-bold ${allDone ? "text-[#15803d]" : "text-[#7a0004]"}`}>
+          Your to-do list
+        </h2>
+        {!allDone && !isEmpty && (
+          <p className="text-xs text-[#7a0004]/70 mt-0.5">
+            {tasksForYou} {tasksForYou === 1 ? "task" : "tasks"} for you
+            {lockedTasks.length > 0 && ` · ${lockedTasks.length} pending`}
+          </p>
+        )}
       </div>
 
       {/* Body */}
@@ -513,7 +556,7 @@ function AttentionCard({
         </div>
       ) : (
         <div className="p-3 sm:p-4 space-y-3">
-          {(showAllTasks ? pending : pending.slice(0, TASK_PAGE_SIZE)).map((task, idx) => {
+          {(showAllTasks ? openTasks : openTasks.slice(0, TASK_PAGE_SIZE)).map((task, idx) => {
             const formattedDate = task.due_date
               ? new Date(task.due_date).toLocaleDateString("en-CA", {
                 month: "long",
@@ -570,7 +613,7 @@ function AttentionCard({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className={`text-sm sm:text-base font-bold leading-snug transition-colors ${fs.all_completed ? "text-[#15803d]" : "text-gray-900 group-hover:text-[#C10007]"}`}>
-                            {task.title}
+                            {taskDisplayTitle(task.title, side)}
                           </p>
                           {fs.all_completed ? (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#dcfce7] text-[#15803d]">
@@ -639,9 +682,9 @@ function AttentionCard({
                               <button
                                 type="button"
                                 onClick={() => onMemberClick(task, m)}
-                                className="flex-shrink-0 inline-flex items-center rounded-lg border border-gray-300 bg-transparent px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
+                                className="flex-shrink-0 inline-flex items-center rounded-lg border border-[#C10007]/60 bg-white px-4 py-2 text-sm font-semibold text-[#C10007] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
                               >
-                                Upload
+                                {kindUpload ? "Upload" : "Provide"}
                               </button>
                             ) : (
                               <span className="flex-shrink-0 text-xs font-semibold text-gray-400">
@@ -672,7 +715,7 @@ function AttentionCard({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
-                        {task.title}
+                        {taskDisplayTitle(task.title, side)}
                       </p>
                       {isNew && (
                         <span className="inline-flex items-center text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FEF2F2] text-[#C10007] border border-[#fca5a5]">
@@ -695,21 +738,39 @@ function AttentionCard({
                       {chip}
                     </span>
                   )}
-                  {/* Arrow */}
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 group-hover:bg-[#FEF2F2] transition-colors">
-                    <ChevronRight size={16} className="text-gray-400 group-hover:text-[#C10007]" strokeWidth={2} />
-                  </div>
+                  <ChevronRight size={16} className="text-gray-400 group-hover:text-[#C10007] flex-shrink-0" strokeWidth={2} />
                 </div>
               </div>
             );
           })}
-          {pending.length > TASK_PAGE_SIZE && (
+          {/* Locked until the rest of the list is done */}
+          {(showAllTasks ? lockedTasks : lockedTasks.slice(0, Math.max(0, TASK_PAGE_SIZE - openTasks.length))).map((task) => (
+            <div
+              key={task.id}
+              className="rounded-xl border border-dashed border-gray-200 bg-gray-50/70 px-4 sm:px-5 py-4"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <Lock size={13} className="text-gray-400" aria-hidden />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm sm:text-base font-bold text-gray-400 leading-snug">{taskDisplayTitle(task.title, side)}</p>
+                  <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+                    {isSigningAppointmentTask(task.title)
+                      ? "Your CSM will reach out to you to book a signing appointment"
+                      : "Pending — opens once your final closing figures are ready"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+          {openTasks.length + lockedTasks.length > TASK_PAGE_SIZE && (
             <button
               type="button"
               onClick={() => setShowAllTasks((v) => !v)}
               className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
             >
-              {showAllTasks ? "Show less" : `See more (${pending.length - TASK_PAGE_SIZE})`}
+              {showAllTasks ? "Show less" : `See more (${openTasks.length + lockedTasks.length - TASK_PAGE_SIZE})`}
             </button>
           )}
         </div>
@@ -722,81 +783,30 @@ function AttentionCard({
    COMPLETED TASKS (read-only)
 ════════════════════════════════════════════════════ */
 
-interface TaskDocument {
-  id: string;
-  label: string | null;
-  file_name: string | null;
-  file_url: string;
-  uploaded_at: string | null;
-}
-
-// Task file, tagged with its party on multi-party tasks.
-type CompletedDoc = TaskDocument & { party: string | null };
-
 function CompletedTasksCard({
   tasks,
   loading,
   familyStatus,
+  onTaskClick,
+  onMemberClick,
+  side,
 }: {
   tasks: Task[];
   loading: boolean;
   familyStatus: Record<string, FamilyTaskStatusSummary>;
+  onTaskClick: (task: Task) => void;
+  onMemberClick: (task: Task, member: FamilyMemberRow) => void;
+  side: "purchase" | "sale" | null;
 }) {
-  const [docsByTask, setDocsByTask] = useState<Record<string, TaskDocument[]>>({});
-  // Last fetched key; differs while loading.
-  const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const PAGE_SIZE = 5;
 
+  // After-closing tasks stay in their own card once done.
   const completed = customerVisibleTasks(tasks, familyStatus)
-    .filter((t) => isTaskDone(t, familyStatus))
+    .filter((t) => isTaskDone(t, familyStatus) && !isAfterClosingTask(t.title))
     .sort(sortByOrder);
-
-  // Multi-party tasks pull files from every party's own task row.
-  const sourceTaskIds = (t: Task): string[] => {
-    const fs = familyStatus[t.id];
-    if (!fs?.is_multi_party) return [t.id];
-    return fs.members.map((m) => m.task_id).filter((id): id is string => !!id);
-  };
-  const docTaskIdsKey = [...new Set(completed.flatMap(sourceTaskIds))].sort().join(",");
-
-  useEffect(() => {
-    if (!docTaskIdsKey) return;
-    let cancelled = false;
-    fetch(`/api/tasks/completed-documents?task_ids=${encodeURIComponent(docTaskIdsKey)}`, {
-      cache: "no-store",
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.success) setDocsByTask(data.documents ?? {});
-      })
-      .catch(() => {
-        // Non-fatal; tasks still render.
-      })
-      .finally(() => {
-        if (!cancelled) setLoadedKey(docTaskIdsKey);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [docTaskIdsKey]);
-  const docsLoading = !!docTaskIdsKey && loadedKey !== docTaskIdsKey;
-
-  const docsFor = (t: Task): CompletedDoc[] => {
-    const fs = familyStatus[t.id];
-    if (!fs?.is_multi_party) {
-      return (docsByTask[t.id] ?? []).map((d) => ({ ...d, party: null }));
-    }
-    return fs.members.flatMap((m) =>
-      m.task_id
-        ? (docsByTask[m.task_id] ?? []).map((d) => ({
-            ...d,
-            party: m.name || `${m.first_name} ${m.last_name}`.trim() || null,
-          }))
-        : [],
-    );
-  };
 
   const toggle = (id: string) =>
     setExpandedTaskIds((prev) => {
@@ -812,128 +822,199 @@ function CompletedTasksCard({
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm mt-5">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 sm:px-6 py-4 bg-[#C10007]/15">
-        <div className="w-10 h-10 rounded-full bg-[#C10007] flex items-center justify-center flex-shrink-0">
-          <CheckCircle2 size={18} className="text-white" strokeWidth={2.2} />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold text-[#7a0004]">Completed Tasks</h2>
-          <p className="text-xs text-[#7a0004]/70 mt-0.5">
-            {completed.length} {completed.length === 1 ? "task" : "tasks"}
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        title="Completed"
+        green
+        done={completed.length}
+        total={completed.length}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((v) => !v)}
+      />
 
-      {/* Body */}
-      <div className="p-3 sm:p-4 space-y-3">
-        {visible.map((task) => {
-          const docs = docsFor(task);
-          const isExpanded = expandedTaskIds.has(task.id);
-          const completedOn = task.completed_at
-            ? new Date(task.completed_at).toLocaleDateString("en-CA", {
-                month: "long",
-                day: "numeric",
-                year: "numeric",
-              })
-            : null;
+      {!collapsed && (
+        <div className="p-3 sm:p-4 space-y-3">
+          {visible.map((task) => {
+            const fs = familyStatus[task.id];
+            const multi = !!fs?.is_multi_party;
+            const isExpanded = multi && expandedTaskIds.has(task.id);
 
-          return (
-            <div key={task.id} className="rounded-xl border border-gray-200 bg-gray-50/60 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => docs.length > 0 && toggle(task.id)}
-                disabled={docs.length === 0}
-                aria-expanded={docs.length > 0 ? isExpanded : undefined}
-                className={`w-full text-left px-4 sm:px-5 py-4 ${docs.length > 0 ? "cursor-pointer" : "cursor-default"}`}
-              >
-                <div className="flex items-center gap-4">
-                  <span
-                    className="w-7 h-7 rounded-full bg-[#FEF2F2] flex items-center justify-center flex-shrink-0"
-                    aria-label="Completed"
-                  >
-                    <Check size={15} className="text-[#C10007]" strokeWidth={2.5} />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm sm:text-base font-bold text-gray-700 leading-snug">
-                      {task.title}
+            return (
+              <div key={task.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => (multi ? toggle(task.id) : onTaskClick(task))}
+                  aria-expanded={multi ? isExpanded : undefined}
+                  className="w-full text-left px-4 sm:px-5 py-4 cursor-pointer group hover:bg-gray-50/60 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <span
+                      className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0"
+                      aria-hidden
+                    >
+                      <Check size={15} className="text-green-600" strokeWidth={2.5} />
+                    </span>
+                    <p className="flex-1 min-w-0 text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
+                      {taskDisplayTitle(task.title, side)}
                     </p>
-                    <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
-                      {completedOn ? `Completed on ${completedOn}` : "Completed"}
-                      {docs.length > 0 &&
-                        ` · ${docs.length} ${docs.length === 1 ? "document" : "documents"}`}
-                    </p>
-                  </div>
-                  {docsLoading && docs.length === 0 ? (
-                    <Loader2 size={16} className="text-gray-300 animate-spin flex-shrink-0" />
-                  ) : docs.length > 0 ? (
-                    <ChevronDown
-                      size={18}
+                    <span className="flex-shrink-0 text-xs font-semibold text-green-600">Completed</span>
+                    <ChevronRight
+                      size={16}
                       strokeWidth={2}
-                      className={`text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? "rotate-180" : ""}`}
+                      className={`flex-shrink-0 text-gray-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
                     />
-                  ) : (
-                    <Lock size={14} className="text-gray-300 flex-shrink-0" aria-hidden />
-                  )}
-                </div>
-              </button>
+                  </div>
+                </button>
 
-              {/* Uploaded files, view/download only */}
-              {isExpanded && docs.length > 0 && (
-                <div className="border-t border-gray-100 divide-y divide-gray-100 bg-white">
-                  {docs.map((d) => {
-                    const href = docDownloadHref(d.file_url);
-                    const name = d.file_name || d.label || "Document";
-                    return (
-                      <div key={`${d.id}:${d.file_url}`} className="flex items-center gap-3 px-4 sm:px-5 py-3">
-                        <div className="w-9 h-9 rounded-lg bg-[#C10007]/10 flex items-center justify-center flex-shrink-0">
-                          <FileText size={16} className="text-[#C10007]" />
+                {/* Per-party rows; each opens that party's form */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 divide-y divide-gray-100">
+                    {fs.members.map((m) => (
+                      <div
+                        key={`${m.lead_id}:${m.task_id ?? ""}`}
+                        className="flex items-center gap-3 px-4 sm:px-5 py-3.5 bg-gray-50/50"
+                      >
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 bg-gray-200 text-gray-500">
+                          {initials(m.first_name, m.last_name)}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="ph-mask text-sm font-semibold text-gray-900 truncate">{name}</p>
-                          {(d.party || (d.label && d.label !== name)) && (
-                            <p className="ph-mask text-xs text-gray-400 truncate">
-                              {[d.party, d.label && d.label !== name ? d.label : null]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </p>
-                          )}
-                        </div>
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-shrink-0 rounded-sm p-2 text-gray-500 border border-gray-300 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-                          title="View"
-                        >
-                          <Eye size={16} />
-                        </a>
-                        <a
-                          href={href}
-                          download={d.file_name ?? undefined}
-                          className="flex-shrink-0 rounded-sm p-2 text-gray-500 border border-gray-300 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-                          title="Download"
-                        >
-                          <Download size={16} />
-                        </a>
+                        <p className="ph-mask flex-1 min-w-0 text-sm font-semibold text-gray-900 truncate">
+                          {m.name || `${m.first_name} ${m.last_name}`.trim() || "Party"}
+                        </p>
+                        {m.can_edit && m.task_id ? (
+                          <button
+                            type="button"
+                            onClick={() => onMemberClick(task, m)}
+                            className="flex-shrink-0 inline-flex items-center rounded-lg border border-gray-300 bg-transparent px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                        ) : (
+                          <span className="flex-shrink-0 w-7 h-7 rounded-full bg-green-100 flex items-center justify-center" aria-label="Completed">
+                            <Check size={15} className="text-green-600" strokeWidth={2.5} />
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {completed.length > PAGE_SIZE && (
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
-          >
-            {showAll ? "Show less" : `See more (${completed.length - PAGE_SIZE})`}
-          </button>
-        )}
-      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {completed.length > PAGE_SIZE && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="w-full inline-flex items-center justify-center rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-100 hover:border-gray-400 transition-colors cursor-pointer"
+            >
+              {showAll ? "Show less" : `See more (${completed.length - PAGE_SIZE})`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   SECTION HEADER (Completed / After closing)
+───────────────────────────────────────────── */
+function SectionHeader({
+  title,
+  done,
+  total,
+  collapsed,
+  onToggle,
+  green = false,
+}: {
+  title: string;
+  done: number;
+  total: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  green?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      className={`w-full flex items-center gap-3 px-5 sm:px-6 py-4 text-left cursor-pointer ${green ? "bg-green-50" : ""} ${collapsed ? "" : green ? "border-b border-green-100" : "border-b border-gray-100"}`}
+    >
+      <h2 className={`flex-1 text-base font-bold ${green ? "text-green-800" : "text-gray-900"}`}>{title}</h2>
+      <span className={`text-sm tabular-nums ${green ? "text-green-700" : "text-gray-500"}`}>
+        {done} of {total}
+      </span>
+      <ChevronDown
+        size={16}
+        strokeWidth={2}
+        className={`text-gray-400 transition-transform ${collapsed ? "" : "rotate-180"}`}
+      />
+    </button>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   AFTER CLOSING TASKS
+───────────────────────────────────────────── */
+function AfterClosingCard({
+  tasks,
+  loading,
+  onTaskClick,
+  side,
+}: {
+  tasks: Task[];
+  loading: boolean;
+  onTaskClick: (task: Task) => void;
+  side: "purchase" | "sale" | null;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const afterClosing = deduplicateTasks(tasks)
+    .filter((t) => !isHiddenTask(t) && isAfterClosingTask(t.title))
+    .sort(sortByOrder);
+
+  if (loading || afterClosing.length === 0) return null;
+
+  const done = afterClosing.filter((t) => t.completed).length;
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm mt-5">
+      <SectionHeader
+        title="After closing"
+        done={done}
+        total={afterClosing.length}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((v) => !v)}
+      />
+      {!collapsed && (
+        <div className="p-3 sm:p-4 space-y-3">
+          {afterClosing.map((task, idx) => (
+            <button
+              key={task.id}
+              type="button"
+              onClick={() => onTaskClick(task)}
+              className="w-full text-left rounded-xl border border-gray-200 bg-white px-4 sm:px-5 py-4 hover:border-[#C10007]/30 hover:shadow-md transition-all duration-200 cursor-pointer group"
+            >
+              <div className="flex items-center gap-4">
+                {task.completed ? (
+                  <span className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0" aria-hidden>
+                    <Check size={15} className="text-green-600" strokeWidth={2.5} />
+                  </span>
+                ) : (
+                  <div className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs font-medium text-gray-400 tabular-nums">{idx + 1}</span>
+                  </div>
+                )}
+                <p className="flex-1 min-w-0 text-sm sm:text-base font-bold text-gray-900 group-hover:text-[#C10007] transition-colors leading-snug">
+                  {taskDisplayTitle(task.title, side)}
+                </p>
+                {task.completed && (
+                  <span className="flex-shrink-0 text-xs font-semibold text-green-600">Completed</span>
+                )}
+                <ChevronRight size={16} className="text-gray-400 group-hover:text-[#C10007] flex-shrink-0" strokeWidth={2} />
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -945,55 +1026,14 @@ function StatusTimeline({
   milestones,
   blockedMilestoneIds,
   loading,
+  side,
 }: {
   milestones: Milestone[];
   blockedMilestoneIds: Set<string>;
   loading: boolean;
+  side: "purchase" | "sale";
 }) {
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
-  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleMouseEnter = (milestone: Milestone, e: React.MouseEvent) => {
-    if (!milestone.description) return;
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const padding = 16;
-
-    const minTop = padding + 100;
-    const maxTop = window.innerHeight - padding - 100;
-    const top = Math.min(Math.max(rect.top + rect.height / 2, minTop), maxTop);
-
-    setSelectedId(milestone.id);
-    setTooltipPos({
-      top,
-      right: window.innerWidth - rect.left + 12,
-    });
-  };
-
-  const handleMouseLeave = () => {
-    hideTimeoutRef.current = setTimeout(() => {
-      setSelectedId(null);
-      setTooltipPos(null);
-    }, 150);
-  };
-
-  const handleTooltipEnter = () => {
-    if (hideTimeoutRef.current) {
-      clearTimeout(hideTimeoutRef.current);
-      hideTimeoutRef.current = null;
-    }
-  };
-
-  const handleTooltipLeave = () => {
-    setSelectedId(null);
-    setTooltipPos(null);
-  };
+  const [hover, setHover] = useState<number | null>(null);
 
   if (loading) {
     return (
@@ -1003,144 +1043,55 @@ function StatusTimeline({
     );
   }
 
-  if (milestones.length === 0) {
-    return null;
-  }
-
-  // A per-party milestone stays "not done" until every co-party's section is
-  // complete, even if the primary's own linked task (and hence the milestone's
-  // task count / server status) already reads done.
+  // A per-party milestone stays open until every co-party's section is done.
   const isMilestoneDone = (m: Milestone) =>
     !blockedMilestoneIds.has(m.id) &&
     (m.status === "Completed" || (m.total_tasks > 0 && m.completed_tasks === m.total_tasks));
-  const completedCount = milestones.filter(isMilestoneDone).length;
-  const progressPercent =
-    milestones.length === 0
-      ? 0
-      : Math.min(100, Math.round((completedCount / milestones.length) * 100));
-
-  const filtered = milestones.filter((m) => m.status !== "Waiting");
-
-  // Find selected milestone for tooltip
-  const selectedMilestone = filtered.find((m) => m.id === selectedId);
-  let selectedDesc = "";
-  if (selectedMilestone?.description) {
-    if (typeof selectedMilestone.description === "string") {
-      selectedDesc = selectedMilestone.description;
-    } else if (typeof selectedMilestone.description === "object") {
-      const desc = selectedMilestone.description as Record<string, unknown>;
-      const modal = typeof desc.modal === "string" ? desc.modal : "";
-      const short = typeof desc.short === "string" ? desc.short : "";
-      selectedDesc = modal || short || "";
-    }
-  }
+  const steps = resolveStatusSteps(
+    side,
+    milestones.map((m) => ({ title: m.title, done: isMilestoneDone(m) })),
+  );
+  const progressPercent = Math.round((steps.filter((st) => st.done).length / steps.length) * 100);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 sm:p-6 shadow-sm">
-      {/* Header row */}
-      <div className="mb-2">
-        <h2 className="text-base font-bold text-gray-900">Status Overview</h2>
+    <div className="bg-white rounded-2xl border border-gray-100 px-4 pt-4 pb-2.5 shadow-sm">
+      <h2 className="mb-2 text-[15px] font-bold text-gray-900">Status Overview</h2>
+      <div className="mb-2 h-[5px] w-full overflow-hidden rounded-full bg-gray-100">
+        <div className="h-full bg-gray-600 transition-all duration-500" style={{ width: `${progressPercent}%` }} />
       </div>
-
-      {/* Progress bar */}
-      <div className="w-full h-1.5 bg-gray-100 rounded-full mb-6 overflow-hidden">
+      {steps.map((step, i) => (
         <div
-          className="h-full bg-gray-600 rounded-full transition-all duration-500"
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
-
-      {/* Steps — scrollable */}
-      <div className="max-h-[350px] overflow-y-auto">
-        <div>
-          {filtered.map((milestone, idx) => {
-            // A milestone is only ever shown as done (green check) or pending
-            // (grey). We deliberately drop the "In Progress" ring — it lit up as
-            // soon as one sub-task completed, which read as distracting. Use the
-            // same done-detection as the progress bar so a milestone flips to the
-            // check only once ALL of its tasks are complete.
-            const isCompleted = isMilestoneDone(milestone);
-            const hasDescription = milestone.description;
-            const isLast = idx === filtered.length - 1;
-            const formattedDate = formatDateOnly(
-              milestone.milestone_date,
-              { month: "short", day: "numeric", year: "numeric" },
-              ""
-            ) || null;
-
-            return (
-              <div
-                key={milestone.id}
-                className="relative"
-                onMouseEnter={(e) => handleMouseEnter(milestone, e)}
-                onMouseLeave={handleMouseLeave}
-              >
-                {/* Connector line */}
-                {!isLast && (
-                  <div className="absolute left-[26px] top-[30px] h-full w-px bg-gray-200 z-0" />
-                )}
-
-                <div
-                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-gray-50/70 ${hasDescription ? "cursor-pointer" : ""}`}
-                >
-                  {/* Node */}
-                  <div className="z-10 flex-shrink-0">
-                    {isCompleted ? (
-                      <div className="w-[28px] h-[28px] rounded-full bg-gray-400 flex items-center justify-center">
-                        <Check size={18} className="text-white" strokeWidth={3} />
-                      </div>
-                    ) : (
-                      <div className="w-[28px] h-[28px] rounded-full bg-gray-200" />
-                    )}
-                  </div>
-
-                  {/* Label + meta */}
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={`text-sm leading-snug ${isCompleted ? "text-gray-400 font-semibold" : "text-gray-500 font-medium"}`}
-                    >
-                      {milestone.title}
-                    </p>
-                    {formattedDate && (
-                      <p className="text-xs text-gray-400 mt-0.5">{formattedDate}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Fixed-position tooltip — renders outside scroll container */}
-      {selectedId && selectedDesc && tooltipPos && selectedMilestone && (
-        <div
-          onMouseEnter={handleTooltipEnter}
-          onMouseLeave={handleTooltipLeave}
-          className="fixed z-50 w-[320px] sm:w-[380px] lg:w-[420px] bg-white rounded-xl border border-gray-200 shadow-xl flex flex-col max-h-[80vh] overflow-y-auto"
-          style={{
-            top: tooltipPos.top,
-            right: tooltipPos.right,
-            transform: "translateY(-50%)",
-          }}
+          key={step.title}
+          className="relative"
+          onMouseEnter={() => setHover(i)}
+          onMouseLeave={() => setHover((h) => (h === i ? null : h))}
         >
-          <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
-            <h4 className="text-sm font-bold text-gray-900">
-              {selectedMilestone.title}
-            </h4>
-            <p className="text-xs mt-1 flex items-center gap-1.5 text-gray-400">
-              <span className={`w-2 h-2 rounded-full inline-block ${selectedMilestone.status === "Completed" ? "bg-gray-400" : selectedMilestone.status === "In Progress" ? "bg-gray-300" : "bg-gray-200"
-                }`} />
-              {selectedMilestone.status === "Completed" ? "Completed" : selectedMilestone.status === "In Progress" ? "In Progress" : "Pending"}
+          <div className={`flex items-center gap-2.5 rounded-lg px-1.5 py-1 ${hover === i ? "bg-gray-50" : ""}`}>
+            {step.done ? (
+              <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-400">
+                <Check size={12} className="text-white" strokeWidth={3} />
+              </div>
+            ) : step.current ? (
+              <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 border-[#C10007]">
+                <div className="h-2 w-2 rounded-full bg-[#C10007]" />
+              </div>
+            ) : (
+              <div className="h-5 w-5 flex-shrink-0 rounded-full bg-gray-200" />
+            )}
+            <p
+              className={`text-[13px] ${step.done ? "font-medium text-gray-400" : step.current ? "font-bold text-gray-900" : "font-medium text-gray-500"}`}
+            >
+              {step.title}
             </p>
           </div>
-          <div className="px-5 py-4">
-            <p className="text-[13px] text-gray-600 leading-[1.7] whitespace-pre-line">
-              {selectedDesc}
-            </p>
-          </div>
+          {hover === i && (
+            <div className="absolute right-[calc(100%+10px)] top-1/2 z-[25] hidden w-[260px] -translate-y-1/2 rounded-[10px] border border-gray-200 bg-white px-3.5 py-2.5 shadow-lg lg:block">
+              <p className="text-[13px] font-bold text-gray-900">{step.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-gray-600">{step.description}</p>
+            </div>
+          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -1177,6 +1128,7 @@ export default function DashboardPage() {
 
   // ── Tasks + milestones for the active deal ────────────────
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [inactiveTasks, setInactiveTasks] = useState<LockedTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [milestonesLoading, setMilestonesLoading] = useState(false);
@@ -1192,6 +1144,11 @@ export default function DashboardPage() {
   const [idDrawerOpen, setIdDrawerOpen] = useState(false);
   const [personalInfoDrawerOpen, setPersonalInfoDrawerOpen] = useState(false);
   const [depositDrawerOpen, setDepositDrawerOpen] = useState(false);
+  const [utilitiesOpen, setUtilitiesOpen] = useState(false);
+  const [propertyDetailsOpen, setPropertyDetailsOpen] = useState(false);
+  const [signingOpen, setSigningOpen] = useState(false);
+  // Title of the task just submitted; shows the success popup.
+  const [submittedTitle, setSubmittedTitle] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   // ── Direct per-party target (inline multi-party accordion) ──
@@ -1302,7 +1259,13 @@ export default function DashboardPage() {
     // Open the dedicated UploadIdentificationDrawer for any identification task.
     // Uses the shared isUploadIdTask() helper so routing, per-party family status
     // and the drawer's ID-doc counting all agree on what counts as an ID task.
-    if (isUploadIdTask(task.title)) {
+    if (isPropertyDetailsTask(task.title)) {
+      setPropertyDetailsOpen(true);
+    } else if (isSigningAppointmentTask(task.title)) {
+      setSigningOpen(true);
+    } else if (isAfterClosingTask(task.title)) {
+      setUtilitiesOpen(true);
+    } else if (isUploadIdTask(task.title)) {
       if (!task.spouse_name) void loadBehalfTargets(task.id);
       setIdDrawerOpen(true);
     } else if (isDepositTask(task.title)) {
@@ -1396,6 +1359,7 @@ export default function DashboardPage() {
     // No deal yet for this lead → clear tasks/milestones
     if (!activeDealId) {
       setTasks([]);
+      setInactiveTasks([]);
       setMilestones([]);
       return;
     }
@@ -1419,6 +1383,7 @@ export default function DashboardPage() {
           const d = await tasksRes.json();
           if (d.success) {
             setTasks(d.tasks);
+            setInactiveTasks(d.locked_tasks ?? []);
             void loadFamilyStatus(d.tasks as Task[]);
             // Land the user on the side that actually has content (e.g. the
             // Sale side where the admin pre-filled a co-seller's Personal
@@ -1447,9 +1412,28 @@ export default function DashboardPage() {
 
   // ── Closing cost estimate modal ──────────────────────────
   const [estimateOpen, setEstimateOpen] = useState(false);
+  // Sale files, or the Sale tab of a Buy & Sell file, get the sale estimate.
+  const estimateSide: "purchase" | "sale" =
+    activeDeal?.type === "Sale" ||
+    (activeDeal?.type === "Purchase & Sale" && selectedSide === "sale")
+      ? "sale"
+      : "purchase";
+  // APS task decides once it exists.
+  const intakeAps =
+    activeDeal?.type === "Purchase & Sale"
+      ? estimateSide === "sale"
+        ? activeProperty?.aps_uploaded_sale
+        : activeProperty?.aps_uploaded_purchase
+      : activeProperty?.aps_uploaded;
+  const apsTask = tasks.find(
+    (t) =>
+      (estimateSide === "sale" ? t.side !== "purchase" : t.side !== "sale") &&
+      /agreement of purchase/i.test(t.title),
+  );
+  const apsUploaded = apsTask ? !!apsTask.completed : !!intakeAps;
 
   // ── Mark task done + refresh ──────────────────────────────
-  async function markDone(id: string) {
+  async function markDone(id: string): Promise<boolean> {
     const taskTitle = tasks.find((t) => t.id === id)?.title ?? "Task";
     const isShared = tasks.find((t) => t.id === id)?.is_shared ?? false;
     try {
@@ -1459,17 +1443,18 @@ export default function DashboardPage() {
         body: JSON.stringify({ status: "Completed", completed: true, is_shared: isShared }),
       });
       if (!res.ok) throw new Error("Failed");
-      toastSuccess(`"${taskTitle}" completed successfully!`);
       if (activeDealId) {
         const [msRes, tasksRes] = await Promise.all([
           fetch(`/api/milestones?deal_id=${activeDealId}`),
           fetch(`/api/tasks?deal_id=${activeDealId}`),
         ]);
         if (msRes.ok) { const d = await msRes.json(); if (d.success) setMilestones(d.milestones); }
-        if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) { setTasks(d.tasks); void loadFamilyStatus(d.tasks as Task[]); } }
+        if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) { setTasks(d.tasks); setInactiveTasks(d.locked_tasks ?? []); void loadFamilyStatus(d.tasks as Task[]); } }
       }
+      return true;
     } catch {
       toastError(`Failed to complete "${taskTitle}". Please try again.`);
+      return false;
     }
   }
 
@@ -1483,9 +1468,34 @@ export default function DashboardPage() {
         fetch(`/api/tasks?deal_id=${activeDealId}`),
       ]);
       if (msRes.ok) { const d = await msRes.json(); if (d.success) setMilestones(d.milestones); }
-      if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) { setTasks(d.tasks); void loadFamilyStatus(d.tasks as Task[]); } }
+      if (tasksRes.ok) { const d = await tasksRes.json(); if (d.success) { setTasks(d.tasks); setInactiveTasks(d.locked_tasks ?? []); void loadFamilyStatus(d.tasks as Task[]); } }
     } catch {
       /* non-fatal */
+    }
+  }
+
+  // Draft keeps the task open.
+  async function saveTaskDraft(id: string) {
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "In Progress", completed: false }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toastSuccess("Draft saved");
+      await refreshActiveDeal();
+    } catch {
+      toastError("Could not save your draft. Please try again.");
+    }
+  }
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toastSuccess("Copied");
+    } catch {
+      toastError("Could not copy");
     }
   }
 
@@ -1546,6 +1556,10 @@ export default function DashboardPage() {
   });
 
   const heroAddress = showSale ? sellingFullAddress : fullAddress;
+  const heroPostal = showSale
+    ? activeProperty?.selling_address_postal_code
+    : activeProperty?.address_postal_code;
+  const heroIsToronto = isTorontoAddress([heroAddress, heroPostal].filter(Boolean).join(", "));
   const heroLabel = isBothDeal
     ? showSale
       ? "Sale · Property Address"
@@ -1561,6 +1575,9 @@ export default function DashboardPage() {
   const visibleTasks = isBothDeal
     ? tasks.filter((t) => (t.side ?? null) === selectedSide)
     : tasks;
+  const visibleInactive = isBothDeal
+    ? inactiveTasks.filter((t) => (t.side ?? null) === selectedSide)
+    : inactiveTasks;
 
   // Milestones linked to a per-party task (Personal Info / Upload ID) must NOT
   // show complete until EVERY party's copy is done. The milestone's own task
@@ -1576,16 +1593,45 @@ export default function DashboardPage() {
     }
   }
 
-  const closingFormatted = formatDateOnly(activeDeal?.closing_date ?? null, {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  const closingFormatted = formatDateOnly(
+    (showSale ? activeDeal?.selling_closing_date : null) ?? activeDeal?.closing_date ?? null,
+    { month: "long", day: "numeric", year: "numeric" },
+  );
+
+  // Booked signing appointment, shown in the hero card. Office time (Toronto),
+  // matching the booking page.
+  const signingAppt = activeProperty?.signing_appointment ?? null;
+  const signingWhen = signingAppt
+    ? `${new Date(signingAppt.start_at).toLocaleDateString("en-CA", {
+        timeZone: "America/Toronto",
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })} · ${new Date(signingAppt.start_at).toLocaleTimeString("en-CA", {
+        timeZone: "America/Toronto",
+        hour: "numeric",
+        minute: "2-digit",
+      })} ET`
+    : null;
 
   // Parties for the active property. On a Purchase & Sale deal each side has its
   // own parties — the primary is on both; co-persons show only on their side
   // (co-purchasers on Purchase, co-sellers on Sale). Single-type deals show all.
   const allParties = activeProperty?.parties ?? [];
+  const activeSide = isBothDeal ? selectedSide : dealTypeToSide(activeDeal?.type);
+  const partyNoun =
+    activeSide === "sale" ? "sellers" : activeSide === "purchase" ? "purchasers" : "parties";
+  const partiesLabel = partyNoun.charAt(0).toUpperCase() + partyNoun.slice(1);
+  const activeTaskHeading = activeTask
+    ? taskDisplayTitle(activeTask.title, activeTask.side ?? activeSide)
+    : "";
+  const taskSubtitle = [
+    isBothDeal ? (showSale ? "Sale" : "Purchase") : activeDeal?.type,
+    activeDeal?.file_number,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const visibleParties = isBothDeal
     ? allParties.filter(
         (p) =>
@@ -1625,6 +1671,20 @@ export default function DashboardPage() {
             familyStatus[t.id],
         )
       : activeTask;
+  // This side's names, from the Personal Info roster.
+  const sidePersonalInfo = tasks.find(
+    (t) =>
+      isPersonalInfoTask(t.title) &&
+      familyStatus[t.id] &&
+      (!isBothDeal || (t.side ?? null) === selectedSide),
+  );
+  const rosterNames = (sidePersonalInfo ? familyStatus[sidePersonalInfo.id].members : [])
+    .map((m) => m.name.trim())
+    .filter(Boolean);
+  const propertyDetailsNames = rosterNames.length
+    ? rosterNames
+    : [[activeProperty?.first_name, activeProperty?.last_name].filter(Boolean).join(" ")].filter(Boolean);
+
   const drawerPartyNames = (
     rosterTask ? (familyStatus[rosterTask.id]?.members ?? []) : []
   )
@@ -1635,8 +1695,13 @@ export default function DashboardPage() {
   // /api/task-responses (keyed off the co-person's task_id). So on-behalf
   // submissions must NOT call markDone() (which would PATCH the primary's task
   // and refetch the primary's list); just close.
+  function showSubmitted() {
+    setSubmittedTitle(activeTaskHeading || "Task");
+  }
+
   function handleDrawerCompleted(id: string, closeDrawer: () => void) {
     closeDrawer();
+    showSubmitted();
     const wasOnBehalf = isOnBehalf;
     setDirectTarget(null);
     // Own task: markDone() PATCHes it and refetches (incl. family status). An
@@ -1658,11 +1723,13 @@ export default function DashboardPage() {
         }}
         taskId={directTarget?.task_id ?? activeTask?.id ?? null}
         taskTitle={activeTask?.title ?? "Task Details"}
+        heading={activeTaskHeading}
         leadId={leadId ?? undefined}
         clientFirstName={activeProperty?.first_name}
         clientLastName={activeProperty?.last_name}
         firmKey={activeProperty?.firm_key}
         side={activeTask?.side ?? dealTypeToSide(activeDeal?.type)}
+        subtitle={taskSubtitle}
         onTaskCompleted={(id) =>
           handleDrawerCompleted(id, () => setDynamicDrawerOpen(false))
         }
@@ -1674,9 +1741,11 @@ export default function DashboardPage() {
         onClose={() => setDepositDrawerOpen(false)}
         taskId={activeTask?.id ?? null}
         taskTitle={activeTask?.title ?? "Deposit Funds Into Our Trust Account"}
+        heading={activeTaskHeading}
         leadId={leadId ?? null}
         onTaskCompleted={(id) => {
           setDepositDrawerOpen(false);
+          showSubmitted();
           markDone(id);
         }}
       />
@@ -1690,6 +1759,7 @@ export default function DashboardPage() {
         }}
         taskId={drawerTaskId}
         taskTitle={activeTask?.title ?? "Provide Personal Information"}
+        heading={activeTaskHeading}
         leadId={drawerLeadId}
         clientFirstName={drawerFirstName}
         clientLastName={drawerLastName}
@@ -1706,6 +1776,13 @@ export default function DashboardPage() {
           postalCode: activeProperty?.address_postal_code ?? null,
         }}
         partyNames={drawerPartyNames}
+        subtitle={
+          activeTask &&
+          familyStatus[activeTask.id]?.is_multi_party &&
+          [drawerFirstName, drawerLastName].filter(Boolean).length
+            ? `For ${[drawerFirstName, drawerLastName].filter(Boolean).join(" ")}`
+            : taskSubtitle
+        }
         onTaskCompleted={(id) =>
           handleDrawerCompleted(id, () => setPersonalInfoDrawerOpen(false))
         }
@@ -1720,12 +1797,15 @@ export default function DashboardPage() {
         }}
         leadId={drawerLeadId}
         taskId={drawerTaskId ?? undefined}
+        clientFirstName={drawerFirstName}
+        clientLastName={drawerLastName}
         spouseName={directTarget ? directTarget.spouse_name : activeTask?.spouse_name}
         partyStatuses={
           activeTask ? familyStatus[activeTask.id]?.members : undefined
         }
         onSaved={async () => {
           setIdDrawerOpen(false);
+          showSubmitted();
           const wasOnBehalf = isOnBehalf;
           const tid = drawerTaskId;
           setDirectTarget(null);
@@ -1737,9 +1817,98 @@ export default function DashboardPage() {
         }}
       />
 
+      {/* ── Confirm Property Details Modal ── */}
+      <PropertyDetailsTaskModal
+        open={propertyDetailsOpen}
+        taskId={activeTask?.id ?? null}
+        title={activeTask?.title ?? "Confirm your property details"}
+        subtitle={taskSubtitle}
+        clientNames={propertyDetailsNames}
+        address={[heroAddress, heroPostal].filter(Boolean).join(" ")}
+        priceLabel={activeSide === "sale" ? "Sale price" : "Purchase price"}
+        price={showSale ? (activeDeal?.selling_price ?? null) : (activeDeal?.price ?? null)}
+        deposit={
+          showSale
+            ? (activeProperty?.selling_deposit_amount ?? null)
+            : (activeDeal?.deposit_amount ?? null)
+        }
+        closingDate={closingFormatted}
+        propertyType={showSale ? null : (activeDeal?.building_type ?? null)}
+        onClose={() => setPropertyDetailsOpen(false)}
+        onSaved={(submitted) => {
+          setPropertyDetailsOpen(false);
+          if (submitted) showSubmitted();
+          else toastSuccess("Draft saved");
+          void refreshActiveDeal();
+        }}
+        onError={toastError}
+      />
+
+      {/* ── Signing Appointment Modal ── */}
+      <SigningTaskModal
+        open={signingOpen}
+        taskId={activeTask?.id ?? null}
+        dealId={activeDeal?.id ?? null}
+        calendarName={activeProperty?.signing_calendar_name ?? null}
+        title={activeTaskHeading || "Book your signing appointment"}
+        subtitle={taskSubtitle}
+        side={activeSide}
+        closingDate={closingFormatted}
+        onClose={() => setSigningOpen(false)}
+        onSaved={(submitted) => {
+          setSigningOpen(false);
+          if (submitted) showSubmitted();
+          else toastSuccess("Draft saved");
+          void refreshActiveDeal();
+        }}
+        onError={toastError}
+      />
+
+      {/* ── Utilities (after closing) Modal ── */}
+      <UtilitiesTaskModal
+        open={utilitiesOpen}
+        title={activeTaskHeading || "Close or transfer your utilities"}
+        subtitle={taskSubtitle}
+        city={
+          heroIsToronto
+            ? "Toronto"
+            : ((showSale ? activeProperty?.selling_address_city : activeProperty?.address_city) ?? null)
+        }
+        onClose={() => setUtilitiesOpen(false)}
+        onSaveDraft={async () => {
+          if (!activeTask) return;
+          await saveTaskDraft(activeTask.id);
+          setUtilitiesOpen(false);
+        }}
+        onComplete={async () => {
+          if (activeTask && (await markDone(activeTask.id))) {
+            setUtilitiesOpen(false);
+            showSubmitted();
+          }
+        }}
+      />
+
+      {activeProperty && (
+        <ChatWidget
+          name={[activeProperty.first_name, activeProperty.last_name].filter(Boolean).join(" ") || "Client"}
+          email={activeProperty.email ?? null}
+          fileNumber={activeDeal?.file_number ?? null}
+          address={heroAddress}
+        />
+      )}
+
+      <TaskSubmittedModal
+        title={submittedTitle}
+        subtitle={taskSubtitle}
+        onClose={() => setSubmittedTitle(null)}
+      />
+
       {/* ── Closing Cost Estimate Modal ── */}
       {estimateOpen && (
-        <ClosingCostEstimateModal onClose={() => setEstimateOpen(false)} />
+        <ClosingCostEstimateModal
+          onClose={() => setEstimateOpen(false)}
+          side={estimateSide}
+        />
       )}
 
       {/* ── 1. Property Selector Tabs (one per lead; Purchase & Sale deals split into 2 tabs) ── */}
@@ -1813,11 +1982,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Info chips row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100 border-t border-gray-100">
-          <div className="flex items-center gap-3 px-5 sm:px-6 py-4">
-            <div className="w-9 h-9 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-              <Calendar size={15} className="text-[#C10007]" strokeWidth={2} />
-            </div>
+        <div className={`grid grid-cols-1 ${signingAppt ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"} divide-y sm:divide-y-0 sm:divide-x divide-gray-100 border-t border-gray-100`}>
+          <div className="px-5 sm:px-6 py-4">
             <div>
               <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
                 Closing Date
@@ -1828,10 +1994,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 px-5 sm:px-6 py-4">
-            <div className="w-9 h-9 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-              <User size={15} className="text-[#C10007]" strokeWidth={2} />
-            </div>
+          <div className="px-5 sm:px-6 py-4">
             <div>
               <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
                 File Number
@@ -1842,31 +2005,48 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Parties — primary + co-persons on this transaction */}
-          <div className="flex items-start gap-3 px-5 sm:px-6 py-4">
-            <div className="w-9 h-9 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-              <Users size={15} className="text-[#C10007]" strokeWidth={2} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1.5">
-                Parties
+          {signingAppt && (
+            <div className="px-5 sm:px-6 py-4 min-w-0">
+              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                Signing Appointment
               </p>
-              {propertyLoading ? (
-                <p className="text-sm text-gray-400">...</p>
-              ) : visibleParties.length === 0 ? (
-                <p className="text-sm text-gray-400">—</p>
-              ) : (
-                <div className="space-y-1">
-                  {visibleParties.map((p) => (
-                    <div key={p.lead_id} className="flex items-center gap-2 flex-wrap">
-                      <span className="ph-mask text-sm font-bold text-gray-900 leading-tight">
-                        {partyFullName(p)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <p className="text-sm font-bold text-gray-900">{signingWhen}</p>
+              {signingAppt.appointment_type === "virtual" && (
+                <p className="text-xs text-gray-500">
+                  {signingAppt.meet_link ? (
+                    <>
+                      Google Meet ·{" "}
+                      <a
+                        href={signingAppt.meet_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-[#C10007] hover:underline"
+                      >
+                        Join
+                      </a>
+                    </>
+                  ) : (
+                    "Google Meet"
+                  )}
+                </p>
               )}
             </div>
+          )}
+
+          {/* Parties — primary + co-persons on this transaction */}
+          <div className="px-5 sm:px-6 py-4 min-w-0">
+            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+              {partiesLabel}
+            </p>
+            {propertyLoading ? (
+              <p className="text-sm text-gray-400">...</p>
+            ) : visibleParties.length === 0 ? (
+              <p className="text-sm text-gray-400">—</p>
+            ) : (
+              <p className="ph-mask text-sm font-bold text-gray-900">
+                {visibleParties.map(partyFullName).join(" & ")}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -1883,12 +2063,24 @@ export default function DashboardPage() {
             onTaskClick={handleTaskClick}
             onMemberClick={handleMemberClick}
             familyStatus={familyStatus}
+            partyNoun={partyNoun}
+            inactiveTasks={visibleInactive}
+            side={activeSide}
           />
           <CompletedTasksCard
             key={`completed:${activeLeadId ?? "no-active-lead"}:${selectedSide}`}
             tasks={visibleTasks}
             loading={tasksLoading}
             familyStatus={familyStatus}
+            onTaskClick={handleTaskClick}
+            onMemberClick={handleMemberClick}
+            side={activeSide}
+          />
+          <AfterClosingCard
+            tasks={visibleTasks}
+            loading={tasksLoading}
+            onTaskClick={handleTaskClick}
+            side={activeSide}
           />
         </div>
 
@@ -1898,6 +2090,7 @@ export default function DashboardPage() {
             milestones={visibleMilestones}
             blockedMilestoneIds={blockedMilestoneIds}
             loading={milestonesLoading}
+            side={activeSide === "sale" ? "sale" : "purchase"}
           />
 
           {/* ── Estimate your closing cost — dev deploys only ──
@@ -1905,74 +2098,84 @@ export default function DashboardPage() {
               without appearing on the production portal. See
               src/lib/featureFlags.ts to flip it on for production. */}
           {SHOW_CLOSING_COST_ESTIMATE && (
-            <ClosingCostEstimateCard onEstimate={() => setEstimateOpen(true)} />
+            <ClosingCostEstimateCard
+              onEstimate={() => setEstimateOpen(true)}
+              locked={!apsUploaded}
+              kind={estimateSide}
+            />
           )}
 
-          {/* ── Need Assistance ── */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#C10007"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.5 10.5a19.79 19.79 0 0 1-3-8.57A2 2 0 0 1 3.47 0h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 7.91a16 16 0 0 0 6 6l.72-.72a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                </svg>
+          {/* ── Your team ── */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm flex flex-col gap-3">
+            <h3 className="text-sm font-bold text-gray-900">Your team</h3>
+            {PORTAL_TEAM.map((m) => (
+              <div key={m.role} className="flex items-center gap-3">
+                <div className="w-[34px] h-[34px] rounded-full bg-gray-100 text-gray-500 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  {teamInitials(m.name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{m.role}</p>
+                  <p className="text-sm font-bold text-gray-900">{m.name}</p>
+                  {m.email && (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      <a href={`mailto:${m.email}`} className="font-semibold text-[#C10007] hover:underline">
+                        {m.email}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(m.email!)}
+                        className="cursor-pointer rounded border border-gray-200 p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+                        aria-label="Copy email"
+                      >
+                        <Copy size={11} />
+                      </button>
+                      {m.phone && (
+                        <>
+                          <span className="h-3 w-px bg-gray-200" aria-hidden />
+                          <a href={`tel:${m.phone.replace(/\D/g, "")}`} className="font-semibold !text-gray-900 hover:underline">
+                            {m.phone}
+                          </a>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-gray-900">
-                  Need Assistance?
-                </h3>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-500 leading-relaxed mb-5">
-              Our team is here to help you through every step of your closing
-              process.
+            ))}
+            <div className="border-t border-gray-100 pt-2.5">
+            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+              General inquiries
             </p>
-
-            <div className="space-y-2.5">
-              {/* Call */}
-              <a
-                href={`tel:${activeFirm.supportPhone}`}
-                className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
-              >
-                <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
-                  <Phone size={14} className="text-[#C10007]" strokeWidth={2} />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                    Call us
-                  </p>
-                  <p className="text-sm font-bold text-gray-900">
-                    {activeFirm.supportPhone}
-                  </p>
-                </div>
-              </a>
-
-              {/* Email */}
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
               <a
                 href={`mailto:${activeFirm.supportEmail}`}
-                className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50 hover:bg-[#FEF2F2] hover:border-[#fca5a5] transition-all duration-200 group"
+                className="font-semibold text-[#C10007] hover:underline break-all"
               >
-                <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 group-hover:border-[#fca5a5] transition-colors">
-                  <Mail size={14} className="text-[#C10007]" strokeWidth={2} />
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                    Email us
-                  </p>
-                  <p className="text-xs font-bold text-gray-900 break-all">
-                    {activeFirm.supportEmail}
-                  </p>
-                </div>
+                {activeFirm.supportEmail}
               </a>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(activeFirm.supportEmail)}
+                className="cursor-pointer rounded border border-gray-200 p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+                aria-label="Copy email"
+              >
+                <Copy size={11} />
+              </button>
+              <span className="h-3 w-px bg-gray-200" aria-hidden />
+              <a href={`tel:${activeFirm.supportPhone}`} className="font-semibold !text-gray-900 hover:underline">
+                {activeFirm.supportPhone}
+              </a>
+            </div>
+            </div>
+            <div className="border-t border-gray-100 pt-2.5">
+              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                Location
+              </p>
+              <p className="mt-1 text-xs font-semibold text-gray-900">
+                Suite 210, 10 Milner Business Court
+                <br />
+                Scarborough, ON M1B 3C6
+              </p>
             </div>
           </div>
         </div>{/* end right column */}

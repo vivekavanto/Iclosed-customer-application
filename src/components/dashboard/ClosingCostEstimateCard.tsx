@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { DollarSign } from "lucide-react";
 
 /* ════════════════════════════════════════════
    CLOSING COST ESTIMATE CARD
@@ -12,49 +11,45 @@ import { DollarSign } from "lucide-react";
    read as a live control that quietly does nothing.
 ════════════════════════════════════════════ */
 
-const HEADING = "Estimate your closing cost";
-
 const ClosingCostEstimateCard: React.FC<{
   href?: string;
   onEstimate?: () => void;
-}> = ({ href, onEstimate }) => {
+  /** Disabled until the Agreement of Purchase and Sale is uploaded. */
+  locked?: boolean;
+  /** Sale files estimate proceeds instead of closing costs. */
+  kind?: "purchase" | "sale";
+}> = ({ href, onEstimate, locked = false, kind = "purchase" }) => {
+  const heading = kind === "sale" ? "Estimate your sale proceeds" : "Estimate your closing cost";
+  const task = kind === "sale" ? "Upload your sale agreement" : "Upload your purchase agreement";
+  const subtitle = locked
+    ? `To activate the Estimate button, upload your Agreement of Purchase and Sale in the “${task}” task.`
+    : kind === "sale"
+      ? "Based on your quote and mortgage balance"
+      : "Based on your quote and purchase price";
   const buttonClass =
-    "w-full flex items-center justify-center rounded-xl bg-[#C10007] px-4 py-3 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#a30006] disabled:cursor-not-allowed disabled:opacity-60";
+    "flex-shrink-0 inline-flex items-center justify-center rounded-lg bg-[#C10007] px-4 py-2 text-sm font-bold text-white transition-colors duration-200 hover:bg-[#a30006] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500";
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] flex items-center justify-center flex-shrink-0">
-          <DollarSign size={18} className="text-[#C10007]" strokeWidth={2} />
-        </div>
-        <h3 className="text-sm font-bold text-gray-900">{HEADING}</h3>
+    <div className="bg-white rounded-2xl border border-gray-100 px-5 py-4 shadow-sm flex items-center gap-4">
+      <div className="flex-1 min-w-0">
+        <h3 className="text-sm font-bold text-gray-900">{heading}</h3>
+        <p className={`text-xs leading-snug mt-0.5 ${locked ? "text-gray-400" : "text-gray-500"}`}>{subtitle}</p>
       </div>
 
-      <p className="text-xs text-gray-500 leading-relaxed mb-5">
-        Get an estimate of the funds you&rsquo;ll need on closing day &mdash;
-        land transfer tax, title insurance, legal fees and disbursements &mdash;
-        so you can plan ahead.
-      </p>
-
-      {href ? (
+      {href && !locked ? (
         <Link href={href} className={buttonClass}>
-          {HEADING}
+          Estimate
         </Link>
       ) : (
         <button
           type="button"
           onClick={onEstimate}
-          disabled={!onEstimate}
+          disabled={!onEstimate || locked}
           className={`${buttonClass} cursor-pointer`}
         >
-          {HEADING}
+          Estimate
         </button>
       )}
-
-      <p className="mt-3 text-[11px] text-[#C10007]/60">
-        For planning only &mdash; no payment is due yet.
-      </p>
     </div>
   );
 };

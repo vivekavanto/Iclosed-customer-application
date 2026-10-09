@@ -7,6 +7,7 @@ import Input from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { INTAKE_STEPS, STEP_PRICE_ADDRESS } from "@/components/intake/steps";
 import type { ApsAgentDetails } from "@/lib/apsPrefill";
+import { ALLOW_DIGITS_IN_NAMES } from "@/lib/featureFlags";
 
 interface ContactData {
     fullName: string;
@@ -108,7 +109,9 @@ export interface ContactInfo {
  * Letters-and-spaces-only was rejecting names read straight off the uploaded
  * agreement — the form filled the field in and then refused its own value.
  */
-const NAME_PATTERN = /^[\p{L}\p{M}][\p{L}\p{M}\s'’.,-]*$/u;
+const NAME_PATTERN = ALLOW_DIGITS_IN_NAMES
+    ? /^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}\s'’.,-]*$/u // dev only: test names like "RDTest1"
+    : /^[\p{L}\p{M}][\p{L}\p{M}\s'’.,-]*$/u;
 const NAME_ERROR = "Enter a name using letters only.";
 
 const makeEmptyCard = (): CoPersonCard => ({
@@ -489,7 +492,7 @@ export default function Step5Contact({
             name: partner.agent_name ?? "",
             company: partner.brokerage_name ?? "",
             email: partner.agent_email ?? "",
-            phone: partner.agent_phone ?? "",
+            phone: formatPrefilledPhone(partner.agent_phone),
             partnerId: partner.id,
         });
         setReferralAgentErrors({});
@@ -548,6 +551,11 @@ export default function Step5Contact({
         if (digits.length <= 3) return digits.length ? `(${digits}` : "";
         if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
         return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+    };
+
+    const formatPrefilledPhone = (value: string | null | undefined): string => {
+        const digits = (value ?? "").replace(/\D/g, "");
+        return formatCoPhone(digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits);
     };
 
     const validateCoCard = (card: CoPersonCard): { fullName?: string; email?: string; phone?: string } => {
@@ -814,7 +822,7 @@ export default function Step5Contact({
                       name,
                       company: prev.company.trim() || apsAgent?.company || "",
                       email: prev.email.trim() || apsAgent?.email || "",
-                      phone: prev.phone.trim() || apsAgent?.phone || "",
+                      phone: prev.phone.trim() || formatPrefilledPhone(apsAgent?.phone),
                   },
         );
 

@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import NextImage from "next/image";
 import Webcam from "react-webcam";
+import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
+import RepeaterRows from "@/components/dashboard/RepeaterRows";
+import ChoiceChips from "@/components/dashboard/ChoiceChips";
+import SharesTable, { formatShares, minorityNames, sharesFor, sharesTotal } from "@/components/dashboard/SharesTable";
 import { upload } from "@vercel/blob/client";
 import { BLOB_ACCESS } from "@/lib/blobPrivacy";
 import { getVisibleWhen, isVisibleByRules, ruleSource } from "@/lib/visibleWhen";
@@ -19,12 +23,8 @@ import {
 } from "@/lib/addressValidation";
 import {
   X,
-  Upload,
-  Trash2,
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
-  RefreshCw,
   Loader2,
   CalendarCheck,
   Camera,
@@ -32,7 +32,6 @@ import {
   ArrowRight,
   ChevronDown,
   FileText,
-  Info,
   Copy,
   Check,
 } from "lucide-react";
@@ -62,6 +61,7 @@ interface FormField {
     | "checkbox"
     | "date"
     | "radio"
+    | "shares"
     | "note";
   label: string;
   placeholder: string | null;
@@ -106,6 +106,10 @@ const MORTGAGEE_ADDRESSES: { lender: string; address: string }[] = [
     address: "Bank of Montreal, 2465 Argentia Road, 8th Floor, Mississauga, ON L5N 0B4",
   },
   {
+    lender: "National Bank of Canada",
+    address: "National Bank of Canada, 800 Saint-Jacques Street, Suite 60001, Montreal, QC H3C 1A3",
+  },
+  {
     lender: "Equitable Bank",
     address: "Equitable Bank, 25 Ontario Street, Suite 2200, Toronto, ON M5A 0Y9",
   },
@@ -125,10 +129,14 @@ const MORTGAGEE_ADDRESSES: { lender: string; address: string }[] = [
 ];
 
 interface DynamicTaskDrawerProps {
+  /** Header line under the title, e.g. "Sale · 26S-0539". */
+  subtitle?: string;
   open: boolean;
   onClose: () => void;
   taskId: string | null;
   taskTitle: string;
+  /** Client-facing name shown in the header. */
+  heading?: string;
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
@@ -143,16 +151,25 @@ interface DynamicTaskDrawerProps {
 /* ─────────────────────────────────────────────
    HELPERS
 ───────────────────────────────────────────── */
+// options.repeater turns a textarea into item rows.
+function getRepeater(opts: unknown): { columns: string[]; hint: string | null } | null {
+  if (!opts || typeof opts !== "object" || Array.isArray(opts)) return null;
+  const r = (opts as { repeater?: { columns?: unknown; hint?: unknown } }).repeater;
+  if (!r || !Array.isArray(r.columns) || r.columns.length === 0) return null;
+  return { columns: r.columns.map(String), hint: typeof r.hint === "string" ? r.hint : null };
+}
+
 function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
 }
 
-function DetailsCard({ details }: { details: TaskDetailsCard }) {
+/** Copies text; shows "Copied" for two seconds. */
+function CopyButton({ text, label, compact = false }: { text: string; label: string; compact?: boolean }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(details.lines.join("\n"));
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -161,22 +178,39 @@ function DetailsCard({ details }: { details: TaskDetailsCard }) {
   }
 
   return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={label}
+      className={[
+        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border text-xs font-semibold transition-colors",
+        compact ? "p-1.5" : "px-3 py-1.5",
+        copied
+          ? "border-green-200 bg-green-50 text-green-700"
+          : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100",
+      ].join(" ")}
+    >
+      {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
+      {!compact && (copied ? "Copied" : label)}
+    </button>
+  );
+}
+
+const POLICY_CHECKLIST = [
+  "Policy effective date matches the closing date",
+  "Coverage amount meets lender requirements",
+  "Property address matches the purchase agreement",
+  "Policy contains a clause stating \u201ccost guaranteed insurance\u201d (not needed for condos)",
+  "Your lender is noted as the 1st mortgagee",
+  "Your lender\u2019s mortgagee address appears on the policy",
+];
+
+function DetailsCard({ details }: { details: TaskDetailsCard }) {
+  return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="text-sm font-bold text-gray-900">{details.heading}</p>
-        <button
-          type="button"
-          onClick={copy}
-          className={[
-            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
-            copied
-              ? "border-green-200 bg-green-50 text-green-700"
-              : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100",
-          ].join(" ")}
-        >
-          {copied ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
-          {copied ? "Copied" : "Copy"}
-        </button>
+        <CopyButton text={details.lines.join("\n")} label="Copy details" />
       </div>
       {details.lines.map((line) => (
         <p key={line} className="text-sm leading-relaxed text-gray-700">
@@ -190,15 +224,14 @@ function DetailsCard({ details }: { details: TaskDetailsCard }) {
 // Amber callout — used for task-description notes and "note" fields.
 function InfoNote({ text }: { text: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-      <Info size={14} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-amber-600" />
-      <p className="text-sm leading-relaxed text-amber-800">{text}</p>
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      <p className="text-xs leading-relaxed text-amber-800">{text}</p>
     </div>
   );
 }
 
-// Note with variant "section" renders as heading + text.
-function getNoteSection(opts: unknown): { text: string } | null {
+// "section" is heading + text (boxed optional); "paragraph" is plain text.
+function getNoteSection(opts: unknown): { text: string; paragraph: boolean; boxed: boolean } | null {
   let parsed: unknown = opts;
   if (typeof opts === "string") {
     try {
@@ -208,9 +241,9 @@ function getNoteSection(opts: unknown): { text: string } | null {
     }
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const o = parsed as { variant?: unknown; text?: unknown };
-  if (o.variant !== "section") return null;
-  return { text: typeof o.text === "string" ? o.text : "" };
+  const o = parsed as { variant?: unknown; text?: unknown; boxed?: unknown };
+  if (o.variant !== "section" && o.variant !== "paragraph") return null;
+  return { text: typeof o.text === "string" ? o.text : "", paragraph: o.variant === "paragraph", boxed: o.boxed === true };
 }
 
 // Format phone as (416) 555-1234
@@ -229,6 +262,30 @@ function isValidPhone(v: string) {
 // Validate email format
 function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function optString(opts: unknown, key: string): string | null {
+  const v = isRecord(opts) ? opts[key] : null;
+  return typeof v === "string" && v ? v : null;
+}
+
+/** Text shown inside an empty file slot. */
+function getSlotLabel(opts: unknown): string | null {
+  return optString(opts, "slot_label");
+}
+
+/** Fixed text before an input, e.g. "$". */
+function getPrefix(opts: unknown): string | null {
+  return optString(opts, "prefix");
+}
+
+/** Half-width field, paired side by side on wider screens. */
+function isHalfField(opts: unknown): boolean {
+  return isRecord(opts) && opts.half === true;
 }
 
 function getFileConfig(opts: unknown): {
@@ -273,13 +330,10 @@ function fileFieldAllowsMultiple(field: FormField): boolean {
   if (field.field_type !== "file") return false;
   const cfg = getFileConfig(field.options);
   if (cfg.multiple) return true;
-  if (cfg.doc_type === "aps" || cfg.doc_type === "void_cheque") return true;
+  if (cfg.doc_type === "aps") return true;
   const label = (field.label ?? "").toLowerCase();
-  // Void cheque / direct deposit form: seller may need to upload one per
-  // account (e.g. a joint account, or one each for spouses on a matrimonial
-  // home sale). Detected by label so it works for the current "Provide Void
-  // Cheque" wording and the newer "Upload Void Cheque / Direct Deposit Form".
-  if (label.includes("void cheque")) return true;
+  // One void cheque per party box.
+  if (cfg.doc_type === "void_cheque" || label.includes("void cheque")) return false;
   return label.includes("agreement of purchase");
 }
 
@@ -374,8 +428,10 @@ function FileSlot({
   onError?: (fieldId: string, error: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const cfg = getFileConfig(field.options);
+  const slotLabel = getSlotLabel(field.options) ?? field.label;
 
   function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
@@ -399,22 +455,12 @@ function FileSlot({
 
   if (existingUrl && !file) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 p-5 text-center">
-        <CheckCircle2 size={22} className="text-green-600" strokeWidth={2} />
-        <div>
-          <p className="text-sm font-semibold text-green-700">
-            {existingName ?? "File uploaded"}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            Previously submitted
-          </p>
-        </div>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw size={11} strokeWidth={2.5} /> Replace
-        </button>
+      <div className="flex items-center justify-center rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-16 text-center">
+        <FileDoneLine
+          name={existingName ?? "File uploaded"}
+          action="Replace"
+          onAction={() => inputRef.current?.click()}
+        />
         <input
           ref={inputRef}
           type="file"
@@ -432,23 +478,8 @@ function FileSlot({
 
   if (file) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">
-            {file.name}
-          </p>
-          <p className="text-xs text-gray-400">
-            {file.size < 1000 * 1000
-              ? `${(file.size / 1000).toFixed(1)} KB`
-              : `${(file.size / 1000 / 1000).toFixed(2)} MB`}
-          </p>
-        </div>
-        <button
-          onClick={() => onClear(field.id)}
-          className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-        >
-          <Trash2 size={13} strokeWidth={2} />
-        </button>
+      <div className="flex items-center justify-center rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-16 text-center">
+        <FileDoneLine name={file.name} action="Remove" onAction={() => onClear(field.id)} />
       </div>
     );
   }
@@ -472,29 +503,39 @@ function FileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200 select-none",
+          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center cursor-pointer transition-all duration-200 select-none",
           dragOver
             ? "border-[#C10007] bg-[#FEF2F2]"
             : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
-        <div
-          className={[
-            "w-9 h-9 rounded-full flex items-center justify-center",
-            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
-          ].join(" ")}
-        >
-          <Upload
-            size={16}
-            className={dragOver ? "text-[#C10007]" : "text-gray-400"}
-            strokeWidth={2}
-          />
-        </div>
         <div>
-          <p className="text-xs font-semibold text-gray-700">{field.label}</p>
+          <p className="text-sm font-semibold text-gray-800">{slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · {cfg.accept} · Max {cfg.max_mb}MB
+            Click or drag · {acceptLabel(cfg.accept)} · Max {cfg.max_mb}MB
           </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCameraOpen(true);
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Camera size={13} strokeWidth={2} /> Take photo
+          </button>
         </div>
         <input
           ref={inputRef}
@@ -508,6 +549,16 @@ function FileSlot({
           }}
         />
       </div>
+      {cameraOpen && (
+        <PhotoCaptureDialog
+          title={slotLabel}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(f) => {
+            handlePick(f);
+            setCameraOpen(false);
+          }}
+        />
+      )}
       {error && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
           <AlertCircle size={11} />
@@ -545,7 +596,10 @@ function MultiFileSlot({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const cfg = getFileConfig(field.options);
+  const slotLabel = getSlotLabel(field.options) ?? field.label;
+  const hasFiles = files.length > 0 || existing.length > 0;
 
   function validateFile(f: File): string | null {
     const ext = "." + (f.name.split(".").pop() ?? "").toLowerCase();
@@ -574,66 +628,45 @@ function MultiFileSlot({
     }
   }
 
-  function fmt(bytes: number) {
-    return bytes < 1000 * 1000
-      ? `${(bytes / 1000).toFixed(1)} KB`
-      : `${(bytes / 1000 / 1000).toFixed(2)} MB`;
-  }
-
   return (
     <div>
-      {/* Existing (previously submitted) files */}
-      {existing.length > 0 && (
-        <div className="space-y-2 mb-2">
+      {/* Picked and previously submitted files in one green box */}
+      {hasFiles && (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files?.length) handlePick(e.dataTransfer.files);
+          }}
+          className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-14 text-center"
+        >
           {existing.map((e, i) => (
-            <div
+            <FileDoneLine
               key={`ex-${i}`}
-              className="flex items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 px-4 py-3"
-            >
-              <CheckCircle2 size={16} className="text-green-600 shrink-0" strokeWidth={2} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-green-700 truncate">{e.name || "File uploaded"}</p>
-                <p className="text-[11px] text-gray-400">Previously submitted</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemoveExisting(field.id, i)}
-                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                aria-label={`Remove ${e.name}`}
-              >
-                <Trash2 size={13} strokeWidth={2} />
-              </button>
-            </div>
+              name={e.name || "File uploaded"}
+              action="Remove"
+              onAction={() => onRemoveExisting(field.id, i)}
+            />
           ))}
-        </div>
-      )}
-
-      {/* Newly picked files */}
-      {files.length > 0 && (
-        <div className="space-y-2 mb-2">
           {files.map((f, i) => (
-            <div
+            <FileDoneLine
               key={`new-${i}`}
-              className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">{f.name}</p>
-                <p className="text-xs text-gray-400">{fmt(f.size)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemoveNew(field.id, i)}
-                className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-                aria-label={`Remove ${f.name}`}
-              >
-                <Trash2 size={13} strokeWidth={2} />
-              </button>
-            </div>
+              name={f.name}
+              action="Remove"
+              onAction={() => onRemoveNew(field.id, i)}
+            />
           ))}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="mt-1 cursor-pointer text-xs font-semibold text-[#C10007] hover:underline"
+          >
+            + Add another file
+          </button>
         </div>
       )}
 
-      {/* Dropzone — always available so more files can be added */}
+      {/* Dropzone until the first file is in */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -650,25 +683,38 @@ function MultiFileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          "flex flex-col items-center gap-2 rounded-xl border-2 border-dashed p-5 text-center cursor-pointer transition-all duration-200 select-none",
+          "flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center cursor-pointer transition-all duration-200 select-none",
+          hasFiles ? "hidden" : "flex",
           dragOver ? "border-[#C10007] bg-[#FEF2F2]" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
-        <div
-          className={[
-            "w-9 h-9 rounded-full flex items-center justify-center",
-            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
-          ].join(" ")}
-        >
-          <Upload size={16} className={dragOver ? "text-[#C10007]" : "text-gray-400"} strokeWidth={2} />
-        </div>
         <div>
-          <p className="text-xs font-semibold text-gray-700">
-            {files.length > 0 || existing.length > 0 ? "Add more files" : field.label}
-          </p>
+          <p className="text-sm font-semibold text-gray-800">{slotLabel}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · multiple · {cfg.accept} · Max {cfg.max_mb}MB each
+            Click or drag · {acceptLabel(cfg.accept)} · Max {cfg.max_mb}MB
           </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCameraOpen(true);
+            }}
+            className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Camera size={13} strokeWidth={2} /> Take photo
+          </button>
         </div>
         <input
           ref={inputRef}
@@ -682,6 +728,16 @@ function MultiFileSlot({
           }}
         />
       </div>
+      {cameraOpen && (
+        <PhotoCaptureDialog
+          title={slotLabel}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(f) => {
+            handlePick([f]);
+            setCameraOpen(false);
+          }}
+        />
+      )}
       {error && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
           <AlertCircle size={11} />
@@ -786,11 +842,13 @@ export default function DynamicTaskDrawer({
   onClose,
   taskId,
   taskTitle,
+  heading,
   leadId,
   clientFirstName,
   clientLastName,
   firmKey,
   side = null,
+  subtitle,
   onTaskCompleted,
 }: DynamicTaskDrawerProps) {
   const firm = getFirm(firmKey);
@@ -834,7 +892,6 @@ export default function DynamicTaskDrawer({
   const [sharpnessOk, setSharpnessOk] = useState(false);
   const [cameraValidating, setCameraValidating] = useState(false);
   const [acceptableDocsOpen, setAcceptableDocsOpen] = useState(false);
-  const [mortgageeAddressesOpen, setMortgageeAddressesOpen] = useState(false);
   const [manualUploadOpen, setManualUploadOpen] = useState(false);
   const [manualUploadStep, setManualUploadStep] = useState(0);
   // Guards the one-time clients-table prefill per open/taskId (see effect below).
@@ -959,7 +1016,7 @@ export default function DynamicTaskDrawer({
           { value: p.marital_status, match: (l) => l.includes("marital") },
           { value: p.citizenship_status, match: (l) => l.includes("citizenship") },
           { value: p.occupation, match: (l) => l.includes("occupation") },
-          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")) },
+          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("phone") && (l.includes("employer") || l.includes("business")) },
         ];
 
         const next: Record<string, string> = {};
@@ -1080,7 +1137,9 @@ export default function DynamicTaskDrawer({
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
-    return field.required || !!getVisibleWhen(ruleSource(field));
+    const opts: unknown = field.options;
+    const optional = isRecord(opts) && opts.optional === true;
+    return field.required || (!!getVisibleWhen(ruleSource(field)) && !optional);
   }
 
   // Validate ONE field. Shared by submit and the on-blur check so a field the
@@ -1113,6 +1172,11 @@ export default function DynamicTaskDrawer({
       return required && values[field.id] !== "true"
         ? `${field.label} is required.`
         : null;
+    }
+    if (field.field_type === "shares") {
+      const total = sharesTotal(sharesFor(shareNames, val));
+      if (!val) return required ? `${field.label} is required.` : null;
+      return total === 100 ? null : `Shares must add up to 100% — they add up to ${total}%.`;
     }
     if (field.field_type === "email") {
       if (required && !val) return `${field.label} is required.`;
@@ -1558,8 +1622,28 @@ export default function DynamicTaskDrawer({
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
   const isVoidChequeTask = taskTitle.toLowerCase().includes("void cheque");
-  const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
+  const hasDraftOption = !isCalendlyTask;
+  // Upload-only tasks submit with "Upload & Submit", per the redesign.
+  const isUploadTask =
+    ["agreement of purchase", "home insurance", "void cheque", "property tax", "deposit funds", "status certificate"].some((k) =>
+      taskTitle.toLowerCase().includes(k),
+    ) && !(isVoidChequeTask && side === "sale");
   const taskCopy = getTaskCopy(taskTitle, side);
+  // Sellers for the proceeds split.
+  const shareNames = fields
+    .filter((f) => f.field_type === "file" && getFileConfig(f.options).doc_type === "void_cheque" && isFieldVisible(f))
+    .map((f) => f.label);
+  // Purchase void cheque: one box per purchaser.
+  const purchaserCount =
+    isVoidChequeTask && side === "purchase"
+      ? fields.filter((f) => f.field_type === "file" && isFieldVisible(f)).length
+      : 0;
+  const eachPurchaserNote =
+    purchaserCount === 2
+      ? " As you are both purchasers, we need one from each of you."
+      : purchaserCount > 2
+        ? ` As there are ${purchaserCount} purchasers, we need one from each of you.`
+        : "";
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {
@@ -1679,7 +1763,7 @@ export default function DynamicTaskDrawer({
         className={[
           "fixed z-50 bg-white shadow-2xl flex flex-col",
           isLargeScreen
-            ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+            ? "inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-2xl border border-gray-100"
             : "top-0 right-0 h-full w-full max-w-[520px]",
           isLargeScreen
             ? open
@@ -1703,10 +1787,12 @@ export default function DynamicTaskDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
-              {taskTitle}
+              {heading ?? taskTitle}
             </h2>
             <p className="text-xs text-gray-400 mt-1">
-              {isUploadIdTask
+              {subtitle
+                ? subtitle
+                : isUploadIdTask
                 ? "Upload your identification documents to verify your identity for the property transaction."
                 : hasFileFields
                   ? "Upload the required documents to complete this task."
@@ -1725,15 +1811,26 @@ export default function DynamicTaskDrawer({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-5">
 
           {taskCopy && (
             <div className="space-y-3">
               <p className="text-sm text-gray-600 leading-relaxed">
                 {taskCopy.description}
+                {eachPurchaserNote}
               </p>
-              {taskCopy.details && <DetailsCard details={taskCopy.details} />}
               {taskCopy.note && <InfoNote text={taskCopy.note} />}
+              {taskCopy.blog && (
+                <a
+                  href={`/blog/${taskCopy.blog.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-[13px] font-semibold text-[#C10007] hover:underline"
+                >
+                  Read our blog: {taskCopy.blog.title} →
+                </a>
+              )}
+              {taskCopy.details && <DetailsCard details={taskCopy.details} />}
             </div>
           )}
 
@@ -1742,99 +1839,35 @@ export default function DynamicTaskDrawer({
             <>
               {/* Policy Requirements Checklist */}
               <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-bold text-gray-900 mb-3">Policy Requirements Checklist</p>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-gray-900">Policy Requirements Checklist</p>
+                  <CopyButton text={POLICY_CHECKLIST.map((t) => `- ${t}`).join("\n")} label="Copy checklist" />
+                </div>
                 <ul className="space-y-2">
-                  {[
-                    { key: "effective-date", label: <>Policy effective date matches the closing date</> },
-                    { key: "coverage", label: <>Coverage amount meets lender requirements</> },
-                    { key: "address", label: <>Property address matches the purchase agreement</> },
-                    {
-                      key: "clause",
-                      label: (
-                        <>
-                          Policy contains a clause stating{" "}
-                          <span className="font-semibold text-gray-900">&ldquo;cost guaranteed insurance&rdquo;</span> (not needed for condos)
-                        </>
-                      ),
-                    },
-                    {
-                      key: "mortgagee-rank",
-                      label: (
-                        <>
-                          Your lender is noted as the{" "}
-                          <span className="font-semibold text-gray-900">1st mortgagee</span>
-                        </>
-                      ),
-                    },
-                    {
-                      key: "mortgagee-address",
-                      label: (
-                        <>
-                          Your lender&rsquo;s{" "}
-                          <span className="font-semibold text-gray-900">mortgagee address</span> appears on the policy
-                        </>
-                      ),
-                    },
-                  ].map((item) => (
-                    <li key={item.key} className="flex items-start gap-2 text-xs text-gray-600">
+                  {POLICY_CHECKLIST.map((item) => (
+                    <li key={item} className="flex items-start gap-2 text-xs text-gray-600">
                       <span className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0 mt-1.5" />
-                      <span>{item.label}</span>
+                      <span>{item}</span>
                     </li>
                   ))}
                 </ul>
-
-                <div className="mt-4 pt-3 border-t border-gray-100">
-                  <button
-                    type="button"
-                    onClick={() => setMortgageeAddressesOpen(!mortgageeAddressesOpen)}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-[#C10007] hover:opacity-80 transition-opacity cursor-pointer"
-                    aria-expanded={mortgageeAddressesOpen}
-                  >
-                    <ChevronDown
-                      size={15}
-                      className={`transition-transform duration-200 ${mortgageeAddressesOpen ? "" : "-rotate-90"}`}
-                      strokeWidth={2.5}
-                    />
-                    See mortgagee addresses for common lenders
-                  </button>
-
-                  {mortgageeAddressesOpen && (
-                    <>
-                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {MORTGAGEE_ADDRESSES.map((m) => (
-                          <div key={m.lender} className="rounded-lg bg-gray-50 px-3 py-2.5">
-                            <p className="text-xs font-bold text-gray-900">{m.lender}</p>
-                            <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">
-                              {m.address}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
-                        This is not an exhaustive list. If your lender is not shown, use the
-                        mortgagee address given by your lender.
-                      </p>
-                    </>
-                  )}
-                </div>
               </div>
-            </>
-          )}
 
-          {/* ── Void Cheque / Direct Deposit static sections (sale only) ── */}
-          {isVoidChequeTask && side !== "purchase" && (
-            <>
-              <p className="text-sm text-gray-600 leading-relaxed">
-              Please upload a void cheque / direct deposit form for each party involved in the sale. 
-              </p>
-              <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                <AlertTriangle
-                  size={15}
-                  className="text-amber-500 flex-shrink-0 mt-0.5"
-                  strokeWidth={2}
-                />
-                <p className="text-xs text-amber-800 leading-relaxed">
-                If you are married and this is a sale of a primary residence, please upload a void cheque / direct deposit form for your spouse as well, or a joint account. 
+              <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-bold text-gray-900 mb-3">Mortgagee addresses for common lenders</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {MORTGAGEE_ADDRESSES.map((m) => (
+                    <div key={m.lender} className="flex items-start justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-900">{m.lender}</p>
+                        <p className="mt-0.5 text-[11px] text-gray-500 leading-relaxed">{m.address}</p>
+                      </div>
+                      <CopyButton text={m.address} label={`Copy ${m.lender} address`} compact />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
+                  Not an exhaustive list. If your lender is not shown, use the mortgagee address from your lender.
                 </p>
               </div>
             </>
@@ -1901,7 +1934,7 @@ export default function DynamicTaskDrawer({
                     <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
                       <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       <p className="text-[11px] text-gray-500">
-                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be used for ID verification purposes.
+                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. Credit Card, if uploaded, will only be used for ID verification purposes.
                       </p>
                     </div>
                   </div>
@@ -2060,20 +2093,33 @@ export default function DynamicTaskDrawer({
             />
           )}
 
-          {!fieldsLoading &&
-            fields.map((field) => {
+          {!fieldsLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+          {fields.map((field) => {
+            const node = ((): React.ReactNode => {
               // Hide fields whose visible_when condition isn't currently met.
               if (!isFieldVisible(field)) return null;
 
               // Display-only callout — the label carries the message.
               if (field.field_type === "note") {
                 const section = getNoteSection(field.options);
+                if (section?.paragraph) {
+                  return (
+                    <p key={field.id} id={`field-${field.id}`} className="text-[15px] text-gray-600 leading-relaxed">
+                      {section.text}
+                    </p>
+                  );
+                }
                 if (section) {
                   return (
-                    <div key={field.id} id={`field-${field.id}`} className="space-y-1.5 pt-2">
+                    <div
+                      key={field.id}
+                      id={`field-${field.id}`}
+                      className={section.boxed ? "space-y-2 rounded-xl border border-gray-200 px-5 py-4" : "space-y-1.5 pt-2"}
+                    >
                       <p className="text-base font-semibold text-gray-900">{field.label}</p>
                       {section.text && (
-                        <p className="text-sm text-gray-600 leading-relaxed">{section.text}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{section.text}</p>
                       )}
                     </div>
                   );
@@ -2085,7 +2131,38 @@ export default function DynamicTaskDrawer({
                 );
               }
 
-              // Pill choices (Yes / No / Partial) — options share the select shape.
+              if (field.field_type === "shares") {
+                const rows = sharesFor(shareNames, values[field.id] ?? "");
+                const minority = sharesTotal(rows) === 100 ? minorityNames(rows) : [];
+                const opts: unknown = field.options;
+                const hint = isRecord(opts) && typeof opts.hint === "string" ? opts.hint : null;
+                const first = (n: string) => n.split(" ")[0];
+                return (
+                  <div key={field.id} id={`field-${field.id}`} className="space-y-3">
+                    <div>
+                      <label className="text-sm font-semibold text-gray-800 block">
+                        {field.label}
+                        {fieldRequired(field) && <span className="text-[#C10007] ml-1">*</span>}
+                      </label>
+                      {hint && <p className="mt-1 text-sm text-gray-500">{hint}</p>}
+                    </div>
+                    <SharesTable
+                      rows={rows}
+                      invalid={!!errors[field.id]}
+                      onChange={(next) => setValue(field.id, formatShares(next))}
+                    />
+                    {errors[field.id] && <p className="text-xs text-[#C10007]">{errors[field.id]}</p>}
+                    {minority.map((name) => (
+                      <InfoNote
+                        key={name}
+                        text={`${first(name)} receives the minority share, so ${first(name)} needs Independent Legal Advice (ILA) \u2014 on their own, not together. ILA is given by a lawyer outside our firm, who charges their own fee (usually $250 to $450, plus HST).`}
+                      />
+                    ))}
+                  </div>
+                );
+              }
+
+              // Radio choices; options share the select shape.
               if (field.field_type === "radio") {
                 const opts = isSelectOptions(field.options) ? field.options : [];
                 const selected = values[field.id] ?? "";
@@ -2097,26 +2174,12 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
-                    <div className="flex flex-wrap gap-2.5">
-                      {opts.map((o) => {
-                        const isOn = selected === o.value;
-                        return (
-                          <button
-                            key={o.value}
-                            type="button"
-                            onClick={() => setValue(field.id, o.value)}
-                            className={[
-                              "px-5 py-2 rounded-full border text-sm font-semibold transition-colors",
-                              isOn
-                                ? "border-[#C10007] text-[#C10007] bg-white"
-                                : "border-gray-200 text-gray-700 bg-white hover:border-gray-300",
-                            ].join(" ")}
-                          >
-                            {o.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <ChoiceChips
+                      options={opts}
+                      value={selected}
+                      onChange={(v) => setValue(field.id, v)}
+                      label={field.label}
+                    />
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
                         {errors[field.id]}
@@ -2436,6 +2499,7 @@ export default function DynamicTaskDrawer({
               }
 
               if (field.field_type === "textarea") {
+                const repeater = getRepeater(field.options);
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
@@ -2444,6 +2508,17 @@ export default function DynamicTaskDrawer({
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                     </label>
+                    {repeater ? (
+                      <>
+                        {repeater.hint && <p className="-mt-1 mb-3 text-sm text-gray-500">{repeater.hint}</p>}
+                        <RepeaterRows
+                          placeholders={repeater.columns}
+                          value={values[field.id] ?? ""}
+                          invalid={!!errors[field.id]}
+                          onChange={(v) => setValue(field.id, v)}
+                        />
+                      </>
+                    ) : (
                     <textarea
                       value={values[field.id] ?? ""}
                       onChange={(e) => setValue(field.id, e.target.value)}
@@ -2456,6 +2531,7 @@ export default function DynamicTaskDrawer({
                         "resize-none",
                       ].join(" ")}
                     />
+                    )}
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
                         {errors[field.id]}
@@ -2474,6 +2550,12 @@ export default function DynamicTaskDrawer({
                       <span className="text-[#C10007] ml-1">*</span>
                     )}
                   </label>
+                  <div className="relative">
+                  {getPrefix(field.options) && (
+                    <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+                      {getPrefix(field.options)}
+                    </span>
+                  )}
                   <input
                     type={
                       field.field_type === "phone" ? "tel" : field.field_type
@@ -2489,8 +2571,10 @@ export default function DynamicTaskDrawer({
                     className={[
                       inputBase,
                       errors[field.id] ? inputError : inputNormal,
+                      getPrefix(field.options) ? "pl-8" : "",
                     ].join(" ")}
                   />
+                  </div>
                   {errors[field.id] && (
                     <p className="mt-1.5 text-xs text-[#C10007]">
                       {errors[field.id]}
@@ -2498,7 +2582,16 @@ export default function DynamicTaskDrawer({
                   )}
                 </div>
               );
-            })}
+            })();
+            if (!node) return null;
+            return (
+              <div key={field.id} className={isHalfField(field.options) ? "min-w-0" : "sm:col-span-2 min-w-0"}>
+                {node}
+              </div>
+            );
+          })}
+          </div>
+          )}
 
           
 
@@ -2545,7 +2638,11 @@ export default function DynamicTaskDrawer({
                   }}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
-                  {isUploadIdTask ? "Save & Continue" : "Submit Information"}
+                  {isPersonalInfoTask
+                    ? "Submit Information"
+                    : isUploadTask
+                      ? "Upload & Submit"
+                      : "Save & Continue"}
                 </Button>
               </>
             ) : (

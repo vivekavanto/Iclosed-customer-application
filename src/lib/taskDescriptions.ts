@@ -7,6 +7,13 @@ interface TaskDescriptionRule {
   // Rendered as a highlighted callout below the description.
   note?: string;
   details?: TaskDetailsCard;
+  // Published post on /blog, shown as "Read our blog: …".
+  blog?: TaskBlogLink;
+}
+
+export interface TaskBlogLink {
+  title: string;
+  slug: string;
 }
 
 export interface TaskDetailsCard {
@@ -19,26 +26,49 @@ const RULES: TaskDescriptionRule[] = [
     match: "agreement of purchase",
     sides: ["sale", "purchase"],
     description:
-      "Please upload your Agreements of Purchase and Sale (APS), and any amendments/schedules so we can prepare your file accordingly.",
+      "Please upload your Agreement of Purchase and Sale (APS), and any amendments/schedules so we can prepare your file accordingly.",
+  },
+  {
+    match: "status certificate",
+    sides: ["purchase"],
+    description:
+      "For resale condos, please upload the status certificate from the condo corporation. It shows the building’s finances, monthly fees and any legal issues.",
+  },
+  {
+    match: "ownership shares",
+    description:
+      "Tell us how you would like to hold title. If you are not sure, read the explainer below or ask our team.",
   },
   {
     match: "mortgage statement",
     sides: ["sale"],
     description:
       "Please upload your most recent mortgage statement, which we use to request the payout amount needed to pay off and discharge your mortgage on closing.",
+    blog: {
+      title: "Mortgage statements and payout statements",
+      slug: "mortgage-statements-and-payout-statements-what-sellers-need-to-know",
+    },
   },
   {
     match: "latest property tax bill",
     sides: ["sale"],
     description:
-      "Please upload your latest property tax bill and proof of payment. We use these to adjust taxes between you and the buyer. If your bill has a customer number, please include it in the upload.",
-    note: "If your property taxes are paid by pre-authorized withdrawal, please contact the municipality to cancel it as of the closing date. This does not happen automatically when the property is sold, and withdrawals will continue after closing unless you cancel.",
+      "Please upload your latest property tax bill. We use it to split this year's taxes between you and the buyer.",
+    note: "Paying by pre-authorized withdrawal? Contact the municipality to cancel it as of the closing date.",
+    blog: {
+      title: "How property taxes are adjusted on closing",
+      slug: "how-property-tax-is-adjusted-when-you-sell-your-ontario-home",
+    },
   },
   {
     match: "rental equipment information",
     sides: ["sale"],
     description:
-      "Many homes have rental equipment e.g hot water tank, furnace, water softener, etc. If your property has rental equipment, please provide the details below.",
+      "Many homes have rental equipment e.g. hot water tank, furnace, water softener. If your property has rental equipment, please provide the details below.",
+    blog: {
+      title: "What happens to rental equipment when you sell",
+      slug: "what-happens-to-rental-equipment-when-you-sell-your-home",
+    },
   },
   {
     match: "mortgage representative details",
@@ -50,7 +80,8 @@ const RULES: TaskDescriptionRule[] = [
     match: "treefort id verification",
     sides: ["purchase", "sale"],
     description:
-      "Please complete ID verification by Treefort prior to your signing appointment. The link will be sent to you via email a few days prior to signing. You'll need two pieces of ID, one with a photograph. Once you have completed the verification, please submit this task. If you have not received the Treefort link within a day of your signing, please reach out.",
+      "Please complete ID verification by Treefort prior to your signing appointment. The link will be sent to you via email a few days prior to signing. You'll need two pieces of ID, one with a photograph.",
+    note: "If you have not received the Treefort link within a day of your signing, please reach out.",
   },
   {
     match: "solicitor information",
@@ -72,13 +103,20 @@ const RULES: TaskDescriptionRule[] = [
     match: "home insurance policy",
     sides: ["purchase"],
     description:
-      "Before releasing your mortgage funds, your lender requires proof that your new home is insured as of the closing date, with them listed on the policy. Please upload a home insurance policy that matches the checklist below.",
+      "Before releasing your mortgage funds, your lender requires proof that your new home is insured as of the closing date, with them listed on the policy.",
+  },
+  {
+    match: "void cheque",
+    sides: ["sale"],
+    description:
+      "After your mortgage and closing costs are paid, the rest of the money from your sale is yours. Tell us how you'd like to receive it.",
   },
   {
     match: "void cheque",
     sides: ["purchase"],
-    description: "Please upload a void cheque for each purchaser.",
-    note: "We may use this banking information to return any excess funds remaining after your transaction closes. If you are obtaining a mortgage, your lender may also require a void cheque to set up your mortgage payments.",
+    description:
+      "We use your void cheque to return any excess funds after closing.",
+    blog: { title: "What is a void cheque", slug: "void-cheques-why-your-lawyer-or-lender-may-ask-for-one" },
   },
   {
     // The drawer renders DEPOSIT_TASK_DESCRIPTION itself (it needs the copy
@@ -96,14 +134,24 @@ const RULES: TaskDescriptionRule[] = [
 export function getTaskCopy(
   title: string | null | undefined,
   side: TaskSide = null,
-): { description: string; note: string | null; details: TaskDetailsCard | null } | null {
+): {
+  description: string;
+  note: string | null;
+  details: TaskDetailsCard | null;
+  blog: TaskBlogLink | null;
+} | null {
   const normalized = (title ?? "").toLowerCase();
   if (!normalized) return null;
 
   for (const rule of RULES) {
     if (!normalized.includes(rule.match)) continue;
     if (rule.sides && (side === null || !rule.sides.includes(side))) continue;
-    return { description: rule.description, note: rule.note ?? null, details: rule.details ?? null };
+    return {
+      description: rule.description,
+      note: rule.note ?? null,
+      details: rule.details ?? null,
+      blog: rule.blog ?? null,
+    };
   }
   return null;
 }

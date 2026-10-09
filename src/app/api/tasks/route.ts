@@ -2,8 +2,9 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeal } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isIlaTask, isTreefortTask } from "@/lib/taskKinds";
 import { NextResponse } from "next/server";
+import { isVacantHomeTaxTask, vacantTaxApplies } from "@/lib/vacantHomeTax";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,13 @@ export async function GET(req: Request) {
         .select("type, lead_id")
         .eq("id", dId)
         .single();
+      const { data: dealLead } = dealData?.lead_id
+        ? await supabaseAdmin
+            .from("leads")
+            .select("address_city, selling_address_city, lead_type")
+            .eq("id", dealData.lead_id)
+            .maybeSingle()
+        : { data: null };
 
       // Hold-title is agreed between co-owners — a single-party file has no one to agree with.
       // Fails open: an unresolvable count keeps the task.
@@ -226,7 +234,8 @@ export async function GET(req: Request) {
             "id, name, role_type, order_index, deadline_rule, stage_template_id, is_shared, activation_required",
           )
           .eq("lead_type", templateType)
-          .eq("is_default", true)
+          // Plus vacant home tax, which the city check below gates.
+          .or("is_default.eq.true,name.ilike.vacant home tax*")
           .eq("is_deleted", false)
           .order("order_index", { ascending: true });
 
@@ -246,7 +255,8 @@ export async function GET(req: Request) {
             const titleKey = `${side ?? "_"}:${tt.name?.trim().toLowerCase()}`;
             if (existingTitleKeys.has(titleKey)) return false;
             if (singleParty && isHoldTitleTask(tt.name)) return false;
-            if (isTreefortTask(tt.name)) return false;
+            if (isTreefortTask(tt.name) || isIlaTask(tt.name)) return false;
+            if (isVacantHomeTaxTask(tt.name) && !(dealLead && vacantTaxApplies(dealLead, side))) return false;
             const role = (tt.role_type ?? "").toLowerCase();
             return role === "client" || role === "both" || role === "";
           })
@@ -494,9 +504,22 @@ export async function GET(req: Request) {
       };
     });
 
+    // Not yet switched on by an admin; dashboard shows them locked.
+    const { data: inactive } = await supabaseAdmin
+      .from("tasks")
+      .select("id, deal_id, title, side, order_index, role_type")
+      .in("deal_id", dealIds)
+      .eq("is_deleted", false)
+      .eq("activation_required", true)
+      .is("activated_at", null);
+    const lockedTasks = (inactive ?? [])
+      .filter((t) => (t.role_type ?? "").toLowerCase() !== "admin")
+      .map((t) => ({ id: t.id, deal_id: t.deal_id, title: t.title, side: t.side, order_index: t.order_index }));
+
     return NextResponse.json({
       success: true,
       tasks: enriched,
+      locked_tasks: lockedTasks,
       deal_ids: dealIds,
     });
   } catch (err) {

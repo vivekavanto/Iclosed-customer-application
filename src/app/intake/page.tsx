@@ -42,6 +42,7 @@ import {
 import { createBrowserClient } from "@supabase/ssr";
 import { resetUser } from "@/lib/analytics";
 import { endClientSession } from "@/lib/sessionClient";
+import { ENFORCE_APS_NAME_MATCH } from "@/lib/featureFlags";
 
 /** An APS file already written to Blob, waiting for a lead to attach it to. */
 interface ApsBlob {
@@ -80,8 +81,9 @@ const READ_FAILED_MESSAGE =
  * that clear on their own. The wall clock is what stops it: a read still going
  * after this long has stopped being background work.
  */
-const READ_MAX_PASSES = 3;
-const READ_PASS_BACKOFF_MS = [3_000, 8_000];
+// Ride out Gemini "high demand" 503s.
+const READ_MAX_PASSES = 7;
+const READ_PASS_BACKOFF_MS = [3_000, 8_000, 15_000, 20_000, 30_000, 40_000];
 const READ_TOTAL_BUDGET_MS = 6 * 60 * 1000;
 
 export default function ServiceSelection() {
@@ -91,8 +93,9 @@ export default function ServiceSelection() {
   >(null);
   const [purchasePrice, setPurchasePrice] = useState("");
   const [sellingPrice, setSellingPrice] = useState("");
-  // Optional deposit held under the agreement — purchase side only.
+  // Filled from the APS read.
   const [depositAmount, setDepositAmount] = useState("");
+  const [propertyType, setPropertyType] = useState("");
   // Closing (completion) date — on the APS, so it prefills from an upload.
   // Optional: an unsigned client won't know it yet. ISO "YYYY-MM-DD".
   const [closingDate, setClosingDate] = useState("");
@@ -395,7 +398,9 @@ export default function ServiceSelection() {
       // printed on their agreement, and offering it as a suggestion to accept
       // only asked them to do the typing we had already done for them.
       for (const key of keysForSide(side, selectedClosingOption)) {
-        if (touchedRef.current.has(key)) continue;
+        // The APS deposit beats a typed one.
+        const apsDeposit = key === "depositAmount" && values.has(key);
+        if (touchedRef.current.has(key) && !apsDeposit) continue;
         setPrefillField(key, values.get(key) ?? "");
       }
 
@@ -464,7 +469,7 @@ export default function ServiceSelection() {
   const checkAccountOnSide = useCallback(
     (side: ApsSide) => {
       const account = accountNameRef.current.trim();
-      if (!account || signOutStartedRef.current) return;
+      if (!ENFORCE_APS_NAME_MATCH || !account || signOutStartedRef.current) return;
 
       const reads = readResultsRef.current[side];
       const settled =
@@ -759,9 +764,9 @@ export default function ServiceSelection() {
     },
   ];
 
-  // Only Property Closing is offered right now. The others stay defined, and the
+  // Only Property Closing and Refinance are offered right now. The others stay defined, and the
   // API still maps their ids, so re-enabling one means adding it back here.
-  const OFFERED_SERVICE_IDS = ["closing"];
+  const OFFERED_SERVICE_IDS = ["closing", "refinance"];
   const offeredServices = services.filter((s) =>
     OFFERED_SERVICE_IDS.includes(s.id),
   );
@@ -779,6 +784,7 @@ export default function ServiceSelection() {
     setPurchasePrice("");
     setSellingPrice("");
     setDepositAmount("");
+    setPropertyType("");
     setClosingDate("");
     setSellingClosingDate("");
     setPurchaseFiles([]);
@@ -856,8 +862,8 @@ export default function ServiceSelection() {
             setPurchasePrice={setPurchasePrice}
             sellingPrice={sellingPrice}
             setSellingPrice={setSellingPrice}
-            depositAmount={depositAmount}
-            setDepositAmount={setDepositAmount}
+            propertyType={propertyType}
+            setPropertyType={setPropertyType}
             closingDate={closingDate}
             setClosingDate={setClosingDate}
             sellingClosingDate={sellingClosingDate}
@@ -948,6 +954,8 @@ export default function ServiceSelection() {
                     selling_price: selectedClosingOption === "both" ? sellingPrice : null,
                     deposit_amount:
                       selectedClosingOption === "selling" ? null : depositAmount,
+                    building_type:
+                      selectedClosingOption === "selling" ? null : propertyType || null,
                     closing_date: closingDate,
                     selling_closing_date:
                       selectedClosingOption === "both" ? sellingClosingDate : null,

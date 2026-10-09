@@ -13,6 +13,7 @@ import {
 import { ChevronLeft, ChevronRight, Home, FileText } from "lucide-react";
 import type { PrefillKey } from "@/lib/apsPrefill";
 import { useToast } from "@/components/ui/Toast";
+import { PROPERTY_TYPES } from "@/lib/propertyType";
 import {
     INTAKE_STEPS,
     STEP_AGREEMENT,
@@ -43,8 +44,8 @@ interface Step2Props {
     setPurchasePrice: (value: string) => void;
     sellingPrice: string;
     setSellingPrice: (value: string) => void;
-    depositAmount: string;
-    setDepositAmount: (value: string) => void;
+    propertyType: string;
+    setPropertyType: (value: string) => void;
     closingDate: string;
     setClosingDate: (value: string) => void;
     sellingClosingDate: string;
@@ -95,8 +96,8 @@ function PropertyDetailsForm({
     priceValue,
     onPriceChange,
     priceError,
-    depositValue,
-    onDepositChange,
+    propertyTypeValue,
+    onPropertyTypeChange,
     closingDateValue,
     onClosingDateChange,
     formatCurrency,
@@ -115,9 +116,9 @@ function PropertyDetailsForm({
     priceValue: string;
     onPriceChange: (value: string) => void;
     priceError: string;
-    /** Omit on a sale card — deposits are only captured for purchases. */
-    depositValue?: string;
-    onDepositChange?: (value: string) => void;
+    /** Purchase cards only. */
+    propertyTypeValue?: string;
+    onPropertyTypeChange?: (value: string) => void;
     closingDateValue: string;
     onClosingDateChange: (value: string) => void;
     formatCurrency: (value: string) => string;
@@ -173,24 +174,30 @@ function PropertyDetailsForm({
                     {priceError && <p className="text-xs text-red-600">{priceError}</p>}
                 </Field>
 
-                {/* Deposit. Still not REQUIRED to submit — it just isn't
-                    labelled as optional: the hint invited people to skip a
-                    figure the firm wants, and the closing-cost estimator
-                    prefills "Deposit already paid" from it. Purchases only. */}
-                {onDepositChange && (
-                    <Field>
-                        <Input
-                            label="Deposit Amount"
-                            id={`${prefix}-deposit`}
-                            type="text"
-                            value={depositValue}
-                            onChange={(e) => {
-                                onDepositChange(formatCurrency(e.target.value));
-                                onFieldTouched("depositAmount");
-                            }}
-                            placeholder="$50,000"
-                        />
-                    </Field>
+                {onPropertyTypeChange && (
+                    <div className="flex flex-col gap-1.5 w-full">
+                        <label htmlFor={`${prefix}-property-type`} className="text-sm font-medium text-[var(--color-text-heading)]">
+                            Property Type <span className="text-red-600 ml-1">*</span>
+                        </label>
+                        <select
+                            id={`${prefix}-property-type`}
+                            value={propertyTypeValue ?? ""}
+                            onChange={(e) => onPropertyTypeChange(e.target.value)}
+                            className={`w-full px-4 py-2.5 rounded-sm border text-sm bg-white ${
+                                submitAttempted && !propertyTypeValue ? "border-red-400" : "border-gray-200"
+                            } ${propertyTypeValue ? "text-gray-900" : "text-gray-400"}`}
+                        >
+                            <option value="">Select property type</option>
+                            {PROPERTY_TYPES.map((t) => (
+                                <option key={t.value} value={t.value}>
+                                    {t.label}
+                                </option>
+                            ))}
+                        </select>
+                        {submitAttempted && !propertyTypeValue && (
+                            <p className="text-xs text-red-600">Please select the property type.</p>
+                        )}
+                    </div>
                 )}
 
                 {/* Closing date. Printed on the APS, so it prefills from an
@@ -316,8 +323,8 @@ const Step2: React.FC<Step2Props> = ({
     setPurchasePrice,
     sellingPrice,
     setSellingPrice,
-    depositAmount,
-    setDepositAmount,
+    propertyType,
+    setPropertyType,
     closingDate,
     setClosingDate,
     sellingClosingDate,
@@ -424,6 +431,11 @@ const Step2: React.FC<Step2Props> = ({
             setSubmitAttempted(true);
             return;
         }
+        if (!isSelling && !propertyType) {
+            toastError("Please select the property type.");
+            setSubmitAttempted(true);
+            return;
+        }
         if (!addressValid) {
             toastError("Please fill in all required address fields.");
             setSubmitAttempted(true);
@@ -527,8 +539,8 @@ const Step2: React.FC<Step2Props> = ({
                                     priceValue={purchasePrice}
                                     onPriceChange={setPurchasePrice}
                                     priceError={priceError}
-                                    depositValue={depositAmount}
-                                    onDepositChange={setDepositAmount}
+                                    propertyTypeValue={propertyType}
+                                    onPropertyTypeChange={setPropertyType}
                                     closingDateValue={closingDate}
                                     onClosingDateChange={setClosingDate}
                                     formatCurrency={formatCurrency}
@@ -570,8 +582,8 @@ const Step2: React.FC<Step2Props> = ({
                                 priceValue={purchasePrice}
                                 onPriceChange={setPurchasePrice}
                                 priceError={priceError}
-                                depositValue={isSelling ? undefined : depositAmount}
-                                onDepositChange={isSelling ? undefined : setDepositAmount}
+                                propertyTypeValue={isSelling ? undefined : propertyType}
+                                onPropertyTypeChange={isSelling ? undefined : setPropertyType}
                                 closingDateValue={closingDate}
                                 onClosingDateChange={setClosingDate}
                                 formatCurrency={formatCurrency}

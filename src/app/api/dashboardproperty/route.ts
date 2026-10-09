@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClient } from "@/lib/getAuthClient";
 import { resolveFirmKey, type FirmKey } from "@/lib/firms";
+import { resolveSigningCalendarNames } from "@/lib/signingCalendar";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export async function GET() {
     const { data: allLeads, error: leadError } = await supabaseAdmin
       .from("leads")
       .select(
-        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key"
+        "id, first_name, last_name, email, phone, lead_type, address_street, address_city, address_province, address_postal_code, address_unit, selling_address_street, selling_address_unit, selling_address_city, selling_address_postal_code, selling_address_province, parent_lead_id, co_person_role, firm_key, selling_deposit_amount, aps_uploaded, aps_uploaded_purchase, aps_uploaded_sale"
       )
       .eq("client_id", client.id)
       .order("created_at", { ascending: false });
@@ -88,7 +89,7 @@ export async function GET() {
     const { data: deals, error: dealError } = await supabaseAdmin
       .from("deals")
       .select(
-        "id, file_number, type, status, closing_date, property_address, price, selling_price, selling_property_address, lead_id"
+        "id, file_number, type, status, closing_date, selling_closing_date, property_address, price, selling_price, selling_property_address, deposit_amount, building_type, lead_id"
       )
       .eq("client_id", client.id)
       .eq("status", "Active")
@@ -115,6 +116,76 @@ export async function GET() {
         dealsByLeadId[deal.lead_id] = deal;
       }
     }
+
+    // ── Upcoming signing appointment per deal ─────────────────────
+    // Linked by deal_id (set when booked from a logged-in session), or by the
+    // deal's file number for bookings made logged-out / before linking existed
+    // (co-clients share the primary's file number, so they see it too). Only
+    // confirmed, not-yet-ended appointments; the earliest one wins.
+    type SigningAppt = {
+      deal_id: string | null;
+      file_number: string | null;
+      start_at: string;
+      end_at: string;
+      appointment_type: "virtual" | "in_person";
+      google_meet_link: string | null;
+    };
+    const apptSelect =
+      "deal_id, file_number, start_at, end_at, appointment_type, google_meet_link";
+    const nowIso = new Date().toISOString();
+    // Name of the calendar each file books its signing with, so the dashboard
+    // task button is labelled on first load (no extra request when it opens).
+    const signingCalendarNames = await resolveSigningCalendarNames((deals ?? []).map((d) => d.id));
+    const dealIds = (deals ?? []).map((d) => d.id);
+    const fileNumbers = [
+      ...new Set((deals ?? []).map((d) => d.file_number).filter((f): f is string => !!f)),
+    ];
+    const apptRows: SigningAppt[] = [];
+    if (dealIds.length > 0) {
+      const { data } = await supabaseAdmin
+        .from("signing_appointments")
+        .select(apptSelect)
+        .in("deal_id", dealIds)
+        .eq("status", "confirmed")
+        .gt("end_at", nowIso);
+      apptRows.push(...((data ?? []) as unknown as SigningAppt[]));
+    }
+    if (fileNumbers.length > 0) {
+      const { data } = await supabaseAdmin
+        .from("signing_appointments")
+        .select(apptSelect)
+        .in("file_number", fileNumbers)
+        .eq("status", "confirmed")
+        .gt("end_at", nowIso);
+      apptRows.push(...((data ?? []) as unknown as SigningAppt[]));
+    }
+    let officeAddress: string | null = null;
+    if (apptRows.some((a) => a.appointment_type === "in_person")) {
+      const { data: st } = await supabaseAdmin
+        .from("signing_settings")
+        .select("office_address")
+        .limit(1)
+        .maybeSingle();
+      officeAddress = st?.office_address ?? null;
+    }
+    const signingForDeal = (deal: { id: string; file_number: string | null } | null) => {
+      if (!deal) return null;
+      const match = apptRows
+        .filter(
+          (a) =>
+            a.deal_id === deal.id ||
+            (!!deal.file_number && a.file_number === deal.file_number),
+        )
+        .sort((a, b) => a.start_at.localeCompare(b.start_at))[0];
+      if (!match) return null;
+      return {
+        start_at: match.start_at,
+        end_at: match.end_at,
+        appointment_type: match.appointment_type,
+        meet_link: match.google_meet_link,
+        location: match.appointment_type === "in_person" ? officeAddress : null,
+      };
+    };
 
     // ── Parties per transaction (primary + co-persons) ───────────
     // For the hero "Parties" panel. A transaction "family" is the primary lead
@@ -184,6 +255,8 @@ export async function GET() {
       return {
         lead_id: lead.id,
         deal_id: deal?.id ?? null,
+        signing_appointment: signingForDeal(deal),
+        signing_calendar_name: deal ? (signingCalendarNames[deal.id] ?? null) : null,
         address_street: deal?.property_address || lead.address_street || null,
         address_city: lead.address_city || null,
         address_province: lead.address_province || null,
@@ -194,9 +267,14 @@ export async function GET() {
         selling_address_province: lead.selling_address_province || null,
         selling_address_postal_code: lead.selling_address_postal_code || null,
         selling_address_unit: lead.selling_address_unit || null,
+        selling_deposit_amount: lead.selling_deposit_amount ?? null,
+        aps_uploaded: !!lead.aps_uploaded,
+        aps_uploaded_purchase: !!lead.aps_uploaded_purchase,
+        aps_uploaded_sale: !!lead.aps_uploaded_sale,
         first_name: client.first_name || lead.first_name,
         last_name: client.last_name || lead.last_name,
         phone: client.phone || lead.phone || null,
+        email: client.email || lead.email || null,
         lead_type: lead.lead_type || deal?.type || null,
         // The single side a co-purchaser/co-seller is party to on a Purchase &
         // Sale deal. The dashboard uses this to show only that side's property,

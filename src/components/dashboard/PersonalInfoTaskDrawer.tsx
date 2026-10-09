@@ -12,7 +12,6 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle2,
-  RefreshCw,
   Loader2,
   CalendarCheck,
   Camera,
@@ -25,10 +24,15 @@ import {
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import ClientNameReadOnlySection from "@/components/dashboard/ClientNameReadOnlySection";
+import { getTaskCopy } from "@/lib/taskDescriptions";
+import { isHoldTitleTask } from "@/lib/taskKinds";
 import OnBehalfSelector, { type BehalfTarget } from "@/components/dashboard/OnBehalfSelector";
 import { useIsLargeScreen } from "@/hooks/useMediaQuery";
 import { getFirm, type FirmKey } from "@/lib/firms";
 import AddressAutocomplete from "@/components/intake/AddressAutocomplete";
+import { acceptLabel, FileDoneLine, PhotoCaptureDialog } from "@/components/dashboard/UploadParts";
+import ChoiceChips from "@/components/dashboard/ChoiceChips";
+import { withRemainder } from "@/components/dashboard/SharesTable";
 import {
   isCityField,
   isMailSameAsPropertyField,
@@ -55,7 +59,7 @@ interface FieldOption {
 interface NoteContent {
   text?: string;
   collapsible?: boolean;
-  variant?: "info" | "warning";
+  variant?: "info" | "warning" | "hint" | "section";
   attach_to?: string;
   display?: "badge" | "block";
   disclaimer?: string;
@@ -87,6 +91,7 @@ interface FormField {
     | FieldOption[]
     | { accept?: string; max_mb?: number; doc_type?: string }
     | NoteContent
+    | { hint?: string }
     | null;
   visible_when?: unknown;
 }
@@ -129,6 +134,8 @@ interface PersonalInfoTaskDrawerProps {
   onClose: () => void;
   taskId: string | null;
   taskTitle: string;
+  /** Client-facing name shown in the header. */
+  heading?: string;
   leadId?: string;
   clientFirstName?: string | null;
   clientLastName?: string | null;
@@ -152,6 +159,8 @@ interface PersonalInfoTaskDrawerProps {
   purchaseAddress?: PurchaseAddress;
   // Everyone on the transaction, "First Last" — seeds the ownership-share rows.
   partyNames?: string[];
+  /** Header line under the title, e.g. "For Riley Dawson". */
+  subtitle?: string;
   // Embedded (section) mode: rendered as one party's accordion inside
   // MultiPartyTaskDrawer. Drops the drawer's own backdrop/header/dropdown, keeps
   // the form body + footer, and does NOT auto-close the surrounding modal on
@@ -165,6 +174,15 @@ interface PersonalInfoTaskDrawerProps {
 ───────────────────────────────────────────── */
 function isSelectOptions(opts: unknown): opts is FieldOption[] {
   return Array.isArray(opts);
+}
+
+// Grey helper line under a text input, from options.hint.
+function getFieldHint(opts: unknown): string | null {
+  if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+    const hint = (opts as { hint?: unknown }).hint;
+    return typeof hint === "string" && hint.trim() ? hint.trim() : null;
+  }
+  return null;
 }
 
 // Notes are never selects, so `options` is free-form for them.
@@ -222,9 +240,8 @@ function NoteBody({
         </div>
       ))}
       {content.disclaimer && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-          <Info size={14} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-amber-600" />
-          <p className="text-sm leading-relaxed text-amber-800">{content.disclaimer}</p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs leading-relaxed text-amber-800">{content.disclaimer}</p>
         </div>
       )}
     </div>
@@ -293,36 +310,61 @@ function NoteBlock({
   content: NoteContent;
 }) {
   const [open, setOpen] = useState(false);
+  if (content.variant === "hint") {
+    return <p className="text-xs leading-relaxed text-gray-500">{content.text ?? label}</p>;
+  }
   const collapsible = content.collapsible ?? (content.sections ?? []).length > 0;
-  const s = NOTE_STYLES[content.variant ?? "info"];
+  const s = NOTE_STYLES[content.variant === "warning" ? "warning" : "info"];
   const inner = <NoteBody label={label} content={content} palette={s} />;
 
   if (!collapsible) {
     return (
-      <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 ${s.shell}`}>
-        <Info size={14} strokeWidth={2} className={`mt-0.5 flex-shrink-0 ${s.icon}`} />
+      <div className={`rounded-lg border px-3 py-2 [&_p]:text-xs [&_p]:leading-relaxed ${s.shell}`}>
         {inner}
       </div>
     );
   }
 
+  const sections = content.sections ?? [];
   return (
-    <div className={`rounded-lg border ${s.shell}`}>
+    <div className="rounded-xl border border-gray-200 bg-white">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+        className="cursor-pointer flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-bold text-gray-900"
       >
-        <Info size={14} strokeWidth={2} className={`flex-shrink-0 ${s.icon}`} />
-        <span className={`flex-1 text-sm font-semibold ${s.heading}`}>{label}</span>
-        <ChevronDown
-          size={16}
-          strokeWidth={2}
-          className={`flex-shrink-0 transition-transform ${s.icon} ${open ? "rotate-180" : ""}`}
-        />
+        {label}
+        <span aria-hidden>{open ? "−" : "+"}</span>
       </button>
-      {open && <div className="px-3 pb-3 pl-9">{inner}</div>}
+      {open && (
+        <div className="px-4 pb-3.5 space-y-3">
+          {sections.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {sections.map((sec, i) => (
+                <div key={i}>
+                  {sec.heading && (
+                    <p className="mb-1.5 text-[13px] font-bold text-gray-900">{sec.heading}</p>
+                  )}
+                  {(sec.items ?? []).map((item, k) => (
+                    <p key={k} className="mb-1.5 text-xs leading-relaxed text-gray-600">
+                      {item.term && <strong className="text-gray-700">{item.term}. </strong>}
+                      {item.body}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            inner
+          )}
+          {content.disclaimer && sections.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-xs leading-relaxed text-amber-800">{content.disclaimer}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -532,7 +574,6 @@ function SharesEditor({
   }
 
   const total = sharesTotal(rows);
-  const totalOk = Math.abs(total - 100) < 0.01;
 
   return (
     <div
@@ -561,15 +602,7 @@ function SharesEditor({
                 type="text"
                 inputMode="decimal"
                 value={row.percent}
-                onChange={(e) =>
-                  update(
-                    rows.map((r, j) =>
-                      j === i
-                        ? { ...r, percent: e.target.value.replace(/[^\d.]/g, "") }
-                        : r,
-                    ),
-                  )
-                }
+                onChange={(e) => update(withRemainder(rows, i, e.target.value.replace(/[^\d.]/g, "")))}
                 placeholder="0"
                 className={`${inputBase} ${inputNormal} py-2.5 pr-7 text-right`}
               />
@@ -582,11 +615,7 @@ function SharesEditor({
       </div>
 
       <div className="mt-3 flex items-center justify-end">
-        <span
-          className={`text-sm font-semibold ${
-            totalOk ? "text-green-700" : "text-gray-500"
-          }`}
-        >
+        <span className="text-sm font-semibold text-gray-900">
           Total: {formatPercent(total)}%
         </span>
       </div>
@@ -594,93 +623,94 @@ function SharesEditor({
   );
 }
 
-/* ─────────────────────────────────────────────
-   SPOUSE NAME (free text + other parties on the deal)
-───────────────────────────────────────────── */
-function SpouseNameInput({
+function isRecordOpts(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+/** Note rendered as a section heading with a divider. */
+function isSectionNote(opts: unknown): boolean {
+  return isRecordOpts(opts) && opts.variant === "section";
+}
+
+/** Half-width field, paired side by side on wider screens. */
+function isHalfField(opts: unknown): boolean {
+  return isRecordOpts(opts) && opts.half === true;
+}
+
+function isBusinessAddressField(label: string): boolean {
+  return label.toLowerCase().includes("business address");
+}
+
+const SOMEONE_ELSE = "__someone_else__";
+
+/** Pick a party on the file as spouse, or type someone else's name. */
+function SpousePicker({
   value,
   suggestions,
-  placeholder,
   invalid,
   onChange,
   onBlur,
 }: {
   value: string;
   suggestions: string[];
-  placeholder: string;
   invalid: boolean;
   onChange: (value: string) => void;
   onBlur: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const query = value.trim().toLowerCase();
-  const matches = suggestions.some((s) => s.toLowerCase() === query)
-    ? suggestions
-    : suggestions.filter((s) => s.toLowerCase().includes(query));
-  const showList = open && matches.length > 0;
+  const isParty = suggestions.some((s) => s.toLowerCase() === value.trim().toLowerCase());
+  const [other, setOther] = useState(!!value.trim() && !isParty);
+  const choice = isParty ? value : other ? SOMEONE_ELSE : "";
 
+  const input = (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      placeholder="As it appears on their ID"
+      autoComplete="off"
+      className={[inputBase, invalid ? inputError : inputNormal].join(" ")}
+    />
+  );
+  // No co-party to pick from: just ask for the name.
+  if (suggestions.length === 0) return input;
   return (
-    <div
-      className="relative"
-      onBlur={(e) => {
-        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-        setOpen(false);
-        onBlur();
-      }}
-    >
-      <input
-        type="text"
-        value={value}
+    <div className="space-y-4">
+      <select
+        value={choice}
         onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
+          const v = e.target.value;
+          setOther(v === SOMEONE_ELSE);
+          onChange(v === SOMEONE_ELSE ? "" : v);
         }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
-        placeholder={placeholder}
-        autoComplete="off"
+        onBlur={onBlur}
         className={[
           inputBase,
-          invalid ? inputError : inputNormal,
-          suggestions.length > 0 ? "pr-10" : "",
+          invalid && !other ? inputError : inputNormal,
+          "appearance-none cursor-pointer text-sm",
+          choice ? "text-gray-900" : "text-gray-500",
         ].join(" ")}
-      />
-      {suggestions.length > 0 && (
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label="Choose from people on this transaction"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setOpen((v) => !v)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-gray-400 hover:text-gray-600"
-        >
-          <ChevronDown size={16} strokeWidth={2} />
-        </button>
-      )}
-      {showList && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
-          <p className="px-4 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            People on this transaction
-          </p>
-          {matches.map((name) => (
-            <button
-              key={name}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                onChange(name);
-                setOpen(false);
-              }}
-              className={[
-                "w-full cursor-pointer px-4 py-2.5 text-left text-sm transition-colors hover:bg-gray-50",
-                name.toLowerCase() === query
-                  ? "bg-[#FEF2F2] font-semibold text-[#C10007]"
-                  : "text-gray-700",
-              ].join(" ")}
-            >
-              {name}
-            </button>
-          ))}
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: "right 14px center",
+          paddingRight: "40px",
+        }}
+      >
+        <option value="">Select...</option>
+        {suggestions.map((name) => (
+          <option key={name} value={name}>
+            {name}
+          </option>
+        ))}
+        <option value={SOMEONE_ELSE}>Someone else</option>
+      </select>
+      {other && (
+        <div>
+          <label className="text-sm font-semibold text-gray-800 mb-2 block">
+            Spouse&apos;s full legal name<span className="text-[#C10007] ml-1">*</span>
+          </label>
+          {input}
         </div>
       )}
     </div>
@@ -711,6 +741,7 @@ function FileSlot({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const cfg = getFileConfig(field.options);
 
   function validateFile(f: File): string | null {
@@ -733,62 +764,39 @@ function FileSlot({
     }
   }
 
-  if (existingUrl && !file) {
+  const picker = (
+    <input
+      ref={inputRef}
+      type="file"
+      accept={cfg.accept}
+      className="hidden"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) handlePick(f);
+        e.target.value = "";
+      }}
+    />
+  );
+
+  if (file || existingUrl) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-green-300 bg-green-50 p-5 text-center">
-        <CheckCircle2 size={22} className="text-green-600" strokeWidth={2} />
-        <div>
-          <p className="text-sm font-semibold text-green-700">
-            {existingName ?? "File uploaded"}
-          </p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            Previously submitted
-          </p>
-        </div>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw size={11} strokeWidth={2.5} /> Replace
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={cfg.accept}
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handlePick(f);
-            e.target.value = "";
-          }}
-        />
+      <div className="flex items-center justify-center rounded-xl border border-dashed border-green-300 bg-green-50 px-6 py-16 text-center">
+        {file ? (
+          <FileDoneLine name={file.name} action="Remove" onAction={() => onClear(field.id)} />
+        ) : (
+          <FileDoneLine
+            name={existingName ?? "File uploaded"}
+            action="Replace"
+            onAction={() => inputRef.current?.click()}
+          />
+        )}
+        {picker}
       </div>
     );
   }
 
-  if (file) {
-    return (
-      <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">
-            {file.name}
-          </p>
-          <p className="text-xs text-gray-400">
-            {file.size < 1000 * 1000
-              ? `${(file.size / 1000).toFixed(1)} KB`
-              : `${(file.size / 1000 / 1000).toFixed(2)} MB`}
-          </p>
-        </div>
-        <button
-          onClick={() => onClear(field.id)}
-          className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-[#C10007] hover:border-red-200 transition-colors"
-        >
-          <Trash2 size={13} strokeWidth={2} />
-        </button>
-      </div>
-    );
-  }
-
+  const buttonClass =
+    "cursor-pointer inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors";
   return (
     <div>
       <div
@@ -808,42 +816,50 @@ function FileSlot({
         tabIndex={0}
         onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
         className={[
-          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200 select-none",
-          dragOver
-            ? "border-[#C10007] bg-[#FEF2F2]"
-            : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
+          "flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-10 text-center cursor-pointer transition-all duration-200 select-none",
+          dragOver ? "border-[#C10007] bg-[#FEF2F2]" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
         ].join(" ")}
       >
-        <div
-          className={[
-            "w-9 h-9 rounded-full flex items-center justify-center",
-            dragOver ? "bg-[#FEF2F2]" : "bg-gray-100",
-          ].join(" ")}
-        >
-          <Upload
-            size={16}
-            className={dragOver ? "text-[#C10007]" : "text-gray-400"}
-            strokeWidth={2}
-          />
-        </div>
         <div>
-          <p className="text-xs font-semibold text-gray-700">{field.label}</p>
+          <p className="text-sm font-semibold text-gray-800">{field.label}</p>
           <p className="text-[11px] text-gray-400 mt-0.5">
-            Click or drag · {cfg.accept} · Max {cfg.max_mb}MB
+            Click or drag · {acceptLabel(cfg.accept)} · Max {cfg.max_mb}MB
           </p>
         </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={cfg.accept}
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handlePick(f);
-            e.target.value = "";
+        <div className="flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              inputRef.current?.click();
+            }}
+            className={buttonClass}
+          >
+            Upload file
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCameraOpen(true);
+            }}
+            className={buttonClass}
+          >
+            <Camera size={13} strokeWidth={2} /> Take photo
+          </button>
+        </div>
+        {picker}
+      </div>
+      {cameraOpen && (
+        <PhotoCaptureDialog
+          title={field.label}
+          onClose={() => setCameraOpen(false)}
+          onCapture={(f) => {
+            handlePick(f);
+            setCameraOpen(false);
           }}
         />
-      </div>
+      )}
       {error && (
         <p className="mt-1.5 flex items-center gap-1 text-xs text-[#C10007]">
           <AlertCircle size={11} />
@@ -1122,6 +1138,7 @@ export default function PersonalInfoTaskDrawer({
   onClose,
   taskId,
   taskTitle,
+  heading,
   leadId,
   clientFirstName,
   clientLastName,
@@ -1133,6 +1150,7 @@ export default function PersonalInfoTaskDrawer({
   onTaskCompleted,
   purchaseAddress,
   partyNames,
+  subtitle,
   embedded = false,
   onSectionSaved,
 }: PersonalInfoTaskDrawerProps) {
@@ -1315,7 +1333,7 @@ export default function PersonalInfoTaskDrawer({
           { value: p.marital_status, match: (l) => l.includes("marital") },
           { value: p.citizenship_status, match: (l) => l.includes("citizenship") },
           { value: p.occupation, match: (l) => l.includes("occupation") },
-          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")) },
+          { value: p.employer_phone, isPhone: true, match: (l) => l.includes("phone") && (l.includes("employer") || l.includes("business")) },
         ];
 
         const next: Record<string, string> = {};
@@ -1527,7 +1545,9 @@ export default function PersonalInfoTaskDrawer({
   // whenever it is visible, even if the DB `required` flag is false.
   function fieldRequired(field: FormField): boolean {
     if (field.field_type === "note") return false;
-    return field.required || !!getVisibleWhen(ruleSource(field));
+    const opts: unknown = field.options;
+    const optional = isRecordOpts(opts) && opts.optional === true;
+    return field.required || (!!getVisibleWhen(ruleSource(field)) && !optional);
   }
 
   // Notes that render inside `label`'s field group rather than on their own.
@@ -2096,7 +2116,7 @@ export default function PersonalInfoTaskDrawer({
   const cameraReadyToFinish =
     idCameraFields.length > 0 && idCameraFields.every((f) => !!cameraFiles[f.id]);
   const isPersonalInfoTask = taskTitle.toLowerCase().includes("personal info");
-  const hasDraftOption = isPersonalInfoTask || isUploadIdTask;
+  const hasDraftOption = isPersonalInfoTask || isUploadIdTask || isHoldTitleTask(taskTitle);
 
   function openCameraFlow() {
     if (idCameraFields.length < 4) {
@@ -2221,7 +2241,7 @@ export default function PersonalInfoTaskDrawer({
             : [
                 "fixed z-50 bg-white shadow-2xl flex flex-col",
                 isLargeScreen
-                  ? "inset-4 sm:inset-8 md:inset-12 lg:inset-16 xl:inset-20 max-w-5xl max-h-[90vh] mx-auto my-auto rounded-2xl border border-gray-100"
+                  ? "inset-0 m-auto h-fit w-[calc(100%-2rem)] max-w-3xl max-h-[90vh] rounded-2xl border border-gray-100"
                   : "top-0 right-0 h-full w-full max-w-[520px]",
                 isLargeScreen
                   ? open
@@ -2247,10 +2267,12 @@ export default function PersonalInfoTaskDrawer({
         <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
           <div className="flex-1 min-w-0 pr-4">
             <h2 className="text-base font-bold text-gray-900 leading-snug">
-              {taskTitle}
+              {heading ?? taskTitle}
             </h2>
             <p className="text-xs text-gray-400 mt-1">
-              {isUploadIdTask
+              {subtitle
+                ? subtitle
+                : isUploadIdTask
                 ? "Upload your identification documents to verify your identity for the property transaction."
                 : hasFileFields
                   ? "Upload the required documents to complete this task."
@@ -2274,7 +2296,7 @@ export default function PersonalInfoTaskDrawer({
           className={
             embedded
               ? "px-1 py-1 space-y-5"
-              : "flex-1 overflow-y-auto px-6 py-6 space-y-5"
+              : "flex-1 min-h-0 overflow-y-auto px-6 py-6 space-y-5"
           }
         >
 
@@ -2374,7 +2396,7 @@ export default function PersonalInfoTaskDrawer({
                     <div className="flex items-start gap-2 pt-3 border-t border-gray-100">
                       <AlertCircle size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
                       <p className="text-[11px] text-gray-500">
-                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. A credit card, if uploaded, will only be used for ID verification purposes.
+                        <span className="font-semibold text-gray-700">Note:</span> Health cards and Citizenship Certificates are not acceptable. Credit Card, if uploaded, will only be used for ID verification purposes.
                       </p>
                     </div>
                   </div>
@@ -2524,6 +2546,25 @@ export default function PersonalInfoTaskDrawer({
             </div>
           )}
 
+          {(() => {
+            const copy = getTaskCopy(taskTitle);
+            return copy ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600 leading-relaxed">{copy.description}</p>
+                {copy.blog && (
+                  <a
+                  href={`/blog/${copy.blog.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block text-[13px] font-semibold text-[#C10007] hover:underline"
+                >
+                  Read our blog: {copy.blog.title} →
+                </a>
+                )}
+              </div>
+            ) : null;
+          })()}
+
           {/* Render dynamic fields */}
           {!fieldsLoading && isPersonalInfoTask && (
             <ClientNameReadOnlySection
@@ -2534,8 +2575,10 @@ export default function PersonalInfoTaskDrawer({
             />
           )}
 
-          {!fieldsLoading &&
-            fields.map((field) => {
+          {!fieldsLoading && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+          {fields.map((field) => {
+            const node = ((): React.ReactNode => {
               // Hide fields whose visible_when condition isn't currently met.
               if (!isFieldVisible(field)) return null;
 
@@ -2753,10 +2796,9 @@ export default function PersonalInfoTaskDrawer({
                 return (
                   <Fragment key={field.id}>
                   {isMailSame && (
-                    <p className="text-sm font-bold text-gray-900">
-                      {MAIL_FORWARDING_HEADING}
-                      {renderLabelBadges(MAIL_FORWARDING_HEADING)}
-                    </p>
+                    <div className="border-t border-gray-100 pt-5 mb-5">
+                      <p className="text-base font-bold text-gray-900">{MAIL_FORWARDING_HEADING}</p>
+                    </div>
                   )}
                   <div id={`field-${field.id}`}>
                     <label
@@ -2834,15 +2876,24 @@ export default function PersonalInfoTaskDrawer({
 
               // Display-only. Ones bound to another field render there, not here.
               if (field.field_type === "note") {
+                if (isSectionNote(field.options)) {
+                  return (
+                    <div id={`field-${field.id}`} className="border-t border-gray-100 pt-5">
+                      <p className="text-base font-bold text-gray-900">{field.label}</p>
+                      {getNoteContent(field.options).text && (
+                        <p className="mt-1 text-sm text-gray-500">{getNoteContent(field.options).text}</p>
+                      )}
+                    </div>
+                  );
+                }
                 const attach = getNoteContent(field.options).attach_to;
                 if (attach) {
-                  // Only selects render attached notes; anything else falls
-                  // through to standalone so the note is never dropped.
+                  // Targets that render attached notes; others fall through.
                   const target = fields.find(
                     (f) =>
                       f.label.trim().toLowerCase() === attach.trim().toLowerCase()
                   );
-                  if (target?.field_type === "select" || target?.field_type === "spouse")
+                  if (["select", "spouse", "shares"].includes(target?.field_type ?? ""))
                     return null;
                   // Badges on the mail-forwarding heading are drawn beside it.
                   if (
@@ -2894,16 +2945,15 @@ export default function PersonalInfoTaskDrawer({
                 return (
                   <div key={field.id} id={`field-${field.id}`}>
                     <label className="text-sm font-semibold text-gray-800 mb-2 block">
-                      {field.label}
+                      {spouseCandidates.length > 0 ? field.label : "Spouse\u2019s full legal name"}
                       {fieldRequired(field) && (
                         <span className="text-[#C10007] ml-1">*</span>
                       )}
                       {renderLabelBadges(field.label)}
                     </label>
-                    <SpouseNameInput
+                    <SpousePicker
                       value={values[field.id] ?? ""}
                       suggestions={spouseCandidates}
-                      placeholder={field.placeholder ?? "Full legal name as it appears on their ID"}
                       invalid={!!errors[field.id]}
                       onChange={(v) => setValue(field.id, v)}
                       onBlur={() => blurField(field)}
@@ -2935,32 +2985,13 @@ export default function PersonalInfoTaskDrawer({
                       {renderLabelBadges(field.label)}
                     </label>
                     {renderAttachedNotes(field.label)}
-                    <select
+                    <ChoiceChips
+                      options={opts}
                       value={values[field.id] ?? ""}
-                      onChange={(e) => setValue(field.id, e.target.value)}
+                      onChange={(v) => setValue(field.id, v)}
                       onBlur={() => blurField(field)}
-                      className={[
-                        inputBase,
-                        errors[field.id] ? inputError : inputNormal,
-                        "appearance-none cursor-pointer",
-                        !values[field.id] ? "text-gray-400 text-xs" : "text-gray-900 text-sm",
-                      ].join(" ")}
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`,
-                        backgroundRepeat: "no-repeat",
-                        backgroundPosition: "right 14px center",
-                        paddingRight: "40px",
-                      }}
-                    >
-                      <option value="" disabled>
-                        {field.placeholder ?? `Select ${field.label}`}
-                      </option>
-                      {opts.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                      label={field.label}
+                    />
                     {errors[field.id] && (
                       <p className="mt-1.5 text-xs text-[#C10007]">
                         {errors[field.id]}
@@ -3008,10 +3039,11 @@ export default function PersonalInfoTaskDrawer({
               return (
                 <Fragment key={field.id}>
                   {isMailForwardingStart && (
-                    <p className="text-sm font-bold text-gray-900">
-                      {MAIL_FORWARDING_HEADING}
-                      {renderLabelBadges(MAIL_FORWARDING_HEADING)}
-                    </p>
+                    <div className="border-t border-gray-100 pt-5 mb-5">
+                      <p className="text-base font-bold text-gray-900">
+                        {MAIL_FORWARDING_HEADING}
+                      </p>
+                    </div>
                   )}
                   <div id={`field-${field.id}`}>
                   <label className="text-sm font-semibold text-gray-800 mb-2 block">
@@ -3020,7 +3052,26 @@ export default function PersonalInfoTaskDrawer({
                       <span className="text-[#C10007] ml-1">*</span>
                     )}
                   </label>
-                  {isStreetAddressField(field.label) &&
+                  {isBusinessAddressField(field.label) &&
+                  field.field_type === "text" ? (
+                    <AddressAutocomplete
+                      value={values[field.id] ?? ""}
+                      onChange={(v) => setValue(field.id, v)}
+                      onSelect={(a) =>
+                        setValue(
+                          field.id,
+                          [a.street, a.city, a.postalCode].filter(Boolean).join(", "),
+                        )
+                      }
+                      onBlur={() => blurField(field)}
+                      placeholder={field.placeholder ?? "Start typing the address"}
+                      restrictToOntario={false}
+                      inputClassName={[
+                        inputWithIcon,
+                        errors[field.id] ? inputError : inputNormal,
+                      ].join(" ")}
+                    />
+                  ) : isStreetAddressField(field.label) &&
                   field.field_type === "text" ? (
                     <AddressAutocomplete
                       value={values[field.id] ?? ""}
@@ -3056,6 +3107,9 @@ export default function PersonalInfoTaskDrawer({
                     ].join(" ")}
                   />
                   )}
+                  {getFieldHint(field.options) && (
+                    <p className="mt-1.5 text-xs text-gray-500">{getFieldHint(field.options)}</p>
+                  )}
                   {errors[field.id] && (
                     <p className="mt-1.5 text-xs text-[#C10007]">
                       {errors[field.id]}
@@ -3064,9 +3118,16 @@ export default function PersonalInfoTaskDrawer({
                   </div>
                 </Fragment>
               );
-            })}
-
-          
+            })();
+            if (!node) return null;
+            return (
+              <div key={field.id} className={isHalfField(field.options) ? "min-w-0" : "sm:col-span-2 min-w-0"}>
+                {node}
+              </div>
+            );
+          })}
+          </div>
+          )}
 
           {/* Global error */}
           {globalError && (
@@ -3111,7 +3172,7 @@ export default function PersonalInfoTaskDrawer({
                   }}
                   className="sm:flex-1 bg-[#C10007] hover:bg-[#a30006]"
                 >
-                  {isUploadIdTask ? "Save & Continue" : "Submit Information"}
+                  {isPersonalInfoTask ? "Submit Information" : "Save & Continue"}
                 </Button>
               </>
             ) : (

@@ -1,5 +1,6 @@
 import { esc, money } from "@/lib/closingEstimateEmail";
 import { getFirm, type FirmKey } from "@/lib/firms";
+import { dollars } from "@/lib/iclosedFees";
 import { QUOTE_TEAM, type QuoteSide } from "@/lib/quotePricing";
 
 const QUOTE_CSM = QUOTE_TEAM.csm;
@@ -14,6 +15,10 @@ export interface QuoteEmailContent {
   propertyFull: string;
   legalFees: number;
   disbursements: number;
+  /** From fee settings, e.g. "Estimated disbursements". */
+  disbursementsLabel?: string;
+  /** Sale and purchase bundle: street addresses and the discount. */
+  bundle?: { saleProperty: string; purchaseProperty: string; discount: number } | null;
   quoteUrl: string;
   siteUrl: string;
 }
@@ -25,11 +30,11 @@ const MUTED = "#6B7280";
 const FONT = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif";
 
 const CONGRATS: Record<QuoteSide, string> = {
-  buying: "Congratulations on the house.",
-  selling: "Congratulations on the sale.",
-  both: "Congratulations on the move.",
-  refinance: "Thanks for choosing us for your refinance.",
-  condo: "Congratulations on the new condo.",
+  buying: "Congratulations on your purchase.",
+  selling: "Congratulations on your sale.",
+  both: "Congratulations on your sale and your new home.",
+  refinance: "Thanks for thinking of us for your refinance.",
+  condo: "Congratulations on your new condo.",
 };
 
 const PURCHASE_TAX_NOTE =
@@ -37,15 +42,27 @@ const PURCHASE_TAX_NOTE =
 
 const TAX_NOTE: Record<QuoteSide, string> = {
   buying: PURCHASE_TAX_NOTE,
-  both: PURCHASE_TAX_NOTE,
-  condo: PURCHASE_TAX_NOTE,
-  selling: "Those are our fees, before HST. Your quote sets out anything else payable on closing separately.",
+  both:
+    "Those are our fees for both closings, before HST. They include {discount} off because we are closing both. Land transfer tax and title insurance on your purchase are paid to the government and to the insurer, and your quote sets those out separately.",
+  condo:
+    "Those are our fees for your occupancy and final closing, before HST. Land transfer tax and title insurance are paid at final closing, and your quote sets those out separately.",
+  selling: "Those are our fees, before HST. They come out of your sale proceeds, so you pay nothing upfront.",
   refinance:
-    "Those are our fees, before HST. Your lender's title insurance is paid to the insurer, and your quote sets that out separately.",
+    "Those are our fees, before HST. Your lender's title insurance is paid to the insurer, and your quote sets it out separately.",
 };
 
-export function quoteEmailSubject(propertyShort: string): string {
-  return propertyShort ? `Your quote for ${propertyShort}` : "Your iClosed quote";
+// Spec TypeLabel; bundles say "sale and purchase".
+const SUBJECT_TYPE: Partial<Record<QuoteSide, string>> = {
+  both: "sale and purchase ",
+  buying: "purchase ",
+  selling: "sale ",
+  refinance: "refinance ",
+  condo: "new condo ",
+};
+
+export function quoteEmailSubject(propertyShort: string, side?: QuoteSide): string {
+  const type = (side && SUBJECT_TYPE[side]) ?? "";
+  return propertyShort ? `Your ${type}quote for ${propertyShort}` : "Your iClosed quote";
 }
 
 function step(n: number, text: string): string {
@@ -61,9 +78,20 @@ function step(n: number, text: string): string {
 export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; html: string } {
   const firm = getFirm(c.firmKey);
   const name = (c.firstName ?? "").trim() || "there";
-  const entity =
-    firm.key === "navawilson" ? `${firm.legalName}, operating as iClosed` : firm.legalName;
-  const taxNote = TAX_NOTE[c.side];
+  const entity = firm.introName.replace("iClosed LLP", "iClosed powered by Nava Wilson");
+  const both = c.side === "both";
+  const taxNote = TAX_NOTE[c.side].replace("{discount}", dollars(c.bundle?.discount ?? 0));
+  const b = both ? c.bundle : null;
+  const strong = (text: string) => `<strong style="color:${INK};">${esc(text)}</strong>`;
+  // Bundles name both properties: "selling X and buying Y".
+  const subjectOf = b
+    ? `selling ${strong(b.saleProperty || "your sale")} and buying ${strong(b.purchaseProperty || "your new home")}`
+    : strong(c.propertyFull || "your property");
+  const legalLabel = both ? "Legal fees, both closings" : "Legal fees";
+  const step2 = both
+    ? "When you are ready, continue from the quote. That opens your two retainers, one for the sale and one for the purchase, and we get started on both files."
+    : "When you are ready, continue from the quote. That opens your retainer and we get started on your file.";
+  const step3 = `We send you your dashboard, where you can watch every step of ${both ? "both closings" : "the closing"} and sign remotely.`;
 
   const html = `
 <div style="background:#F3F4F6;padding:24px 12px;font-family:${FONT};">
@@ -72,17 +100,17 @@ export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; ht
       <div style="font-size:34px;font-weight:800;letter-spacing:-0.5px;color:${INK};"><span style="color:${RED};font-style:italic;">i</span>Closed</div>
       <p style="margin:24px 0 0;font-size:16px;line-height:1.6;color:${BODY};">Hi ${esc(name)},</p>
       <p style="margin:18px 0 0;font-size:16px;line-height:1.6;color:${BODY};">
-        ${CONGRATS[c.side]} Your quote for <strong style="color:${INK};">${esc(c.propertyFull || "your property")}</strong> is ready.
+        ${CONGRATS[c.side]} Your quote for ${subjectOf} is ready.
       </p>
 
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;background:#F6F7F9;border:1px solid #EEF0F3;border-radius:10px;">
         <tr>
           <td style="padding:22px 24px;" valign="bottom">
-            <div style="font-size:14px;color:${MUTED};">Legal fees</div>
+            <div style="font-size:14px;color:${MUTED};">${legalLabel}</div>
             <div style="font-size:32px;font-weight:800;color:${INK};line-height:1.2;">${esc(money(c.legalFees))}</div>
           </td>
           <td style="padding:22px 24px;text-align:right;" valign="bottom">
-            <div style="font-size:14px;color:${MUTED};">Disbursements</div>
+            <div style="font-size:14px;color:${MUTED};">${esc(c.disbursementsLabel ?? "Disbursements")}</div>
             <div style="font-size:24px;font-weight:800;color:${INK};line-height:1.3;">${esc(money(c.disbursements))}</div>
           </td>
         </tr>
@@ -100,8 +128,8 @@ export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; ht
         <p style="margin:0 0 18px;font-size:17px;font-weight:700;color:${INK};">What happens next</p>
         <table role="presentation" cellpadding="0" cellspacing="0">
           ${step(1, `Review your quote. ${esc(QUOTE_CSM.fullName)}, your Customer Success Manager, will call you to confirm the details and answer anything you want to ask.`)}
-          ${step(2, "When you are ready, continue from the quote. That opens your retainer and we get started on your file.")}
-          ${step(3, "We send you your dashboard, where you can watch every step of the closing and sign remotely.")}
+          ${step(2, step2)}
+          ${step(3, step3)}
         </table>
       </div>
 
@@ -125,5 +153,5 @@ export function buildQuoteEmailHtml(c: QuoteEmailContent): { subject: string; ht
   </table>
 </div>`;
 
-  return { subject: quoteEmailSubject(c.propertyShort), html };
+  return { subject: quoteEmailSubject(c.propertyShort, c.side), html };
 }

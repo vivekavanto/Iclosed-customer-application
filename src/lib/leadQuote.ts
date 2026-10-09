@@ -1,9 +1,9 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLeadFirmKey } from "@/lib/leadFirm";
-import { ratesFromConfigRow } from "@/lib/closingCosts";
-import { readFirmAndSharedRow } from "@/lib/closingCostRates";
 import type { FirmKey } from "@/lib/firms";
-import { quoteFigures, quoteSideFromLeadType, type QuoteSide } from "@/lib/quotePricing";
+import { quoteSideFromLeadType, type QuoteSide } from "@/lib/quotePricing";
+import { computeBundle, computeFees, type BundleSide, type FeeFileType, type IclosedFees } from "@/lib/iclosedFees";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
 
 type Addr = {
   street?: string | null;
@@ -30,8 +30,58 @@ export interface LeadQuote {
   purchaseClosingDate: string | null;
   saleClosingDate: string | null;
   createdAt: string | null;
+  /** From fee settings. */
+  disbursementsLabel: string;
+  /** e.g. "26P-0411"; bundles use the C prefix. */
+  quoteNumber: string | null;
+  /** Net of any bundle discount. */
   legalFees: number;
   disbursements: number;
+  /** Sale and purchase bundle only (spec 7A). */
+  bundle: QuoteBundle | null;
+}
+
+export interface QuoteBundle {
+  discountSide: BundleSide;
+  discount: number;
+  /** Street only, for the email opening. */
+  saleProperty: string;
+  purchaseProperty: string;
+  sale: { legalFees: number; disbursements: number };
+  purchase: { legalFees: number; disbursements: number };
+}
+
+// Fee-file type per quote side; null is a bundle.
+const FEE_TYPE: Record<QuoteSide, FeeFileType | null> = {
+  buying: "purchase",
+  selling: "sale",
+  refinance: "refinance",
+  condo: "new_build_condo",
+  both: null,
+};
+
+// Single-type figures from src/config/iclosed-fees.yaml.
+function feeFileFigures(fees: IclosedFees, type: FeeFileType): { legalFees: number; disbursements: number } {
+  const f = computeFees(fees, type);
+  return { legalFees: f.legalFees, disbursements: f.disbursements };
+}
+
+// "26P-0411": count of same-type primary leads that year.
+async function quoteNumberFor(
+  lead: { id: string; lead_type: string; created_at: string | null },
+  prefix: string,
+): Promise<string | null> {
+  if (!lead.created_at) return null;
+  const year = new Date(lead.created_at).getUTCFullYear();
+  const { count, error } = await supabaseAdmin
+    .from("leads")
+    .select("id", { count: "exact", head: true })
+    .eq("lead_type", lead.lead_type)
+    .is("parent_lead_id", null)
+    .gte("created_at", `${year}-01-01T00:00:00Z`)
+    .lte("created_at", lead.created_at);
+  if (error || !count) return null;
+  return `${String(year).slice(2)}${prefix}-${String(count).padStart(4, "0")}`;
 }
 
 function shortAddress(a: Addr): string {
@@ -60,7 +110,7 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
   const { data: lead } = await supabaseAdmin
     .from("leads")
     .select(
-      "id, first_name, email, lead_type, price, selling_price, closing_date, selling_closing_date, created_at, address_street, address_unit, address_city, address_province, address_postal_code, selling_address_street, selling_address_unit, selling_address_city, selling_address_province, selling_address_postal_code",
+      "id, parent_lead_id, first_name, email, lead_type, price, selling_price, closing_date, selling_closing_date, created_at, address_street, address_unit, address_city, address_province, address_postal_code, selling_address_street, selling_address_unit, selling_address_city, selling_address_province, selling_address_postal_code",
     )
     .eq("id", leadId)
     .maybeSingle();
@@ -88,8 +138,27 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
   const primary = side === "selling" ? saleAddr : purchase;
 
   const firmKey = await getLeadFirmKey(leadId);
-  const { row } = await readFirmAndSharedRow(firmKey);
-  const { legalFees, disbursements } = quoteFigures(side, ratesFromConfigRow(row));
+  const fees = loadIclosedFees();
+  const feeType = FEE_TYPE[side];
+  const saleClosing = side === "selling" ? lead.closing_date ?? null : lead.selling_closing_date ?? null;
+  const b = feeType
+    ? null
+    : computeBundle(fees, { saleClosing, purchaseClosing: lead.closing_date ?? null });
+  const { legalFees, disbursements } = b ?? feeFileFigures(fees, feeType!);
+  const bundle: QuoteBundle | null = b && {
+    discountSide: b.discountSide,
+    discount: b[b.discountSide].discount,
+    saleProperty: shortAddress(saleAddr),
+    purchaseProperty: shortAddress(purchase),
+    sale: { legalFees: b.sale.legalFees, disbursements: b.sale.disbursements },
+    purchase: { legalFees: b.purchase.legalFees, disbursements: b.purchase.disbursements },
+  };
+  const prefix = feeType ? fees.file_types[feeType].quote_prefix : fees.bundles.sale_and_purchase.quote_prefix;
+  // Co-persons share the primary's quote number.
+  const { data: parent } = lead.parent_lead_id
+    ? await supabaseAdmin.from("leads").select("id, lead_type, created_at").eq("id", lead.parent_lead_id).maybeSingle()
+    : { data: null };
+  const quoteNumber = prefix ? await quoteNumberFor(parent ?? lead, prefix) : null;
 
   return {
     leadId: lead.id,
@@ -97,10 +166,11 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
     side,
     firstName: lead.first_name ?? null,
     email: lead.email ?? null,
+    // Bundles name the sale first (spec 7A).
     propertyShort:
-      side === "both" ? join(shortAddress(purchase), shortAddress(sale)) : shortAddress(primary),
+      side === "both" ? join(shortAddress(sale), shortAddress(purchase)) : shortAddress(primary),
     propertyFull:
-      side === "both" ? join(cityAddress(purchase), cityAddress(sale)) : cityAddress(primary),
+      side === "both" ? join(cityAddress(sale), cityAddress(purchase)) : cityAddress(primary),
     purchaseAddress: side === "selling" ? "" : postalAddress(purchase),
     saleAddress: side === "selling" || side === "both" ? postalAddress(saleAddr) : "",
     // Sale-only intakes store the sale price in `price`; a refinance has no price.
@@ -110,7 +180,10 @@ export async function loadLeadQuote(leadId: string): Promise<LeadQuote | null> {
     purchaseClosingDate: side === "selling" ? null : lead.closing_date ?? null,
     saleClosingDate: side === "selling" ? lead.closing_date ?? null : lead.selling_closing_date ?? null,
     createdAt: lead.created_at ?? null,
+    quoteNumber,
+    disbursementsLabel: fees.file_types[feeType ?? "purchase"].disbursements_label,
     legalFees,
     disbursements,
+    bundle,
   };
 }

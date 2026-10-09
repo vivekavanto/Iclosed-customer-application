@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { isPersonalInfoTask, isHoldTitleField } from "@/lib/taskKinds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
+import { cityIn } from "@/lib/cityMatch";
+import { ilaName } from "@/lib/ilaTask";
 
 /** `options` arrives as parsed JSONB, or as a JSON string in some setups. */
 function parseOptions(opts: unknown): Record<string, unknown> {
@@ -81,10 +83,40 @@ async function dropMultiPartyOnlyFields<T extends { label: string; options: unkn
   return fields.filter((f) => !dropped.has(f));
 }
 
-const PURCHASER_TOKEN = /\bPurchaser (\d+)\b/g;
+// Drops only_cities fields, and what hangs off them, outside those cities.
+async function dropOtherCityFields<T extends { label: string; options: unknown; visible_when?: unknown }>(
+  fields: T[],
+  taskId: string,
+  leadId: string | null
+): Promise<T[]> {
+  const flagged = fields.filter((f) => Array.isArray(parseOptions(f.options).only_cities));
+  if (flagged.length === 0) return fields;
+  const [{ data: t }, { data: lead }] = await Promise.all([
+    supabaseAdmin.from("tasks").select("side").eq("id", taskId).maybeSingle(),
+    leadId
+      ? supabaseAdmin.from("leads").select("address_city, selling_address_city, lead_type").eq("id", leadId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  const city =
+    t?.side === "sale" && lead?.lead_type === "Purchase & Sale" ? lead?.selling_address_city : lead?.address_city;
+  const out = flagged.filter((f) => !cityIn(city, parseOptions(f.options).only_cities as string[]));
+  const dropped = new Set(out.map((f) => f.label.trim().toLowerCase()));
+  for (const f of out) {
+    const target = parseOptions(f.options).attach_to;
+    if (typeof target === "string") dropped.add(target.trim().toLowerCase());
+  }
+  return fields.filter((f) => {
+    if (dropped.has(f.label.trim().toLowerCase())) return false;
+    const vw = f.visible_when ? { visible_when: f.visible_when } : parseOptions(f.options);
+    return !visibleWhenParents(vw).some((l) => dropped.has(l.trim().toLowerCase()));
+  });
+}
 
-// Primary first, then co-purchasers in the order they were added.
-async function getPurchaserNames(leadId: string): Promise<string[]> {
+const PURCHASER_TOKEN = /\bPurchaser (\d+)\b/g;
+const SELLER_TOKEN = /\bSeller (\d+)\b/g;
+
+// Primary first, then same-role co-parties.
+async function getPartyNames(leadId: string, role: "purchaser" | "seller"): Promise<string[]> {
   const { data: lead } = await supabaseAdmin
     .from("leads")
     .select("id, parent_lead_id")
@@ -100,18 +132,19 @@ async function getPurchaserNames(leadId: string): Promise<string[]> {
     .order("created_at", { ascending: true });
 
   return (family ?? [])
-    .filter((l) => l.co_person_role !== "seller")
+    .filter((l) => l.co_person_role !== (role === "seller" ? "purchaser" : "seller"))
     .sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0))
     .map((l) => `${l.first_name ?? ""} ${l.last_name ?? ""}`.trim());
 }
 
-// "Purchaser N" → that purchaser's name.
-function withPurchaserNames<T extends { label: string; options: unknown }>(
+// "Purchaser N" / "Seller N" → that party's name.
+function withPartyNames<T extends { label: string; options: unknown }>(
   fields: T[],
-  names: string[]
+  names: string[],
+  token: RegExp
 ): T[] {
   const swap = (s: string) =>
-    s.replace(PURCHASER_TOKEN, (m, n) => names[Number(n) - 1] || m);
+    s.replace(token, (m, n) => names[Number(n) - 1] || m);
   return fields.map((f) => ({
     ...f,
     label: swap(f.label),
@@ -125,9 +158,9 @@ function withPurchaserNames<T extends { label: string; options: unknown }>(
   }));
 }
 
-function mentionsPurchaser(field: { label: string; options: unknown }): boolean {
+function mentions(field: { label: string; options: unknown }, token: RegExp): boolean {
   const text = field.label + (Array.isArray(field.options) ? JSON.stringify(field.options) : "");
-  return new RegExp(PURCHASER_TOKEN.source).test(text);
+  return new RegExp(token.source).test(text);
 }
 
 /**
@@ -224,8 +257,21 @@ export async function GET(req: Request) {
     }
 
     let formFields = await dropMultiPartyOnlyFields(fields ?? [], leadId);
-    if (leadId && formFields.some(mentionsPurchaser)) {
-      formFields = withPurchaserNames(formFields, await getPurchaserNames(leadId));
+    formFields = await dropOtherCityFields(formFields, task_id, leadId);
+    if (leadId && formFields.some((f) => mentions(f, PURCHASER_TOKEN))) {
+      formFields = withPartyNames(formFields, await getPartyNames(leadId, "purchaser"), PURCHASER_TOKEN);
+    }
+    if (leadId && formFields.some((f) => mentions(f, SELLER_TOKEN))) {
+      formFields = withPartyNames(formFields, await getPartyNames(leadId, "seller"), SELLER_TOKEN);
+    }
+    const ila = ilaName(task.title);
+    if (ila) {
+      const safe = ila.replace(/["\\]/g, "");
+      formFields = formFields.map((f) => ({
+        ...f,
+        label: f.label.replaceAll("{name}", safe),
+        options: f.options == null ? f.options : JSON.parse(JSON.stringify(f.options).replaceAll("{name}", safe)),
+      }));
     }
 
     // 4. Fetch any existing responses so we can pre-fill the form

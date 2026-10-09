@@ -1,7 +1,9 @@
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isIlaTask, isStatusCertificateTask, isTreefortTask } from "@/lib/taskKinds";
+import { apsTaskHasQuestions } from "@/lib/apsTaskCompletion";
+import { isVacantHomeTaxTask, vacantTaxApplies } from "@/lib/vacantHomeTax";
 import { advanceMilestone } from "@/lib/syncSharedTask";
 import { findClientByName, followMergedClient, nameMatchesClient } from "@/lib/clientNames";
 import { sendInviteEmail } from "@/lib/sendInviteEmail";
@@ -23,6 +25,42 @@ export interface ConvertLeadResult {
  * Does NOT convert co-purchaser leads — call this separately for each.
  * Does NOT sync shared tasks — caller should do that after all leads are converted.
  */
+// Copies intake APS files into the APS task.
+async function bridgeIntakeAps(
+  taskId: string,
+  templateId: string | null,
+  lead: { id: string; parent_lead_id?: string | null },
+  sale: boolean,
+): Promise<void> {
+  const { data: existing } = await supabaseAdmin
+    .from("task_responses")
+    .select("id")
+    .eq("task_id", taskId)
+    .eq("field_type", "file")
+    .limit(1);
+  if (existing?.length || !templateId) return;
+  const { data: field } = await supabaseAdmin
+    .from("task_form_fields")
+    .select("id, label")
+    .eq("task_template_id", templateId)
+    .eq("field_type", "file")
+    .order("order_index", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!field) return;
+  const leadIds = [lead.id, lead.parent_lead_id].filter(Boolean);
+  const { data: docs } = await supabaseAdmin
+    .from("lead_corporate_docs")
+    .select("file_url, file_name")
+    .in("lead_id", leadIds)
+    .eq("doc_type", sale ? "aps_sale" : "aps_purchase")
+    .order("created_at", { ascending: true });
+  const rows = (docs ?? [])
+    .filter((d) => d.file_url)
+    .map((d) => ({ task_id: taskId, field_id: field.id, field_label: field.label, field_type: "file", file_url: d.file_url, file_name: d.file_name }));
+  if (rows.length) await supabaseAdmin.from("task_responses").insert(rows);
+}
+
 export async function convertSingleLead(params: {
   lead: any;
   parentClientId?: string | null;
@@ -167,21 +205,49 @@ export async function convertSingleLead(params: {
   const prefix = `${year}${leadTypePrefix}-`;
 
   let generatedFileNumber = fileNumber ?? null;
-  if (!generatedFileNumber) {
-    const { data: lastDeal } = await supabaseAdmin
+  // Co-clients share the primary's file number, as in the admin app.
+  let isCoClient = false;
+  if (!generatedFileNumber && lead.parent_lead_id) {
+    const { data: primaryDeal } = await supabaseAdmin
       .from("deals")
       .select("file_number")
-      .like("file_number", `${prefix}%`)
-      .order("file_number", { ascending: false })
+      .eq("lead_id", lead.parent_lead_id)
+      .eq("is_primary_file", true)
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    let nextNum = 1;
-    if (lastDeal?.file_number) {
-      const lastNum = parseInt(lastDeal.file_number.replace(prefix, ""), 10);
-      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    if (primaryDeal?.file_number) {
+      generatedFileNumber = primaryDeal.file_number;
+      isCoClient = true;
     }
-    generatedFileNumber = `${prefix}${String(nextNum).padStart(4, "0")}`;
+  }
+  if (!generatedFileNumber) {
+    // True numeric max; text sort puts "26P-867" above "26P-0868".
+    let maxNum = 0;
+    for (let from = 0; ; from += 1000) {
+      const { data: page } = await supabaseAdmin
+        .from("deals")
+        .select("file_number")
+        .filter("file_number", "match", `^${prefix}[0-9]+$`)
+        .range(from, from + 999);
+      for (const d of page ?? []) maxNum = Math.max(maxNum, parseInt(d.file_number.slice(prefix.length), 10) || 0);
+      if (!page || page.length < 1000) break;
+    }
+
+    // Skip any number a primary file already holds, as in the admin app.
+    for (let n = maxNum + 1; n <= maxNum + 10 && !generatedFileNumber; n++) {
+      const candidate = `${prefix}${String(n).padStart(4, "0")}`;
+      const { data: taken } = await supabaseAdmin
+        .from("deals")
+        .select("id")
+        .eq("file_number", candidate)
+        .eq("is_primary_file", true)
+        .limit(1)
+        .maybeSingle();
+      if (!taken) generatedFileNumber = candidate;
+    }
+    generatedFileNumber ??= `${prefix}${String(maxNum + 100).padStart(4, "0")}`;
   }
 
   // ── 3. Clean prices ─────────────────────────────────────────────────
@@ -197,6 +263,7 @@ export async function convertSingleLead(params: {
       lead_id: lead.id,
       client_id: clientId,
       file_number: generatedFileNumber,
+      is_primary_file: !isCoClient,
       type: lead.lead_type ?? "Purchase",
       status: "Active",
       property_address: lead.address_street ?? "Address TBD",
@@ -213,6 +280,9 @@ export async function convertSingleLead(params: {
       ...(lead.selling_closing_date
         ? { selling_closing_date: lead.selling_closing_date }
         : {}),
+      // Deposit from intake; drafts read it here.
+      ...(lead.deposit_amount != null ? { deposit_amount: lead.deposit_amount } : {}),
+      ...(lead.building_type ? { building_type: lead.building_type } : {}),
     })
     .select("id")
     .single();
@@ -311,7 +381,9 @@ export async function convertSingleLead(params: {
         .filter((t) => {
           if (singleParty && isHoldTitleTask(t.name)) return false;
           // Only added once someone picks virtual signing.
-          if (isTreefortTask(t.name)) return false;
+          if (isTreefortTask(t.name) || isIlaTask(t.name)) return false;
+          if (isVacantHomeTaxTask(t.name) && !vacantTaxApplies(lead, side)) return false;
+          if (isStatusCertificateTask(t.name) && (side === "sale" || lead.building_type !== "resale_condo")) return false;
           const role = (t.role_type ?? "").toLowerCase();
           return role === "client" || role === "both" || role === "";
         })
@@ -354,7 +426,7 @@ export async function convertSingleLead(params: {
         if (apsUploaded) {
           const apsQuery = supabaseAdmin
             .from("tasks")
-            .select("id, milestone_id")
+            .select("id, milestone_id, task_template_id")
             .eq("deal_id", deal.id)
             .ilike("title", "%agreement of purchase and sale%");
           const { data: apsTask } = side === null
@@ -362,6 +434,11 @@ export async function convertSingleLead(params: {
             : await apsQuery.eq("side", side).maybeSingle();
 
           if (apsTask) {
+            await bridgeIntakeAps(apsTask.id, apsTask.task_template_id, lead, side === "sale" || templateType === "Sale");
+          }
+
+          // Left open while it still has questions to answer.
+          if (apsTask && !(await apsTaskHasQuestions(apsTask.task_template_id))) {
             await supabaseAdmin
               .from("tasks")
               .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })

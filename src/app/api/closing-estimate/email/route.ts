@@ -3,15 +3,15 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/email/emailTransport";
 import { normalizeRecipientEmail } from "@/lib/firmEmail";
 import { resolveFirmKey } from "@/lib/firms";
-import { computeStatement, type ClosingCostInputs } from "@/lib/closingCosts";
-import { generateClosingCostPdf } from "@/lib/closingCostPdf";
-import {
-  estimateEmailHtml,
-  estimateEmailSubject,
-  estimatePdfFileName,
-} from "@/lib/closingEstimateEmail";
+import { estimateEmailHtml, estimateEmailSubject } from "@/lib/closingEstimateEmail";
+import { draftStatementPdfFileName } from "@/lib/draftStatement";
+import { generateDraftStatementPdf } from "@/lib/draftStatementPdf";
+import { loadIclosedFees } from "@/lib/loadIclosedFees";
+import { buildClientDraft } from "@/lib/loadDraftStatement";
 import {
   parseClientMortgage,
+  parseCommissionRate,
+  parseDraftSideParam,
   parseFileId,
   rejectLockedInputs,
   resolveClientEstimateContext,
@@ -104,28 +104,27 @@ export async function POST(req: Request) {
     );
   }
 
-  if (ctx.locked.price <= 0) {
+  const commissionRate = parseCommissionRate(body.commission_rate);
+  if (commissionRate !== null && typeof commissionRate !== "number") {
     return NextResponse.json(
-      { success: false, error: "We don't have a purchase price on your file yet." },
+      { success: false, error: commissionRate.error },
       { status: 400 },
     );
   }
 
-  const inputs: ClosingCostInputs = {
-    price: ctx.locked.price,
-    deposit: ctx.locked.deposit,
+  const isFirstTimeBuyer = body.is_first_time_buyer === true;
+  const { draft, price, side, headline, costsTotal } = await buildClientDraft(ctx, loadIclosedFees(), {
+    side: parseDraftSideParam(body.side),
     mortgage,
-    isToronto: ctx.locked.isToronto,
-    isFirstTimeBuyer: body.is_first_time_buyer === true,
-    titlePremiumOverride: ctx.locked.titlePremiumOverride,
-    propertyTaxAdjustment: ctx.locked.propertyTaxAdjustment,
-    // null → undefined: the firm never said, so each line keeps its default.
-    titlePremiumIsEstimate: ctx.locked.titlePremiumIsEstimate ?? undefined,
-    teraviewIsEstimate: ctx.locked.teraviewIsEstimate ?? undefined,
-    sheriffIsEstimate: ctx.locked.sheriffIsEstimate ?? undefined,
-    propertyTaxIsEstimate: ctx.locked.propertyTaxIsEstimate ?? undefined,
-  };
-  const statement = computeStatement(inputs, ctx.rates);
+    firstTimeBuyer: isFirstTimeBuyer,
+    commissionRate,
+  });
+  if (price <= 0) {
+    return NextResponse.json(
+      { success: false, error: `We don't have a ${side} price on your file yet.` },
+      { status: 400 },
+    );
+  }
 
   // ── The attachment ──
   // Same generator, same inputs and the same statement type as the on-screen
@@ -133,25 +132,12 @@ export async function POST(req: Request) {
   // were looking at when they hit send.
   let attachment: { filename: string; content: Buffer } | null = null;
   try {
-    const bytes = await generateClosingCostPdf({
-      statement,
-      config: ctx.config,
-      statementType: ctx.statementType,
-      fileNo: ctx.locked.fileNo,
-      propertyAddress: ctx.locked.propertyAddress,
-      clientName: ctx.locked.purchasers ?? ctx.client.fullName ?? null,
-      closingDate: ctx.locked.closingDate,
-      preparedOn: new Date().toISOString().slice(0, 10),
-      // A client's own copy is always a planning estimate, whatever wording they
-      // previewed — so it always carries the draft watermark.
-      draft: true,
-      configVersion: ctx.configVersion,
+    const bytes = await generateDraftStatementPdf({
+      draft,
+      firmKey: ctx.firmKey,
     });
     attachment = {
-      filename: estimatePdfFileName({
-        fileNo: ctx.locked.fileNo,
-        propertyAddress: ctx.locked.propertyAddress,
-      }),
+      filename: draftStatementPdfFileName(ctx.locked.fileNo, ctx.locked.propertyAddress),
       content: Buffer.from(bytes),
     };
   } catch (err) {
@@ -169,9 +155,10 @@ export async function POST(req: Request) {
     firstName: ctx.client.firstName,
     propertyAddress: ctx.locked.propertyAddress,
     fileNo: ctx.locked.fileNo,
-    price: inputs.price,
-    totalClosingCosts: statement.total,
-    balanceDue: statement.balance.balanceDue,
+    kind: side,
+    price,
+    totalClosingCosts: costsTotal,
+    balanceDue: headline,
     hasAttachment: Boolean(attachment),
   });
 
@@ -215,12 +202,12 @@ export async function POST(req: Request) {
       resource_id: ctx.client.id,
       metadata: {
         to,
-        purchase_price: inputs.price,
-        deposit_paid: inputs.deposit,
+        side,
+        price,
         mortgage_amount: mortgage,
-        is_toronto: inputs.isToronto,
-        is_first_time_buyer: inputs.isFirstTimeBuyer,
-        balance_due: statement.balance.balanceDue,
+        commission_rate: side === "sale" ? commissionRate : null,
+        is_first_time_buyer: isFirstTimeBuyer,
+        balance_due: headline,
         statement_type: ctx.statementType.type_key,
         pdf_attached: Boolean(attachment),
         note: "Client's own planning estimate — not written to deal_closing_estimates",

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 import { syncSharedTaskCompletion, syncSharedTaskResponses, advanceMilestone } from "@/lib/syncSharedTask";
 import { sendCitizenshipFlagEmail } from "@/lib/sendCitizenshipFlagEmail";
@@ -16,11 +16,16 @@ import { requestDepositProofAlert } from "@/lib/requestDepositProofAlert";
 import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
 import { spouseNameFromResponses, syncSpouseIdTask } from "@/lib/spouseIdTask";
 import { syncTreefortTasks } from "@/lib/treefortTask";
+import { isSaleProceedsTask, syncIlaTasks } from "@/lib/ilaTask";
+import { isHoldTitleTask } from "@/lib/taskKinds";
+import { fillDealDepositFromAps, isApsLabel } from "@/lib/fillDealDepositFromAps";
 
 // This route can reach the email transport, and the SMTP provider uses
 // nodemailer — which needs raw TCP and CANNOT run on the Edge runtime.
 // Resend never exposed this because it is an HTTPS fetch client.
 export const runtime = "nodejs";
+// Room for the background APS read after the response (see fillDealDepositFromAps).
+export const maxDuration = 180;
 
 
 // Normalize a citizenship value (possibly legacy or free-text) to the canonical set
@@ -237,7 +242,7 @@ export async function POST(req: Request) {
         const maritalVal = findVal((l) => l.includes("marital"));
         const occupationVal = findVal((l) => l.includes("occupation"));
         const employerPhoneVal = findVal(
-          (l) => l.includes("employer") || (l.includes("business") && l.includes("phone")),
+          (l) => l.includes("phone") && (l.includes("employer") || l.includes("business")),
         );
         const citizenshipRaw = findVal((l) => l.includes("citizenship"));
         const citizenshipVal = citizenshipRaw
@@ -364,6 +369,8 @@ export async function POST(req: Request) {
         });
         await syncTreefortTasks(task.id);
       }
+      if (isHoldTitleTask(task.title)) await syncIlaTasks(task.id, "purchase");
+      else if (await isSaleProceedsTask(task)) await syncIlaTasks(task.id, "sale");
 
       // Family-aware milestone advancement — completes only when EVERY party on
       // the file has finished this milestone's tasks. See advanceMilestone.
@@ -397,6 +404,19 @@ export async function POST(req: Request) {
       // reaching the trust account is what those two are waiting on, and it
       // can't wait for the whole file to finish. No-ops for every other task.
       await requestDepositProofAlert({ taskId: task.id, taskTitle: task.title });
+
+      // APS task upload: read its deposit after responding.
+      const apsUrls = (responses as { field_label?: string; file_url?: string | null }[])
+        .filter((r) => r?.file_url && (isApsLabel(r.field_label) || isApsLabel(task.title)))
+        .map((r) => String(r.file_url));
+      if (task.deal_id && apsUrls.length > 0) {
+        const dealId = task.deal_id;
+        after(() =>
+          fillDealDepositFromAps({ dealId, side: task.side, fileUrls: apsUrls }).catch((err) =>
+            console.error("[aps-deposit] failed:", err),
+          ),
+        );
+      }
 
       // Routed through the admin app so the alert carries the file's documents;
       // falls back to sending from here if it can't be reached.

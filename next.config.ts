@@ -28,6 +28,8 @@ const nextConfig: NextConfig = {
   // that can reach the email module. Leaving it external eliminates a class of
   // build-succeeds/runtime-fails divergence you would only find in production.
   serverExternalPackages: ["nodemailer"],
+  // Fee settings are read from disk at runtime; ship them with every route.
+  outputFileTracingIncludes: { "/**": ["./src/config/iclosed-fees.yaml"] },
   // Proxy PostHog through our origin so tracker blockers don't drop the data.
   skipTrailingSlashRedirect: true,
   async rewrites() {
