@@ -18,6 +18,7 @@ coverage
 # Standalone folders not imported by the app at build/runtime
 sql
 scripts
+e2e-agent
 
 # Local tooling / notes
 .claude

@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
 , "src/app/api/uploadblobstorage"  ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "e2e-agent"]
 }
