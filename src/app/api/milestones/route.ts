@@ -242,11 +242,13 @@ export async function GET(req: Request) {
           .eq("is_deleted", false)
           .order("order_index", { ascending: true }),
 
+        // Switched-off tasks are hidden from clients.
         supabaseAdmin
           .from("tasks")
           .select("id, milestone_id, completed")
           .in("deal_id", dealIds)
-          .eq("is_deleted", false),
+          .eq("is_deleted", false)
+          .or("activation_required.is.null,activation_required.eq.false,activated_at.not.is.null"),
       ]);
 
     if (msError) {
