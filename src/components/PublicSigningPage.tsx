@@ -157,6 +157,8 @@ export default function PublicSigningPage({
     fileNumber: "",
     extraGuestsText: "",
   });
+  // The ID confirmation differs for in-person and virtual, so it resets when the location changes.
+  const [idConfirmed, setIdConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<ConfirmedBooking | null>(null);
@@ -355,6 +357,10 @@ export default function PublicSigningPage({
     if (!EMAIL_RE.test(form.clientEmail.trim())) {
       setEmailTouched(true);
       setError("Enter a valid email address.");
+      return;
+    }
+    if (!idConfirmed) {
+      setError("Please tick the ID confirmation before scheduling.");
       return;
     }
     if (!form.propertyAddress.trim()) {
@@ -881,7 +887,10 @@ export default function PublicSigningPage({
                             key={value}
                             type="button"
                             aria-pressed={selected}
-                            onClick={() => setForm({ ...form, appointmentType: value })}
+                            onClick={() => {
+                              if (value !== form.appointmentType) setIdConfirmed(false);
+                              setForm({ ...form, appointmentType: value });
+                            }}
                             className="inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
                             style={
                               selected
@@ -899,6 +908,21 @@ export default function PublicSigningPage({
                       <p className="mt-2 text-xs text-gray-500">{availability.officeAddress}</p>
                     )}
                   </div>
+
+                  <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-900">
+                    <input
+                      type="checkbox"
+                      checked={idConfirmed}
+                      onChange={(e) => setIdConfirmed(e.target.checked)}
+                      className="mt-0.5 h-5 w-5 shrink-0 rounded cursor-pointer"
+                      style={{ accentColor: BRAND }}
+                    />
+                    <span>
+                      {form.appointmentType === "virtual"
+                        ? "I confirm everyone in this transaction will complete the online ID verification before the signing appointment, and show two pieces of ID during the appointment."
+                        : "I confirm everyone in this transaction will bring two pieces of ID to the office."}
+                    </span>
+                  </label>
 
                   <div>
                     <label className={labelClass}>Property address *</label>

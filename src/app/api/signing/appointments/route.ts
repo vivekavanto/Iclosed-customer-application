@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { adminAppUrl } from "@/lib/adminAppUrl";
 import { getAuthClient } from "@/lib/getAuthClient";
 import supabaseAdmin from "@/lib/supabaseAdmin";
+import { advanceMilestone } from "@/lib/syncSharedTask";
+import { notifyClientTaskCompleted } from "@/lib/notifyTaskCompleted";
+import { isSigningAppointmentTask } from "@/lib/signingAppointment";
 import {
   dealSide,
   findExistingAppointment,
@@ -51,6 +54,37 @@ async function linkAppointment(
     .update({ deal_id: deal.id, lead_id: deal.lead_id })
     .eq("id", appointmentId);
   if (error) console.error("[signing appointments] deal link failed:", error.message);
+}
+
+// A confirmed booking completes the "Book your signing appointment" task, the
+// same way submitting any other task does (mark Completed, advance the
+// milestone, tell the office). Skipped when the task is already done.
+async function completeSigningTask(
+  deal: Pick<PortalDeal, "id">,
+  side: SigningSide | null,
+): Promise<void> {
+  const { data: tasks } = await supabaseAdmin
+    .from("tasks")
+    .select("id, title, milestone_id, side")
+    .eq("deal_id", deal.id)
+    .eq("completed", false)
+    .ilike("title", "%book your signing appointment%");
+  const task = (tasks ?? []).find(
+    (t) => isSigningAppointmentTask(t.title) && (!side || !t.side || t.side === side),
+  );
+  if (!task) return;
+
+  await supabaseAdmin
+    .from("tasks")
+    .update({ completed: true, status: "Completed", completed_at: new Date().toISOString() })
+    .eq("id", task.id);
+  if (task.milestone_id) await advanceMilestone(deal.id, task.milestone_id);
+  await notifyClientTaskCompleted({
+    taskId: task.id,
+    dealId: deal.id,
+    taskTitle: task.title,
+    source: "signing-appointments",
+  });
 }
 
 // Public-link bookings carry no dealId: if the caller is signed in, match their
@@ -130,7 +164,10 @@ export async function POST(req: Request) {
         const linkTo =
           deal ??
           (await dealFromFileNumber(typeof body.fileNumber === "string" ? body.fileNumber : null));
-        if (linkTo) await linkAppointment(String(json.data.id), linkTo);
+        if (linkTo) {
+          await linkAppointment(String(json.data.id), linkTo);
+          await completeSigningTask(linkTo, side ?? parseSide(body.side) ?? dealSide(linkTo.type));
+        }
       } catch (err) {
         console.error("[signing appointments] deal link error:", err);
       }

@@ -2011,9 +2011,9 @@ export default function DashboardPage() {
                 Signing Appointment
               </p>
               <p className="text-sm font-bold text-gray-900">{signingWhen}</p>
-              <p className="text-xs text-gray-500">
-                {signingAppt.appointment_type === "virtual" ? (
-                  signingAppt.meet_link ? (
+              {signingAppt.appointment_type === "virtual" && (
+                <p className="text-xs text-gray-500">
+                  {signingAppt.meet_link ? (
                     <>
                       Google Meet ·{" "}
                       <a
@@ -2027,11 +2027,9 @@ export default function DashboardPage() {
                     </>
                   ) : (
                     "Google Meet"
-                  )
-                ) : (
-                  `In person${signingAppt.location ? ` · ${signingAppt.location}` : ""}`
-                )}
-              </p>
+                  )}
+                </p>
+              )}
             </div>
           )}
 
@@ -2168,6 +2166,16 @@ export default function DashboardPage() {
                 {activeFirm.supportPhone}
               </a>
             </div>
+            </div>
+            <div className="border-t border-gray-100 pt-2.5">
+              <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
+                Location
+              </p>
+              <p className="mt-1 text-xs font-semibold text-gray-900">
+                Suite 210, 10 Milner Business Court
+                <br />
+                Scarborough, ON M1B 3C6
+              </p>
             </div>
           </div>
         </div>{/* end right column */}

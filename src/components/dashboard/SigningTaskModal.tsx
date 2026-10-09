@@ -104,6 +104,9 @@ const SigningTaskModal: React.FC<{
                 Your signing date must be 3 days prior to the closing day ({closingDate}). It is subject to {waitingFor}
               </p>
             </div>
+            <p className="text-sm font-semibold text-gray-900">
+              Please bring 2 pieces of ID (one must have a photograph)
+            </p>
             <a
               href={`/signing?${new URLSearchParams({
                 ...(dealId ? { deal: dealId } : {}),
