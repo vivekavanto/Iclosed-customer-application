@@ -1,5 +1,7 @@
 import supabaseAdmin from "./supabaseAdmin";
 import { sanitizeBlogHtml, readingTimeFromHtml } from "./sanitizeBlogHtml";
+import { parseBlogByline } from "./blogByline";
+import { parseQuickAnswer } from "./blogQuickAnswer";
 import { slugify } from "./blogSlug";
 
 export { slugify };
@@ -78,7 +80,21 @@ export type BlogPost = {
    * printed twice on the one page that also renders the body.
    */
   imageFromContent: boolean;
+  /**
+   * Who wrote it. The name from the body's own byline when the article carries
+   * one, because that is the copy an editor maintains; `blog_posts.author` (a
+   * desk name such as "iClosed Real Estate Law Desk") otherwise.
+   */
   author: string;
+  /** The byline's job title, e.g. "Real Estate Lawyer and Practice Lead". */
+  authorRole: string | null;
+  /**
+   * The article's own "Quick answer" paragraph, label removed — the summary
+   * printed under the title on a card and on the article itself. Null for a
+   * post that does not open with one, and every surface falls back to
+   * `excerpt`. See blogQuickAnswer.ts.
+   */
+  quickAnswer: string | null;
   tags: string[];
   /** Sanitized. Safe to hand to dangerouslySetInnerHTML. */
   content: string;
@@ -145,6 +161,12 @@ export function toBlogPost(row: BlogPostRow): BlogPost {
   // cover, and that path should not scan the body at all.
   const borrowed = row.cover_image_url ? null : firstContentImage(content);
 
+  // The article's own opening byline, when it has one. Resolved here rather
+  // than in each page so the listing card, the article header, the dashboard
+  // reader and the structured data all name the same author and quote the same
+  // reading time — they disagreed while the chrome read only the column.
+  const byline = parseBlogByline(content);
+
   return {
     id: row.id,
     slug: row.slug,
@@ -153,7 +175,9 @@ export function toBlogPost(row: BlogPostRow): BlogPost {
     date: formatDisplayDate(row.published_at ?? row.created_at),
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
-    readTime: `${row.reading_time_min ?? readingTimeFromHtml(content)} min read`,
+    readTime:
+      byline?.readTime ??
+      `${row.reading_time_min ?? readingTimeFromHtml(content)} min read`,
     // No house fallback. A post used to borrow /blog1.png when it had no
     // cover of its own, which put the same stock picture on unrelated
     // articles and made the listing read as one repeated post. The fallback
@@ -165,7 +189,9 @@ export function toBlogPost(row: BlogPostRow): BlogPost {
       ? row.cover_image_alt ?? row.title
       : borrowed?.alt || row.title,
     imageFromContent: !row.cover_image_url && borrowed !== null,
-    author: row.author,
+    author: byline?.author ?? row.author,
+    authorRole: byline?.role ?? null,
+    quickAnswer: parseQuickAnswer(content),
     tags: Array.isArray(row.tags) ? row.tags : [],
     content,
     metaTitle: row.meta_title,

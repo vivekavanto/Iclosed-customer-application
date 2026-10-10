@@ -1,9 +1,21 @@
 import Link from "next/link";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
 
-// Marketing header shared by the public pages (home, blog, appointment booking).
-// Fixed 64px bar — pages using it need `pt-16` on their content.
-export default function SiteHeader() {
+/**
+ * The public site header, shared by the blog listing and every article page.
+ *
+ * It used to exist twice: /blogs had this bar (logo, Blog, "Start your
+ * closing", the auth control), while /blogs/[slug] had a shorter one of its own
+ * with a Home/Blog nav and no call to action. Following a card from the listing
+ * into an article therefore changed the header out from under the reader and
+ * dropped the only way to start a closing from the page where they had just
+ * finished reading about one.
+ *
+ * `fixed` rather than `sticky`, as the listing's copy always was — so callers
+ * must leave 4rem of room at the top of their first section (pt-16), which is
+ * this bar's height.
+ */
+export default function BlogSiteHeader() {
   return (
     <header className="fixed top-0 inset-x-0 z-50 h-16 bg-white/95 backdrop-blur-md border-b border-gray-100">
       <div className="max-w-7xl mx-auto w-full h-full px-5 sm:px-8 lg:px-10 flex items-center justify-between">
@@ -25,12 +37,6 @@ export default function SiteHeader() {
             className="hidden sm:inline-flex px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-gray-100 hover:text-gray-900 transition-colors"
           >
             Blog
-          </Link>
-          <Link
-            href="/book-appointment"
-            className="hidden sm:inline-flex px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-gray-100 hover:text-gray-900 transition-colors"
-          >
-            Book an Appointment
           </Link>
           <Link
             href="/intake"

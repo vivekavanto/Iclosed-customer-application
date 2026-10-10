@@ -2,14 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import {
-  Calendar,
-  ArrowLeft,
-  Phone,
-  Mail,
-  MapPin,
-} from "lucide-react";
-import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
+import { Calendar, ArrowLeft, Phone, Mail, MapPin } from "lucide-react";
+import BlogSiteHeader from "@/components/layout/BlogSiteHeader";
 import {
   listPublishedPosts,
   listPublishedSlugs,
@@ -89,22 +83,6 @@ export async function generateMetadata({
   };
 }
 
-function IClosedLogo() {
-  return (
-    <Link href="/" className="flex items-center select-none flex-shrink-0">
-      <span
-        className="text-[#C10007] font-bold italic text-xl leading-none"
-        style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
-      >
-        i
-      </span>
-      <span className="text-gray-900 font-bold text-xl leading-none tracking-tight">
-        Closed
-      </span>
-    </Link>
-  );
-}
-
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
   const post = await getPublishedPost(slug);
@@ -148,29 +126,12 @@ export default async function BlogPostPage({ params }: PageProps) {
           the same array rendered visibly further down this page. */}
       <BlogJsonLd post={post} />
 
-      {/* Public header */}
-      <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/90 backdrop-blur">
-        <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
-          <IClosedLogo />
-          <nav className="hidden md:flex items-center gap-6">
-            <Link
-              href="/"
-              className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Home
-            </Link>
-            <Link href="/blogs" className="text-sm font-medium text-[#C10007]">
-              Blog
-            </Link>
-          </nav>
-          <div className="flex items-center gap-2">
-            <HomeHeaderAuth />
-          </div>
-        </div>
-      </header>
+      {/* The same header the listing page wears — see BlogSiteHeader. It is
+          fixed, so the section under it opens with pt-16 to clear it. */}
+      <BlogSiteHeader />
 
       {/* Hero + Image Row */}
-      <section className="relative bg-white">
+      <section className="relative bg-white pt-16">
         <div className="h-[3px] bg-[#C10007]" />
 
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-14 lg:px-8">
@@ -188,8 +149,12 @@ export default async function BlogPostPage({ params }: PageProps) {
                 Back to Blog
               </Link>
 
+              {/* The tags, printed once. They used to appear a second time as
+                  grey pills under the summary, and this row was capped at two,
+                  so every tag past the second only existed in that duplicate —
+                  all of them live here now. */}
               <div className="mb-5 flex flex-wrap items-center gap-2.5">
-                {post.tags.slice(0, 2).map((tag) => (
+                {post.tags.map((tag) => (
                   <span
                     key={tag}
                     className="rounded-full border border-red-100 bg-red-50 px-4 py-1 text-[10px] font-bold uppercase tracking-widest text-[#C10007]"
@@ -197,51 +162,42 @@ export default async function BlogPostPage({ params }: PageProps) {
                     {tag}
                   </span>
                 ))}
-                <span className="text-[11px] font-medium text-gray-400">
-                  {post.readTime}
-                </span>
               </div>
 
               <h1 className="mb-4 text-3xl font-bold leading-tight tracking-tight text-gray-900 sm:text-4xl lg:text-[2.4rem] lg:leading-[1.18]">
                 {post.title}
               </h1>
 
+              {/* The article's own "Quick answer" — it answers the question in
+                  the title, where `excerpt` only describes the article. Posts
+                  without one fall back to the excerpt. It is stripped from the
+                  body below, so the page does not open with it twice. */}
               <p className="mb-6 text-[16.5px] leading-relaxed text-gray-500">
-                {post.excerpt}
+                {post.quickAnswer ?? post.excerpt}
               </p>
 
-              <div className="mb-8 flex flex-wrap items-center gap-2">
-                {post.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-3.5 py-1 text-[11px] font-semibold text-gray-500 transition-colors duration-150 hover:border-red-100 hover:bg-red-50 hover:text-[#C10007]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-
-              <div className="mt-auto flex flex-wrap items-center gap-6 border-t border-gray-100 pt-6">
-                <div className="flex items-center gap-2">
-                  <Calendar
-                    size={13}
-                    strokeWidth={2}
-                    className="text-gray-400"
-                  />
-                  <span className="text-sm font-medium text-gray-500">
-                    {post.date}
-                  </span>
-                </div>
+              {/* Who wrote it and when it was published, on one line. The name
+                  comes off the body's own byline when it has one (see
+                  blogByline.ts), which is also why that line no longer appears
+                  in the prose below. */}
+              <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-100 pt-6">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-red-100 bg-red-50">
-                    <span className="text-[11px] font-bold text-[#C10007]">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-red-100 bg-red-50">
+                    <span className="text-[12px] font-bold text-[#C10007]">
                       {post.author.charAt(0)}
                     </span>
                   </div>
-                  <span className="text-sm font-medium text-gray-600">
+                  <span className="text-sm font-semibold text-gray-800">
                     By {post.author}
                   </span>
                 </div>
+                <span aria-hidden className="text-gray-300">
+                  ·
+                </span>
+                <span className="flex items-center gap-2 text-sm font-medium text-gray-500">
+                  <Calendar size={13} strokeWidth={2} className="text-gray-400" />
+                  {post.date}
+                </span>
               </div>
             </div>
 
@@ -344,7 +300,7 @@ export default async function BlogPostPage({ params }: PageProps) {
               </div>
             </a>
             <a
-              href="mailto:info@iclosed.ca"
+              href="mailto:hello@iclosed.ca"
               className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-4 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#C10007] hover:shadow-md"
             >
               <Mail size={16} className="text-[#C10007]" strokeWidth={2.2} />
@@ -352,8 +308,9 @@ export default async function BlogPostPage({ params }: PageProps) {
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
                   Email
                 </p>
+                
                 <p className="text-sm font-semibold text-gray-800">
-                  info@iclosed.ca
+                  hello@iclosed.ca
                 </p>
               </div>
             </a>

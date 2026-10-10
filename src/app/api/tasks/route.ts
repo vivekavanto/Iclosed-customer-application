@@ -2,7 +2,7 @@ import supabaseAdmin from "@/lib/supabaseAdmin";
 import { getAuthClientDeal } from "@/lib/getAuthClient";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
 import { getFamilyPartyCount } from "@/lib/familyPartyCount";
-import { isHoldTitleTask, isIlaTask, isTreefortTask } from "@/lib/taskKinds";
+import { isHoldTitleTask, isIlaTask, isStatusCertificateTask, isTreefortTask } from "@/lib/taskKinds";
 import { NextResponse } from "next/server";
 import { isVacantHomeTaxTask, vacantTaxApplies } from "@/lib/vacantHomeTax";
 
@@ -101,9 +101,20 @@ export async function GET(req: Request) {
       // Get deal type to filter correct templates
       const { data: dealData } = await supabaseAdmin
         .from("deals")
-        .select("type, lead_id")
+        .select("type, lead_id, building_type")
         .eq("id", dId)
         .single();
+
+      // Status certificate is for resale condo purchases only.
+      const resaleCondo = dealData?.building_type === "resale_condo";
+      await supabaseAdmin
+        .from("tasks")
+        .update({ is_deleted: true })
+        .eq("deal_id", dId)
+        .eq("is_deleted", false)
+        .eq("completed", false)
+        .ilike("title", "%status certificate%")
+        .or(resaleCondo ? "side.eq.sale" : "side.is.null,side.eq.purchase,side.eq.sale");
       const { data: dealLead } = dealData?.lead_id
         ? await supabaseAdmin
             .from("leads")
@@ -257,6 +268,7 @@ export async function GET(req: Request) {
             if (singleParty && isHoldTitleTask(tt.name)) return false;
             if (isTreefortTask(tt.name) || isIlaTask(tt.name)) return false;
             if (isVacantHomeTaxTask(tt.name) && !(dealLead && vacantTaxApplies(dealLead, side))) return false;
+            if (isStatusCertificateTask(tt.name) && (side === "sale" || !resaleCondo)) return false;
             const role = (tt.role_type ?? "").toLowerCase();
             return role === "client" || role === "both" || role === "";
           })

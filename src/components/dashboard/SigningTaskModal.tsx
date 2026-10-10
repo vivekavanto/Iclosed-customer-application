@@ -2,15 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
+import { SIGNING_LAWYER } from "@/lib/signingAppointment";
 
 const BOOKED_LABEL = "I have booked my appointment";
 
 const SigningTaskModal: React.FC<{
   open: boolean;
   taskId: string | null;
-  dealId: string | null;
-  /** Calendar the admin assigned to this file, for the button label. */
-  calendarName: string | null;
   title: string;
   subtitle?: string;
   side: "purchase" | "sale" | null;
@@ -18,10 +16,11 @@ const SigningTaskModal: React.FC<{
   onClose: () => void;
   onSaved: (submitted: boolean) => void;
   onError: (message: string) => void;
-}> = ({ open, taskId, dealId, calendarName, title, subtitle, side, closingDate, onClose, onSaved, onError }) => {
+}> = ({ open, taskId, title, subtitle, side, closingDate, onClose, onSaved, onError }) => {
   const [booked, setBooked] = useState(false);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState<"draft" | "submit" | null>(null);
+
   // Prefill from a saved draft.
   useEffect(() => {
     if (!open || !taskId) return;
@@ -43,6 +42,7 @@ const SigningTaskModal: React.FC<{
 
   if (!open) return null;
 
+  const firstName = SIGNING_LAWYER.name.split(" ")[0];
   const waitingFor =
     side === "sale"
       ? "receiving the payout statement from your lender, and may be rescheduled if we have not received it by then."
@@ -97,7 +97,7 @@ const SigningTaskModal: React.FC<{
 
           <div className="px-6 sm:px-8 py-6 space-y-5 overflow-y-auto">
             <p className="text-sm text-gray-600 leading-relaxed">
-              Book a time to sign your closing documents.
+              Book a time to sign your closing documents with your lawyer, {SIGNING_LAWYER.name}.
             </p>
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
               <p className="text-xs leading-relaxed text-amber-800">
@@ -108,17 +108,12 @@ const SigningTaskModal: React.FC<{
               Please bring 2 pieces of ID (one must have a photograph)
             </p>
             <a
-              href={`/signing?${new URLSearchParams({
-                ...(dealId ? { deal: dealId } : {}),
-                ...(side ? { side } : {}),
-              }).toString()}`}
+              href={SIGNING_LAWYER.bookingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center rounded-lg bg-[#C10007] px-4 py-2.5 text-sm font-semibold !text-white hover:bg-[#a30006]"
             >
-              {calendarName ? (
-                `Book ${calendarName}'s signing appointment`
-              ) : (
-                "Book your signing appointment"
-              )}
+              Open {firstName}&apos;s booking calendar ↗
             </a>
             <div>
               <label className="flex items-center gap-3 cursor-pointer text-sm font-semibold text-gray-900">

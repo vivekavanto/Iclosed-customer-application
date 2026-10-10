@@ -13,6 +13,9 @@
  * with no attributes, which is what the match below relies on.
  */
 
+import { stripInlineByline } from "./blogByline";
+import { stripQuickAnswer } from "./blogQuickAnswer";
+
 export interface BlogTocItem {
   /** The value of the heading's `id`, and the fragment the sidebar links to. */
   id: string;
@@ -164,10 +167,19 @@ export function stripInlineSeriesNav(html: string): string {
  * The body as the page should render it: the author's prose, minus the blocks
  * the layout now renders for itself.
  *
- * One function rather than three calls at each site, because the page (for the
- * sidebar) and BlogArticleBody (for the body) each run this independently and
- * have to agree exactly. Applying one stripper and forgetting another would
+ * One function rather than a list of calls at each site, because the page (for
+ * the sidebar) and BlogArticleBody (for the body) each run this independently
+ * and have to agree exactly. Applying one stripper and forgetting another would
  * put a heading in the sidebar that the body no longer contains.
+ *
+ * The byline and the quick answer go with them: the page header now prints the
+ * author the body's opening line carries (see blogByline.ts) and the summary
+ * paragraph that follows it (see blogQuickAnswer.ts), so leaving either in the
+ * prose would print it twice on the one page.
+ *
+ * The byline is stripped FIRST, so the quick answer is within reach of the
+ * search depth that finds it — it is the second paragraph until the byline
+ * above it goes.
  *
  * `hasRenderedFaq` must be the same answer both callers give — it is
  * `post.faq.length > 0`, the condition the page uses to decide whether to
@@ -180,7 +192,9 @@ export function cleanArticleBody(
   sanitizedHtml: string,
   { hasRenderedFaq = false }: { hasRenderedFaq?: boolean } = {}
 ): string {
-  const html = stripInlineSeriesNav(stripInlineToc(sanitizedHtml));
+  const html = stripQuickAnswer(
+    stripInlineByline(stripInlineSeriesNav(stripInlineToc(sanitizedHtml)))
+  );
   return hasRenderedFaq ? stripInlineFaq(html) : html;
 }
 
