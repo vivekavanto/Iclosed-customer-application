@@ -379,8 +379,8 @@ function AttentionCard({
 
   // Closing-figures review stays locked until every other to-do is done.
   const figuresLocked = trulyPending.some((t) => !isClosingFiguresTask(t.title));
-  // The CSM books signing, so the client can't open it.
-  const isLockedOpen = (t: Task) => (figuresLocked && isClosingFiguresTask(t.title)) || isSigningAppointmentTask(t.title);
+  // Signing is open to the client: they book it themselves from their task.
+  const isLockedOpen = (t: Task) => figuresLocked && isClosingFiguresTask(t.title);
   const lockedTasks: LockedTask[] = [
     ...pending.filter((t) => !isTaskComplete(t) && isLockedOpen(t)),
     ...inactiveTasks,
