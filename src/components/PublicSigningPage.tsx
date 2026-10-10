@@ -48,6 +48,10 @@ interface AvailabilityData {
   minBusinessDaysBeforeClosing?: number;
 }
 
+function todayToronto(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(new Date());
+}
+
 interface ExistingBooking {
   startAt: string;
   endAt: string;
@@ -694,7 +698,9 @@ export default function PublicSigningPage({
                     </div>
                   ) : (
                     <p className="text-sm text-gray-400">
-                      {availability?.latestBookableDate && date > availability.latestBookableDate
+                      {availability?.latestBookableDate && availability.latestBookableDate < todayToronto()
+                        ? `Your closing date is too close. Signings must be booked at least ${availability.minBusinessDaysBeforeClosing} business days before closing, so please choose a closing date at least ${availability.minBusinessDaysBeforeClosing} business days from today.`
+                        : availability?.latestBookableDate && date > availability.latestBookableDate
                         ? `Signing must be booked on or before ${availability.latestBookableDate} (${availability.minBusinessDaysBeforeClosing} business days before closing). Please pick an earlier date.`
                         : "No times available on this date."}
                     </p>
