@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 import AuthHashHandler from "@/components/AuthHashHandler";
 import Providers from "@/components/Providers";
-import { siteUrl } from "@/lib/siteUrl";
+import GoogleAnalytics from "@/components/analytics/GoogleAnalytics";
+import CookieConsent from "@/components/analytics/CookieConsent";
+import { siteUrl, isProductionSite } from "@/lib/siteUrl";
 
 export const metadata: Metadata = {
   // Load-bearing, not boilerplate: without it Next silently DROPS every
@@ -14,6 +16,10 @@ export const metadata: Metadata = {
     "iClosed customer portal – manage your real-estate closing from intake to completion.",
   // Square favicons generated from logo.png (scripts/gen-favicon.cjs) so the
   // wide wordmark sits centered on a white square instead of being letterboxed.
+  // Google Search Console HTML-tag verification (production env only).
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
+  },
   icons: {
     icon: [
       { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
@@ -28,6 +34,11 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // GA only on the real production site, never dev/preview.
+  const gaId = isProductionSite()
+    ? process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() || undefined
+    : undefined;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -52,6 +63,8 @@ export default function RootLayout({
           <AuthHashHandler />
           {children}
         </Providers>
+        <GoogleAnalytics gaId={gaId} />
+        <CookieConsent enabled={!!gaId} />
       </body>
     </html>
   );
