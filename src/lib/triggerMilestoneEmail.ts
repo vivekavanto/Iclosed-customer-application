@@ -5,11 +5,63 @@ import { getLeadFirmKey } from "@/lib/leadFirm";
 import { brandEmailHtml } from "@/lib/emailBrand";
 import { renderMilestoneTemplate, resolveTemplateSubject } from "@/lib/email-templates/milestone";
 import { getLinkedDealIds } from "@/lib/getLinkedDealIds";
+import { adminAppUrl } from "@/lib/adminAppUrl";
+import { signedServiceHeaders } from "@/lib/signServiceRequest";
 import {
   recipientSideForLead,
   resolveMilestoneSide,
   shouldEmailForSide,
 } from "@/lib/recipientSide";
+
+/** How long to wait on the admin ack before giving up on an agent-only send. */
+const ACK_TIMEOUT_MS = 8000;
+
+/**
+ * An `agent_only` template (e.g. "Signing appointment scheduled (agent)") is
+ * addressed to the referral agent, never the client — only the admin app's
+ * `/api/admin/send-milestone-email` knows how to resolve and CC the agent
+ * (`collectMilestoneRecipients` / `sendCombinedMilestoneEmail`, with side
+ * scoping). This function has no agent concept at all, so sending it locally
+ * would land the agent-facing copy in the CLIENT's inbox instead — which is
+ * the bug this delegation fixes. Best-effort: never throws, and deliberately
+ * does NOT fall back to the local sender on failure (that fallback would be
+ * the same wrong-recipient send), so a delivery failure here must be chased
+ * from the admin app's logs rather than silently miscaddressed.
+ */
+async function sendAgentOnlyMilestoneEmail(
+  milestone: { id: string; deal_id: string; title: string | null },
+  clientId: string | null,
+): Promise<void> {
+  if (!clientId) {
+    console.warn(
+      `[MilestoneEmail] agent_only milestone "${milestone.title}" has no client_id on its deal — cannot delegate, skipping`,
+    );
+    return;
+  }
+  try {
+    const rawBody = JSON.stringify({
+      milestone_id: milestone.id,
+      deal_id: milestone.deal_id,
+      client_id: clientId,
+      milestone_title: milestone.title,
+    });
+    const res = await fetch(`${adminAppUrl()}/api/admin/send-milestone-email`, {
+      method: "POST",
+      headers: signedServiceHeaders(rawBody),
+      body: rawBody,
+      signal: AbortSignal.timeout(ACK_TIMEOUT_MS),
+    });
+    if (res.ok) return;
+    console.warn(
+      `[MilestoneEmail] agent_only delegation for "${milestone.title}" returned ${res.status} — the agent was not notified`,
+    );
+  } catch (err) {
+    console.warn(
+      `[MilestoneEmail] agent_only delegation for "${milestone.title}" failed — the agent was not notified:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
 
 /**
  * When a milestone completes, check if it has an email_template_id.
@@ -46,7 +98,7 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
     // Fetch the email template from the database
     const { data: template } = await supabaseAdmin
       .from("email_templates")
-      .select("name, subject, body")
+      .select("name, subject, body, agent_only")
       .eq("id", milestone.email_template_id)
       .eq("is_active", true)
       .or("is_deleted.eq.false,is_deleted.is.null")
@@ -54,6 +106,14 @@ export async function triggerMilestoneEmail(milestoneId: string): Promise<void> 
 
     if (!template) {
       console.warn(`[MilestoneEmail] No template found for id ${milestone.email_template_id}`);
+      return;
+    }
+
+    if (template.agent_only) {
+      await sendAgentOnlyMilestoneEmail(
+        { id: milestone.id, deal_id: deal.id, title: milestone.title },
+        deal.client_id,
+      );
       return;
     }
 
