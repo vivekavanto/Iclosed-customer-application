@@ -46,6 +46,9 @@ interface AvailabilityData {
   /** Last bookable date (YYYY-MM-DD) for this closing date; null = no limit. */
   latestBookableDate?: string | null;
   minBusinessDaysBeforeClosing?: number;
+  /** First bookable date (YYYY-MM-DD) for this closing date; null = no limit. */
+  earliestBookableDate?: string | null;
+  maxBusinessDaysBeforeClosing?: number;
 }
 
 function todayToronto(): string {
@@ -111,12 +114,15 @@ function formatFileNumber(value: string): string {
 
 export default function PublicSigningPage({
   lawyerInitials: initialLawyerInitials,
+  linkOnly = false,
   showOwnHeader = true,
   dealId,
   side: sideProp,
   initialState,
 }: {
   lawyerInitials?: string;
+  /** A lawyer's personal link (/book-appointment/AT): the lawyer is fixed by the URL — no picker, no way to switch to another. */
+  linkOnly?: boolean;
   /** false when hosted inside a layout that already renders its own header (e.g. the dashboard nav). */
   showOwnHeader?: boolean;
   /** Dashboard only: the file being booked for, from the signing task. */
@@ -251,7 +257,8 @@ export default function PublicSigningPage({
   // Always load the lawyer list — needed for the picker, and to let a
   // direct /signing/[initials] visitor switch lawyers without round-tripping.
   useEffect(() => {
-    if (locked) return;
+    // A personal link never shows the list, so it is not fetched at all.
+    if (locked || linkOnly) return;
     let cancelled = false;
     (async () => {
       try {
@@ -270,7 +277,7 @@ export default function PublicSigningPage({
     return () => {
       cancelled = true;
     };
-  }, [locked]);
+  }, [locked, linkOnly]);
 
   // Locked mode: ask the server which calendar this file books with, and
   // whether the property already has an appointment.
@@ -534,7 +541,7 @@ export default function PublicSigningPage({
                     This signing-appointment link is not valid. Please contact the office for a
                     new link.
                   </p>
-                  {!locked && (
+                  {!locked && !linkOnly && (
                     <button
                       type="button"
                       onClick={changeLawyer}
@@ -608,7 +615,7 @@ export default function PublicSigningPage({
               Book a Signing Appointment
             </h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              {locked ? "Step 1 of 2 — choose your date and time." : "Step 1 of 2 — choose your lawyer, date and time."}
+              {locked || linkOnly ? "Step 1 of 2 — choose your date and time." : "Step 1 of 2 — choose your lawyer, date and time."}
             </p>
 
             {locked ? (
@@ -619,6 +626,17 @@ export default function PublicSigningPage({
               ) : lockedError ? (
                 <p className="mt-5 text-sm text-[#C10007]">{lockedError}</p>
               ) : null
+            ) : linkOnly ? (
+            <div className="mt-5">
+              <label className={labelClass}>Lawyer</label>
+              {selectedLawyerName ? (
+                <p className="text-sm font-semibold text-[#1a1a1a]">{selectedLawyerName}</p>
+              ) : (
+                <div className="flex items-center gap-2 py-2 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              )}
+            </div>
             ) : (
             <div className="mt-5">
               <label className={labelClass}>Lawyer</label>
@@ -702,6 +720,8 @@ export default function PublicSigningPage({
                         ? `Your closing date is too close. Signings must be booked at least ${availability.minBusinessDaysBeforeClosing} business days before closing, so please choose a closing date at least ${availability.minBusinessDaysBeforeClosing} business days from today.`
                         : availability?.latestBookableDate && date > availability.latestBookableDate
                         ? `Signing must be booked on or before ${availability.latestBookableDate} (${availability.minBusinessDaysBeforeClosing} business days before closing). Please pick an earlier date.`
+                        : availability?.earliestBookableDate && date < availability.earliestBookableDate
+                        ? `Signing can only be booked from ${availability.earliestBookableDate} (${availability.maxBusinessDaysBeforeClosing} business days before closing). Please pick a later date.`
                         : "No times available on this date."}
                     </p>
                   )}
@@ -856,24 +876,6 @@ export default function PublicSigningPage({
                         </p>
                       )}
                     </div>
-                    <div>
-                      <label className={labelClass}>File number</label>
-                      <input
-                        placeholder="26P-0059"
-                        className={inputClass}
-                        value={form.fileNumber}
-                        onChange={(e) =>
-                          setForm({ ...form, fileNumber: formatFileNumber(e.target.value) })
-                        }
-                        onBlur={() => setFileNumberTouched(true)}
-                        aria-invalid={fileNumberTouched && fileNumberIncomplete}
-                      />
-                      {fileNumberTouched && fileNumberIncomplete && (
-                        <p className="mt-1 text-xs text-[#C10007]">
-                          Enter file number in 26P-0059 format.
-                        </p>
-                      )}
-                    </div>
                   </div>
 
                   <div>
@@ -925,21 +927,6 @@ export default function PublicSigningPage({
                     )}
                   </div>
 
-                  <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-900">
-                    <input
-                      type="checkbox"
-                      checked={idConfirmed}
-                      onChange={(e) => setIdConfirmed(e.target.checked)}
-                      className="mt-0.5 h-5 w-5 shrink-0 rounded cursor-pointer"
-                      style={{ accentColor: BRAND }}
-                    />
-                    <span>
-                      {form.appointmentType === "virtual"
-                        ? "I confirm everyone in this transaction will complete the online ID verification before the signing appointment, and show two pieces of ID during the appointment."
-                        : "I confirm everyone in this transaction will bring two pieces of ID to the office."}
-                    </span>
-                  </label>
-
                   <div>
                     <label className={labelClass}>Property address *</label>
                     <AddressAutocomplete
@@ -953,16 +940,6 @@ export default function PublicSigningPage({
                       }
                       placeholder="123 Main Street, Toronto"
                       inputClassName={`${inputClass} pl-9`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass}>Closing date</label>
-                    <input
-                      type="date"
-                      className={`${inputClass} max-w-[200px]`}
-                      value={form.closingDate}
-                      onChange={(e) => setForm({ ...form, closingDate: e.target.value })}
                     />
                   </div>
 
@@ -999,10 +976,20 @@ export default function PublicSigningPage({
                   </div>
                   )}
 
-                  <p className="text-xs leading-relaxed text-gray-400">
-                    By proceeding, you confirm that you have read and agree to iClosed&apos;s
-                    Participant Terms and Privacy Notice.
-                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer text-sm text-gray-900">
+                    <input
+                      type="checkbox"
+                      checked={idConfirmed}
+                      onChange={(e) => setIdConfirmed(e.target.checked)}
+                      className="mt-0.5 h-5 w-5 shrink-0 rounded cursor-pointer"
+                      style={{ accentColor: BRAND }}
+                    />
+                    <span>
+                      {form.appointmentType === "virtual"
+                        ? "I confirm everyone in this transaction will complete the online ID verification before the signing appointment, and show two pieces of ID during the appointment."
+                        : "I confirm everyone in this transaction will bring two pieces of ID to the office."}
+                    </span>
+                  </label>
 
                   {error && (
                     <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-[#C10007]">

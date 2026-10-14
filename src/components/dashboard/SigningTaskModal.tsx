@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, Loader2, X } from "lucide-react";
 
 const BOOKED_LABEL = "I have booked my appointment";
 
@@ -9,8 +9,8 @@ const SigningTaskModal: React.FC<{
   open: boolean;
   taskId: string | null;
   dealId: string | null;
-  /** Calendar the admin assigned to this file, for the button label. */
-  calendarName: string | null;
+  /** Calendar the admin assigned to this file (no longer shown on the button). */
+  calendarName?: string | null;
   title: string;
   subtitle?: string;
   side: "purchase" | "sale" | null;
@@ -18,28 +18,8 @@ const SigningTaskModal: React.FC<{
   onClose: () => void;
   onSaved: (submitted: boolean) => void;
   onError: (message: string) => void;
-}> = ({ open, taskId, dealId, calendarName, title, subtitle, side, closingDate, onClose, onSaved, onError }) => {
-  const [booked, setBooked] = useState(false);
-  const [touched, setTouched] = useState(false);
+}> = ({ open, taskId, dealId, title, subtitle, side, closingDate, onClose, onSaved, onError }) => {
   const [busy, setBusy] = useState<"draft" | "submit" | null>(null);
-  // Prefill from a saved draft.
-  useEffect(() => {
-    if (!open || !taskId) return;
-    setBooked(false);
-    setTouched(false);
-    let cancelled = false;
-    fetch(`/api/task-responses?task_id=${encodeURIComponent(taskId)}`, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (cancelled || !data?.success) return;
-        const r = (data.responses ?? []).find((x: { field_label?: string }) => x.field_label === BOOKED_LABEL);
-        if (r) setBooked(r.value === "true");
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [open, taskId]);
 
   if (!open) return null;
 
@@ -50,10 +30,6 @@ const SigningTaskModal: React.FC<{
 
   const save = async (draft: boolean) => {
     if (!taskId) return;
-    if (!draft) {
-      setTouched(true);
-      if (!booked) return;
-    }
     setBusy(draft ? "draft" : "submit");
     try {
       const res = await fetch("/api/task-responses", {
@@ -61,7 +37,8 @@ const SigningTaskModal: React.FC<{
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           task_id: taskId,
-          responses: [{ field_label: BOOKED_LABEL, field_type: "checkbox", value: booked ? "true" : "false" }],
+          // The "I have booked" checkbox is gone; clicking "I've booked" is the confirmation.
+          responses: [{ field_label: BOOKED_LABEL, field_type: "checkbox", value: draft ? "false" : "true" }],
           draft,
         }),
       });
@@ -104,9 +81,6 @@ const SigningTaskModal: React.FC<{
                 Your signing date must be 3 days prior to the closing day ({closingDate}). It is subject to {waitingFor}
               </p>
             </div>
-            <p className="text-sm font-semibold text-gray-900">
-              Please bring 2 pieces of ID (one must have a photograph)
-            </p>
             <a
               href={`/signing?${new URLSearchParams({
                 ...(dealId ? { deal: dealId } : {}),
@@ -114,26 +88,9 @@ const SigningTaskModal: React.FC<{
               }).toString()}`}
               className="inline-flex items-center rounded-lg bg-[#C10007] px-4 py-2.5 text-sm font-semibold !text-white hover:bg-[#a30006]"
             >
-              {calendarName ? (
-                `Book ${calendarName}'s signing appointment`
-              ) : (
-                "Book your signing appointment"
-              )}
+              Book your signing appointment
+              <ArrowUpRight className="ml-1.5 h-4 w-4" />
             </a>
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-semibold text-gray-900">
-                <input
-                  type="checkbox"
-                  checked={booked}
-                  onChange={(e) => setBooked(e.target.checked)}
-                  className="h-5 w-5 rounded accent-[#C10007] cursor-pointer"
-                />
-                {BOOKED_LABEL}
-              </label>
-              {touched && !booked && (
-                <p className="mt-1.5 text-xs text-[#C10007]">Please confirm once you have booked.</p>
-              )}
-            </div>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row gap-3 px-6 sm:px-8 py-5 border-t border-gray-100">

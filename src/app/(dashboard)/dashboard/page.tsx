@@ -1612,7 +1612,7 @@ export default function DashboardPage() {
         timeZone: "America/Toronto",
         hour: "numeric",
         minute: "2-digit",
-      })} ET`
+      })}${signingAppt.appointment_type === "in_person" ? " · In person" : ""}`
     : null;
 
   // Parties for the active property. On a Purchase & Sale deal each side has its

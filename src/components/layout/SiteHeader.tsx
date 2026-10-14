@@ -1,7 +1,8 @@
 import Link from "next/link";
 import HomeHeaderAuth from "@/components/layout/HomeHeaderAuth";
 
-// Marketing header shared by the public pages (home, blog, appointment booking).
+// Marketing header shared by the public pages (home, blog, booking page).
+// Booking is by personal lawyer link only, so it is deliberately not linked here.
 // Fixed 64px bar — pages using it need `pt-16` on their content.
 export default function SiteHeader() {
   return (
@@ -25,12 +26,6 @@ export default function SiteHeader() {
             className="hidden sm:inline-flex px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-gray-100 hover:text-gray-900 transition-colors"
           >
             Blog
-          </Link>
-          <Link
-            href="/book-appointment"
-            className="hidden sm:inline-flex px-3 sm:px-4 py-2 text-sm font-medium text-gray-600 rounded-sm hover:bg-gray-100 hover:text-gray-900 transition-colors"
-          >
-            Book an Appointment
           </Link>
           <Link
             href="/intake"
